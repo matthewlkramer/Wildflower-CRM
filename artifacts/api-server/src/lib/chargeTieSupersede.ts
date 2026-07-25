@@ -1,8 +1,13 @@
 // `db` is used ONLY to derive the transaction type (same convention as
 // paymentApplications.ts) — nothing here touches the singleton at runtime.
 import type { db } from "@workspace/db";
-import { paymentApplications, stagedPayments, stripeStagedCharges } from "@workspace/db/schema";
-import { and, eq, isNotNull, ne, or, sql } from "drizzle-orm";
+import {
+  paymentApplications,
+  paymentUnits,
+  stagedPayments,
+  stripeStagedCharges,
+} from "@workspace/db/schema";
+import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
 import {
   AnchorAlreadyCountedError,
   applyPaymentApplication,
@@ -289,9 +294,10 @@ export async function applyChargeTieSupersedePairs(
         confirmedAt: paymentApplications.confirmedAt,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .where(
         and(
-          eq(paymentApplications.paymentId, pair.qbStagedPaymentId),
+          eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
           eq(paymentApplications.evidenceSource, "quickbooks"),
           or(
             eq(paymentApplications.linkRole, "counted"),
@@ -311,9 +317,10 @@ export async function applyChargeTieSupersedePairs(
         note: paymentApplications.note,
       })
       .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
       .where(
         and(
-          eq(paymentApplications.stripeChargeId, pair.chargeId),
+          eq(paymentUnits.stripeChargeId, pair.chargeId),
           eq(paymentApplications.evidenceSource, "stripe"),
           eq(paymentApplications.linkRole, "counted"),
         ),
@@ -340,10 +347,11 @@ export async function applyChargeTieSupersedePairs(
         .select({
           total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
         })
-        .from(paymentApplications)
+      .from(paymentApplications)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
         .where(
           and(
-            eq(paymentApplications.stripeChargeId, pair.chargeId),
+            eq(paymentUnits.stripeChargeId, pair.chargeId),
             eq(paymentApplications.linkRole, "counted"),
             ne(paymentApplications.giftId, giftId),
           ),
@@ -399,7 +407,13 @@ export async function applyChargeTieSupersedePairs(
             .delete(paymentApplications)
             .where(
               and(
-                eq(paymentApplications.paymentId, pair.qbStagedPaymentId),
+                inArray(
+                  paymentApplications.paymentUnitId,
+                  tx
+                    .select({ id: paymentUnits.id })
+                    .from(paymentUnits)
+                    .where(eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId)),
+                ),
                 eq(paymentApplications.giftId, d.qbRow.giftId),
                 eq(paymentApplications.linkRole, "corroborating"),
                 ne(paymentApplications.id, d.qbRow.id),
@@ -417,7 +431,13 @@ export async function applyChargeTieSupersedePairs(
             .delete(paymentApplications)
             .where(
               and(
-                eq(paymentApplications.paymentId, pair.qbStagedPaymentId),
+                inArray(
+                  paymentApplications.paymentUnitId,
+                  tx
+                    .select({ id: paymentUnits.id })
+                    .from(paymentUnits)
+                    .where(eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId)),
+                ),
                 eq(paymentApplications.giftId, d.qbRow.giftId),
                 eq(paymentApplications.linkRole, "corroborating"),
                 ne(paymentApplications.id, d.qbRow.id),
@@ -449,9 +469,10 @@ export async function applyChargeTieSupersedePairs(
           const countedExists = await tx
             .select({ id: paymentApplications.id })
             .from(paymentApplications)
+            .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
             .where(
               and(
-                eq(paymentApplications.paymentId, pair.qbStagedPaymentId),
+                eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
                 eq(paymentApplications.giftId, d.qbRow.giftId),
                 eq(paymentApplications.linkRole, "counted"),
               ),
@@ -473,9 +494,10 @@ export async function applyChargeTieSupersedePairs(
               total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
             })
             .from(paymentApplications)
+            .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
             .where(
               and(
-                eq(paymentApplications.paymentId, pair.qbStagedPaymentId),
+                eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
                 eq(paymentApplications.linkRole, "counted"),
                 ne(paymentApplications.giftId, d.qbRow.giftId),
               ),

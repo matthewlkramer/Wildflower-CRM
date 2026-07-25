@@ -3,6 +3,7 @@ import {
   giftsAndPayments,
   stripeStagedCharges,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db";
 import { and, eq, ne } from "drizzle-orm";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
@@ -195,6 +196,11 @@ export async function confirmRefundPropagation(
       result = { code: "not_proposed", chargeId };
       return;
     }
+    const chargePaymentUnitId = await tx
+      .select({ id: paymentUnits.id })
+      .from(paymentUnits)
+      .where(eq(paymentUnits.stripeChargeId, chargeId))
+      .then((r) => r[0]?.id ?? null);
 
     // Ledger fallback: the gift this charge is counted against (the legacy
     // matched/created gift-pointer columns are retired, never read).
@@ -208,7 +214,7 @@ export async function confirmRefundPropagation(
       .from(paymentApplications)
       .where(
         and(
-          eq(paymentApplications.stripeChargeId, chargeId),
+          eq(paymentApplications.paymentUnitId, chargePaymentUnitId ?? ""),
           eq(paymentApplications.evidenceSource, "stripe"),
           eq(paymentApplications.linkRole, "counted"),
         ),
@@ -254,7 +260,7 @@ export async function confirmRefundPropagation(
         .delete(paymentApplications)
         .where(
           and(
-            eq(paymentApplications.stripeChargeId, chargeId),
+            eq(paymentApplications.paymentUnitId, chargePaymentUnitId ?? ""),
             eq(paymentApplications.giftId, rowGiftId),
             eq(paymentApplications.linkRole, "corroborating"),
             ne(paymentApplications.id, rowId),

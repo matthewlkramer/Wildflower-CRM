@@ -9,6 +9,7 @@ import {
   fundableProjects,
   sourceLinks,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
 import { newId } from "./helpers";
@@ -173,7 +174,11 @@ export function buildSuperfluousHeaderDelete(
         inArray(stagedPayments.qbEntityId, qbDepositIds),
         sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
-        sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${paymentApplications}
+          JOIN ${paymentUnits} ON ${paymentUnits.id} = ${paymentApplications.paymentUnitId}
+          WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
+        )`,
       ),
     );
 }
@@ -213,7 +218,11 @@ export function buildSuperfluousLineDelete(
         stagedStatusIn(["pending", "excluded"]),
         sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
-        sql`NOT EXISTS (SELECT 1 FROM ${paymentApplications} WHERE ${paymentApplications.paymentId} = ${stagedPayments.id})`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM ${paymentApplications}
+          JOIN ${paymentUnits} ON ${paymentUnits.id} = ${paymentApplications.paymentUnitId}
+          WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
+        )`,
       ),
     );
 }

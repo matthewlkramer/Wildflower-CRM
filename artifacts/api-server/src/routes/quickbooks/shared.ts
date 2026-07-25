@@ -4,6 +4,7 @@ import {
   stagedPayments,
   giftsAndPayments,
   paymentApplications,
+  paymentUnits,
   organizations,
   households,
   people,
@@ -556,9 +557,10 @@ export async function revertOneStagedPayment(
           createdTheGift: paymentApplications.createdTheGift,
         })
         .from(paymentApplications)
+        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
         .where(
           and(
-            eq(paymentApplications.paymentId, id),
+            eq(paymentUnits.sourceStagedPaymentId, id),
             eq(paymentApplications.evidenceSource, "quickbooks"),
             eq(paymentApplications.linkRole, "counted"),
           ),

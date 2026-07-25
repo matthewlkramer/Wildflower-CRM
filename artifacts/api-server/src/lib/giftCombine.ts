@@ -22,7 +22,7 @@
 // writes NOTHING and returns the collision so the route can 409 with a clean,
 // no-op rollback.
 import type { db } from "@workspace/db";
-import { paymentApplications } from "@workspace/db/schema";
+import { paymentApplications, paymentUnits } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -78,7 +78,8 @@ export async function absorbGiftEvidenceIntoSurvivor(
         eq(paymentApplications.linkRole, "counted"),
         sql`(
           SELECT COUNT(*) FROM payment_applications pa2
-          WHERE pa2.payment_id = ${paymentApplications.paymentId}
+          JOIN payment_units pu2 ON pu2.id = pa2.payment_unit_id
+          WHERE pu2.source_staged_payment_id = ${paymentUnits.sourceStagedPaymentId}
             AND pa2.evidence_source = 'quickbooks'
             AND pa2.link_role = 'counted'
         ) > 1`,
@@ -91,9 +92,9 @@ export async function absorbGiftEvidenceIntoSurvivor(
     .select({
       id: paymentApplications.id,
       giftId: paymentApplications.giftId,
-      paymentId: paymentApplications.paymentId,
-      stripeChargeId: paymentApplications.stripeChargeId,
-      donorboxDonationId: paymentApplications.donorboxDonationId,
+      paymentId: paymentUnits.sourceStagedPaymentId,
+      stripeChargeId: paymentUnits.stripeChargeId,
+      donorboxDonationId: paymentUnits.donorboxDonationId,
       evidenceSource: paymentApplications.evidenceSource,
       amountApplied: paymentApplications.amountApplied,
       giftAllocationId: paymentApplications.giftAllocationId,
@@ -101,6 +102,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
       createdTheGift: paymentApplications.createdTheGift,
     })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(
       and(
         inArray(paymentApplications.giftId, allIds),
@@ -116,10 +118,11 @@ export async function absorbGiftEvidenceIntoSurvivor(
       id: paymentApplications.id,
       giftId: paymentApplications.giftId,
       evidenceSource: paymentApplications.evidenceSource,
-      paymentId: paymentApplications.paymentId,
-      stripeChargeId: paymentApplications.stripeChargeId,
+      paymentId: paymentUnits.sourceStagedPaymentId,
+      stripeChargeId: paymentUnits.stripeChargeId,
     })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(
       and(
         inArray(paymentApplications.giftId, allIds),

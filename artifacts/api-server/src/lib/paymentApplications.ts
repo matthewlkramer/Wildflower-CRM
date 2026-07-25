@@ -10,7 +10,7 @@ import {
   stripeStagedCharges,
   donorboxDonations,
 } from "@workspace/db/schema";
-import { and, eq, isNotNull, ne, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -482,7 +482,15 @@ export async function removePaymentApplicationsForPayment(
 ): Promise<string[]> {
   const removed = await tx
     .delete(paymentApplications)
-    .where(eq(paymentApplications.paymentId, paymentId))
+    .where(
+      inArray(
+        paymentApplications.paymentUnitId,
+        tx
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
+          .where(eq(paymentUnits.sourceStagedPaymentId, paymentId)),
+      ),
+    )
     .returning({ giftId: paymentApplications.giftId });
   return removed.map((r) => r.giftId);
 }
@@ -500,7 +508,15 @@ export async function removePaymentApplicationsForStripeCharge(
 ): Promise<string[]> {
   const removed = await tx
     .delete(paymentApplications)
-    .where(eq(paymentApplications.stripeChargeId, stripeChargeId))
+    .where(
+      inArray(
+        paymentApplications.paymentUnitId,
+        tx
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
+          .where(eq(paymentUnits.stripeChargeId, stripeChargeId)),
+      ),
+    )
     .returning({ giftId: paymentApplications.giftId });
   return removed.map((r) => r.giftId);
 }
@@ -516,7 +532,15 @@ export async function removePaymentApplicationsForDonorboxDonation(
 ): Promise<string[]> {
   const removed = await tx
     .delete(paymentApplications)
-    .where(eq(paymentApplications.donorboxDonationId, donorboxDonationId))
+    .where(
+      inArray(
+        paymentApplications.paymentUnitId,
+        tx
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
+          .where(eq(paymentUnits.donorboxDonationId, donorboxDonationId)),
+      ),
+    )
     .returning({ giftId: paymentApplications.giftId });
   return removed.map((r) => r.giftId);
 }
@@ -617,7 +641,13 @@ export async function confirmPaymentApplicationsForPayment(
     })
     .where(
       and(
-        eq(paymentApplications.paymentId, paymentId),
+        inArray(
+          paymentApplications.paymentUnitId,
+          tx
+            .select({ id: paymentUnits.id })
+            .from(paymentUnits)
+            .where(eq(paymentUnits.sourceStagedPaymentId, paymentId)),
+        ),
         eq(paymentApplications.matchMethod, "system"),
       ),
     )
@@ -742,13 +772,14 @@ export function donorboxLedgerExistsForGift(
 export function donorboxBackedExistsSql(giftRef: string): string {
   return `EXISTS (
     SELECT 1 FROM payment_applications pa_dbx
+    JOIN payment_units pu_dbx ON pu_dbx.id = pa_dbx.payment_unit_id
     WHERE pa_dbx.gift_id = ${giftRef} AND pa_dbx.link_role = 'counted'
       AND (
         pa_dbx.evidence_source = 'donorbox'
-        OR (pa_dbx.evidence_source = 'stripe' AND pa_dbx.stripe_charge_id IS NOT NULL
+        OR (pa_dbx.evidence_source = 'stripe' AND pu_dbx.stripe_charge_id IS NOT NULL
             AND EXISTS (
               SELECT 1 FROM donorbox_donations dd_dbx
-              WHERE dd_dbx.stripe_charge_id = pa_dbx.stripe_charge_id
+              WHERE dd_dbx.stripe_charge_id = pu_dbx.stripe_charge_id
             ))
       )
   )`;
@@ -775,7 +806,8 @@ export function qbLedgerPaymentIdForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.payment_id FROM payment_applications pa
+    SELECT pu.source_staged_payment_id FROM payment_applications pa
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
     WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
     LIMIT 1
   )`;
@@ -810,9 +842,10 @@ export function qbLedgerExistsForGiftExcludingPayment(
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1 FROM payment_applications pa
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
     WHERE pa.gift_id = ${giftIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-      AND pa.payment_id <> ${excludePaymentIdSql}
+      AND pu.source_staged_payment_id <> ${excludePaymentIdSql}
   )`;
 }
 
@@ -826,10 +859,11 @@ export function qbLedgerPaymentIdForGiftExcludingPayment(
   excludePaymentIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.payment_id FROM payment_applications pa
+    SELECT pu.source_staged_payment_id FROM payment_applications pa
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
     WHERE pa.gift_id = ${giftIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-      AND pa.payment_id <> ${excludePaymentIdSql}
+      AND pu.source_staged_payment_id <> ${excludePaymentIdSql}
     LIMIT 1
   )`;
 }
@@ -853,11 +887,12 @@ export function chargeIdOwningGiftExcludingCharge(
   excludeChargeIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.stripe_charge_id FROM payment_applications pa
+    SELECT pu.stripe_charge_id FROM payment_applications pa
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
     WHERE pa.gift_id = ${giftIdSql}
       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-      AND pa.stripe_charge_id IS NOT NULL
-      AND pa.stripe_charge_id <> ${excludeChargeIdSql}
+      AND pu.stripe_charge_id IS NOT NULL
+      AND pu.stripe_charge_id <> ${excludeChargeIdSql}
     LIMIT 1
   )`;
 }
@@ -887,7 +922,8 @@ export function qbLedgerGiftIdForPaymentExcludingGift(
 ): SQL<string | null> {
   return sql<string | null>`(
     SELECT pa.gift_id FROM payment_applications pa
-    WHERE pa.payment_id = ${paymentIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${paymentIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
       AND pa.gift_id <> ${excludeGiftIdSql}
     LIMIT 1
@@ -900,7 +936,8 @@ export function qbLedgerExistsForPayment(
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1 FROM payment_applications pa
-    WHERE pa.payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
   )`;
 }
 
@@ -927,7 +964,8 @@ export function qbLedgerSoleGiftIdForPayment(
   return sql<string | null>`(
     SELECT CASE WHEN COUNT(*) = 1 THEN MIN(pa.gift_id) END
     FROM payment_applications pa
-    WHERE pa.payment_id = ${paymentIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${paymentIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
   )`;
 }
@@ -942,7 +980,8 @@ export function qbLedgerMintedGiftIdForPayment(
 ): SQL<string | null> {
   return sql<string | null>`(
     SELECT pa.gift_id FROM payment_applications pa
-    WHERE pa.payment_id = ${paymentIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${paymentIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
       AND pa.created_the_gift = true
     LIMIT 1
@@ -964,7 +1003,8 @@ export function qbLedgerDirectMatchExists(
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1 FROM payment_applications pa
-    WHERE pa.payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
       AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
       AND pa.created_the_gift = false
   )`;
@@ -994,7 +1034,8 @@ export function stripeLedgerGiftIdForCharge(
 ): SQL<string | null> {
   return sql<string | null>`(
     SELECT pa.gift_id FROM payment_applications pa
-    WHERE pa.stripe_charge_id = ${chargeIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.stripe_charge_id = ${chargeIdSql}
       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
     LIMIT 1
   )`;
@@ -1010,7 +1051,8 @@ export function stripeLedgerMintedGiftIdForCharge(
 ): SQL<string | null> {
   return sql<string | null>`(
     SELECT pa.gift_id FROM payment_applications pa
-    WHERE pa.stripe_charge_id = ${chargeIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.stripe_charge_id = ${chargeIdSql}
       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
       AND pa.created_the_gift = true
     LIMIT 1
@@ -1034,9 +1076,10 @@ export async function chargeCountedLedgerRow(
       createdTheGift: paymentApplications.createdTheGift,
     })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(
       and(
-        eq(paymentApplications.stripeChargeId, chargeId),
+        eq(paymentUnits.stripeChargeId, chargeId),
         eq(paymentApplications.evidenceSource, "stripe"),
         eq(paymentApplications.linkRole, "counted"),
       ),
@@ -1058,14 +1101,15 @@ export async function giftCountedStripeChargeId(
   giftId: string,
 ): Promise<string | null> {
   const row = await q
-    .select({ stripeChargeId: paymentApplications.stripeChargeId })
+    .select({ stripeChargeId: paymentUnits.stripeChargeId })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(
       and(
         eq(paymentApplications.giftId, giftId),
         eq(paymentApplications.evidenceSource, "stripe"),
         eq(paymentApplications.linkRole, "counted"),
-        isNotNull(paymentApplications.stripeChargeId),
+        isNotNull(paymentUnits.stripeChargeId),
       ),
     )
     .limit(1)
@@ -1079,7 +1123,8 @@ export function stripeLedgerCountedExistsForCharge(
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1 FROM payment_applications pa
-    WHERE pa.stripe_charge_id = ${chargeIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.stripe_charge_id = ${chargeIdSql}
       AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
   )`;
 }
@@ -1093,7 +1138,8 @@ export function donorboxLedgerGiftIdForDonation(
 ): SQL<string | null> {
   return sql<string | null>`(
     SELECT pa.gift_id FROM payment_applications pa
-    WHERE pa.donorbox_donation_id = ${donationIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.donorbox_donation_id = ${donationIdSql}
       AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
     LIMIT 1
   )`;
@@ -1105,7 +1151,8 @@ export function donorboxLedgerCountedExistsForDonation(
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1 FROM payment_applications pa
-    WHERE pa.donorbox_donation_id = ${donationIdSql}
+    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    WHERE pu.donorbox_donation_id = ${donationIdSql}
       AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
   )`;
 }

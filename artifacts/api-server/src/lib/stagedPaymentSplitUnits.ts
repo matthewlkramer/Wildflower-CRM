@@ -2,6 +2,7 @@ import { db } from "@workspace/db";
 import {
   stagedPayments,
   paymentApplications,
+  paymentUnits,
   sourceLinks,
 } from "@workspace/db/schema";
 import { and, asc, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -80,9 +81,10 @@ async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
   if (rowIds.length === 0) return new Set();
   const [apps, setl, links] = await Promise.all([
     tx
-      .select({ id: paymentApplications.paymentId })
+      .select({ id: paymentUnits.sourceStagedPaymentId })
       .from(paymentApplications)
-      .where(inArray(paymentApplications.paymentId, rowIds)),
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .where(inArray(paymentUnits.sourceStagedPaymentId, rowIds)),
     tx
       .select({ id: stagedPayments.id })
       .from(stagedPayments)
@@ -194,7 +196,8 @@ export async function splitStagedPaymentIntoUnits(
     tx
       .select({ id: paymentApplications.id })
       .from(paymentApplications)
-      .where(eq(paymentApplications.paymentId, parentId))
+      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .where(eq(paymentUnits.sourceStagedPaymentId, parentId))
       .limit(1),
     tx
       .select({ id: stagedPayments.id })

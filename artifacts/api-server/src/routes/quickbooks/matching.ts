@@ -5,6 +5,7 @@ import {
   giftsAndPayments,
   giftAllocations,
   paymentApplications,
+  paymentUnits,
 } from "@workspace/db/schema";
 import {
   and,
@@ -464,13 +465,14 @@ router.post(
         // one existence check (excluding this group's payments) replaces the
         // legacy direct + split guards.
         const conflict = await tx
-          .select({ paymentId: paymentApplications.paymentId })
+          .select({ paymentId: paymentUnits.sourceStagedPaymentId })
           .from(paymentApplications)
+          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
           .where(
             and(
               eq(paymentApplications.giftId, giftId),
               eq(paymentApplications.evidenceSource, "quickbooks"),
-              notInArray(paymentApplications.paymentId, ids),
+              notInArray(paymentUnits.sourceStagedPaymentId, ids),
             ),
           )
           .then((r) => r[0]);
@@ -725,7 +727,7 @@ router.post(
           .from(paymentApplications)
           .where(
             and(
-              eq(paymentApplications.paymentId, id),
+              eq(paymentUnits.sourceStagedPaymentId, id),
               eq(paymentApplications.linkRole, "counted"),
             ),
           )

@@ -325,11 +325,12 @@ export async function detectFinancialCorrections(
   const existingLinks = await db
     .select({
       evidenceSource: paymentApplications.evidenceSource,
-      paymentId: paymentApplications.paymentId,
-      stripeChargeId: paymentApplications.stripeChargeId,
+      paymentId: paymentUnits.sourceStagedPaymentId,
+      stripeChargeId: paymentUnits.stripeChargeId,
       giftId: paymentApplications.giftId,
     })
     .from(paymentApplications)
+    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
     .where(eq(paymentApplications.linkRole, "corroborating"));
   const linkedSet = new Set(
     existingLinks
