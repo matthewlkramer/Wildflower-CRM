@@ -6094,6 +6094,32 @@ export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
   matchBasis?: WorkbenchDepositQbRecordMatchBasis;
 });
 
+export type DepositExclusionReason = typeof DepositExclusionReason[keyof typeof DepositExclusionReason];
+
+
+export const DepositExclusionReason = {
+  membership: 'membership',
+  loan_repayment: 'loan_repayment',
+  loan_proceeds: 'loan_proceeds',
+  note_payable: 'note_payable',
+  earned_income: 'earned_income',
+  interest: 'interest',
+  other_revenue: 'other_revenue',
+  intercompany_transfer: 'intercompany_transfer',
+  tax_refund: 'tax_refund',
+  insurance: 'insurance',
+  expense_refund: 'expense_refund',
+  expensify: 'expensify',
+  returned_wire: 'returned_wire',
+  miscoded_withdrawal: 'miscoded_withdrawal',
+  other: 'other',
+} as const;
+
+export interface BankDepositExclusion {
+  reason: DepositExclusionReason;
+  note: string | null;
+}
+
 export interface WorkbenchDeposit {
   /** Stable key: 'bank_deposit:<bank_deposits.id>'. */
   id: string;
@@ -6111,9 +6137,16 @@ export interface WorkbenchDeposit {
   charges: WorkbenchDepositCharge[];
   qbRecords: WorkbenchDepositQbRecord[];
   accountingChecks: WorkbenchDepositAccountingCheck[];
+  /** Direct bank-deposit exclusion decision, if one exists. This is separate from inferred staged-payment exclusion reasons. */
+  bankExclusion?: BankDepositExclusion | null;
   /** Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded. */
   notFundraisingReason?: string | null;
   coverage: WorkbenchClusterCoverage;
+}
+
+export interface SetBankDepositExclusionBody {
+  reason: DepositExclusionReason;
+  note?: string | null;
 }
 
 export interface DepositQboComponentMutationResult {

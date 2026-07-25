@@ -522,6 +522,32 @@ export const ListDepositCandidatePayoutsResponse = zod.object({
 })
 
 /**
+ * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
+ * @summary Mark a Wells Fargo bank deposit as not fundraising.
+ */
+export const SetBankDepositExclusionParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+export const SetBankDepositExclusionBody = zod.object({
+  "reason": zod.enum(['membership', 'loan_repayment', 'loan_proceeds', 'note_payable', 'earned_income', 'interest', 'other_revenue', 'intercompany_transfer', 'tax_refund', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'miscoded_withdrawal', 'other']),
+  "note": zod.string().nullish()
+})
+
+export const SetBankDepositExclusionResponse = zod.object({
+  "reason": zod.enum(['membership', 'loan_repayment', 'loan_proceeds', 'note_payable', 'earned_income', 'interest', 'other_revenue', 'intercompany_transfer', 'tax_refund', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'miscoded_withdrawal', 'other']),
+  "note": zod.string().nullable()
+})
+
+/**
+ * Finance/admin review only. Deletes only the deposit-level exclusion decision.
+ * @summary Return a bank deposit to the open reconciliation queue.
+ */
+export const ClearBankDepositExclusionParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+/**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.
  */
 export const LinkPayoutDepositParams = zod.object({
@@ -1436,6 +1462,10 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbDepositId": zod.string().nullish(),
   "exclusionReason": zod.string().nullish()
 })),
+  "bankExclusion": zod.object({
+  "reason": zod.enum(['membership', 'loan_repayment', 'loan_proceeds', 'note_payable', 'earned_income', 'interest', 'other_revenue', 'intercompany_transfer', 'tax_refund', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'miscoded_withdrawal', 'other']),
+  "note": zod.string().nullable()
+}).nullish().describe('Direct bank-deposit exclusion decision, if one exists. This is separate from inferred staged-payment exclusion reasons.'),
   "notFundraisingReason": zod.string().nullish().describe('Representative staged-payment exclusion reason when every non-Stripe QBO line tied to this deposit is excluded.'),
   "coverage": zod.object({
   "evidenceRecords": zod.array(zod.object({

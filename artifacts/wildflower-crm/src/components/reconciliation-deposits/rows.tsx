@@ -88,6 +88,8 @@ const NOOP_ACTIONS: ClusterActions = {
   openLinkPayoutDeposit: () => undefined,
   openUnlinkPayoutDeposit: () => undefined,
   openConfirmPayoutBankMatch: () => undefined,
+  openBankDepositExclusion: () => undefined,
+  clearBankDepositExclusion: () => undefined,
   isFinanceOrAdmin: false,
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
@@ -339,6 +341,9 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
             </span>
             {actions.isFinanceOrAdmin ? (
               <CardActionsMenu items={[
+                deposit.bankExclusion
+                  ? { label: "Return to open queue", onSelect: () => actions.clearBankDepositExclusion?.(deposit.anchorId) }
+                  : { label: "Mark not fundraising…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
                 ...(deposit.composition.payoutId
                   ? [{ label: "Unlink payout", onSelect: () => actions.openUnlinkPayoutDeposit?.(deposit.composition.payoutId ?? "") }]
                   : /stripe\s+transfer/i.test(deposit.bank.memo ?? "")

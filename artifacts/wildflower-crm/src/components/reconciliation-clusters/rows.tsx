@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import type {
+  BankDepositExclusion,
   WorkbenchCluster,
   WorkbenchClusterCharge,
   WorkbenchClusterGift,
@@ -85,6 +86,8 @@ export interface ClusterActions {
   openLinkPayoutDeposit?: (payoutId: string) => void;
   openUnlinkPayoutDeposit?: (payoutId: string) => void;
   openConfirmPayoutBankMatch?: (payoutId: string) => void;
+  openBankDepositExclusion?: (bankDepositId: string, existing: BankDepositExclusion | null) => void;
+  clearBankDepositExclusion?: (bankDepositId: string) => void;
   /** True when the viewer is a finance team member or admin. Finance-gates QB write actions (§7.3). */
   isFinanceOrAdmin: boolean;
   /** Open the read-only in-app QB record detail dialog (§7.2). Linkage word comes from coverage.state.qbCards. */

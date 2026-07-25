@@ -22,6 +22,7 @@ import type {
 import type {
   ApproveCompleteMatchBody,
   BadRequestResponse,
+  BankDepositExclusion,
   BundleAnchorInput,
   BundleAnchorListResponse,
   BundleConfirmInput,
@@ -61,6 +62,7 @@ import type {
   SearchReconciliationNodeParams,
   SearchReconciliationPayoutsParams,
   SearchReconciliationQbStagedParams,
+  SetBankDepositExclusionBody,
   SettlementLineage,
   SplitStagedPaymentUnitsBody,
   SplitStagedPaymentUnitsResult,
@@ -923,6 +925,148 @@ export function useListDepositCandidatePayouts<TData = Awaited<ReturnType<typeof
 
 
 /**
+ * Finance/admin review only. Records only the deposit-level exclusion decision; it never creates or changes payment units, deposit components, or payment applications.
+ * @summary Mark a Wells Fargo bank deposit as not fundraising.
+ */
+export const getSetBankDepositExclusionUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/exclusion`
+}
+
+export const setBankDepositExclusion = async (bankDepositId: string,
+    setBankDepositExclusionBody: SetBankDepositExclusionBody, options?: RequestInit): Promise<BankDepositExclusion> => {
+
+  return customFetch<BankDepositExclusion>(getSetBankDepositExclusionUrl(bankDepositId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      setBankDepositExclusionBody,)
+  }
+);}
+
+
+
+
+export const getSetBankDepositExclusionMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBankDepositExclusion>>, TError,{bankDepositId: string;data: BodyType<SetBankDepositExclusionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setBankDepositExclusion>>, TError,{bankDepositId: string;data: BodyType<SetBankDepositExclusionBody>}, TContext> => {
+
+const mutationKey = ['setBankDepositExclusion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setBankDepositExclusion>>, {bankDepositId: string;data: BodyType<SetBankDepositExclusionBody>}> = (props) => {
+          const {bankDepositId,data} = props ?? {};
+
+          return  setBankDepositExclusion(bankDepositId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetBankDepositExclusionMutationResult = NonNullable<Awaited<ReturnType<typeof setBankDepositExclusion>>>
+    export type SetBankDepositExclusionMutationBody = BodyType<SetBankDepositExclusionBody>
+    export type SetBankDepositExclusionMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Mark a Wells Fargo bank deposit as not fundraising.
+ */
+export const useSetBankDepositExclusion = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setBankDepositExclusion>>, TError,{bankDepositId: string;data: BodyType<SetBankDepositExclusionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setBankDepositExclusion>>,
+        TError,
+        {bankDepositId: string;data: BodyType<SetBankDepositExclusionBody>},
+        TContext
+      > => {
+      return useMutation(getSetBankDepositExclusionMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Deletes only the deposit-level exclusion decision.
+ * @summary Return a bank deposit to the open reconciliation queue.
+ */
+export const getClearBankDepositExclusionUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/exclusion`
+}
+
+export const clearBankDepositExclusion = async (bankDepositId: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getClearBankDepositExclusionUrl(bankDepositId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearBankDepositExclusionMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearBankDepositExclusion>>, TError,{bankDepositId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearBankDepositExclusion>>, TError,{bankDepositId: string}, TContext> => {
+
+const mutationKey = ['clearBankDepositExclusion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearBankDepositExclusion>>, {bankDepositId: string}> = (props) => {
+          const {bankDepositId} = props ?? {};
+
+          return  clearBankDepositExclusion(bankDepositId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearBankDepositExclusionMutationResult = NonNullable<Awaited<ReturnType<typeof clearBankDepositExclusion>>>
+
+    export type ClearBankDepositExclusionMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Return a bank deposit to the open reconciliation queue.
+ */
+export const useClearBankDepositExclusion = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearBankDepositExclusion>>, TError,{bankDepositId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearBankDepositExclusion>>,
+        TError,
+        {bankDepositId: string},
+        TContext
+      > => {
+      return useMutation(getClearBankDepositExclusionMutationOptions(options));
+    }
+    /**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.
  */
 export const getLinkPayoutDepositUrl = (payoutId: string,) => {

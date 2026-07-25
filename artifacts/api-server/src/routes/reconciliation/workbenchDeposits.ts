@@ -1,10 +1,12 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
+import { bankDepositExclusions, bankDeposits } from "@workspace/db/schema";
 import { sql } from "drizzle-orm";
-import { asyncHandler, parsePagination } from "../../lib/helpers";
+import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuard";
 import { getViewer, maskName } from "../../lib/identityVisibility";
+import { ClearBankDepositExclusionParams, SetBankDepositExclusionBody, SetBankDepositExclusionParams } from "@workspace/api-zod";
 import {
   informationStateOf,
   lensFlagsFromState,
@@ -75,6 +77,8 @@ type DepositRow = {
   payout_refund_total: string | null;
   payout_adjustment: string | null;
   payout_charge_count: number | null;
+  bank_exclusion_reason: string | null;
+  bank_exclusion_note: string | null;
   not_fundraising_reason: string | null;
   components: Array<{
     componentId: string;
@@ -511,6 +515,8 @@ router.get(
         p.refund_total::text AS payout_refund_total,
         p.adjustment_total::text AS payout_adjustment,
         p.charge_count AS payout_charge_count,
+        (SELECT bde.reason::text FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id) AS bank_exclusion_reason,
+        (SELECT bde.note FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id) AS bank_exclusion_note,
         COALESCE(
           (SELECT bde.reason::text FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id),
         (
@@ -601,12 +607,16 @@ router.get(
             'recordComplete', (g.organization_id IS NOT NULL OR g.individual_giver_person_id IS NOT NULL OR g.household_id IS NOT NULL)
               AND EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = g.id),
             'linkedChargeIds', COALESCE((
-              SELECT jsonb_agg(pa2.stripe_charge_id) FROM payment_applications pa2
-              WHERE pa2.gift_id = g.id AND pa2.link_role = 'counted' AND pa2.lifecycle = 'confirmed' AND pa2.stripe_charge_id IS NOT NULL
+              SELECT jsonb_agg(pu2.stripe_charge_id)
+              FROM payment_applications pa2
+              JOIN payment_units pu2 ON pu2.id = pa2.payment_unit_id
+              WHERE pa2.gift_id = g.id AND pa2.link_role = 'counted' AND pa2.lifecycle = 'confirmed' AND pu2.stripe_charge_id IS NOT NULL
             ), '[]'::jsonb),
             'linkedStagedPaymentIds', COALESCE((
-              SELECT jsonb_agg(pa3.payment_id) FROM payment_applications pa3
-              WHERE pa3.gift_id = g.id AND pa3.link_role = 'counted' AND pa3.lifecycle = 'confirmed' AND pa3.payment_id IS NOT NULL
+              SELECT jsonb_agg(pu3.source_staged_payment_id)
+              FROM payment_applications pa3
+              JOIN payment_units pu3 ON pu3.id = pa3.payment_unit_id
+              WHERE pa3.gift_id = g.id AND pa3.link_role = 'counted' AND pa3.lifecycle = 'confirmed' AND pu3.source_staged_payment_id IS NOT NULL
             ), '[]'::jsonb)
           ))
           FROM payment_applications pa
@@ -820,6 +830,9 @@ router.get(
         charges: r.charges,
         qbRecords: r.qb_records,
         accountingChecks: r.accounting_checks,
+        bankExclusion: r.bank_exclusion_reason
+          ? { reason: r.bank_exclusion_reason, note: r.bank_exclusion_note }
+          : null,
         notFundraisingReason: r.not_fundraising_reason,
         coverage: {
           evidenceRecords: [],
@@ -894,6 +907,77 @@ router.get(
       pagination: { page, limit, total: counts[lens] ?? 0 },
       viewerCanManageAccounting: viewerCanManageAccounting(req),
     });
+  }),
+);
+
+router.post(
+  "/reconciliation/deposits/:bankDepositId/exclusion",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const params = parseOrBadRequest(SetBankDepositExclusionParams, req.params, res);
+    if (!params) return;
+    const body = parseOrBadRequest(SetBankDepositExclusionBody, req.body, res);
+    if (!body) return;
+
+    const [deposit] = await db
+      .select({ id: bankDeposits.id })
+      .from(bankDeposits)
+      .where(sql`${bankDeposits.id} = ${params.bankDepositId}`)
+      .limit(1);
+    if (!deposit) {
+      notFound(res, "bank deposit");
+      return;
+    }
+
+    const [row] = await db
+      .insert(bankDepositExclusions)
+      .values({
+        id: `bdex_${newId()}`,
+        bankDepositId: params.bankDepositId,
+        reason: body.reason,
+        note: body.note ?? null,
+        createdByUserId: user.id,
+      })
+      .onConflictDoUpdate({
+        target: bankDepositExclusions.bankDepositId,
+        set: {
+          reason: body.reason,
+          note: body.note ?? null,
+          updatedAt: new Date(),
+        },
+      })
+      .returning({
+        reason: bankDepositExclusions.reason,
+        note: bankDepositExclusions.note,
+      });
+    res.json(row);
+  }),
+);
+
+router.delete(
+  "/reconciliation/deposits/:bankDepositId/exclusion",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(ClearBankDepositExclusionParams, req.params, res);
+    if (!params) return;
+    const [deposit] = await db
+      .select({ id: bankDeposits.id })
+      .from(bankDeposits)
+      .where(sql`${bankDeposits.id} = ${params.bankDepositId}`)
+      .limit(1);
+    if (!deposit) {
+      notFound(res, "bank deposit");
+      return;
+    }
+    await db
+      .delete(bankDepositExclusions)
+      .where(sql`${bankDepositExclusions.bankDepositId} = ${params.bankDepositId}`);
+    res.status(204).send();
   }),
 );
 

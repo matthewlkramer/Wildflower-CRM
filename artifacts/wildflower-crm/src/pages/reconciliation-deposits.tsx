@@ -31,6 +31,10 @@ import {
   useLinkPayoutDeposit,
   useUnlinkPayoutDeposit,
   useConfirmPayoutBankMatch,
+  useSetBankDepositExclusion,
+  useClearBankDepositExclusion,
+  DepositExclusionReason,
+  type BankDepositExclusion,
   useListPayoutCandidateDeposits,
   type DepositCandidatePayout,
   type PayoutCandidateDeposit,
@@ -54,8 +58,11 @@ import { DonorResolveDialog, EvidenceChooserDialog, ExcludeReasonDialog, QbRecor
 import type { AnchorRef, ClusterActions } from "@/components/reconciliation-clusters/rows";
 import type { DonorType } from "@/components/entity-picker";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 const PAGE_SIZE = 25;
+const DEPOSIT_EXCLUSION_REASONS = Object.values(DepositExclusionReason);
 
 function formatWhen(iso: string): string {
   const date = new Date(iso);
@@ -103,6 +110,8 @@ export default function ReconciliationDepositsPage() {
   const linkPayout = useLinkPayoutDeposit();
   const unlinkPayout = useUnlinkPayoutDeposit();
   const confirmPayoutBankMatch = useConfirmPayoutBankMatch();
+  const setBankDepositExclusion = useSetBankDepositExclusion();
+  const clearBankDepositExclusion = useClearBankDepositExclusion();
   const deposits = data?.data ?? [];
   const canManageAccounting = data?.viewerCanManageAccounting ?? false;
   const total = data?.pagination.total ?? 0;
@@ -121,6 +130,9 @@ export default function ReconciliationDepositsPage() {
   const [unlinkPayoutFor, setUnlinkPayoutFor] = useState<string | null>(null);
   const [confirmPayoutFor, setConfirmPayoutFor] = useState<string | null>(null);
   const [payoutCandidateFor, setPayoutCandidateFor] = useState<string | null>(null);
+  const [bankExclusionFor, setBankExclusionFor] = useState<{ depositId: string; existing: BankDepositExclusion | null } | null>(null);
+  const [bankExclusionReason, setBankExclusionReason] = useState<DepositExclusionReason>("other");
+  const [bankExclusionNote, setBankExclusionNote] = useState("");
   const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
     query: {
       enabled: linkPayoutFor != null,
@@ -137,7 +149,7 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -194,6 +206,14 @@ export default function ReconciliationDepositsPage() {
     openLinkPayoutDeposit: setPayoutCandidateFor,
     openUnlinkPayoutDeposit: setUnlinkPayoutFor,
     openConfirmPayoutBankMatch: setConfirmPayoutFor,
+    openBankDepositExclusion: (depositId, existing) => {
+      setBankExclusionFor({ depositId, existing });
+      setBankExclusionReason(existing?.reason ?? "other");
+      setBankExclusionNote(existing?.note ?? "");
+    },
+    clearBankDepositExclusion: (depositId) => {
+      void clearBankDepositExclusion.mutateAsync({ bankDepositId: depositId }).then(invalidate);
+    },
     isFinanceOrAdmin: canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: () => undefined,
@@ -364,6 +384,51 @@ export default function ReconciliationDepositsPage() {
               }}
             >
               Confirm match
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={bankExclusionFor != null} onOpenChange={(open) => { if (!open && !busy) setBankExclusionFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark deposit as not fundraising</AlertDialogTitle>
+            <AlertDialogDescription>
+              This records only a deposit-level decision and does not change payment units, components, payment applications, or gifts.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="deposit-exclusion-reason">Reason</label>
+              <Select value={bankExclusionReason} onValueChange={(value) => setBankExclusionReason(value as DepositExclusionReason)}>
+                <SelectTrigger id="deposit-exclusion-reason"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {DEPOSIT_EXCLUSION_REASONS.map((reason) => (
+                    <SelectItem key={reason} value={reason}>{reason.replaceAll("_", " ")}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="deposit-exclusion-note">Note (optional)</label>
+              <Textarea id="deposit-exclusion-note" value={bankExclusionNote} onChange={(event) => setBankExclusionNote(event.target.value)} placeholder="Add context for this decision" />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => {
+                if (!bankExclusionFor) return;
+                void setBankDepositExclusion.mutateAsync({
+                  bankDepositId: bankExclusionFor.depositId,
+                  data: { reason: bankExclusionReason, note: bankExclusionNote.trim() || null },
+                }).then(() => {
+                  setBankExclusionFor(null);
+                  invalidate();
+                });
+              }}
+            >
+              Save decision
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
