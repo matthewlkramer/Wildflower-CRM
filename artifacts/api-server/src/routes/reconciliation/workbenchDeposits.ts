@@ -362,6 +362,10 @@ function buildUniverse(q: string | null) {
         )
       ) AS f_completed,
       (
+        EXISTS (
+          SELECT 1 FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id
+        )
+        OR (
         (
           COALESCE(d.memo, '') ~* '\\m(loan|interest)\\M'
           OR (
@@ -417,6 +421,7 @@ function buildUniverse(q: string | null) {
           )
         )
         AND COALESCE(d.memo, '') !~* 'transfer[[:space:]]+from[[:space:]]+(brk|brokerage)'
+        )
       ) AS f_not_fundraising
     FROM bank_deposits d
     LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
@@ -505,8 +510,10 @@ router.get(
         p.refund_total::text AS payout_refund_total,
         p.adjustment_total::text AS payout_adjustment,
         p.charge_count AS payout_charge_count,
+        COALESCE(
+          (SELECT bde.reason::text FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id),
         (
-          SELECT qbo_lines.exclusion_reason
+          SELECT qbo_lines.exclusion_reason::text
           FROM (
             SELECT qsp.exclusion_reason
             FROM deposit_qbo_components dqc
@@ -525,7 +532,7 @@ router.get(
           GROUP BY qbo_lines.exclusion_reason
           ORDER BY count(*) DESC, qbo_lines.exclusion_reason
           LIMIT 1
-        ) AS not_fundraising_reason,
+        )) AS not_fundraising_reason,
         COALESCE((
           SELECT bool_or(ch.raw_charge->>'status' = 'succeeded' AND ch.refund_propagation_status = 'proposed')
           FROM stripe_staged_charges ch WHERE ch.stripe_payout_id = p.id
