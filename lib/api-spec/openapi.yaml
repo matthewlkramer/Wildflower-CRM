@@ -9113,6 +9113,10 @@ components:
         donorbox:      { type: boolean, description: "True when a counted Donorbox ledger row backs this gift (renders the DB badge)." }
         grantLetter:   { type: boolean, description: "True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge)." }
         codingForm:    { type: boolean, description: "True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge)." }
+        qboRecords:
+          type: array
+          description: "Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship."
+          items: { $ref: "#/components/schemas/WorkbenchDepositNodeQbRecord" }
         recordComplete: { type: boolean, description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule." }
         linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
@@ -9481,6 +9485,10 @@ components:
               label: { type: string, nullable: true }
               exclusionReason: { type: string, nullable: true }
               matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
+              qboRecords:
+                type: array
+                description: "Derived QBO evidence aligned to this deposit component."
+                items: { $ref: "#/components/schemas/WorkbenchDepositNodeQbRecord" }
         units:
           type: array
           items:
@@ -9669,6 +9677,10 @@ components:
         - $ref: "#/components/schemas/WorkbenchClusterCharge"
         - type: object
           properties:
+            qboRecords:
+              type: array
+              description: "Derived QBO evidence aligned to this Stripe charge."
+              items: { $ref: "#/components/schemas/WorkbenchDepositNodeQbRecord" }
             refunded: { type: boolean, nullable: true }
             amountRefunded: { type: string, nullable: true }
             refundPropagationStatus: { type: string, nullable: true }
@@ -9694,6 +9706,36 @@ components:
             unconfirmed: { type: boolean, nullable: true }
             source: { type: string, enum: [bank_spine, qbo_provisional], nullable: true }
             matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
+    WorkbenchDepositNodeQbRecord:
+      type: object
+      required: [stagedPaymentId, role]
+      description: "Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship."
+      properties:
+        stagedPaymentId: { type: string }
+        role:
+          type: string
+          enum: [component, provisional, fee, charge_tie]
+        reference: { type: string, nullable: true }
+        lineDescription: { type: string, nullable: true }
+        memo: { type: string, nullable: true }
+        amount: { type: string, nullable: true }
+        dateReceived: { type: string, format: date, nullable: true }
+        paymentMethod: { type: string, nullable: true }
+        linkedChargeId: { type: string, nullable: true }
+        componentId: { type: string, nullable: true }
+        paymentUnitId: { type: string, nullable: true }
+        accountingCheckId: { type: string, nullable: true }
+        payerName: { type: string, nullable: true }
+        qbEntityType: { type: string, nullable: true }
+        qbEntityId: { type: string, nullable: true }
+        qbTransactionMemo: { type: string, nullable: true }
+        qbLocation: { type: string, nullable: true }
+        revenueLocation: { type: string, nullable: true }
+        qbDocNumber: { type: string, nullable: true }
+        qbCheckNumber: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        qbPayerType: { type: string, nullable: true }
+        exclusionReason: { type: string, nullable: true }
     DepositQboComponentMutationResult:
       type: object
       required: [id, confirmed]

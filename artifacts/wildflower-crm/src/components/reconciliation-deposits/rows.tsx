@@ -3,6 +3,8 @@ import type {
   WorkbenchDeposit,
   WorkbenchDepositAccountingCheck,
   WorkbenchDepositQbRecord,
+  WorkbenchDepositNodeQbRecord,
+  WorkbenchDepositCharge,
   WorkbenchDepositLens,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -15,6 +17,7 @@ export type DepositActions = ClusterActions & {
   openAddKnownPayment?: (bankDepositId: string, remainder: string) => void;
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
+  openChargeQbSearch?: (charge: WorkbenchDepositCharge) => void;
 };
 
 export const DEPOSIT_GRID =
@@ -111,6 +114,7 @@ const NOOP_ACTIONS: DepositActions = {
   openAddKnownPayment: () => undefined,
   openFlagRemainder: () => undefined,
   removeManualComponent: () => undefined,
+  openChargeQbSearch: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -304,7 +308,22 @@ function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepo
   return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
-function Accounting({ checks, records, actions }: { checks: WorkbenchDepositAccountingCheck[]; records: WorkbenchDepositQbRecord[]; actions: ClusterActions }) {
+function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord }) {
+  return (
+    <div className="rounded-md border border-dashed bg-card px-2 py-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="truncate text-[10px] font-medium">{record.lineDescription ?? record.memo ?? record.stagedPaymentId}</span>
+        <span className="shrink-0 text-[10px] tabular-nums">{money(record.amount)}</span>
+      </div>
+      <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+        {record.role.replace("_", " ")} · {record.dateReceived ?? "Undated"} · {record.qbLocation ?? record.revenueLocation ?? "No location"}
+      </div>
+    </div>
+  );
+}
+
+function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: DepositActions }) {
+  const { accountingChecks: checks, qbRecords: records } = deposit;
   const checksByPayment = new Map(checks.map((check) => [check.stagedPaymentId, check]));
   const items = [
     ...records.map((record) => ({ record, check: checksByPayment.get(record.stagedPaymentId) })),
@@ -312,12 +331,41 @@ function Accounting({ checks, records, actions }: { checks: WorkbenchDepositAcco
       .filter((check) => !records.some((record) => record.stagedPaymentId === check.stagedPaymentId))
       .map((check) => ({ record: undefined, check })),
   ];
-  if (!items.length) {
+  const nodeGroups = [
+    ...deposit.composition.components.map((component) => ({
+      key: `component-${component.componentId}`,
+      label: component.label ?? component.kind.replace("_", " "),
+      records: component.qboRecords ?? [],
+    })),
+    ...deposit.charges.map((charge) => ({
+      key: `charge-${charge.chargeId}`,
+      label: charge.payerName ?? charge.chargeId,
+      records: charge.qboRecords ?? [],
+    })),
+    ...deposit.gifts.map((gift) => ({
+      key: `gift-${gift.giftId}`,
+      label: gift.name ?? gift.giftId,
+      records: gift.qboRecords ?? [],
+    })),
+  ].filter((group) => group.records.length > 0);
+  const nodeRecordIds = new Set(nodeGroups.flatMap((group) => group.records.map((record) => `${record.role}:${record.stagedPaymentId}:${record.linkedChargeId ?? ""}`)));
+  const unalignedItems = items.filter(({ record }) => {
+    if (!record) return true;
+    const linkedChargeId = "linkedChargeId" in record ? record.linkedChargeId ?? "" : "";
+    return ![...nodeRecordIds].some((id) => id.startsWith(`${record.stagedPaymentId}:`) || id.endsWith(`:${linkedChargeId}`));
+  });
+  if (!nodeGroups.length && !unalignedItems.length) {
     return <span className="text-xs text-muted-foreground">No accounting check</span>;
   }
   return (
     <div className="space-y-1.5">
-      {items.map(({ record, check }) => {
+      {nodeGroups.map((group) => (
+        <div key={group.key} className="space-y-1 rounded-md border border-sky-200/70 bg-sky-50/30 p-1.5 dark:border-sky-900/60 dark:bg-sky-950/20">
+          <div className="truncate text-[10px] font-semibold text-sky-900 dark:text-sky-200">{group.label}</div>
+          {group.records.map((record) => <NodeQbCard key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`} record={record} />)}
+        </div>
+      ))}
+      {unalignedItems.map(({ record, check }) => {
         const display = record ?? check;
         if (!display) return null;
         const anchor: AnchorRef = { kind: "staged", id: display.stagedPaymentId, label: accountingLabel(display) };
@@ -470,6 +518,7 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                   <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(anchor, chargePreview(charge))}>Identify donor</button>
                   {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, chargePreview(charge))}>Donorbox lookup</button> : null}
                   {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, chargePreview(charge))}>Coding form</button> : null}
+                  {actions.isFinanceOrAdmin && deposit.composition.payoutId && actions.openChargeQbSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openChargeQbSearch?.(charge)}>Search QuickBooks</button> : null}
                 </div>
               </div>
             );
@@ -518,7 +567,7 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
               );
             }) : null}
         </span>
-        <span><Accounting checks={deposit.accountingChecks} records={deposit.qbRecords} actions={actions} /></span>
+        <span><Accounting deposit={deposit} actions={actions} /></span>
       </div>
     </section>
   );

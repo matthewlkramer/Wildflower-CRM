@@ -5272,6 +5272,45 @@ export const WorkbenchClusterGiftDonorKind = {
   household: 'household',
 } as const;
 
+export type WorkbenchDepositNodeQbRecordRole = typeof WorkbenchDepositNodeQbRecordRole[keyof typeof WorkbenchDepositNodeQbRecordRole];
+
+
+export const WorkbenchDepositNodeQbRecordRole = {
+  component: 'component',
+  provisional: 'provisional',
+  fee: 'fee',
+  charge_tie: 'charge_tie',
+} as const;
+
+/**
+ * Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.
+ */
+export interface WorkbenchDepositNodeQbRecord {
+  stagedPaymentId: string;
+  role: WorkbenchDepositNodeQbRecordRole;
+  reference?: string | null;
+  lineDescription?: string | null;
+  memo?: string | null;
+  amount?: string | null;
+  dateReceived?: string | null;
+  paymentMethod?: string | null;
+  linkedChargeId?: string | null;
+  componentId?: string | null;
+  paymentUnitId?: string | null;
+  accountingCheckId?: string | null;
+  payerName?: string | null;
+  qbEntityType?: string | null;
+  qbEntityId?: string | null;
+  qbTransactionMemo?: string | null;
+  qbLocation?: string | null;
+  revenueLocation?: string | null;
+  qbDocNumber?: string | null;
+  qbCheckNumber?: string | null;
+  entityId?: string | null;
+  qbPayerType?: string | null;
+  exclusionReason?: string | null;
+}
+
 /**
  * One CRM gift card in the cluster's donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.
  */
@@ -5298,6 +5337,8 @@ export interface WorkbenchClusterGift {
   grantLetter?: boolean;
   /** True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge). */
   codingForm?: boolean;
+  /** Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship. */
+  qboRecords?: WorkbenchDepositNodeQbRecord[];
   /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
   recordComplete?: boolean;
   /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
@@ -5913,6 +5954,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   label?: string | null;
   exclusionReason?: string | null;
   matchBasis?: WorkbenchDepositCompositionComponentsItemMatchBasis;
+  /** Derived QBO evidence aligned to this deposit component. */
+  qboRecords?: WorkbenchDepositNodeQbRecord[];
 };
 
 export type WorkbenchDepositCompositionUnitsItemKind = typeof WorkbenchDepositCompositionUnitsItemKind[keyof typeof WorkbenchDepositCompositionUnitsItemKind];
@@ -6053,6 +6096,8 @@ export type WorkbenchDepositBank = {
 };
 
 export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({
+  /** Derived QBO evidence aligned to this Stripe charge. */
+  qboRecords?: WorkbenchDepositNodeQbRecord[];
   refunded?: boolean | null;
   amountRefunded?: string | null;
   refundPropagationStatus?: string | null;
