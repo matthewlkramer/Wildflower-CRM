@@ -367,6 +367,18 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
   rank and set `ambiguous_deposit_match` (flag only, like
   `stripe_payouts.ambiguous_bank_match` — no review workflow).
+- `bank_deposit_exclusions` — the reviewed **deposit-level "not fundraising"
+  decision authority**. One row (`UNIQUE(bank_deposit_id)`) marks a specific
+  bank deposit as non-fundraising money movement directly on the spine, for
+  deposits with no QBO/staged-payment record to hang an exclusion on (e.g.
+  internal `ONLINE TRANSFER … CSP/PAYROLL/NONPAYROLL`) or whose only tie to a
+  human exclusion is an inferred amount+date+name match that must not become a
+  stored money relationship. A DECISION authority, not evidence: it never counts
+  money, never composes a deposit, and only drives the workbench
+  Not-fundraising classification. `reason` reuses
+  `staged_payment_exclusion_reason`; overridable (delete the row to re-open the
+  deposit). Reviewed backfill of the 66 name-confirmed affiliated dues/loans +
+  33 internal transfers is migration 0176.
 - `qbo_accounting_checks` — the QBO **expected-vs-actual accounting sidecar**
   (Phase 7): one row per QBO record comparing the DERIVED expected posting
   (from the resolved real chain) against what QBO actually says. jsonb

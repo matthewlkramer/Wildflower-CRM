@@ -401,6 +401,25 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(visible.data.some((item: any) => item.anchorId === brokerage)).toBe(false);
   });
 
+  it("treats a bank-deposit-level exclusion as not_fundraising", async () => {
+    const excluded = await seedDeposit("ONLINE TRANSFER CSP MAY NONPAYROLL", "4321.00");
+    await db.insert(schema.bankDepositExclusions).values({
+      id: `bdex_${excluded}`,
+      bankDepositId: excluded,
+      reason: "intercompany_transfer",
+      note: "reviewed internal transfer",
+    });
+
+    const open = await listDeposits("all_open");
+    expect(open.data.some((item: any) => item.anchorId === excluded)).toBe(false);
+
+    const result = await listDeposits("not_fundraising", "ONLINE TRANSFER CSP");
+    const row = result.data.find((item: any) => item.anchorId === excluded);
+    expect(row).toBeTruthy();
+    expect(row?.lenses).toContain("not_fundraising");
+    expect(row?.notFundraisingReason).toBe("intercompany_transfer");
+  });
+
   it("returns lenses from the same canonical coverage state", async () => {
     const id = await seedDeposit("Parity unresolved");
     const result = await listDeposits("unresolved_composition", "Parity unresolved");
