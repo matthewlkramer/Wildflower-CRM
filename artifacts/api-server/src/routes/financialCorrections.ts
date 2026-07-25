@@ -4,6 +4,7 @@ import {
   giftsAndPayments,
   giftAllocations,
   paymentApplications,
+  paymentUnits,
   stagedPayments,
   stripeStagedCharges,
   organizations,
@@ -465,6 +466,15 @@ router.post(
     const now = new Date();
     const evidenceSource: "quickbooks" | "stripe" =
       body.evidenceKind === "qb_staged" ? "quickbooks" : "stripe";
+    const paymentUnitId = await db
+      .select({ id: paymentUnits.id })
+      .from(paymentUnits)
+      .where(
+        evidenceSource === "quickbooks"
+          ? eq(paymentUnits.sourceStagedPaymentId, body.evidenceId)
+          : eq(paymentUnits.stripeChargeId, body.evidenceId),
+      )
+      .then((rows) => rows[0]?.id ?? null);
     await db
       .insert(paymentApplications)
       .values(
@@ -473,6 +483,7 @@ router.post(
           giftId,
           evidenceSource,
           paymentId: body.evidenceKind === "qb_staged" ? body.evidenceId : null,
+          paymentUnitId,
           stripeChargeId:
             body.evidenceKind === "stripe_charge" ? body.evidenceId : null,
           amountApplied: null,
