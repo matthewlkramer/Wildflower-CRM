@@ -3,6 +3,8 @@ import { ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
 import {
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
+  type CodingFormRow,
+  type DonorboxReviewRow,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import {
@@ -36,6 +38,148 @@ export interface EvidencePreview {
   source: string;
   /** Statement descriptor / memo, when present. */
   memo?: string | null;
+}
+
+export function DonorboxSearchDialog({
+  open,
+  onOpenChange,
+  rows,
+  search,
+  onSearchChange,
+  busy,
+  onLink,
+  onCreate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  rows: DonorboxReviewRow[];
+  search: string;
+  onSearchChange: (value: string) => void;
+  busy: boolean;
+  onLink: (row: DonorboxReviewRow) => void;
+  onCreate: (row: DonorboxReviewRow) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(value) => (!busy ? onOpenChange(value) : null)}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Find Donorbox donation</DialogTitle>
+          <DialogDescription>
+            Search pending non-Stripe donations, then link or create the gift
+            for this payment component.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <input
+            value={search}
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder="Search donor, designation, campaign, or comment…"
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+            disabled={busy}
+            autoFocus
+          />
+          <div className="max-h-80 space-y-2 overflow-y-auto">
+            {rows.length ? rows.map((row) => (
+              <div key={row.id} className="rounded-md border px-3 py-2 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold">{row.donorName ?? "Donor not identified"}</p>
+                    <p className="text-muted-foreground">
+                      {row.dateReceived ?? "Undated"} · {row.amount ?? "—"} · Donorbox #{row.id}
+                    </p>
+                    {row.designation || row.campaignName ? (
+                      <p className="mt-1 text-muted-foreground">
+                        {[row.designation, row.campaignName].filter(Boolean).join(" · ")}
+                      </p>
+                    ) : null}
+                    {row.comment ? <p className="mt-1 line-clamp-2 text-muted-foreground">{row.comment}</p> : null}
+                  </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => onLink(row)}>
+                      Link gift…
+                    </Button>
+                    <Button size="sm" disabled={busy} onClick={() => onCreate(row)}>
+                      Create gift
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <p className="py-6 text-center text-sm text-muted-foreground">
+                No pending Donorbox donations match this search.
+              </p>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function CodingFormLookupDialog({
+  open,
+  onOpenChange,
+  rows,
+  busy,
+  onUse,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  rows: CodingFormRow[];
+  busy: boolean;
+  onUse: (row: CodingFormRow, mode: "identify" | "create") => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(value) => (!busy ? onOpenChange(value) : null)}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Use a coding-form row</DialogTitle>
+          <DialogDescription>
+            Coding-form donor and intended-use evidence informs the next
+            identify or create-gift step. It does not book money by itself.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-80 space-y-2 overflow-y-auto">
+          {rows.length ? rows.map((row) => (
+            <div key={row.id} className="rounded-md border px-3 py-2 text-xs">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold">{row.donorName ?? row.donorNameRaw ?? "Donor not identified"}</p>
+                  <p className="text-muted-foreground">
+                    {row.donationDate ?? "Undated"} · {row.amount ?? "—"} · {row.source} row {row.sourceRowIndex}
+                  </p>
+                  {row.intendedUsageSuggested ? <p className="mt-1 text-muted-foreground">Purpose: {row.intendedUsageSuggested}</p> : null}
+                  {row.internalMemo ? <p className="mt-1 line-clamp-2 text-muted-foreground">Memo: {row.internalMemo}</p> : null}
+                </div>
+                <div className="flex shrink-0 gap-1.5">
+                  <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(row, "identify")}>
+                    Identify donor
+                  </Button>
+                  <Button size="sm" disabled={busy} onClick={() => onUse(row, "create")}>
+                    Create gift
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No coding-form rows matched this component.
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function PreviewField({
@@ -83,6 +227,7 @@ export function DonorResolveDialog({
   mode,
   recordLabel,
   preview,
+  contextNote,
   busy,
   onSubmit,
 }: {
@@ -91,6 +236,7 @@ export function DonorResolveDialog({
   mode: "create" | "identify";
   recordLabel: string;
   preview: EvidencePreview | null;
+  contextNote?: string | null;
   busy: boolean;
   onSubmit: (donorType: DonorType, donorId: string) => void;
 }) {
@@ -164,6 +310,11 @@ export function DonorResolveDialog({
                   <PreviewField label="Memo" value={preview.memo} locked />
                 </div>
               ) : null}
+            </div>
+          ) : null}
+          {contextNote ? (
+            <div className="rounded-md border border-blue-200 bg-blue-50/60 px-2.5 py-2 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+              {contextNote}
             </div>
           ) : null}
         </div>
