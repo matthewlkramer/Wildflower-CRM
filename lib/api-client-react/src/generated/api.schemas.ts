@@ -6202,6 +6202,36 @@ export interface BankDepositComponentExclusion {
   classificationSource: StagedPaymentClassificationSource;
 }
 
+export type SetQboAccountingCheckDispositionBodyDisposition = typeof SetQboAccountingCheckDispositionBodyDisposition[keyof typeof SetQboAccountingCheckDispositionBodyDisposition];
+
+
+export const SetQboAccountingCheckDispositionBodyDisposition = {
+  corrected: 'corrected',
+  accepted_historical: 'accepted_historical',
+} as const;
+
+export interface SetQboAccountingCheckDispositionBody {
+  disposition: SetQboAccountingCheckDispositionBodyDisposition;
+  /** Required and non-blank when disposition is accepted_historical. */
+  note?: string | null;
+}
+
+export type QboAccountingCheckDispositionResultDisposition = typeof QboAccountingCheckDispositionResultDisposition[keyof typeof QboAccountingCheckDispositionResultDisposition];
+
+
+export const QboAccountingCheckDispositionResultDisposition = {
+  corrected: 'corrected',
+  accepted_historical: 'accepted_historical',
+} as const;
+
+export interface QboAccountingCheckDispositionResult {
+  id: string;
+  disposition: QboAccountingCheckDispositionResultDisposition;
+  note: string | null;
+  resolvedByUserId: string | null;
+  resolvedAt: string | null;
+}
+
 export type DepositCandidatePaymentUnitKind = typeof DepositCandidatePaymentUnitKind[keyof typeof DepositCandidatePaymentUnitKind];
 
 

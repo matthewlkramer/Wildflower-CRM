@@ -11,9 +11,16 @@ import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ClusterActions, AnchorRef } from "@/components/reconciliation-clusters/rows";
-import type { EvidencePickOption, EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
+import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 
-export type DepositActions = ClusterActions & {
+export type DepositActions = Omit<
+  ClusterActions,
+  "openMarkLoss" | "openMatchEvidence" | "unmatchPledge"
+> & {
+  openAccountingDisposition?: (
+    checkId: string,
+    disposition: "corrected" | "accepted_historical",
+  ) => void;
   openAddKnownPayment?: (bankDepositId: string, remainder: string) => void;
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
@@ -93,7 +100,6 @@ const NOOP_ACTIONS: DepositActions = {
   openDismissRefund: () => undefined,
   openFlag: () => undefined,
   openFlagGift: () => undefined,
-  openMarkLoss: () => undefined,
   openSettlementSearch: () => undefined,
   openLinkDepositPayout: () => undefined,
   openLinkPayoutDeposit: () => undefined,
@@ -106,8 +112,6 @@ const NOOP_ACTIONS: DepositActions = {
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
   confirmProposedMatch: () => undefined,
-  openMatchEvidence: () => undefined,
-  unmatchPledge: () => undefined,
   openUnlinkChooser: () => undefined,
   openMergeGifts: () => undefined,
   confirmChargeProposal: () => undefined,
@@ -389,6 +393,12 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
               <CardActionsMenu items={[
                 { label: "QB detail", onSelect: () => actions.openQbDetail(record ?? (display as WorkbenchDepositQbRecord), check ? "matched" : "missing") },
                 { label: "Exclude", onSelect: () => actions.openExclude(anchor) },
+                ...(check && check.disposition === "correction_needed"
+                  ? [
+                      { label: "Mark corrected", onSelect: () => actions.openAccountingDisposition?.(check.id, "corrected") },
+                      { label: "Accept historical…", onSelect: () => actions.openAccountingDisposition?.(check.id, "accepted_historical") },
+                    ]
+                  : []),
               ]} />
             ) : null}
           </span>
@@ -427,20 +437,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     deposit.bank.refNo,
   ].filter(Boolean).join(" · ");
   const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
-  const evidenceOptions: EvidencePickOption[] = [
-    ...deposit.charges.map((charge) => ({
-      anchor: { kind: "charge" as const, id: charge.chargeId, label: charge.payerName ?? charge.chargeId },
-      source: `Stripe charge · ${charge.payerName ?? charge.chargeId}`,
-      amount: money(charge.amount),
-      date: charge.chargeDate ?? null,
-    })),
-    ...deposit.qbRecords.map((record) => ({
-      anchor: { kind: "staged" as const, id: record.stagedPaymentId, label: record.lineDescription ?? record.stagedPaymentId },
-      source: `QuickBooks · ${record.lineDescription ?? record.stagedPaymentId}`,
-      amount: money(record.amount),
-      date: record.dateReceived ?? null,
-    })),
-  ];
   return (
     <section className="border-b last:border-b-0" data-testid={`deposit-row-${deposit.anchorId}`}>
       <div className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}>
@@ -480,7 +476,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
               </p>
               <p className="text-[11px] tabular-nums">{money(gift.amount)}</p>
               <div className="mt-1 flex flex-wrap gap-1">
-                <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openMatchEvidence(gift.giftId, gift.name ?? gift.giftId, evidenceOptions)}>Match evidence</button>
                 {(gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0 ? (
                   <button
                     type="button"
