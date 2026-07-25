@@ -548,6 +548,38 @@ export const ClearBankDepositExclusionParams = zod.object({
 })
 
 /**
+ * Finance/admin review only. Records the component-level exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+ * @summary Exclude a direct bank-deposit component from fundraising.
+ */
+export const ExcludeBankDepositComponentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ExcludeBankDepositComponentBody = zod.object({
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'refunded_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).')
+}).describe('File the staged payment under a non-gift exclusion category.')
+
+export const ExcludeBankDepositComponentResponse = zod.object({
+  "id": zod.string(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'refunded_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullable(),
+  "classificationSource": zod.enum(['auto', 'manual'])
+})
+
+/**
+ * Finance/admin review only. Clears the component exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+ * @summary Re-include an excluded direct bank-deposit component.
+ */
+export const ReIncludeBankDepositComponentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReIncludeBankDepositComponentResponse = zod.object({
+  "id": zod.string(),
+  "exclusionReason": zod.enum(['zero_amount', 'membership', 'interest', 'tax_refund', 'other_revenue', 'earned_income', 'intercompany_transfer', 'other', 'insurance', 'expense_refund', 'expensify', 'returned_wire', 'processor_payout', 'loan_repayment', 'loan_proceeds', 'note_payable', 'miscoded_withdrawal', 'failed_charge', 'refunded_charge', 'loan', 'government_reimbursement', 'fiscally_sponsored']).describe('Why a staged QuickBooks payment \/ Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan \/ government_reimbursement \/ fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).').nullable(),
+  "classificationSource": zod.enum(['auto', 'manual'])
+})
+
+/**
  * @summary Link a Stripe payout to a Wells Fargo bank deposit.
  */
 export const LinkPayoutDepositParams = zod.object({

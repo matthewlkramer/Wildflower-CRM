@@ -1,12 +1,23 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { bankDepositExclusions, bankDeposits } from "@workspace/db/schema";
+import {
+  bankDepositComponents,
+  bankDepositExclusions,
+  bankDeposits,
+} from "@workspace/db/schema";
 import { sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuard";
 import { getViewer, maskName } from "../../lib/identityVisibility";
-import { ClearBankDepositExclusionParams, SetBankDepositExclusionBody, SetBankDepositExclusionParams } from "@workspace/api-zod";
+import {
+  ClearBankDepositExclusionParams,
+  ExcludeBankDepositComponentBody,
+  ExcludeBankDepositComponentParams,
+  ReIncludeBankDepositComponentParams,
+  SetBankDepositExclusionBody,
+  SetBankDepositExclusionParams,
+} from "@workspace/api-zod";
 import {
   informationStateOf,
   lensFlagsFromState,
@@ -299,6 +310,7 @@ function buildUniverse(q: string | null) {
           SELECT 1 FROM stripe_staged_charges pc
           WHERE pc.stripe_payout_id = p.id
             AND pc.raw_charge->>'status' = 'succeeded'
+            AND pc.exclusion_reason IS NULL
             AND NOT (
               pc.refunded = true
               AND COALESCE(pc.amount_refunded, 0) >= pc.gross_amount
@@ -311,7 +323,7 @@ function buildUniverse(q: string | null) {
                 AND ppa.lifecycle = 'confirmed'
             )
         )
-        OR COALESCE(bool_or(c.id IS NOT NULL AND NOT EXISTS (
+        OR COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
         SELECT 1 FROM payment_applications pa
         WHERE pa.payment_unit_id = c.payment_unit_id
           AND pa.link_role = 'counted'
@@ -369,6 +381,40 @@ function buildUniverse(q: string | null) {
       (
         EXISTS (
           SELECT 1 FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id
+        )
+        OR (
+          EXISTS (
+            SELECT c_all.id
+            FROM bank_deposit_components c_all
+            WHERE c_all.bank_deposit_id = d.id
+            UNION ALL
+            SELECT dqc_all.id
+            FROM deposit_qbo_components dqc_all
+            WHERE dqc_all.bank_deposit_id = d.id
+            UNION ALL
+            SELECT ch_all.id
+            FROM stripe_payouts p_all
+            JOIN stripe_staged_charges ch_all ON ch_all.stripe_payout_id = p_all.id
+            WHERE p_all.bank_deposit_id = d.id
+          )
+          AND NOT EXISTS (
+            SELECT c_open.id
+            FROM bank_deposit_components c_open
+            WHERE c_open.bank_deposit_id = d.id
+              AND c_open.exclusion_reason IS NULL
+            UNION ALL
+            SELECT dqc_open.id
+            FROM deposit_qbo_components dqc_open
+            JOIN staged_payments sp_open ON sp_open.id = dqc_open.staged_payment_id
+            WHERE dqc_open.bank_deposit_id = d.id
+              AND sp_open.exclusion_reason IS NULL
+            UNION ALL
+            SELECT ch_open.id
+            FROM stripe_payouts p_open
+            JOIN stripe_staged_charges ch_open ON ch_open.stripe_payout_id = p_open.id
+            WHERE p_open.bank_deposit_id = d.id
+              AND ch_open.exclusion_reason IS NULL
+          )
         )
         OR (
         (
@@ -534,6 +580,17 @@ router.get(
             JOIN staged_payments rsp ON rsp.id = rpu.source_staged_payment_id
             WHERE rbc.bank_deposit_id = d.id
               AND (rsp.funding_source IS NULL OR rsp.funding_source <> 'stripe')
+            UNION ALL
+            SELECT rbc.exclusion_reason
+            FROM bank_deposit_components rbc
+            WHERE rbc.bank_deposit_id = d.id
+              AND rbc.exclusion_reason IS NOT NULL
+            UNION ALL
+            SELECT ch.exclusion_reason
+            FROM stripe_payouts rp
+            JOIN stripe_staged_charges ch ON ch.stripe_payout_id = rp.id
+            WHERE rp.bank_deposit_id = d.id
+              AND ch.exclusion_reason IS NOT NULL
           ) qbo_lines
           WHERE qbo_lines.exclusion_reason IS NOT NULL
           GROUP BY qbo_lines.exclusion_reason
@@ -551,6 +608,7 @@ router.get(
             'ambiguousDepositMatch', c.ambiguous_deposit_match,
             'unconfirmed', false, 'source', 'bank_spine',
             'stagedPaymentId', u.source_staged_payment_id,
+            'exclusionReason', c.exclusion_reason,
             'countedGiftIds', COALESCE((
               SELECT jsonb_agg(pa.gift_id) FROM payment_applications pa
               WHERE pa.payment_unit_id = u.id AND pa.link_role = 'counted' AND pa.lifecycle = 'confirmed'
@@ -656,7 +714,8 @@ router.get(
             'captured', (ch.raw_charge->>'captured')::boolean
           ) ORDER BY ch.gross_amount DESC)
           FROM stripe_staged_charges ch
-          WHERE ch.stripe_payout_id = p.id AND ch.raw_charge->>'status' = 'succeeded'
+          WHERE ch.stripe_payout_id = p.id
+            AND (ch.raw_charge->>'status' = 'succeeded' OR ch.exclusion_reason IS NOT NULL)
         ), '[]'::jsonb) AS charges,
         COALESCE((
           SELECT jsonb_agg(item ORDER BY item->>'stagedPaymentId')
@@ -978,6 +1037,89 @@ router.delete(
       .delete(bankDepositExclusions)
       .where(sql`${bankDepositExclusions.bankDepositId} = ${params.bankDepositId}`);
     res.status(204).send();
+  }),
+);
+
+router.post(
+  "/reconciliation/deposit-components/:id/exclude",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(ExcludeBankDepositComponentParams, req.params, res);
+    if (!params) return;
+    const body = parseOrBadRequest(ExcludeBankDepositComponentBody, req.body, res);
+    if (!body) return;
+
+    const [component] = await db
+      .select({
+        id: bankDepositComponents.id,
+        exclusionReason: bankDepositComponents.exclusionReason,
+      })
+      .from(bankDepositComponents)
+      .where(sql`${bankDepositComponents.id} = ${params.id}`)
+      .limit(1);
+    if (!component) {
+      notFound(res, "bank deposit component");
+      return;
+    }
+
+    const [row] = await db
+      .update(bankDepositComponents)
+      .set({
+        exclusionReason: body.exclusionReason,
+        classificationSource: "manual",
+        updatedAt: new Date(),
+      })
+      .where(sql`${bankDepositComponents.id} = ${params.id}`)
+      .returning({
+        id: bankDepositComponents.id,
+        exclusionReason: bankDepositComponents.exclusionReason,
+        classificationSource: bankDepositComponents.classificationSource,
+      });
+    res.json(row);
+  }),
+);
+
+router.post(
+  "/reconciliation/deposit-components/:id/re-include",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(ReIncludeBankDepositComponentParams, req.params, res);
+    if (!params) return;
+
+    const [component] = await db
+      .select({
+        id: bankDepositComponents.id,
+        exclusionReason: bankDepositComponents.exclusionReason,
+      })
+      .from(bankDepositComponents)
+      .where(sql`${bankDepositComponents.id} = ${params.id}`)
+      .limit(1);
+    if (!component) {
+      notFound(res, "bank deposit component");
+      return;
+    }
+    if (!component.exclusionReason) {
+      res.status(409).json({
+        error: "not_excluded",
+        message: "Only excluded bank deposit components can be re-included.",
+      });
+      return;
+    }
+
+    const [row] = await db
+      .update(bankDepositComponents)
+      .set({
+        exclusionReason: null,
+        classificationSource: "manual",
+        updatedAt: new Date(),
+      })
+      .where(sql`${bankDepositComponents.id} = ${params.id}`)
+      .returning({
+        id: bankDepositComponents.id,
+        exclusionReason: bankDepositComponents.exclusionReason,
+        classificationSource: bankDepositComponents.classificationSource,
+      });
+    res.json(row);
   }),
 );
 

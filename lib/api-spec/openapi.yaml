@@ -4688,6 +4688,46 @@ paths:
         "204": { description: Deposit returned to the open queue }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /reconciliation/deposit-components/{id}/exclude:
+    post:
+      operationId: excludeBankDepositComponent
+      tags: [reconciliation]
+      summary: Exclude a direct bank-deposit component from fundraising.
+      description: Finance/admin review only. Records the component-level exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExcludeStagedPaymentBody" }
+      responses:
+        "200":
+          description: Direct component exclusion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankDepositComponentExclusion" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Component cannot be excluded from its current state" }
+  /reconciliation/deposit-components/{id}/re-include:
+    post:
+      operationId: reIncludeBankDepositComponent
+      tags: [reconciliation]
+      summary: Re-include an excluded direct bank-deposit component.
+      description: Finance/admin review only. Clears the component exclusion decision without changing the payment unit, deposit composition, applications, or gifts.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Direct component re-inclusion
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankDepositComponentExclusion" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Component is not excluded" }
   /reconciliation/payouts/{payoutId}/bank-deposit:
     post:
       operationId: linkPayoutDeposit
@@ -9513,6 +9553,15 @@ components:
       properties:
         reason: { $ref: "#/components/schemas/DepositExclusionReason" }
         note: { type: string, nullable: true }
+    BankDepositComponentExclusion:
+      type: object
+      required: [id, exclusionReason, classificationSource]
+      properties:
+        id: { type: string }
+        exclusionReason:
+          allOf: [ { $ref: "#/components/schemas/StagedPaymentExclusionReason" } ]
+          nullable: true
+        classificationSource: { $ref: "#/components/schemas/StagedPaymentClassificationSource" }
     WorkbenchDepositCharge:
       allOf:
         - $ref: "#/components/schemas/WorkbenchClusterCharge"

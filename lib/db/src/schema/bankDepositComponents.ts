@@ -9,7 +9,11 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { bankDepositComponentSourceEnum } from "./_enums";
+import {
+  bankDepositComponentSourceEnum,
+  stagedPaymentClassificationSourceEnum,
+  stagedPaymentExclusionReasonEnum,
+} from "./_enums";
 import { bankDeposits } from "./bankDeposits";
 import { paymentUnits } from "./paymentUnits";
 import { stagedPayments } from "./stagedPayments";
@@ -80,6 +84,14 @@ export const bankDepositComponents = pgTable(
     ambiguousDepositMatch: boolean("ambiguous_deposit_match")
       .notNull()
       .default(false),
+    // A direct component may be filed as non-fundraising without removing it
+    // from the deposit composition. Null means the component remains included.
+    exclusionReason: stagedPaymentExclusionReasonEnum("exclusion_reason"),
+    classificationSource: stagedPaymentClassificationSourceEnum(
+      "classification_source",
+    )
+      .notNull()
+      .default("auto"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

@@ -19,6 +19,7 @@ import {
   useDismissStripeRefundPropagation,
   useDismissDepositQboComponent,
   useExcludeStagedPayment,
+  useExcludeBankDepositComponent,
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
   useLinkStripeChargeToGift,
@@ -39,6 +40,7 @@ import {
   type DepositCandidatePayout,
   type PayoutCandidateDeposit,
   useReIncludeStagedPayment,
+  useReIncludeBankDepositComponent,
   useReIncludeStripeStagedCharge,
   useRevertStagedPayment,
   useRevertStripeStagedCharge,
@@ -91,6 +93,8 @@ export default function ReconciliationDepositsPage() {
   const { data: recentData, isLoading: recentLoading } = useListWorkbenchRecentChanges();
   const { data: me } = useGetCurrentUser();
   const reIncludeStaged = useReIncludeStagedPayment();
+  const excludeComponent = useExcludeBankDepositComponent();
+  const reIncludeComponent = useReIncludeBankDepositComponent();
   const reIncludeCharge = useReIncludeStripeStagedCharge();
   const revertStaged = useRevertStagedPayment();
   const revertCharge = useRevertStripeStagedCharge();
@@ -149,7 +153,7 @@ export default function ReconciliationDepositsPage() {
   const [mergeGiftIds, setMergeGiftIds] = useState<string[]>([]);
   const mergeQueries = useQueries({ queries: mergeGiftIds.map((id) => getGetGiftOrPaymentQueryOptions(id, { query: { enabled: mergeGiftIds.length > 0, queryKey: getGetGiftOrPaymentQueryKey(id) } })) });
   const mergeRecords = useMemo<GiftOrPaymentDetail[]>(() => mergeQueries.map((query) => query.data).filter((record): record is GiftOrPaymentDetail => !!record), [mergeQueries]);
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -179,7 +183,8 @@ export default function ReconciliationDepositsPage() {
   const handleExclude = async (reason: StagedPaymentExclusionReason) => {
     if (!excludeFor) return;
     if (excludeFor.kind === "charge") await excludeCharge.mutateAsync({ id: excludeFor.id, data: { exclusionReason: reason } });
-    else await excludeStaged.mutateAsync({ id: excludeFor.id, data: { exclusionReason: reason } });
+    else if (excludeFor.kind === "staged") await excludeStaged.mutateAsync({ id: excludeFor.id, data: { exclusionReason: reason } });
+    else await excludeComponent.mutateAsync({ id: excludeFor.id, data: { exclusionReason: reason } });
     setExcludeFor(null); invalidate();
   };
   const handleRevert = async () => {
@@ -194,7 +199,13 @@ export default function ReconciliationDepositsPage() {
     openCreateGift: (anchor, preview) => setCreateFor({ anchor, preview }),
     openIdentify: (anchor, preview) => setIdentifyFor({ anchor, preview: preview ?? { amount: "—", date: "—", method: "Payment", source: anchor.label, memo: null } }),
     openExclude: setExcludeFor,
-    reInclude: (anchor) => void (anchor.kind === "charge" ? reIncludeCharge.mutateAsync({ id: anchor.id }) : reIncludeStaged.mutateAsync({ id: anchor.id })).finally(invalidate),
+    reInclude: (anchor) => void (
+      anchor.kind === "charge"
+        ? reIncludeCharge.mutateAsync({ id: anchor.id })
+        : anchor.kind === "staged"
+          ? reIncludeStaged.mutateAsync({ id: anchor.id })
+          : reIncludeComponent.mutateAsync({ id: anchor.id })
+    ).finally(invalidate),
     openRevert: (anchor, description) => setRevertFor({ anchor, description }),
     openConfirmRefund: (chargeId, kind, label) => setRefundFor({ chargeId, kind, label }),
     openDismissRefund: (chargeId, label) => setDismissFor({ chargeId, label }),
