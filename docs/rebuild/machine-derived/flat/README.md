@@ -19,3 +19,10 @@ In `bank_deposits_flat.csv`, every child array has companion columns named `<arr
 - `components_sum_vs_deposit_diff` is `deposit amount - components_sum`; positive means under-composed and negative means over-composed.
 
 All dollar sums are rounded to cents. The source machine CSVs remain authoritative; these files add no records or relationships.
+
+## QBO register flat view
+
+- `qbo_register_flat.csv` — one row per positive QBO register-import deposit row (2,245 rows). The register columns are raw evidence fetched from the deterministic `qbo_register_export` import.
+- `is_tied` is `true` only when the register row appears in the machine-derived `qbo_register_links.csv`; `tie_*` columns preserve the machine link evidence.
+- When tied, `deposit_*` columns and the `components` / `payment_units` JSON arrays with their `_count` and `_sum` companions come from the canonical machine-derived `flat/bank_deposits_flat.csv` row. When untied, deposit fields are blank, arrays are `[]`, counts are `0`, and sums are `0.00`.
+- This file deliberately does not derive ties from production money-model tables: register rows are raw imported evidence, while every tie, canonical deposit, composition, and payment-unit field is sourced from the checked-in machine rebuild CSVs. Array cells are valid, CSV-quoted JSON.
