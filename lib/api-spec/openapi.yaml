@@ -9791,6 +9791,12 @@ components:
             unconfirmed: { type: boolean, nullable: true }
             source: { type: string, enum: [bank_spine, qbo_provisional], nullable: true }
             matchBasis: { type: string, enum: [deposit_header_exact, deposit_header_ambiguous], nullable: true }
+            bankTransactionId: { type: string, nullable: true, description: "bank_transactions.id when this deposit-grain record comes from the QBO bank-register linkage table." }
+            payee: { type: string, nullable: true }
+            txnType: { type: string, nullable: true }
+            refNo: { type: string, nullable: true }
+            reconciliationStatus: { type: string, nullable: true }
+            account: { type: string, nullable: true }
     WorkbenchDepositNodeQbRecord:
       type: object
       required: [stagedPaymentId, role]
@@ -9799,7 +9805,7 @@ components:
         stagedPaymentId: { type: string }
         role:
           type: string
-          enum: [component, provisional, fee, charge_tie]
+          enum: [component, provisional, deposit, fee, charge_tie]
         reference: { type: string, nullable: true }
         lineDescription: { type: string, nullable: true }
         memo: { type: string, nullable: true }
@@ -9821,6 +9827,12 @@ components:
         entityId: { type: string, nullable: true }
         qbPayerType: { type: string, nullable: true }
         exclusionReason: { type: string, nullable: true }
+        bankTransactionId: { type: string, nullable: true }
+        payee: { type: string, nullable: true }
+        txnType: { type: string, nullable: true }
+        refNo: { type: string, nullable: true }
+        reconciliationStatus: { type: string, nullable: true }
+        account: { type: string, nullable: true }
     DepositQboComponentMutationResult:
       type: object
       required: [id, confirmed]

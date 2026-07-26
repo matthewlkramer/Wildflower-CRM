@@ -25,6 +25,8 @@ let schema: {
   bankDeposits: Db["bankDeposits"];
   paymentUnits: Db["paymentUnits"];
   bankDepositComponents: Db["bankDepositComponents"];
+  bankTransactions: Db["bankTransactions"];
+  bankDepositQboRegister: Db["bankDepositQboRegister"];
   qboAccountingChecks: Db["qboAccountingChecks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -36,6 +38,8 @@ const payoutIds: string[] = [];
 const depositIds: string[] = [];
 const paymentUnitIds: string[] = [];
 const componentIds: string[] = [];
+const bankTransactionIds: string[] = [];
+const registerLinkIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -83,6 +87,21 @@ async function seedDeposit(amount: string, depositDate: string): Promise<string>
   return id;
 }
 
+async function seedQboRegister(amount: string, txnDate: string): Promise<string> {
+  const id = nextId("register");
+  await db.insert(schema.bankTransactions).values({
+    id,
+    source: "qbo_register_export",
+    sourceFile: "bank-spine-recompute-test.csv",
+    txnDate,
+    deposit: amount,
+    dedupKey: nextId("dedup"),
+    occurrence: 0,
+  });
+  bankTransactionIds.push(id);
+  return id;
+}
+
 async function readCheck(stagedId: string) {
   const rows = await db
     .select({
@@ -106,6 +125,8 @@ beforeAll(async () => {
     bankDeposits: dbMod.bankDeposits,
     paymentUnits: dbMod.paymentUnits,
     bankDepositComponents: dbMod.bankDepositComponents,
+    bankTransactions: dbMod.bankTransactions,
+    bankDepositQboRegister: dbMod.bankDepositQboRegister,
     qboAccountingChecks: dbMod.qboAccountingChecks,
   };
   eqFn = drizzle.eq;
@@ -132,6 +153,16 @@ afterAll(async () => {
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  }
+  if (registerLinkIds.length) {
+    await db
+      .delete(schema.bankDepositQboRegister)
+      .where(inArrayFn(schema.bankDepositQboRegister.id, registerLinkIds));
+  }
+  if (bankTransactionIds.length) {
+    await db
+      .delete(schema.bankTransactions)
+      .where(inArrayFn(schema.bankTransactions.id, bankTransactionIds));
   }
   if (payoutIds.length)
     await db
@@ -289,5 +320,62 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       .from(schema.bankDepositComponents)
       .where(eqFn(schema.bankDepositComponents.paymentUnitId, paymentUnitId));
     expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
+  });
+
+  it("links a unique exact-amount register row within the +/- 3-day window and is idempotent", async () => {
+    const depositId = await seedDeposit("701.00", "2026-07-10");
+    const registerId = await seedQboRegister("701.00", "2026-07-12");
+    registerLinkIds.push(`bdqr_${depositId}`);
+
+    await recompute.recomputeBankSpine();
+    const first = await db
+      .select({
+        bankDepositId: schema.bankDepositQboRegister.bankDepositId,
+        bankTransactionId: schema.bankDepositQboRegister.bankTransactionId,
+        amount: schema.bankDepositQboRegister.amount,
+        ambiguous: schema.bankDepositQboRegister.ambiguous,
+      })
+      .from(schema.bankDepositQboRegister)
+      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+    expect(first).toEqual([{
+      bankDepositId: depositId,
+      bankTransactionId: registerId,
+      amount: "701.00",
+      ambiguous: false,
+    }]);
+
+    await recompute.recomputeBankSpine();
+    const second = await db
+      .select({ id: schema.bankDepositQboRegister.id })
+      .from(schema.bankDepositQboRegister)
+      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+    expect(second).toEqual([{ id: `bdqr_${depositId}` }]);
+  });
+
+  it("does not link when two register rows are candidates for one deposit", async () => {
+    const depositId = await seedDeposit("702.00", "2026-07-20");
+    await seedQboRegister("702.00", "2026-07-19");
+    await seedQboRegister("702.00", "2026-07-22");
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({ id: schema.bankDepositQboRegister.id })
+      .from(schema.bankDepositQboRegister)
+      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+    expect(rows).toEqual([]);
+  });
+
+  it("requires an exact amount even when the register date is within the window", async () => {
+    const depositId = await seedDeposit("703.00", "2026-07-30");
+    await seedQboRegister("703.01", "2026-07-31");
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({ id: schema.bankDepositQboRegister.id })
+      .from(schema.bankDepositQboRegister)
+      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+    expect(rows).toEqual([]);
   });
 });

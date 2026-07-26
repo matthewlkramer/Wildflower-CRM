@@ -327,16 +327,28 @@ function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepo
   return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
-function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord }) {
+function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord }) {
+  const registerRecord = "bankTransactionId" in record && record.bankTransactionId
+    ? record
+    : null;
   return (
     <div className="rounded-md border border-dashed bg-card px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[10px] font-medium">{record.lineDescription ?? record.memo ?? record.stagedPaymentId}</span>
+        <span className="truncate text-[10px] font-medium">
+          {registerRecord?.payee ?? record.lineDescription ?? record.memo ?? record.stagedPaymentId}
+        </span>
         <span className="shrink-0 text-[10px] tabular-nums">{money(record.amount)}</span>
       </div>
       <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
-        {record.role.replace("_", " ")} · {record.dateReceived ?? "Undated"} · {record.qbLocation ?? record.revenueLocation ?? "No location"}
+        {registerRecord
+          ? `${registerRecord.txnType ?? "register"} · ${registerRecord.refNo ?? "No ref"} · ${registerRecord.reconciliationStatus ?? "Unreconciled"} · ${registerRecord.account ?? "No account"}`
+          : `${record.role.replace("_", " ")} · ${record.dateReceived ?? "Undated"} · ${record.qbLocation ?? record.revenueLocation ?? "No location"}`}
       </div>
+      {registerRecord ? (
+        <div className="truncate text-[9px] text-muted-foreground">
+          {record.memo ?? "No memo"}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -366,12 +378,17 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
       label: gift.name ?? gift.giftId,
       records: gift.qboRecords ?? [],
     })),
+    {
+      key: "deposit",
+      label: "Deposit accounting",
+      records: records.filter((record) => record.role === "deposit"),
+    },
   ].filter((group) => group.records.length > 0);
   const nodeRecordIds = new Set(nodeGroups.flatMap((group) => group.records.map((record) => `${record.role}:${record.stagedPaymentId}:${record.linkedChargeId ?? ""}`)));
   const unalignedItems = items.filter(({ record }) => {
     if (!record) return true;
     const linkedChargeId = "linkedChargeId" in record ? record.linkedChargeId ?? "" : "";
-    return ![...nodeRecordIds].some((id) => id.startsWith(`${record.stagedPaymentId}:`) || id.endsWith(`:${linkedChargeId}`));
+    return !nodeRecordIds.has(`${record.role}:${record.stagedPaymentId}:${linkedChargeId}`);
   });
   if (!nodeGroups.length && !unalignedItems.length) {
     return <span className="text-xs text-muted-foreground">No accounting check</span>;
