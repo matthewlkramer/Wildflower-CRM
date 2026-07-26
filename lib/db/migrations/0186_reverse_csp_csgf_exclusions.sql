@@ -13,10 +13,8 @@
 -- One-time, human-gated data correction; this is idempotent because a rerun
 -- simply finds no remaining rows for already-deleted exclusions.
 --
--- Apply only after review, to both environments:
+-- Apply only after review:
 --   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 \
---     -f lib/db/migrations/0186_reverse_csp_csgf_exclusions.sql
---   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 \
 --     -f lib/db/migrations/0186_reverse_csp_csgf_exclusions.sql
 --
 -- Do not add BEGIN/COMMIT: this file is run with psql -1.
