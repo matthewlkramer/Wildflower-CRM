@@ -377,6 +377,73 @@ export async function recomputeBankSpine(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  // 4d. Link residual componentless bank deposits to QBO register evidence.
+  //     This is accounting documentation only: it never creates a component,
+  //     payment unit, gift, or payment application. Match exact amounts within
+  //     a +/- 3-day date window, and write only pairs that are unique from both
+  //     sides. Ambiguous pairs remain unlinked for a future human workflow.
+  await db.execute(sql`
+    WITH scope AS (
+      SELECT d.id, d.amount, d.deposit_date
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (
+          SELECT 1 FROM stripe_payouts p
+          WHERE p.bank_deposit_id = d.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components c
+          WHERE c.bank_deposit_id = d.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM deposit_qbo_components dqc
+          WHERE dqc.bank_deposit_id = d.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_qbo_register existing
+          WHERE existing.bank_deposit_id = d.id
+        )
+    ),
+    candidate_pairs AS (
+      SELECT
+        d.id AS bank_deposit_id,
+        bt.id AS bank_transaction_id,
+        d.amount
+      FROM scope d
+      JOIN bank_transactions bt
+        ON bt.source = 'qbo_register_export'
+       AND bt.deposit IS NOT NULL
+       AND bt.deposit > 0
+       AND bt.deposit = d.amount
+       AND bt.txn_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
+    ),
+    unique_pairs AS (
+      SELECT p.bank_deposit_id, p.bank_transaction_id, p.amount
+      FROM candidate_pairs p
+      WHERE (
+        SELECT count(*)
+        FROM candidate_pairs deposit_candidates
+        WHERE deposit_candidates.bank_deposit_id = p.bank_deposit_id
+      ) = 1
+        AND (
+          SELECT count(*)
+          FROM candidate_pairs register_candidates
+          WHERE register_candidates.bank_transaction_id = p.bank_transaction_id
+        ) = 1
+    )
+    INSERT INTO bank_deposit_qbo_register (
+      id, bank_deposit_id, bank_transaction_id, amount, ambiguous
+    )
+    SELECT
+      'bdqr_' || p.bank_deposit_id,
+      p.bank_deposit_id,
+      p.bank_transaction_id,
+      p.amount,
+      false
+    FROM unique_pairs p
+    ON CONFLICT DO NOTHING
+  `);
+
   // 5. Donorbox pointer on card units (0165): pulled charge id first, then the
   //    human donorbox_charge link. NULL-only + cardinality-guarded.
   await db.execute(sql`

@@ -5278,6 +5278,7 @@ export type WorkbenchDepositNodeQbRecordRole = typeof WorkbenchDepositNodeQbReco
 export const WorkbenchDepositNodeQbRecordRole = {
   component: 'component',
   provisional: 'provisional',
+  deposit: 'deposit',
   fee: 'fee',
   charge_tie: 'charge_tie',
 } as const;
@@ -5309,6 +5310,12 @@ export interface WorkbenchDepositNodeQbRecord {
   entityId?: string | null;
   qbPayerType?: string | null;
   exclusionReason?: string | null;
+  bankTransactionId?: string | null;
+  payee?: string | null;
+  txnType?: string | null;
+  refNo?: string | null;
+  reconciliationStatus?: string | null;
+  account?: string | null;
 }
 
 /**
@@ -6141,6 +6148,13 @@ export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
   unconfirmed?: boolean | null;
   source?: WorkbenchDepositQbRecordSource;
   matchBasis?: WorkbenchDepositQbRecordMatchBasis;
+  /** bank_transactions.id when this deposit-grain record comes from the QBO bank-register linkage table. */
+  bankTransactionId?: string | null;
+  payee?: string | null;
+  txnType?: string | null;
+  refNo?: string | null;
+  reconciliationStatus?: string | null;
+  account?: string | null;
 });
 
 export type DepositExclusionReason = typeof DepositExclusionReason[keyof typeof DepositExclusionReason];

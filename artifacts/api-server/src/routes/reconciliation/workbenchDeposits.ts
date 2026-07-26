@@ -936,6 +936,20 @@ router.get(
             FROM deposit_qbo_components dqc
             JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
             WHERE dqc.bank_deposit_id = d.id
+            UNION ALL
+            SELECT jsonb_build_object(
+              'stagedPaymentId', bt.id, 'role', 'deposit', 'reference', bt.ref_no,
+              'lineDescription', bt.txn_type, 'memo', bt.memo,
+              'amount', bt.deposit::text, 'dateReceived', bt.txn_date::text,
+              'payerName', bt.payee, 'qbLocation', bt.account,
+              'bankTransactionId', bt.id, 'payee', bt.payee,
+              'txnType', bt.txn_type, 'refNo', bt.ref_no,
+              'reconciliationStatus', bt.reconciliation_status,
+              'account', bt.account
+            ) AS item
+            FROM bank_deposit_qbo_register bqr
+            JOIN bank_transactions bt ON bt.id = bqr.bank_transaction_id
+            WHERE bqr.bank_deposit_id = d.id
           ) records
         ), '[]'::jsonb) AS qb_records,
         COALESCE((

@@ -1253,7 +1253,7 @@ export const ListWorkbenchClustersResponse = zod.object({
   "codingForm": zod.boolean().optional().describe('True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge).'),
   "qboRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "role": zod.enum(['component', 'provisional', 'fee', 'charge_tie']),
+  "role": zod.enum(['component', 'provisional', 'deposit', 'fee', 'charge_tie']),
   "reference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "memo": zod.string().nullish(),
@@ -1274,7 +1274,13 @@ export const ListWorkbenchClustersResponse = zod.object({
   "qbCheckNumber": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "qbPayerType": zod.string().nullish(),
-  "exclusionReason": zod.string().nullish()
+  "exclusionReason": zod.string().nullish(),
+  "bankTransactionId": zod.string().nullish(),
+  "payee": zod.string().nullish(),
+  "txnType": zod.string().nullish(),
+  "refNo": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish(),
+  "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship.'),
   "recordComplete": zod.boolean().optional().describe('True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.'),
   "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
@@ -1519,7 +1525,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish(),
   "qboRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "role": zod.enum(['component', 'provisional', 'fee', 'charge_tie']),
+  "role": zod.enum(['component', 'provisional', 'deposit', 'fee', 'charge_tie']),
   "reference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "memo": zod.string().nullish(),
@@ -1540,7 +1546,13 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbCheckNumber": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "qbPayerType": zod.string().nullish(),
-  "exclusionReason": zod.string().nullish()
+  "exclusionReason": zod.string().nullish(),
+  "bankTransactionId": zod.string().nullish(),
+  "payee": zod.string().nullish(),
+  "txnType": zod.string().nullish(),
+  "refNo": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish(),
+  "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence aligned to this deposit component.')
 })),
   "units": zod.array(zod.object({
@@ -1567,7 +1579,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "codingForm": zod.boolean().optional().describe('True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge).'),
   "qboRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "role": zod.enum(['component', 'provisional', 'fee', 'charge_tie']),
+  "role": zod.enum(['component', 'provisional', 'deposit', 'fee', 'charge_tie']),
   "reference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "memo": zod.string().nullish(),
@@ -1588,7 +1600,13 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbCheckNumber": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "qbPayerType": zod.string().nullish(),
-  "exclusionReason": zod.string().nullish()
+  "exclusionReason": zod.string().nullish(),
+  "bankTransactionId": zod.string().nullish(),
+  "payee": zod.string().nullish(),
+  "txnType": zod.string().nullish(),
+  "refNo": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish(),
+  "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship.'),
   "recordComplete": zod.boolean().optional().describe('True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.'),
   "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
@@ -1614,7 +1632,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
 }).describe('One Stripe charge in the cluster\'s payment-evidence facet. Per-charge status\/exclusion\/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.').and(zod.object({
   "qboRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string(),
-  "role": zod.enum(['component', 'provisional', 'fee', 'charge_tie']),
+  "role": zod.enum(['component', 'provisional', 'deposit', 'fee', 'charge_tie']),
   "reference": zod.string().nullish(),
   "lineDescription": zod.string().nullish(),
   "memo": zod.string().nullish(),
@@ -1635,7 +1653,13 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "qbCheckNumber": zod.string().nullish(),
   "entityId": zod.string().nullish(),
   "qbPayerType": zod.string().nullish(),
-  "exclusionReason": zod.string().nullish()
+  "exclusionReason": zod.string().nullish(),
+  "bankTransactionId": zod.string().nullish(),
+  "payee": zod.string().nullish(),
+  "txnType": zod.string().nullish(),
+  "refNo": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish(),
+  "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence aligned to this Stripe charge.'),
   "refunded": zod.boolean().nullish(),
   "amountRefunded": zod.string().nullish(),
@@ -1677,7 +1701,13 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "depositQboComponentId": zod.string().nullish(),
   "unconfirmed": zod.boolean().nullish(),
   "source": zod.enum(['bank_spine', 'qbo_provisional']).nullish(),
-  "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish()
+  "matchBasis": zod.enum(['deposit_header_exact', 'deposit_header_ambiguous']).nullish(),
+  "bankTransactionId": zod.string().nullish().describe('bank_transactions.id when this deposit-grain record comes from the QBO bank-register linkage table.'),
+  "payee": zod.string().nullish(),
+  "txnType": zod.string().nullish(),
+  "refNo": zod.string().nullish(),
+  "reconciliationStatus": zod.string().nullish(),
+  "account": zod.string().nullish()
 }))),
   "accountingChecks": zod.array(zod.object({
   "id": zod.string(),
