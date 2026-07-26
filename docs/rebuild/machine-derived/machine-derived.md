@@ -10,14 +10,14 @@ The computation uses bank-native deduplication for bank_csv_export rows. Identit
 |---|---:|---:|---:|---:|
 | bank_transactions | 2074 | 91089645.81 | 2001 | 86202075.61 |
 | bank_deposits | 1680 | 91089645.81 | 1607 | 86202075.61 |
-| payment_units | 994 | 80601301.74 | 317 | 3028208.94 |
-| bank_deposit_components | 187 | 32624834.90 | 23 | 1236650.81 |
+| payment_units | 994 | 80601301.74 | 510 | 30414246.43 |
+| bank_deposit_components | 187 | 32624834.90 | 180 | 28287834.90 |
 | stripe_payout_ties | 161 | 97278.55 | 161 | 97278.55 |
 | qbo_register_links | 451 | 27100046.63 | 449 | 26842926.43 |
 
 Raw bank_transactions source rows: 2074. Canonical rows: 2001. Positive bank deposits change from 1680 production rows to 1607 machine rows.
 Duplicate collapse removed 73 rows across 62 identity groups.
-Machine payment_units contain 284 Stripe charge units and 33 supported QBO composition units (check/direct_ach/wire). The 624 attribution-support kind=other units from migration 0178 are intentionally absent; those units return only when human attribution decisions are reapplied.
+Machine payment_units contain 284 Stripe charge units and 226 full step-4a QBO composition units across all CASE-derived kinds. The approximately 360 attribution-support kind=other units without qb_deposit_id from migration 0178 are intentionally absent; those units return only when human attribution decisions are reapplied.
 
 ## Deduped bank rows removed
 
@@ -104,19 +104,19 @@ Machine components use each staged QBO line amount, never the whole bank deposit
 - bdc_0172_recTUSUQJHoasnViD (bdep_4c12381756e99a952084ad71): old 250000.00; machine line not emitted.
 - bdc_0172_recs30mG9xDAg81iz (bdep_52a7e23be4dd4387a2aff1ac): old 195000.00; machine line not emitted.
 - bdc_0172_recjtiyQqiTD16KTv (bdep_69e6ba786a30ad402f0c8d9d): old 500000.00; machine line not emitted.
-- bdc_0172_recPuB4akP0d4AZsN (bdep_80e541c591cbfe438a97fbf2): old 1500000.00; machine line not emitted.
-- bdc_fe20NzJrK3GYkpymmM9VD (bdep_80e541c591cbfe438a97fbf2): old 750000.00; machine line not emitted.
+- bdc_0172_recPuB4akP0d4AZsN (bdep_80e541c591cbfe438a97fbf2): old 1500000.00; machine line 750000.00 via bdc_8r4tQubAh23RqksEG7OU-.
+- bdc_fe20NzJrK3GYkpymmM9VD (bdep_80e541c591cbfe438a97fbf2): old 750000.00; machine line 750000.00 via bdc_fe20NzJrK3GYkpymmM9VD.
 - bdc_0172_DWN2URcC3_p0WhfUItlxo (bdep_a858e4f94074dfd04a93ca05): old 1600000.00; machine line not emitted.
 - bdc_0172_reckbnrhVwrpTUULL (bdep_b201d116ef46224cb6f36844): old 1000000.00; machine line not emitted.
 
 ### Known over-composed deposits
-- Arthur Rock bdep_80e541c591cbfe438a97fbf2: production composition contains the 0172 $1,500,000 component plus a $750,000 second line against a $1,500,000 deposit. The deterministic QBO header calculation sees the two line amounts ($750,000 + $750,000), but both source rows classify as kind=other and are therefore intentionally absent from this requested machine-unit/component layer.
-- Howley bdep_0f2f008c03fed2cf015acab8: production composition contains the 0172 $120,000 component plus a $40,000 second line against a $120,000 deposit. The deterministic machine composition emits the two QBO line amounts ($80,000 + $40,000).
+- Arthur Rock bdep_80e541c591cbfe438a97fbf2: production composition contains the 0172 $1,500,000 component plus a $750,000 second line against a $1,500,000 deposit. Machine composition emits the two QBO line amounts ($750,000 + $750,000).
+- Howley bdep_0f2f008c03fed2cf015acab8: production composition contains the 0172 $120,000 component plus a $40,000 second line against a $120,000 deposit. Machine composition emits the two QBO line amounts ($80,000 + $40,000).
 
 ## Reconciliation checks
 
 Every emitted component is checked against its machine deposit total.
-No machine deposits are over-composed; all 22 component-bearing deposits have component totals ≤ deposit amounts.
+No machine deposits are over-composed; all 175 component-bearing deposits have component totals ≤ deposit amounts.
 
 ## Deterministic versus dropped state
 
@@ -125,7 +125,7 @@ No machine deposits are over-composed; all 22 component-bearing deposits have co
 - Canonical bank-native transaction rows and stable old→new ID remapping.
 - Positive bank deposits projected from canonical bank rows.
 - One payment unit per non-excluded Stripe charge, including deterministic lifecycle facts.
-- Supported direct-payment units and per-line QBO composition (check, direct ACH, wire), paired by exact QBO deposit total/date rank logic.
+- Full step-4a QBO composition units across all CASE-derived kinds and per-line QBO composition, paired by exact QBO deposit total/date rank logic.
 - Stripe payout ties using deterministic nearest eligible deposits within the recompute five-day forward window, including the ambiguity flag.
 - QBO register evidence links using exact amount, a ±3-day window, and unique-only matching from both sides.
 
@@ -133,16 +133,16 @@ No machine deposits are over-composed; all 22 component-bearing deposits have co
 
 - bank_deposit_exclusions and all other human exclusion decisions.
 - payment_applications and gifts_and_payments.
-- The 624 migration-0178 attribution-support kind=other units; these are not machine money evidence.
+- The approximately 360 migration-0178 attribution-support kind=other units without qb_deposit_id; these are not machine money evidence and are deferred to human reapplication.
 - Legacy bdc_0172_* hand-repair components.
-- Existing production rows are not treated as machine authority; outputs are clean deterministic projections.
+- Existing production rows are not treated as machine authority; outputs are clean deterministic projections. The step-4a scope intentionally depends on charge_qb_tie/charge_fee_row source_links as an evidence-link dependency documented in the human registry.
 
 ## Output files
 
 - bank_transactions_canonical.csv — canonical bank-native rows.
 - id_remap.csv — every source bank transaction ID and deposit ID mapped to canonical IDs.
 - bank_deposits.csv — positive canonical bank credits.
-- payment_units.csv — Stripe and supported direct-payment machine units.
+- payment_units.csv — Stripe and the full step-4a QBO composition-unit scope across all CASE-derived kinds.
 - bank_deposit_components.csv — per-QBO-line direct composition with reconciliation flags.
 - stripe_payout_ties.csv — deterministic payout-to-bank-deposit matches.
 - qbo_register_links.csv — unique-only QBO register evidence links.
