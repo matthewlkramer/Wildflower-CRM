@@ -48,3 +48,13 @@ The augmented flat files include a direct-QBO pointer and hierarchy reach flags 
 - `stripe_payouts_flat.csv` is one row per machine payout tie, with parent deposit fields and a JSON `charges` array.
 
 The charge-level `charge_qb_tie` / `charge_fee_row` links come from the checked-in human-decisions registry, not machine recomputation. They are surfaced with separate provenance so strict machine-only consumers can exclude those direct pointers.
+
+## All QB ties
+
+`bank_deposits_flat.csv` also includes the union of every production QB record tied to a deposit through the three supported mechanisms:
+
+- `register` — `bank_deposit_qbo_register` joined to its register `bank_transactions` row.
+- `component_qbo_line` — the staged-payment row referenced by a composing `bank_deposit_components.source_staged_payment_id`.
+- `provisional_qbo` — the staged-payment row referenced by the legacy/provisional `deposit_qbo_components` overlay.
+
+The `qb_links` column is valid JSON containing compact objects with `tie_source`, `qb_record_id`, `amount`, `date`, `payee`, `memo`, `reference`, `account`, and (when available) `qb_deposit_id`. `qb_links_count` is the number of unique QB records in the union, and `qb_links_sum` sums their amounts. Empty unions are `[]`, `0`, and `0.00`. Production deposit IDs are translated to canonical machine IDs through `id_remap.csv`. If the same QB record appears through multiple mechanisms, it is represented once, preferring `register`, then `component_qbo_line`, then `provisional_qbo`; mechanism coverage counts remain available from the source joins.
