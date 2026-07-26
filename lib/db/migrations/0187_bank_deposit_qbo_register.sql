@@ -15,10 +15,8 @@
 -- any payment from a Wildflower school is earned income or a loan payment,
 -- never a donation; this migration does not classify any register row.
 --
--- Apply after Publish, by a human, to both environments:
+-- Apply after Publish, by a human:
 --   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 \
---     -f lib/db/migrations/0187_bank_deposit_qbo_register.sql
---   psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 \
 --     -f lib/db/migrations/0187_bank_deposit_qbo_register.sql
 --
 -- Do not add BEGIN/COMMIT: this file is run with psql -1.
