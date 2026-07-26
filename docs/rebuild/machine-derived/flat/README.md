@@ -27,6 +27,16 @@ All dollar sums are rounded to cents. The source machine CSVs remain authoritati
 - When tied, `deposit_*` columns and the `components` / `payment_units` JSON arrays with their `_count` and `_sum` companions come from the canonical machine-derived `flat/bank_deposits_flat.csv` row. When untied, deposit fields are blank, arrays are `[]`, counts are `0`, and sums are `0.00`.
 - This file deliberately does not derive ties from production money-model tables: register rows are raw imported evidence, while every tie, canonical deposit, composition, and payment-unit field is sourced from the checked-in machine rebuild CSVs. Array cells are valid, CSV-quoted JSON.
 
+## Deposit-to-register pointers
+
+`bank_deposits_flat.csv` (and the base `machine-derived/bank_deposits.csv`) includes a direct pointer for each machine deposit tied to a QBO register row:
+
+- `qb_register_txn_id` is the tied register `bank_transaction_id`, joined from `qbo_register_links.csv`; it is empty when no register tie exists.
+- `qb_register_match_basis` classifies the absolute deposit-date/register-transaction-date gap: `same_day_unique_amount`, `one_day_unique_amount`, `two_day_unique_amount`, or `three_day_unique_amount`. The reserved `human` value is for future human-decided ties.
+- `qb_register_match_note` is reserved for explanatory text on `human` ties and is empty for the current deterministic links.
+
+These pointers are strictly one-to-one per deposit and are derived only from the checked-in machine register-link CSV.
+
 ## QBO reach analysis
 
 The augmented flat files include a direct-QBO pointer and hierarchy reach flags using interpretation B: any QBO accounting record counts. `qb_direct_provenance` is `register` for a deposit register row, `qbo_deposit_line` for a component or composition unit, and `charge_qb_tie` for a Stripe-charge source link. Payout nodes have no direct QBO pointer in the machine model.
