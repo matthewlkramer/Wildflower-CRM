@@ -1241,8 +1241,8 @@ export const useFlagQboAccountingError = <TError = ErrorType<BadRequestResponse 
       return useMutation(getFlagQboAccountingErrorMutationOptions(options));
     }
     /**
- * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
- * @summary Remove a manually-added bank-deposit component.
+ * Finance/admin review only. Removes a manual or qbo_inferred component only when it has no counted gift/application (returns the deposit to unresolved composition); a now-orphaned placeholder/create payment unit is removed in the same transaction. A qbo_inferred component may be re-proposed by the next bank-spine recompute.
+ * @summary Remove a manual or QBO-inferred bank-deposit component.
  */
 export const getRemoveManualBankDepositComponentUrl = (id: string,) => {
 
@@ -1298,7 +1298,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type RemoveManualBankDepositComponentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
- * @summary Remove a manually-added bank-deposit component.
+ * @summary Remove a manual or QBO-inferred bank-deposit component.
  */
 export const useRemoveManualBankDepositComponent = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeManualBankDepositComponent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}

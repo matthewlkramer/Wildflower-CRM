@@ -4744,8 +4744,8 @@ paths:
     delete:
       operationId: removeManualBankDepositComponent
       tags: [reconciliation]
-      summary: Remove a manually-added bank-deposit component.
-      description: Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
+      summary: Remove a manual or QBO-inferred bank-deposit component.
+      description: Finance/admin review only. Removes a manual or qbo_inferred component only when it has no counted gift/application (returns the deposit to unresolved composition); a now-orphaned placeholder/create payment unit is removed in the same transaction. A qbo_inferred component may be re-proposed by the next bank-spine recompute.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
@@ -9212,6 +9212,17 @@ components:
           description: "Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship."
           items: { $ref: "#/components/schemas/WorkbenchDepositNodeQbRecord" }
         recordComplete: { type: boolean, description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule." }
+        allocations:
+          type: array
+          description: "The gift's allocations (amount + purpose), straight from gift_allocations, for sub-card display in the deposit workbench."
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string }
+              amount: { type: string, nullable: true, description: "Allocation sub-amount, major units." }
+              usage: { type: string, nullable: true, description: "Denormalised human-readable usage label (gift_allocations.display_usage)." }
+              purpose: { type: string, nullable: true, description: "Verbatim purpose or restriction description, when recorded." }
         linkedChargeIds: { type: array, items: { type: string }, description: "stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters." }
         linkedStagedPaymentIds: { type: array, items: { type: string }, description: "staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only." }
     WorkbenchClusterCharge:
@@ -9576,6 +9587,7 @@ components:
               unconfirmed: { type: boolean, description: "True for a provisional QBO accounting-plane decomposition row." }
               source: { type: string, enum: [bank_spine, qbo_provisional] }
               stagedPaymentId: { type: string, nullable: true }
+              receivedDate: { type: string, format: date, nullable: true, description: "The backing payment unit's received date (bank_spine components only)." }
               sourceStagedPaymentManual: { type: boolean, description: "Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column." }
               label: { type: string, nullable: true }
               exclusionReason: { type: string, nullable: true }

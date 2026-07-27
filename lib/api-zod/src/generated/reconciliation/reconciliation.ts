@@ -608,8 +608,8 @@ export const FlagQboAccountingErrorResponse = zod.object({
 })
 
 /**
- * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
- * @summary Remove a manually-added bank-deposit component.
+ * Finance/admin review only. Removes a manual or qbo_inferred component only when it has no counted gift/application (returns the deposit to unresolved composition); a now-orphaned placeholder/create payment unit is removed in the same transaction. A qbo_inferred component may be re-proposed by the next bank-spine recompute.
+ * @summary Remove a manual or QBO-inferred bank-deposit component.
  */
 export const RemoveManualBankDepositComponentParams = zod.object({
   "id": zod.coerce.string()
@@ -1317,6 +1317,12 @@ export const ListWorkbenchClustersResponse = zod.object({
   "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship.'),
   "recordComplete": zod.boolean().optional().describe('True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.'),
+  "allocations": zod.array(zod.object({
+  "id": zod.string(),
+  "amount": zod.string().nullish().describe('Allocation sub-amount, major units.'),
+  "usage": zod.string().nullish().describe('Denormalised human-readable usage label (gift_allocations.display_usage).'),
+  "purpose": zod.string().nullish().describe('Verbatim purpose or restriction description, when recorded.')
+})).optional().describe('The gift\'s allocations (amount + purpose), straight from gift_allocations, for sub-card display in the deposit workbench.'),
   "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
   "linkedStagedPaymentIds": zod.array(zod.string()).optional().describe('staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only.')
 }).describe('One CRM gift card in the cluster\'s donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.')),
@@ -1553,6 +1559,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
   "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),
   "stagedPaymentId": zod.string().nullish(),
+  "receivedDate": zod.string().date().nullish().describe('The backing payment unit\'s received date (bank_spine components only).'),
   "sourceStagedPaymentManual": zod.boolean().optional().describe('Derived UI hint: the payment-unit pointer differs from the bank component\'s recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column.'),
   "label": zod.string().nullish(),
   "exclusionReason": zod.string().nullish(),
@@ -1643,6 +1650,12 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "account": zod.string().nullish()
 }).describe('Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.')).optional().describe('Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship.'),
   "recordComplete": zod.boolean().optional().describe('True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.'),
+  "allocations": zod.array(zod.object({
+  "id": zod.string(),
+  "amount": zod.string().nullish().describe('Allocation sub-amount, major units.'),
+  "usage": zod.string().nullish().describe('Denormalised human-readable usage label (gift_allocations.display_usage).'),
+  "purpose": zod.string().nullish().describe('Verbatim purpose or restriction description, when recorded.')
+})).optional().describe('The gift\'s allocations (amount + purpose), straight from gift_allocations, for sub-card display in the deposit workbench.'),
   "linkedChargeIds": zod.array(zod.string()).optional().describe('stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters.'),
   "linkedStagedPaymentIds": zod.array(zod.string()).optional().describe('staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only.')
 }).describe('One CRM gift card in the cluster\'s donor-and-purpose facet. Carries actionable ids so later phases can wire actions without a contract change.')),

@@ -5272,6 +5272,16 @@ export const WorkbenchClusterGiftDonorKind = {
   household: 'household',
 } as const;
 
+export type WorkbenchClusterGiftAllocationsItem = {
+  id: string;
+  /** Allocation sub-amount, major units. */
+  amount?: string | null;
+  /** Denormalised human-readable usage label (gift_allocations.display_usage). */
+  usage?: string | null;
+  /** Verbatim purpose or restriction description, when recorded. */
+  purpose?: string | null;
+};
+
 export type WorkbenchDepositNodeQbRecordRole = typeof WorkbenchDepositNodeQbRecordRole[keyof typeof WorkbenchDepositNodeQbRecordRole];
 
 
@@ -5348,6 +5358,8 @@ export interface WorkbenchClusterGift {
   qboRecords?: WorkbenchDepositNodeQbRecord[];
   /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
   recordComplete?: boolean;
+  /** The gift's allocations (amount + purpose), straight from gift_allocations, for sub-card display in the deposit workbench. */
+  allocations?: WorkbenchClusterGiftAllocationsItem[];
   /** stripe_staged_charges ids whose counted ledger rows feed this gift (pairs gift↔charge sub-rows client-side). Empty outside stripe_payout clusters. */
   linkedChargeIds?: string[];
   /** staged_payments ids whose counted ledger rows feed this gift. Empty when the gift is charge-fed or crm_only. */
@@ -5958,6 +5970,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   unconfirmed?: boolean;
   source?: WorkbenchDepositCompositionComponentsItemSource;
   stagedPaymentId?: string | null;
+  /** The backing payment unit's received date (bank_spine components only). */
+  receivedDate?: string | null;
   /** Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column. */
   sourceStagedPaymentManual?: boolean;
   label?: string | null;
