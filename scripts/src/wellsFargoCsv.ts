@@ -76,16 +76,21 @@ export function parseWellsFargoCsv(
   });
 }
 
+const amountKeyPart = (value: string): string => {
+  const numeric = toNumeric(value);
+  return numeric === null ? "" : Number(numeric).toFixed(2);
+};
+
+// Only stable bank facts participate: From/To, Donor, and the QB posting
+// column are annotations that change between exports of the same line, and
+// including them minted duplicate rows on re-import.
 export const wellsFargoDedupKey = (row: WellsFargoTransaction): string =>
   [
     row.date,
     row.checkNo,
     row.description,
-    row.spent,
-    row.received,
-    row.fromTo,
-    row.donor,
-    row.qbPosting,
+    amountKeyPart(row.spent),
+    amountKeyPart(row.received),
   ].join("|");
 
 export function mergeWellsFargoTransactions(
