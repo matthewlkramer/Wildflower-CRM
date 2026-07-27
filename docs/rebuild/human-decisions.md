@@ -234,7 +234,7 @@ There are 16 active exclusions with a non-null created_by_user_id. These are the
 ## Files
 
 - exclusions.csv — all active deposit-level exclusions with QBO accounts, payers, and evidence.
-- gift_attributions.csv — every payment-application row with canonical payment-unit evidence and gift details.
+- payment_applications.csv — every payment-application row with canonical payment-unit evidence and gift details.
 - charge_qb_ties.csv — every source_links row with resolved evidence endpoints.
 - legacy_0172_components.csv — all seven legacy 0172 component rows and their gift applications.
 - coding_form_mappings.csv — all coding-form rows that map to a gift.

@@ -363,6 +363,6 @@ UNCATEGORIZED_prior_exclusion_not_reapplied,deposit_exclusion,bdep_fee4c2ad7a212
 UNCATEGORIZED_prior_exclusion_not_reapplied,deposit_exclusion,bdep_ff26910d27f1b6d7699ccbe5,bdep_efa7d4e697d94cae97d0a226,9/10/2019,250,INTUIT PYMT SOLN DEPOSIT    190910 524771997507722 THE WILDFLOWER FOUNDAT,loan,"reviewed: componentless deposit, all QB accounts non-donation (0185)",,
 UNCATEGORIZED_prior_exclusion_not_reapplied,deposit_exclusion,bdep_ff78d3c469210b91c89b28aa,bdep_e191dba4b4fcf59c61c01a74,6/28/2019,292.03,STRIPE           TRANSFER          ST-M0X0M6B1W1Q9 THE WILDFLOWER FOUNDAT,earned_income,"reviewed: componentless deposit, all QB accounts non-donation (0185)",,
 REVIEW_category_see_file,charge_qb_tie,,,,,160 rows in docs/rebuild/charge_qb_ties.csv,,,,
-REVIEW_category_see_file,gift_attribution,,,,,949 rows in docs/rebuild/gift_attributions.csv,,,,
+REVIEW_category_see_file,gift_attribution,,,,,949 rows in docs/rebuild/payment_applications.csv,,,,
 REVIEW_category_see_file,coding_form_mapping,,,,,232 rows in docs/rebuild/coding_form_mappings.csv,,,,
 REVIEW_category_see_file,legacy_0172_component,,,,,7 rows in docs/rebuild/legacy_0172_components.csv,,,,
