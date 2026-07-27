@@ -374,6 +374,21 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
+  const handleSinglePaymentNoGift = async () => {
+    if (!singlePaymentFor) return;
+    try {
+      await addBankComponent.mutateAsync({
+        bankDepositId: singlePaymentFor.depositId,
+        data: { mode: "create", kind: "other", amount: singlePaymentFor.amount },
+      });
+      setSinglePaymentFor(null);
+      invalidate();
+      toast({ title: "Single payment recorded", description: "This deposit is now one payment for its full amount — link a CRM gift when you find it." });
+    } catch (err) {
+      toast({ title: "Couldn't record single payment", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
+    }
+  };
+
   const handleQbEvidencePick = async (qbStagedPaymentId: string) => {
     if (!qbEvidenceFor) return;
     try {
@@ -792,6 +807,11 @@ export default function ReconciliationDepositsPage() {
         busy={busy}
         title="Single payment deposit"
         description={singlePaymentFor ? `Record this ${formatCurrency(singlePaymentFor.amount)} deposit as a single payment for an existing CRM gift.` : undefined}
+        extraAction={{
+          label: "Record without a gift",
+          description: singlePaymentFor ? `One ${formatCurrency(singlePaymentFor.amount)} payment covering the whole deposit — no CRM gift linked yet.` : undefined,
+          onSelect: () => void handleSinglePaymentNoGift(),
+        }}
       />
       {qbEvidenceFor ? (
         <TieChargeQbDialog

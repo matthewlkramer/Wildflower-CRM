@@ -28,6 +28,10 @@ import { bankTransactionSourceEnum } from "./_enums";
  * Dedup model (register exports overlap):
  *   `dedupKey` = the raw register field values
  *   date|ref|payee|memo|payment|deposit|type|balance joined with `|`.
+ *   For `bank_csv_export` rows only STABLE bank facts participate —
+ *   date|checkNo|description|spent|received — because the From/To, Donor,
+ *   and QB-posting columns are annotations that change between exports of
+ *   the same physical line (see 0213).
  *   The same key can legitimately occur more than once WITHIN one export
  *   (e.g. repeated voided payments on one day at an identical running
  *   balance), so the true multiplicity of a key is the MAX count observed in

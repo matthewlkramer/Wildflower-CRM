@@ -37,6 +37,27 @@ test("normalizes both Wells Fargo header formats", () => {
   assert.equal(batchB[0].donor, "");
 });
 
+test("dedupes the same bank line when only annotation columns changed", () => {
+  const first = parseWellsFargoCsv(
+    [
+      "Date,Check No.,Bank description,Spent,Received,From/To,Donor,Match/Categorize",
+      '"05/30/2024","","DEPOSIT","","$57,964.92","Frey Foundation","","Matched to: multiple transactions"',
+    ].join("\n"),
+    "Wells_Fargo_9.csv",
+  );
+  const second = parseWellsFargoCsv(
+    [
+      "Date,Check No.,Bank description,Spent,Received,From/To,Donor,Match/Categorize",
+      '"05/30/2024","","DEPOSIT","","$57,964.92","Lirio (C)","",""',
+    ].join("\n"),
+    "Wells_Fargo_15.csv",
+  );
+  const merged = mergeWellsFargoTransactions([...first, ...second]);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].occurrence, 0);
+});
+
 test("keeps legitimate same-key occurrences and gives them stable ids", () => {
   const first = parseWellsFargoCsv(
     [

@@ -46,6 +46,7 @@ export function GiftSearchDialog({
   description = "Find any existing gift by donor, amount, or date.",
   busy = false,
   footnote,
+  extraAction,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -58,6 +59,8 @@ export function GiftSearchDialog({
   busy?: boolean;
   /** Optional helper line under the results (e.g. an action reminder). */
   footnote?: ReactNode;
+  /** Optional alternative to picking a gift (e.g. "record without a gift"). */
+  extraAction?: { label: string; description?: string; onSelect: () => void };
 }) {
   const [text, setText] = useState("");
   const [debouncedText, setDebouncedText] = useState("");
@@ -199,6 +202,27 @@ export function GiftSearchDialog({
             ))
           )}
         </div>
+        {extraAction && (
+          <>
+            <Separator />
+            <button
+              type="button"
+              disabled={busy}
+              onClick={extraAction.onSelect}
+              className={cn(
+                "flex w-full items-center justify-between gap-3 rounded-md border border-dashed px-3 py-2 text-left text-sm transition-colors",
+                busy ? "cursor-not-allowed opacity-50" : "hover:bg-muted",
+              )}
+            >
+              <span className="min-w-0">
+                <span className="block font-medium">{extraAction.label}</span>
+                {extraAction.description && (
+                  <span className="block text-xs text-muted-foreground">{extraAction.description}</span>
+                )}
+              </span>
+            </button>
+          </>
+        )}
         {footnote && (
           <p className="text-[11px] text-muted-foreground">{footnote}</p>
         )}
