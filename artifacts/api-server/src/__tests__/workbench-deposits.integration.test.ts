@@ -193,13 +193,13 @@ async function seedDepositQboComponent(
     exclusionReason,
   });
   stagedIds.push(stagedPaymentId);
-  await db.insert(schema.depositQboComponents).values({
+  await db.insert(schema.sourceLinks).values({
     id: componentId,
+    linkType: "qbo_line_deposit",
     bankDepositId: depositId,
-    realmId: RUN,
-    qbDepositId,
-    stagedPaymentId,
-    amount,
+    qbStagedPaymentId: stagedPaymentId,
+    lifecycle: "confirmed",
+    provenance: "system",
     matchBasis: "deposit_header_exact",
   });
   depositQboComponentIds.push(componentId);
@@ -251,7 +251,7 @@ afterAll(async () => {
     await db.delete(schema.qboAccountingChecks).where(inArrayFn(schema.qboAccountingChecks.id, accountingCheckIds));
   }
   if (depositQboComponentIds.length) {
-    await db.delete(schema.depositQboComponents).where(inArrayFn(schema.depositQboComponents.id, depositQboComponentIds));
+    await db.delete(schema.sourceLinks).where(inArrayFn(schema.sourceLinks.id, depositQboComponentIds));
   }
   if (stagedIds.length) {
     await db.delete(schema.stagedPayments).where(inArrayFn(schema.stagedPayments.id, stagedIds));
@@ -512,13 +512,13 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       exclusionReason: "membership",
     });
     stagedIds.push(stagedPaymentId);
-    await db.insert(schema.depositQboComponents).values({
+    await db.insert(schema.sourceLinks).values({
       id: componentId,
+      linkType: "qbo_line_deposit",
       bankDepositId: deposit,
-      realmId: RUN,
-      qbDepositId: nextId("provisional_group"),
-      stagedPaymentId,
-      amount: "125.00",
+      qbStagedPaymentId: stagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "system",
       matchBasis: "deposit_header_exact",
     });
     depositQboComponentIds.push(componentId);
@@ -592,13 +592,13 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       amount: "80.00",
     });
     stagedIds.push(stagedPaymentId);
-    await db.insert(schema.depositQboComponents).values({
+    await db.insert(schema.sourceLinks).values({
       id: componentId,
+      linkType: "qbo_line_deposit",
       bankDepositId: deposit,
-      realmId: RUN,
-      qbDepositId: nextId("action_group"),
-      stagedPaymentId,
-      amount: "80.00",
+      qbStagedPaymentId: stagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "system",
       matchBasis: "deposit_header_ambiguous",
     });
     depositQboComponentIds.push(componentId);

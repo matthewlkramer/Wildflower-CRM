@@ -254,16 +254,17 @@ END)`;
 /* ── slim universe (lens flags only) ───────────────────────────────────── */
 
 // stripe_payout half — per-payout rollup predicates.
-// A settled QBO lump (settled_stripe_payout_id pairing fact, 0168) with at
+// A settled QBO lump (payout_qb_settlement pairing fact, 0168) with at
 // least one counted unit→gift tie: one gift covers the whole payout
 // (deposit-grain / coarse §4.3 booking). When true, every charge is
 // effectively covered even though no individual charge has its own tie.
 const depositGrainGiftExists = `EXISTS (
-  SELECT 1 FROM staged_payments sl_dg
+  SELECT 1 FROM source_links pqs_dg
   JOIN payment_units pu_dg
-    ON pu_dg.source_staged_payment_id = sl_dg.id
+    ON pu_dg.source_staged_payment_id = pqs_dg.qb_staged_payment_id
     AND pu_dg.gift_id IS NOT NULL
-  WHERE sl_dg.settled_stripe_payout_id = sp.id
+  WHERE pqs_dg.link_type = 'payout_qb_settlement'
+    AND pqs_dg.stripe_payout_id = sp.id
 )`;
 const payoutAnyOpenCharge = `(EXISTS (
   SELECT 1 FROM stripe_staged_charges oc
@@ -286,8 +287,9 @@ const payoutRefund = `EXISTS (
 // Settled = a QBO lump carries the pairing fact OR the individually-booked
 // fully-charge-tied path (shared fragment; alias sp — matches this FROM).
 const payoutSettled: SQL = sql`(EXISTS (
-  SELECT 1 FROM staged_payments sl_s
-  WHERE sl_s.settled_stripe_payout_id = sp.id
+  SELECT 1 FROM source_links pqs_s
+  WHERE pqs_s.link_type = 'payout_qb_settlement'
+    AND pqs_s.stripe_payout_id = sp.id
 ) OR ${fullyChargeTied})`;
 // Stripe withdrawal: a NEGATIVE payout — money leaving Stripe, so no bank
 // deposit ever reaches QuickBooks. Deterministic (no human resolve step,
@@ -345,7 +347,11 @@ const feePairedAnchorExpr = (fee: string) => `(
 // Parked fiscally-sponsored rows (sponsored-entity money with no gift yet)
 // mirror the queue workbench: they reconcile in their own worklist, not here.
 const qbEligible = `
-  s.settled_stripe_payout_id IS NULL
+  NOT EXISTS (
+    SELECT 1 FROM source_links pqs_e
+    WHERE pqs_e.link_type = 'payout_qb_settlement'
+      AND pqs_e.qb_staged_payment_id = s.id
+  )
   AND NOT EXISTS (
     SELECT 1 FROM source_links srcl_e
     WHERE srcl_e.link_type IN ('charge_qb_tie', 'charge_fee_row')
@@ -380,12 +386,13 @@ const chargeGrainGiftExists = `EXISTS (
 )`;
 // Total counted unit gross tied on the settled deposit >= net_total (±0.005 tolerance).
 const depositFullyCovered = `EXISTS (
-  SELECT 1 FROM staged_payments sl_dfc
-  WHERE sl_dfc.settled_stripe_payout_id = sp.id
+  SELECT 1 FROM source_links pqs_dfc
+  WHERE pqs_dfc.link_type = 'payout_qb_settlement'
+    AND pqs_dfc.stripe_payout_id = sp.id
     AND (
       SELECT COALESCE(SUM(pu_dfc.gross_amount), 0)
       FROM payment_units pu_dfc
-      WHERE pu_dfc.source_staged_payment_id = sl_dfc.id
+      WHERE pu_dfc.source_staged_payment_id = pqs_dfc.qb_staged_payment_id
         AND pu_dfc.gift_id IS NOT NULL
     ) >= COALESCE(sp.net_total, sp.amount) - 0.005
 )`;
@@ -400,12 +407,13 @@ const allChargeLinkedGiftsComplete = `NOT EXISTS (
 )`;
 // No deposit-linked gift fails giftComplete.
 const allDepositLinkedGiftsComplete = `NOT EXISTS (
-  SELECT 1 FROM staged_payments sl_gc
+  SELECT 1 FROM source_links pqs_gc
   JOIN payment_units pu_gc
-    ON pu_gc.source_staged_payment_id = sl_gc.id
+    ON pu_gc.source_staged_payment_id = pqs_gc.qb_staged_payment_id
     AND pu_gc.gift_id IS NOT NULL
   JOIN gifts_and_payments g ON g.id = pu_gc.gift_id
-  WHERE sl_gc.settled_stripe_payout_id = sp.id
+  WHERE pqs_gc.link_type = 'payout_qb_settlement'
+    AND pqs_gc.stripe_payout_id = sp.id
     AND NOT (${giftComplete})
 )`;
 // No QB-linked gift fails giftComplete.
@@ -1480,7 +1488,11 @@ router.get(
               AND nf2.id <> dep0.id
               AND nf2.qb_entity_type = 'deposit'
               AND nf2.amount < 0
-            WHERE dep0.settled_stripe_payout_id = sp.id
+            WHERE dep0.id = (
+                SELECT pqs_f.qb_staged_payment_id FROM source_links pqs_f
+                WHERE pqs_f.link_type = 'payout_qb_settlement'
+                  AND pqs_f.stripe_payout_id = sp.id
+              )
               AND NOT EXISTS (
                 SELECT 1 FROM source_links srcl_x
                 WHERE srcl_x.link_type IN ('charge_qb_tie', 'charge_fee_row')
@@ -1506,7 +1518,9 @@ router.get(
         COALESCE(ad.organization_id, ad.individual_giver_person_id, ad.household_id) AS dep_attributed_donor_id,
         COALESCE(o_dep.name, h_dep.name, ${sql.raw(personNameExpr("p_dep"))}) AS dep_attributed_donor_name
       FROM stripe_payouts sp
-      LEFT JOIN staged_payments ad ON ad.settled_stripe_payout_id = sp.id
+      LEFT JOIN source_links pqs_ad ON pqs_ad.link_type = 'payout_qb_settlement'
+        AND pqs_ad.stripe_payout_id = sp.id
+      LEFT JOIN staged_payments ad ON ad.id = pqs_ad.qb_staged_payment_id
       LEFT JOIN organizations o_dep ON o_dep.id = ad.organization_id
       LEFT JOIN people p_dep ON p_dep.id = ad.individual_giver_person_id
       LEFT JOIN households h_dep ON h_dep.id = ad.household_id
@@ -1704,14 +1718,15 @@ router.get(
 
       SELECT
         'deposit'::text AS grain,
-        sl.settled_stripe_payout_id AS payout_id,
+        pqs_cov.stripe_payout_id AS payout_id,
         pu.id AS pa_id,
         pu.gift_id,
         NULL AS charge_id,
         pu.gross_amount::text AS amount_applied
       FROM payment_units pu
-      JOIN staged_payments sl ON pu.source_staged_payment_id = sl.id
-      WHERE sl.settled_stripe_payout_id IN (${inList(payoutIds)})
+      JOIN source_links pqs_cov ON pqs_cov.link_type = 'payout_qb_settlement'
+        AND pqs_cov.qb_staged_payment_id = pu.source_staged_payment_id
+      WHERE pqs_cov.stripe_payout_id IN (${inList(payoutIds)})
         AND pu.gift_id IS NOT NULL`)
           .then((r) => r.rows as unknown as CoverageRow[])
       : Promise.resolve([]);

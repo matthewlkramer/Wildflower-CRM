@@ -63,6 +63,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   giftAllocations: Db["giftAllocations"];
   paymentApplications: Db["paymentApplications"];
+  sourceLinks: Db["sourceLinks"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -179,15 +180,18 @@ async function seedPayoutFor(
     arrivalDate: "2026-03-15",
   });
   payoutIds.push(id);
-  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
-  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
-  // lifecycle is retired. "matched" stamps the pairing; "none" leaves the
-  // payout unpaired.
+  // The payout\u2194QBO-lump pairing is a payout_qb_settlement source_link.
+  // "matched" stamps the pairing; "none" leaves the payout unpaired.
   if (link === "matched") {
-    await db
-      .update(schema.stagedPayments)
-      .set({ settledStripePayoutId: id })
-      .where(eqFn(schema.stagedPayments.id, stagedPaymentId));
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_pqs_${id}`,
+      linkType: "payout_qb_settlement",
+      qbStagedPaymentId: stagedPaymentId,
+      stripePayoutId: id,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "settled_pairing",
+    });
   }
   return id;
 }
@@ -301,6 +305,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     giftAllocations: dbMod.giftAllocations,
     paymentApplications: dbMod.paymentApplications,
+    sourceLinks: dbMod.sourceLinks,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;

@@ -14,6 +14,7 @@ import { asyncHandler, notFound } from "../../lib/helpers";
 import { chargeStatusSql } from "../../lib/derivedStatus";
 import { stripeLedgerCountedExistsForCharge } from "../../lib/paymentApplications";
 import { personDisplayNameSql } from "../../lib/personNameSql";
+import { settledPayoutIdForDeposit } from "../../lib/payoutSettlement";
 
 type LinkSource = "pulled" | "qb_confirmed" | "stripe_pulled" | "stripe_confirmed";
 
@@ -48,26 +49,25 @@ router.get(
     if (!staged) return notFound(res, "reconciliation card");
 
     // ── Stripe payout settled into this deposit lump ─────────────────────
-    // Resolved through the pairing fact on the QBO row
-    // (staged_payments.settled_stripe_payout_id, 0168).
-    const [payoutRow] = await db
-      .select({
-        id: stripePayouts.id,
-        amount: stripePayouts.amount,
-        grossTotal: stripePayouts.grossTotal,
-        feeTotal: stripePayouts.feeTotal,
-        netTotal: stripePayouts.netTotal,
-        chargeCount: stripePayouts.chargeCount,
-        arrivalDate: stripePayouts.arrivalDate,
-        status: stripePayouts.status,
-      })
-      .from(stagedPayments)
-      .innerJoin(
-        stripePayouts,
-        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
-      )
-      .where(eq(stagedPayments.id, id))
-      .limit(1);
+    // Resolved through the pairing fact
+    // (payout_qb_settlement source_link, 0168).
+    const settledPayoutId = await settledPayoutIdForDeposit(db, id);
+    const [payoutRow] = settledPayoutId
+      ? await db
+          .select({
+            id: stripePayouts.id,
+            amount: stripePayouts.amount,
+            grossTotal: stripePayouts.grossTotal,
+            feeTotal: stripePayouts.feeTotal,
+            netTotal: stripePayouts.netTotal,
+            chargeCount: stripePayouts.chargeCount,
+            arrivalDate: stripePayouts.arrivalDate,
+            status: stripePayouts.status,
+          })
+          .from(stripePayouts)
+          .where(eq(stripePayouts.id, settledPayoutId))
+          .limit(1)
+      : [];
 
     const payout = payoutRow
       ? {

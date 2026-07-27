@@ -461,7 +461,11 @@ router.post(
                 AND srcl.qb_staged_payment_id = "staged_payments"."id"
               LIMIT 1
             )`,
-            settlementLinked: sql<boolean>`(${stagedPayments.settledStripePayoutId} IS NOT NULL)`,
+            settlementLinked: sql<boolean>`EXISTS (
+              SELECT 1 FROM source_links pqs
+              WHERE pqs.link_type = 'payout_qb_settlement'
+                AND pqs.qb_staged_payment_id = "staged_payments"."id"
+            )`,
           })
           .from(stagedPayments)
           .where(inArray(stagedPayments.id, qbIds));

@@ -11,6 +11,11 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
+import {
+  recordPayoutQbSettlement,
+  settledDepositIdForPayout,
+  settledPayoutIdForDeposit,
+} from "../../lib/payoutSettlement";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
 import {
@@ -178,19 +183,11 @@ async function canonicalizeAnchor(
   anchorId: string,
 ): Promise<{ anchorType: BundleAnchorType; anchorId: string }> {
   if (anchorType !== "qb_staged_payment") return { anchorType, anchorId };
-  // Authoritative source of the payout↔deposit tie is the pairing fact on the
-  // QBO row (staged_payments.settled_stripe_payout_id).
-  const tied = await conn
-    .select({ id: stripePayouts.id })
-    .from(stagedPayments)
-    .innerJoin(
-      stripePayouts,
-      eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
-    )
-    .where(eq(stagedPayments.id, anchorId))
-    .then((r) => r[0]);
-  return tied
-    ? { anchorType: "stripe_payout" as const, anchorId: tied.id }
+  // Authoritative source of the payout↔deposit tie is the pairing fact
+  // (payout_qb_settlement source_link).
+  const tiedPayoutId = await settledPayoutIdForDeposit(conn, anchorId);
+  return tiedPayoutId
+    ? { anchorType: "stripe_payout" as const, anchorId: tiedPayoutId }
     : { anchorType, anchorId };
 }
 
@@ -582,24 +579,11 @@ router.post(
           tie.payoutId &&
           tie.depositStagedPaymentId
         ) {
-          const paired = await tx
-            .update(stagedPayments)
-            .set({
-              settledStripePayoutId: tie.payoutId,
-              updatedAt: new Date(),
-            })
-            .where(
-              and(
-                eq(stagedPayments.id, tie.depositStagedPaymentId),
-                isNull(stagedPayments.settledStripePayoutId),
-                sql`NOT EXISTS (
-                  SELECT 1 FROM staged_payments t
-                  WHERE t.settled_stripe_payout_id = ${tie.payoutId}
-                )`,
-              ),
-            )
-            .returning({ id: stagedPayments.id });
-          if (paired.length > 0) {
+          const paired = await recordPayoutQbSettlement(tx, {
+            stagedPaymentId: tie.depositStagedPaymentId,
+            payoutId: tie.payoutId,
+          });
+          if (paired) {
             giftTieIds.push(
               ...(await applySettlementSupersedeMany(tx, [
                 tie.depositStagedPaymentId,
@@ -925,17 +909,13 @@ router.post(
         // picked a DIFFERENT deposit than the paired one, we still return
         // success with the ACTUAL depositStagedPaymentId — the UI can detect
         // the mismatch from the response; a pairing is never repointed here.
-        const existing = await tx
-          .select({ id: stagedPayments.id })
-          .from(stagedPayments)
-          .where(eq(stagedPayments.settledStripePayoutId, payoutId))
-          .then((r) => r[0]);
-        if (existing) {
+        const existingDepositId = await settledDepositIdForPayout(tx, payoutId);
+        if (existingDepositId) {
           return {
             confirmed: true,
             kind: "already_confirmed" as const,
             payoutId,
-            depositStagedPaymentId: existing.id,
+            depositStagedPaymentId: existingDepositId,
           };
         }
 
@@ -969,7 +949,7 @@ router.post(
           });
         }
         // Exclusivity: a deposit backs at most one payout's settlement.
-        if (deposit.settledStripePayoutId) {
+        if (await settledPayoutIdForDeposit(tx, pickedDepositId)) {
           throw new ReconcileAbort(409, {
             error: "deposit_unconfirmable",
             message:
@@ -1037,23 +1017,19 @@ router.post(
           });
         }
 
-        // Fill-only pairing write; the partial unique index is the
-        // belt-and-suspenders against a racing pairing of the same payout.
-        const paired = await tx
-          .update(stagedPayments)
-          .set({
-            settledStripePayoutId: payoutId,
-            classificationSource: "manual",
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(stagedPayments.id, pickedDepositId),
-              isNull(stagedPayments.settledStripePayoutId),
-            ),
-          )
-          .returning({ id: stagedPayments.id });
-        if (!paired.length) {
+        // Fill-only pairing write; the deterministic per-payout link id is
+        // the belt-and-suspenders against a racing pairing of the same payout.
+        const paired = await recordPayoutQbSettlement(tx, {
+          stagedPaymentId: pickedDepositId,
+          payoutId,
+        });
+        if (paired) {
+          await tx
+            .update(stagedPayments)
+            .set({ classificationSource: "manual", updatedAt: new Date() })
+            .where(eq(stagedPayments.id, pickedDepositId));
+        }
+        if (!paired) {
           throw new ReconcileAbort(409, {
             error: "deposit_unconfirmable",
             message:

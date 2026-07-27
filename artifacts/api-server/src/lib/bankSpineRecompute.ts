@@ -19,8 +19,8 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  *      deterministic rank-pairing for equal amount/date classes with
  *      ambiguous_bank_match=true — the approved flag-not-workflow policy)
  *   4. check units+components  ← QBO deposit-composing rows     (0162)
- *   4e. QBO-grain source_links ← legacy tie projection + register matching
- *       (docs/adr-qbo-evidence-grain.md; 0189–0191)
+ *   4e. QBO-grain source_links ← register↔deposit matching
+ *       (docs/adr-qbo-evidence-grain.md; 0189–0191, legacy tables retired 0192)
  *   5. donorbox pointer        ← pulled charge id / human link  (0165)
  *   6. (retired) unit→gift pointer sync — payment_units.gift_id IS the
  *      counted authority now (docs/adr-unit-gift-pointer.md; 0201)
@@ -356,20 +356,16 @@ export async function recomputeBankSpine(): Promise<void> {
        AND b.deposit_date = q.txn_date
        AND b.rn = q.rn
     )
-    INSERT INTO deposit_qbo_components (
-      id, bank_deposit_id, realm_id, qb_deposit_id, staged_payment_id,
-      amount, match_basis
+    INSERT INTO source_links (
+      id, link_type, qb_staged_payment_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
     )
     SELECT
-      'dqc_' || m.id,
-      p.bank_deposit_id,
-      m.realm_id,
-      m.qb_deposit_id,
-      m.id,
-      m.amount,
+      'srcl_qld_' || m.id, 'qbo_line_deposit',
+      m.id, p.bank_deposit_id, 'confirmed', 'system',
       CASE WHEN p.ambiguous
-        THEN 'deposit_header_ambiguous'::deposit_qbo_match_basis
-        ELSE 'deposit_header_exact'::deposit_qbo_match_basis
+        THEN 'deposit_header_ambiguous'::source_link_match_basis
+        ELSE 'deposit_header_exact'::source_link_match_basis
       END
     FROM scope m
     JOIN pairs p
@@ -382,123 +378,11 @@ export async function recomputeBankSpine(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4d. Link residual componentless bank deposits to QBO register evidence.
-  //     This is accounting documentation only: it never creates a component,
-  //     payment unit, gift, or payment application. Match exact amounts within
-  //     a +/- 3-day date window, and write only pairs that are unique from both
-  //     sides. Ambiguous pairs remain unlinked for a future human workflow.
-  await db.execute(sql`
-    WITH scope AS (
-      SELECT d.id, d.amount, d.deposit_date
-      FROM bank_deposits d
-      WHERE d.source = 'bank_csv_export'
-        AND NOT EXISTS (
-          SELECT 1 FROM stripe_payouts p
-          WHERE p.bank_deposit_id = d.id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM bank_deposit_components c
-          WHERE c.bank_deposit_id = d.id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM deposit_qbo_components dqc
-          WHERE dqc.bank_deposit_id = d.id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM bank_deposit_qbo_register existing
-          WHERE existing.bank_deposit_id = d.id
-        )
-    ),
-    candidate_pairs AS (
-      SELECT
-        d.id AS bank_deposit_id,
-        bt.id AS bank_transaction_id,
-        d.amount
-      FROM scope d
-      JOIN bank_transactions bt
-        ON bt.source = 'qbo_register_export'
-       AND bt.deposit IS NOT NULL
-       AND bt.deposit > 0
-       AND bt.deposit = d.amount
-       AND bt.txn_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
-    ),
-    unique_pairs AS (
-      SELECT p.bank_deposit_id, p.bank_transaction_id, p.amount
-      FROM candidate_pairs p
-      WHERE (
-        SELECT count(*)
-        FROM candidate_pairs deposit_candidates
-        WHERE deposit_candidates.bank_deposit_id = p.bank_deposit_id
-      ) = 1
-        AND (
-          SELECT count(*)
-          FROM candidate_pairs register_candidates
-          WHERE register_candidates.bank_transaction_id = p.bank_transaction_id
-        ) = 1
-    )
-    INSERT INTO bank_deposit_qbo_register (
-      id, bank_deposit_id, bank_transaction_id, amount, ambiguous
-    )
-    SELECT
-      'bdqr_' || p.bank_deposit_id,
-      p.bank_deposit_id,
-      p.bank_transaction_id,
-      p.amount,
-      false
-    FROM unique_pairs p
-    ON CONFLICT DO NOTHING
-  `);
-
-  // 4e. QBO-grain source_links (docs/adr-qbo-evidence-grain.md).
-  //     source_links is the successor tie mechanism for all QBO evidence;
-  //     the legacy tables keep being written above until their read cutover
-  //     + 0192 drop. Everything here is fill-only with deterministic ids.
-
-  // 4e-i. Project the legacy ties into source_links (same derivation as the
-  //       0191 backfill, re-run so forward writes stay in lockstep).
-  await db.execute(sql`
-    INSERT INTO source_links (
-      id, link_type, bank_transaction_id, bank_deposit_id,
-      lifecycle, provenance, match_basis
-    )
-    SELECT
-      'srcl_qrd_' || r.bank_transaction_id, 'qbo_register_deposit',
-      r.bank_transaction_id, r.bank_deposit_id, 'confirmed', 'system',
-      CASE abs(bt.txn_date - d.deposit_date)
-        WHEN 0 THEN 'same_day_unique_amount'
-        WHEN 1 THEN 'one_day_unique_amount'
-        WHEN 2 THEN 'two_day_unique_amount'
-        ELSE 'three_day_unique_amount'
-      END::source_link_match_basis
-    FROM bank_deposit_qbo_register r
-    JOIN bank_transactions bt ON bt.id = r.bank_transaction_id
-    JOIN bank_deposits d ON d.id = r.bank_deposit_id
-    ON CONFLICT (id) DO NOTHING
-  `);
-  await db.execute(sql`
-    INSERT INTO source_links (
-      id, link_type, qb_staged_payment_id, bank_deposit_id,
-      lifecycle, provenance, match_basis
-    )
-    SELECT
-      'srcl_qld_' || c.staged_payment_id, 'qbo_line_deposit',
-      c.staged_payment_id, c.bank_deposit_id, 'confirmed', 'system',
-      c.match_basis::text::source_link_match_basis
-    FROM deposit_qbo_components c
-    ON CONFLICT (id) DO NOTHING
-  `);
-  await db.execute(sql`
-    INSERT INTO source_links (
-      id, link_type, qb_staged_payment_id, stripe_payout_id,
-      lifecycle, provenance, match_basis
-    )
-    SELECT
-      'srcl_pqs_' || sp.settled_stripe_payout_id, 'payout_qb_settlement',
-      sp.id, sp.settled_stripe_payout_id, 'confirmed', 'system', 'settled_pairing'
-    FROM staged_payments sp
-    WHERE sp.settled_stripe_payout_id IS NOT NULL
-    ON CONFLICT (id) DO NOTHING
-  `);
+  // 4e. QBO-grain source_links (docs/adr-qbo-evidence-grain.md) — THE tie
+  //     mechanism for all QBO evidence (the legacy tables are retired).
+  //     Everything here is fill-only with deterministic ids. The
+  //     payout_qb_settlement pairing is written where it is decided
+  //     (qboAccountingRecompute + the reconciliation commit flows).
 
   // 4e-ii. Broadened register↔deposit matching, WITHOUT the legacy residual
   //        gating: register accounting evidence coexists with payouts,

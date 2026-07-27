@@ -90,8 +90,10 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
+  sourceLinks: Db["sourceLinks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
+let andFn: (typeof import("drizzle-orm"))["and"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let server: Server;
 let baseUrl = "";
@@ -290,13 +292,17 @@ async function seedPayout(stagedPaymentId: string): Promise<string> {
     arrivalDate: "2026-03-15",
   });
   payoutIds.push(id);
-  // The approve route finds tied payouts through the pairing fact on the QBO
-  // row (staged_payments.settled_stripe_payout_id, 0168) — the settlement-link
-  // lifecycle is retired. Stamp the pairing directly.
-  await db
-    .update(schema.stagedPayments)
-    .set({ settledStripePayoutId: id })
-    .where(eqFn(schema.stagedPayments.id, stagedPaymentId));
+  // The approve route finds tied payouts through the payout_qb_settlement
+  // source_link pairing. Stamp the pairing directly.
+  await db.insert(schema.sourceLinks).values({
+    id: `srcl_pqs_${id}`,
+    linkType: "payout_qb_settlement",
+    qbStagedPaymentId: stagedPaymentId,
+    stripePayoutId: id,
+    lifecycle: "confirmed",
+    provenance: "system",
+    matchBasis: "settled_pairing",
+  });
   return id;
 }
 
@@ -358,10 +364,15 @@ async function readCharge(id: string) {
 }
 async function readPairedPayoutId(stagedId: string): Promise<string | null> {
   const [row] = await db
-    .select({ settledStripePayoutId: schema.stagedPayments.settledStripePayoutId })
-    .from(schema.stagedPayments)
-    .where(eqFn(schema.stagedPayments.id, stagedId));
-  return row?.settledStripePayoutId ?? null;
+    .select({ stripePayoutId: schema.sourceLinks.stripePayoutId })
+    .from(schema.sourceLinks)
+    .where(
+      andFn(
+        eqFn(schema.sourceLinks.linkType, "payout_qb_settlement"),
+        eqFn(schema.sourceLinks.qbStagedPaymentId, stagedId),
+      ),
+    );
+  return row?.stripePayoutId ?? null;
 }
 
 async function seedOpp(opts: {
@@ -422,8 +433,10 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
+    sourceLinks: dbMod.sourceLinks,
   };
   eqFn = drizzle.eq;
+  andFn = drizzle.and;
   inArrayFn = drizzle.inArray;
 
   await db.insert(schema.users).values({

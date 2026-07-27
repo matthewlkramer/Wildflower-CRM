@@ -29,8 +29,8 @@ type AnchorQueue = "needs_review" | "confirmed" | "all";
 const ANCHOR_QUEUES = ["needs_review", "confirmed", "all"] as const;
 type AnchorSource = "stripe_payout" | "qb_staged_payment";
 
-// Stripe payout buckets (over the settled_stripe_payout_id pairing fact on the
-// QBO row). `all` = every payout is a valid anchor (even a stray orphan one —
+// Stripe payout buckets (over the payout_qb_settlement pairing fact in
+// source_links). `all` = every payout is a valid anchor (even a stray orphan one —
 // its charges can still mint gifts).
 //
 // A payout only NEEDS review when there is actionable work in this workbench:
@@ -45,7 +45,9 @@ type AnchorSource = "stripe_payout" | "qb_staged_payment";
 // `linked_qb_staged_payment_id` name for API compatibility) or terminal. Such
 // a payout is SETTLED — it shows as Matched, not Missing deposit.
 const payoutSettled = sql`EXISTS (
-  SELECT 1 FROM staged_payments slp WHERE slp.settled_stripe_payout_id = sp.id
+  SELECT 1 FROM source_links pqs_bs
+  WHERE pqs_bs.link_type = 'payout_qb_settlement'
+    AND pqs_bs.stripe_payout_id = sp.id
 )`;
 export const fullyChargeTied = sql`(
   NOT ${payoutSettled}
@@ -122,7 +124,11 @@ function stripeWhere(queue: AnchorQueue): SQL {
 // only `stripe`, `donorbox` (Donorbox frequently settles through Stripe), and
 // NULL (unknown — no signal either way, so never hide it).
 function qbWhere(queue: AnchorQueue): SQL {
-  const eligible = sql`s.settled_stripe_payout_id IS NULL
+  const eligible = sql`NOT EXISTS (
+      SELECT 1 FROM source_links pqs_el
+      WHERE pqs_el.link_type = 'payout_qb_settlement'
+        AND pqs_el.qb_staged_payment_id = s.id
+    )
     AND NOT EXISTS (
       -- A QB row confirmed-tied to a Stripe charge reconciles THROUGH that
       -- charge's payout (charge-grain twin of the settlement-link omission
@@ -326,7 +332,9 @@ router.get(
           WHERE cc.stripe_payout_id = sp.id) AS charge_ties_confirmed,
         ${readinessSelect("d")}
       FROM stripe_payouts sp
-      LEFT JOIN staged_payments ad ON ad.settled_stripe_payout_id = sp.id
+      LEFT JOIN source_links pqs_ad ON pqs_ad.link_type = 'payout_qb_settlement'
+        AND pqs_ad.stripe_payout_id = sp.id
+      LEFT JOIN staged_payments ad ON ad.id = pqs_ad.qb_staged_payment_id
       LEFT JOIN reconciliation_bundle_drafts d
         ON d.anchor_type = 'stripe_payout' AND d.anchor_id = sp.id
       WHERE ${stripeWhere(queue)}`;

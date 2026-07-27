@@ -153,9 +153,10 @@ export function buildStagedLineUpsert(
  * ids (one ≤500-id chunk). A header exists ONLY because its deposit yielded
  * zero direct-line rows; when a later QB edit gives the deposit direct lines,
  * the line rows are the representation and the header is a duplicate. A header
- * that review work already references — a settled-payout pairing, a source link, or a
- * ledger row (the last should be impossible by guard, but is checked for
- * safety) — is KEPT so a human resolution is never silently destroyed.
+ * that review work already references — a source link (including the
+ * settled-payout pairing) or a ledger row (the last should be impossible by
+ * guard, but is checked for safety) — is KEPT so a human resolution is never
+ * silently destroyed.
  *
  * Returns the drizzle builder; exported so the reference guards can be
  * asserted in a regression test (compile-only via `.toSQL()`).
@@ -171,7 +172,6 @@ export function buildSuperfluousHeaderDelete(
         eq(stagedPayments.realmId, realmId),
         eq(stagedPayments.qbEntityType, "deposit_header"),
         inArray(stagedPayments.qbEntityId, qbDepositIds),
-        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (
           SELECT 1 FROM ${paymentUnits}
@@ -193,9 +193,9 @@ export function buildSuperfluousHeaderDelete(
  * header).
  *
  * Guards (all must hold, per row):
- *   - same three reference guards as the header delete (settled-payout
- *     pairing, source link, ledger row) — review work is never silently
- *     destroyed;
+ *   - same reference guards as the header delete (source link — including
+ *     the settled-payout pairing — and ledger row) — review work is never
+ *     silently destroyed;
  *   - derived status still open (`pending` / `excluded`) — a human-resolved
  *     line row is kept even if unreferenced (e.g. a manual confirmation),
  *     mirroring the "never clobber a manual resolution" upsert rule.
@@ -215,7 +215,6 @@ export function buildSuperfluousLineDelete(
         eq(stagedPayments.qbEntityType, "deposit"),
         inArray(stagedPayments.qbEntityId, qbDepositIds),
         stagedStatusIn(["pending", "excluded"]),
-        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (
           SELECT 1 FROM ${paymentUnits}

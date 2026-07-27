@@ -338,10 +338,15 @@ describe.skipIf(!HAS_DB)("staged payment split units (DB)", () => {
 
   it("rejects a parent settled into a payout (the pairing fact) → 409 parent_has_claims", async () => {
     const parent = await seedParent({ amount: "100.00" });
-    await db
-      .update(schema.stagedPayments)
-      .set({ settledStripePayoutId: PAYOUT_ID })
-      .where(eqFn(schema.stagedPayments.id, parent));
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_pqs_${PAYOUT_ID}`,
+      linkType: "payout_qb_settlement",
+      qbStagedPaymentId: parent,
+      stripePayoutId: PAYOUT_ID,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "settled_pairing",
+    });
     const a = await abortOf(() =>
       split(parent, [{ amount: "60.00" }, { amount: "40.00" }]),
     );
