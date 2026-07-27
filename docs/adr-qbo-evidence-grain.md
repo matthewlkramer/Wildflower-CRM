@@ -66,6 +66,7 @@ review/matching state migrates to the reconciliation workflow over time.
 | `qbo_register_unit` | `bank_transaction_id` + `payment_unit_id` | this register posting is the accounting record of that donor-level payment unit |
 | `qbo_line_deposit` | `qb_staged_payment_id` + `bank_deposit_id` | this QBO Deposit line decomposes that bank deposit (accounting evidence only — replaces `deposit_qbo_components`) |
 | `payout_qb_settlement` | `qb_staged_payment_id` + `stripe_payout_id` | this QBO row is the booked lump for that Stripe payout (replaces `staged_payments.settled_stripe_payout_id`) |
+| `qbo_line_allocation` | `qb_staged_payment_id` + `gift_allocation_id` | this QBO line was booked at allocation grain — one physical payment split by the bookkeeper into several allocation-level lines; the line ties to the `gift_allocations` row it generated (dollars live once on the merged payment unit) |
 
 A structured `match_basis` column records HOW a machine tie was made
 (`same_day_unique_amount` … `three_day_unique_amount`,
