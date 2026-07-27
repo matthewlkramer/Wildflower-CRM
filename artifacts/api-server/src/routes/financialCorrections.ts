@@ -11,6 +11,8 @@ import {
   people,
   households,
   entities,
+  sourceLinks,
+  sourceLinkId,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { asyncHandler, newId, parseOrBadRequest } from "../lib/helpers";
@@ -497,6 +499,27 @@ router.post(
         ],
         where: sql`${paymentApplications.linkRole} = 'corroborating'`,
       });
+    // Dual-write the successor evidence claim (docs/adr-unit-gift-pointer.md):
+    // corroborating unit↔gift links live in source_links as
+    // unit_gift_corroboration rows once the ledger retires.
+    await db
+      .insert(sourceLinks)
+      .values(
+        body.giftIds.map((giftId) => ({
+          id: sourceLinkId(
+            "unit_gift_corroboration",
+            `${paymentUnitId}_${giftId}`,
+          ),
+          linkType: "unit_gift_corroboration" as const,
+          paymentUnitId,
+          giftId,
+          lifecycle: "confirmed" as const,
+          provenance: "human" as const,
+          confirmedByUserId: appUser?.id ?? null,
+          confirmedAt: now,
+        })),
+      )
+      .onConflictDoNothing();
 
     res.json({
       evidenceKind: body.evidenceKind,

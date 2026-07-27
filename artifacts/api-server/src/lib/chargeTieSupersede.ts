@@ -12,6 +12,7 @@ import {
   AnchorAlreadyCountedError,
   applyPaymentApplication,
   checkBookOnce,
+  syncUnitGiftPointers,
   type PaymentApplicationMatchMethod,
 } from "./paymentApplications";
 
@@ -419,10 +420,15 @@ export async function applyChargeTieSupersedePairs(
                 ne(paymentApplications.id, d.qbRow.id),
               ),
             );
-          await tx
+          const demoted = await tx
             .update(paymentApplications)
             .set({ linkRole: "corroborating", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id));
+            .where(eq(paymentApplications.id, d.qbRow.id))
+            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+          await syncUnitGiftPointers(
+            tx,
+            demoted.map((r) => r.paymentUnitId),
+          );
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }
@@ -443,10 +449,15 @@ export async function applyChargeTieSupersedePairs(
                 ne(paymentApplications.id, d.qbRow.id),
               ),
             );
-          await tx
+          const demotedOnly = await tx
             .update(paymentApplications)
             .set({ linkRole: "corroborating", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id));
+            .where(eq(paymentApplications.id, d.qbRow.id))
+            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+          await syncUnitGiftPointers(
+            tx,
+            demotedOnly.map((r) => r.paymentUnitId),
+          );
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }
@@ -457,9 +468,14 @@ export async function applyChargeTieSupersedePairs(
           break;
         }
         case "remove_charge_row": {
-          await tx
+          const removedCharge = await tx
             .delete(paymentApplications)
-            .where(eq(paymentApplications.id, d.chargeRow.id));
+            .where(eq(paymentApplications.id, d.chargeRow.id))
+            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+          await syncUnitGiftPointers(
+            tx,
+            removedCharge.map((r) => r.paymentUnitId),
+          );
           affectedGiftIds.add(d.chargeRow.giftId);
           break;
         }
@@ -509,10 +525,15 @@ export async function applyChargeTieSupersedePairs(
             newAmount: d.qbRow.amountApplied,
           });
           if (!guard.ok) break;
-          await tx
+          const promoted = await tx
             .update(paymentApplications)
             .set({ linkRole: "counted", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id));
+            .where(eq(paymentApplications.id, d.qbRow.id))
+            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+          await syncUnitGiftPointers(
+            tx,
+            promoted.map((r) => r.paymentUnitId),
+          );
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }

@@ -7,6 +7,7 @@ import {
 } from "@workspace/db";
 import { and, eq, ne } from "drizzle-orm";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
+import { syncUnitGiftPointers } from "./paymentApplications";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Stripe refund / chargeback propagation (INV-13).
@@ -277,6 +278,9 @@ export async function confirmRefundPropagation(
           updatedAt: now,
         })
         .where(eq(paymentApplications.id, rowId));
+      if (chargePaymentUnitId) {
+        await syncUnitGiftPointers(tx, [chargePaymentUnitId]);
+      }
       retiredFromCoverage = true;
     };
 
