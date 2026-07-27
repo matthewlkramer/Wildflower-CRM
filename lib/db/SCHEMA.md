@@ -99,7 +99,10 @@ mutation.
 ### Evidence relationships (one authority each)
 
 - `payment_applications` is the **sole** unit↔gift cash-application ledger
-  (evidence unit → CRM gift). The true relationship grain is the
+  (evidence unit → CRM gift). RETIRING (docs/adr-unit-gift-pointer.md):
+  counted rows become the `payment_units.gift_id` pointer, corroborating rows
+  become `source_links` `unit_gift_corroboration` claims; drop gated in 0195
+  after the read cutover. The true relationship grain is the
   component/payment unit: each unit has zero or one counted gift application.
   Header grain (`gift_id`, never an allocation; `gift_allocation_id` is a
   narrowing annotation only) remains the stored link, while apparent multiple
@@ -349,7 +352,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   payout; a check's is a `bank_deposit_components` row). Pointers, each at most
   one authority: `stripe_charge_id` (1:1, UNIQUE, required iff kind=stripe_charge),
   `donorbox_donation_id` (UNIQUE — the single canonical Donorbox authority,
-  Phase 6), `source_staged_payment_id` (provisional QBO provenance for check
+  Phase 6), `gift_id` (the gift this unit's money funds — successor of the
+  counted `payment_applications` row, docs/adr-unit-gift-pointer.md; derived
+  from the counted ledger until the read cutover), `source_staged_payment_id`
+  (provisional QBO provenance for check
   units, Phase 3; never an authority). Seeded 1:1 from non-excluded
   `stripe_staged_charges` (`pu_<charge id>`); check units come in Phase 3.
 - `bank_deposit_components` — the **components (checks / direct payments) that
@@ -415,7 +421,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `stripe_payout_id`) and a structured `match_basis` — successor of
   `bank_deposit_qbo_register`, `deposit_qbo_components`, and
   `staged_payments.settled_stripe_payout_id` (retired in 0192 after read
-  cutover).
+  cutover). Also `unit_gift_corroboration` (unit + gift anchors;
+  docs/adr-unit-gift-pointer.md) — successor of the ledger's
+  `link_role='corroborating'` rows.
 - `reconciliation_bundle_drafts`, `unit_groups` — workbench working state. (`unit_groups` is deprecated: new group creation is retired — multi-match writes N counted `payment_applications` rows instead — and the table is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3; it persists only for legacy groups.)
 
 ## Communications & workflow
