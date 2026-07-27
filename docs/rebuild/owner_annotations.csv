@@ -13,7 +13,7 @@ bdep_22114c9b85f3a34a2b2fb49b,5/22/2026,1600000,VANGRDCHARITABLE GRANTPYMNT     
 bdep_0ef2fd85298f889a72a94ce3,9/4/2020,1000000,WEND LLC         GRANT             0348            GRANT 2020-162,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_57238387d56fd59387ac2b70,1/27/2025,1454.55,Wildflower Monte Receivable        016USQUHO3MD1TE 016USQUHO3MD1TE Wildflower Monte Bill.com Inv 17,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_f68619486cb252e9c85a03cb,7/11/2025,1500000,VANGRDCHARITABLE GRANTPYMNT        GOP103178       WILDFLOWER FOUNDATION,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
-bdep_8bca6f24157c6c254ee37ec9,3/11/2026,7431.66,Bill.com         Receivable        015WCQOACPWF4IY Multiple Payments Bill.com Receivables 015WCQOAC,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_8bca6f24157c6c254ee37ec9,3/11/2026,7431.66,Bill.com         Receivable        015WCQOACPWF4IY Multiple Payments Bill.com Receivables 015WCQOAC,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_e8c90aa6fe8adbdcd31c1fbb,2/1/2021,1000000,WEND LLC         ACH PMTS          0472            GRANT 2020-162,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_2579931319396e2085be3203,2/11/2022,625,Minnesota Wildfl Bill.com          016WYLVSR246SIG Minnesota Wildflower Montessori Schools Bill.com,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_b471f7eb1b52caa2f92cd49f,7/8/2024,1500000,VANGRDCHARITABLE GRANTPYMNT        41790448        WILDFLOWER FOUNDATION,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
@@ -60,7 +60,7 @@ bdep_c6ed395c75ad99cd7fa1c2fd,4/13/2020,500000,WT FED#04834 OUTGOING MASTER TR  
 bdep_6f1da83480f2c919547cefc0,6/25/2025,500000,ATM CHECK DEPOSIT              ON              06/25 4712 Chicago Ave          Minneapolis   MN  0009735           ATM ID 5819T    CARD 0628,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_c82bb6b3f88320f163518b4e,6/14/2018,137.5,INTUIT PYMT SOLN DEPOSIT 180614 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_12110a5d26715f187f013bad,11/20/2025,1557.48,Bill.com         Receivable        015RLWAOXKR07YK Dahlia (San Francisco) Bill.com 015RLWAOXKR07YK,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_ad142220f94fc074440cebda,6/25/2026,4527.67,Bill.com         Receivable        996FRWXVN128NDD Multiple Payments Bill.com Receivables 996FRWXVN,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_ad142220f94fc074440cebda,6/25/2026,4527.67,Bill.com         Receivable        996FRWXVN128NDD Multiple Payments Bill.com Receivables 996FRWXVN,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_1ebae8e9e4e7da7a6c1aa6d4,11/6/2017,137.5,INTUIT PYMT SOLN DEPOSIT 171104 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_2e21c5a8a12fa23df6a77cbf,2/20/2025,3731.18,Minnesota Wildfl Receivable        016LCFXXN3N9PHO 016LCFXXN3N9PHO Minnesota Wildfl Bill.com Inv TC,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_1f568f592dd1943ee410239d,8/20/2018,1695,INTUIT PYMT SOLN DEPOSIT 180818 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
@@ -88,7 +88,7 @@ bdep_27c821ec3701c73862cea8e1,11/25/2024,545.45,Desert Peach Mon Bill.com       
 bdep_a84b59d9bf57b21bb96a028c,5/11/2020,1517.18,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_cacc02651fa218937bc0719b,10/16/2023,1140.15,BASIC            BASICCOBRA 231016                 The Wildflower Foundat,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_23794c57db997bd6924ce76e,6/9/2025,623.8,Bill.com         Receivable        015HEBSOHGIUIZ5   Greenbrier (C) Bill.com 015HEBSOHGIUIZ5 Inv #T,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_0f9ae8544883b575b2336827,2/6/2026,41348.61,Bill.com         Receivable        015FZDENIMUR4NT Multiple Payments Bill.com Receivables 015FZDENI,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_0f9ae8544883b575b2336827,2/6/2026,41348.61,Bill.com         Receivable        015FZDENIMUR4NT Multiple Payments Bill.com Receivables 015FZDENI,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_bffc58c895236b2a08d09b22,3/27/2025,2522.44,Wild Rose Montes Receivable        016QFDZSP3OL2KV 016QFDZSP3OL2KV Wild Rose Montes Bill.com Inv 11,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_69fa98e7a734297d701d5c83,11/1/2023,300000,"WT FED#02421 BANK OF AMERICA, N    /ORG=IMAGINABLE FUTURES FOUNDATION                 SRF#    2023103100681190 TRN#231101013482  RFB#    23AOF1207IS02234",inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_efe83381095bb51be95562b0,8/12/2021,300000,EDUCATION INNOVA EIPF9614   210806 V-004465        THE WILDFLOWER FOUNDAT,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
@@ -100,7 +100,7 @@ bdep_9fb7909f012351c1a4e19a85,7/9/2026,118363.19,ONLINE TRANSFER JUNE 26 OPEX DR
 bdep_946de8cb3e640781077f2095,2/24/2025,1454.55,Wildflower Monte Receivable        016GCURLT3NDNXD 016GCURLT3NDNXD Wildflower Monte Bill.com Inv TC,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_025bf1a10e8c08095939d574,12/10/2018,212.5,INTUIT PYMT SOLN DEPOSIT    181209 524771997507722 THE WILDFLOWER FOUNDAT 201812101,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_9d0ea2677e09c8adb4642661,1/17/2020,475,INTUIT PYMT SOLN DEPOSIT    200117 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
-bdep_6e2afe101a9eff08a7b1468d,5/8/2026,1921.22,Bill.com         Receivable        015TZBUTXQZMONK Multiple Payments Bill.com Receivables 015TZBUTX,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_6e2afe101a9eff08a7b1468d,5/8/2026,1921.22,Bill.com         Receivable        015TZBUTXQZMONK Multiple Payments Bill.com Receivables 015TZBUTX,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_4580fca5866f7b3ce43e1769,9/1/2017,1604.17,INTUIT PYMT SOLN DEPOSIT 170901 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_defd0be9a60676a48cfdffc9,8/17/2018,284375,WALTON FAM FDN GRANT PMT 62054 GRANT 2017-1205,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_961de53b64a098ab928c947a,12/7/2021,103726.19,DC WILDFLOWER PU EFT PYMT   120621 Charter School  The Wildflower Foundat,exclusion_reason,SERVICE_AGREEMENT,approved,owner annotation 2026-07-23
@@ -151,7 +151,7 @@ bdep_1b5274430c61a01d868f7e63,5/7/2018,237.5,INTUIT PYMT SOLN DEPOSIT 180506 524
 bdep_ca7169ff6177a7fa23c5e48f,7/2/2025,545.45,Bill.com         Receivable        015BRUAYNDK0IPU Acacia Montessori (C) Bill.com 015BRUAYNDK0IPU I,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_d04fe8348a493f672ace6fb6,10/3/2019,1100,INTUIT PYMT SOLN DEPOSIT    191003 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_98d04ccbddb7121686c2683c,3/18/2025,1301.38,Sundrops Montess Receivable        016PBMLGB3O8SVA 016PBMLGB3O8SVA Sundrops Montess Bill.com Inv 79,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_99cb2a7fa88bd4f6bf672813,11/7/2025,42159.15,Bill.com         Receivable        015ZGLZAHUQDQPW Multiple Payments Bill.com Receivables 015ZGLZAH,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_99cb2a7fa88bd4f6bf672813,11/7/2025,42159.15,Bill.com         Receivable        015ZGLZAHUQDQPW Multiple Payments Bill.com Receivables 015ZGLZAH,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_f9c8987274aa8331d8c8f556,3/7/2025,653.68,Sundrops Montess Receivable        016HHHFQB3NVK2K 016HHHFQB3NVK2K Sundrops Montess Bill.com Inv TC,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_263e75d6d7088399c581786b,9/30/2024,811.08,"Snowdrop Montess Bill.com          026MXUAVF13GARL Snowdrop Montessori School, Inc. Bill.com 026MXU",exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_8622c5fcb1253958ba600599,11/3/2025,125000,FIDELITY INVESTM GrantPaymt Date   3223645         WILDFLOWER FOUNDATION,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
@@ -242,7 +242,7 @@ bdep_e622cd03c2873b9ee9e23e0f,4/12/2024,40000,WEND II INC      PAYMENT          
 bdep_73f4b5b7ed2a969a5216a63e,3/19/2019,40000,WT SEQ106855 WF RETURN WIRES IN PROC /ORG=                                            SRF#    0009532067651860 TRN#190319106855  RFB#,exclusion_reason,RETURN_WIRE,approved,owner annotation 2026-07-23
 bdep_3a53340fa9fbfd2d5ce261f9,6/26/2026,39648.42,ONLINE TRANSFER INDIRECT COSTS APRIL  REF #BB0YP2WMTC,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_23b179464d05e1a13a49cd26,8/28/2024,9790.41,Minnesota Wildfl Receivable        016FFAFCU3GOYRB 016FFAFCU3GOYRB Minnesota Wildfl Bill.com Multip,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_a1a2e5ea6d0e96b9655c81b5,4/10/2025,8413.12,Minnesota Wildfl Receivable        016UCVPQT3P4T09 016UCVPQT3P4T09 Minnesota Wildfl Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_a1a2e5ea6d0e96b9655c81b5,4/10/2025,8413.12,Minnesota Wildfl Receivable        016UCVPQT3P4T09 016UCVPQT3P4T09 Minnesota Wildfl Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_76e4d68621b0637392d89d77,4/27/2026,19500,ONLINE TRANSFER REPAY TWF FOR LOTUS LOAN ON 042626 REF #BB0XT997TH,exclusion_reason,INTERNAL_LOAN_TRANSFER,approved,owner annotation 2026-07-23
 bdep_98da0d9067c6720a43ed9c79,9/20/2019,35625,WT SEQ126069 WF RETURN WIRES IN PROC /ORG=                                            SRF#    2019092000097723 TRN#190920126069  RFB#,exclusion_reason,RETURN_WIRE,approved,owner annotation 2026-07-23
 bdep_cf1dae37b214d95eb02f2d45,1/24/2019,35000,ATM CHECK DEPOSIT              ON              01/24 3030 NICOLLET AVE         MINNEAPOLIS   MN  0002981           ATM ID 5813V    CARD 7365,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
@@ -299,13 +299,13 @@ bdep_ad26415d071ae56cf86b1490,1/3/2019,5015.5,STRIPE           TRANSFER         
 bdep_88bbb54d7e85ba1412fd5c3c,9/10/2025,24965,DC WILDFLOWER PU EFT PYMT   090925 Charter School  The Wildflower Foundat,exclusion_reason,SERVICE_AGREEMENT,approved,owner annotation 2026-07-23
 bdep_02f636292f08a91a333008d5,5/1/2019,237.5,INTUIT PYMT SOLN DEPOSIT    190501 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_7c620a8172845a715bc49085,4/30/2019,3000,INTUIT PYMT SOLN DEPOSIT    190430 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
-bdep_068b28cf9273d775be2446b1,5/15/2026,2616.66,Bill.com         Receivable        016LAMBJZ100MWC Multiple Payments Bill.com Receivables 016LAMBJZ,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_068b28cf9273d775be2446b1,5/15/2026,2616.66,Bill.com         Receivable        016LAMBJZ100MWC Multiple Payments Bill.com Receivables 016LAMBJZ,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_13f9d4ac3dc42b8f8693d550,8/17/2021,4963.76,STRIPE           TRANSFER          ST-K2Q1H5N0U5Y7 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_bef8dee88c901c3792cee623,11/22/2024,4767.2,STRIPE           TRANSFER          ST-A3N9O1Q6S2Z7 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_768c12c141f5fc528d707eff,1/8/2026,39603.58,Bill.com         Receivable        015PYVGGQZTBE4W Multiple Payments Bill.com Receivables 015PYVGGQ,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_768c12c141f5fc528d707eff,1/8/2026,39603.58,Bill.com         Receivable        015PYVGGQZTBE4W Multiple Payments Bill.com Receivables 015PYVGGQ,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_d4aaf8081782e287a52799b4,1/20/2026,4623.66,Minnesota Wildfl Receivable        016AIOVZL3ZEDFH 016AIOVZL3ZEDFH Minnesota Wildfl Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_7735ce8fa95ebd4191b946d8,1/2/2026,20000,THE 20 22 ACT    PAYMENTS          WILDFLOWER SCHO WILDFLOWER SCHOOLS,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
-bdep_cea8df20f3476b4b5ad73d6c,1/9/2026,7766.33,Bill.com         Receivable        015UXQVPIPTE08Z Multiple Payments Bill.com Receivables 015UXQVPI,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_cea8df20f3476b4b5ad73d6c,1/9/2026,7766.33,Bill.com         Receivable        015UXQVPIPTE08Z Multiple Payments Bill.com Receivables 015UXQVPI,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_c7c677ed772930ca3b0eb78f,1/21/2026,4623.66,Minnesota Wildfl Receivable        016XGEKOM3ZGIZW 016XGEKOM3ZGIZW Minnesota Wildfl Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_d72f5d674c42816acbdf3fa2,3/27/2020,20000,CHARTER FUND INC 3.27RLCOVC        V000513         WM-F3-ER-OC-2020-1Q(GRANT1OF1),inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_c512ac9d385734c66e03f933,12/10/2019,1767.42,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
@@ -362,16 +362,16 @@ bdep_1b5491c76b03c3b0224f2946,4/22/2026,4623.66,Minnesota Wildfl Receivable     
 bdep_be4ec752ee352df9d37b23f3,5/7/2018,2000,INTUIT PYMT SOLN DEPOSIT 180505 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_909c86bfc51b7a5ce573bba2,4/5/2019,1665.28,INTUIT PYMT SOLN DEPOSIT    190405 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_9da6adee54308532a44c58c6,10/13/2020,628.12,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
-bdep_2ee9d2559c604b1ccc936e0e,10/4/2024,2611.82,Minnesota Wildfl Receivable        016QOFFDC3I8V3E 016QOFFDC3I8V3E Minnesota Wildfl Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_2ee9d2559c604b1ccc936e0e,10/4/2024,2611.82,Minnesota Wildfl Receivable        016QOFFDC3I8V3E 016QOFFDC3I8V3E Minnesota Wildfl Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_dbf05e890ba590d1d1885406,4/9/2019,11000,ATM CHECK DEPOSIT              ON              04/09 1505 WEST LAKE ST         MINNEAPOLIS   MN  0009753           ATM ID 6991J    CARD 7365,exclusion_reason,EMBRACING_EQUITY,approved,owner annotation 2026-07-23
 bdep_d3108722bc82ad57c22edf2d,5/31/2022,2076.66,STRIPE           TRANSFER          ST-G7K5C0A9F7K4 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_979a2ff0d99ee48190ba91d4,4/4/2019,212.5,INTUIT PYMT SOLN DEPOSIT    190404 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
-bdep_ee9f97813c9d611f6b43dc66,11/12/2025,4988.42,Bill.com         Receivable        015USATMPJQJ03O Multiple Payments Bill.com Receivables 015USATMP,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_ee9f97813c9d611f6b43dc66,11/12/2025,4988.42,Bill.com         Receivable        015USATMPJQJ03O Multiple Payments Bill.com Receivables 015USATMP,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_d1cfe853446a701468c73d3e,8/15/2025,2062.55,STRIPE           TRANSFER          ST-W2X1C8G7R0O4 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_61c3706fbae421e313606264,11/3/2022,10835.5,DC WILDFLOWER PU EFT PYMT   110222 Charter School  The Wildflower Foundat,exclusion_reason,SERVICE_AGREEMENT,approved,owner annotation 2026-07-23
-bdep_9db1617a59b5526e8fe69f89,1/12/2026,13609.66,Bill.com         Receivable        015ZUXCLMZTGG7U Multiple Payments Bill.com Receivables 015ZUXCLM,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_9db1617a59b5526e8fe69f89,1/12/2026,13609.66,Bill.com         Receivable        015ZUXCLMZTGG7U Multiple Payments Bill.com Receivables 015ZUXCLM,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_4f8ffb8dc5551188f09c9dc8,9/22/2025,1292.57,Excellent School Receivable        016AVEMUQ3V56QF 016AVEMUQ3V56QF Excellent School Bill.com Inv EX,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_a04fecc431cf9fe4866dd3ed,12/5/2025,41939.39,Bill.com         Receivable        015UJRLMEKRR9TU Multiple Payments Bill.com Receivables 015UJRLME,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_a04fecc431cf9fe4866dd3ed,12/5/2025,41939.39,Bill.com         Receivable        015UJRLMEKRR9TU Multiple Payments Bill.com Receivables 015UJRLME,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_f03c088bde189b29fa5ded72,12/6/2022,10550.5,DC WILDFLOWER PU EFT PYMT   120522 Charter School  The Wildflower Foundat,exclusion_reason,SERVICE_AGREEMENT,approved,owner annotation 2026-07-23
 bdep_b0667ebb758f0ee4034cdb95,6/12/2025,1299.91,Bill.com         Receivable        015WZNKNILJ1XEL   Tiger Lily (C) Bill.com 015WZNKNILJ1XEL Inv #T,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_bab6648fb81a9781544194cc,1/17/2023,4943.19,BASIC            BASICCOBRA 230116                 The Wildflower Foundat,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
@@ -447,7 +447,7 @@ bdep_51beefa297d24e0811b7ec4e,1/2/2025,625.35,STRIPE           TRANSFER         
 bdep_5a40b2dff80db46d65fab6f1,12/4/2025,593.23,STRIPE           TRANSFER          ST-Q8U4V2U5N5C8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_514d6e81eeea55d7f316beb9,3/13/2026,4623.55,Minnesota Wildfl Receivable        016ZODLZG41DWX4 016ZODLZG41DWX4 Minnesota Wildfl Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_db7fa98cee1414a89e7f64dc,10/27/2023,584.7,STRIPE           TRANSFER          ST-H0R0D5P5M6N7 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_6ccaa9f7f91a1911294a0100,11/17/2025,4864.55,Bill.com         Receivable        015UWJZQAPQSGJE Multiple Payments Bill.com Receivables 015UWJZQA,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_6ccaa9f7f91a1911294a0100,11/17/2025,4864.55,Bill.com         Receivable        015UWJZQAPQSGJE Multiple Payments Bill.com Receivables 015UWJZQA,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_b52a7a4a933b4334f0fb98ce,9/30/2024,545.45,Desert Peach Mon Bill.com          026KPMWYQ13G9SX Desert Peach Montessori School Bill.com 026KPMWY,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_0c0766161e1eea729e3d5b62,2/27/2020,240,INTUIT PYMT SOLN DEPOSIT    200227 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_da70f9d3607e30f1d4784f93,10/17/2025,4623.66,Minnesota Wildfl Receivable        016BOAYFC3W4QM1 016BOAYFC3W4QM1 Minnesota Wildfl Bill.com For In,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -505,7 +505,7 @@ bdep_3a68ea4d9e7e7371071a127c,12/24/2024,496,STRIPE           TRANSFER          
 bdep_40397995a48718f28237de53,7/10/2020,1517.18,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_0a22ec805e9680733650ccb1,4/22/2020,485.2,STRIPE           TRANSFER          ST-P7I4Y2X0V8Y0 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_90456f0be030a385bbb1def4,6/18/2020,485.2,STRIPE           TRANSFER          ST-Z3W8Y6V5O8W1 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_acad9dfb684c94b9184cb066,10/22/2025,3708.66,Bill.com         Receivable        015OJPQHILPHGPE Multiple Payments Bill.com Receivables 015OJPQHI,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_acad9dfb684c94b9184cb066,10/22/2025,3708.66,Bill.com         Receivable        015OJPQHILPHGPE Multiple Payments Bill.com Receivables 015OJPQHI,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_44025274156b01d27ae4707b,12/24/2020,479.2,STRIPE           TRANSFER          ST-I4L0K2K0K1H8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_aae9eb2322fc091e33b4ab53,4/28/2025,2522.44,Wild Rose Montes Receivable        016BTZOXG3PQGXL 016BTZOXG3PQGXL Wild Rose Montes Bill.com Inv 50,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_6d4ebb7d82ae4d6a196c3beb,12/12/2022,3710,DC WILDFLOWER PU EFT PYMT   120922 Charter School  The Wildflower Foundat,exclusion_reason,SERVICE_AGREEMENT,approved,owner annotation 2026-07-23
@@ -585,8 +585,8 @@ bdep_a9daab3cb7a41a759f463c98,2/7/2020,450,INTUIT PYMT SOLN DEPOSIT    200207 52
 bdep_6dbf80d993aa5b6ddf9a063a,9/27/2022,219.69,STRIPE           TRANSFER          ST-G1Q4P3X6E8H0 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_ed25c12ae223f1a65262f162,6/8/2026,292165.52,ONLINE TRANSFER CSP MAY NON PAYROLL REF #BB0YFTHQLB,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_d9755e5c17d9525dfc98670c,4/23/2018,1045,INTUIT PYMT SOLN DEPOSIT 180422 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
-bdep_927c5aaa68037ff1fc1d8294,2/10/2026,4859.96,Bill.com         Receivable        015RVSVYQJUWU2T Multiple Payments Bill.com Receivables 015RVSVYQ,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
-bdep_77e06d31b867e423a2d424e0,2/10/2025,7462.36,Minnesota Wildfl Receivable        016JCNQDC3MW3MB 016JCNQDC3MW3MB Minnesota Wildfl Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_927c5aaa68037ff1fc1d8294,2/10/2026,4859.96,Bill.com         Receivable        015RVSVYQJUWU2T Multiple Payments Bill.com Receivables 015RVSVYQ,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
+bdep_77e06d31b867e423a2d424e0,2/10/2025,7462.36,Minnesota Wildfl Receivable        016JCNQDC3MW3MB 016JCNQDC3MW3MB Minnesota Wildfl Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_f8de2667d731574be89ab9ae,1/18/2018,187.5,INTUIT PYMT SOLN DEPOSIT 180118 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_4b8e395fc5b7e660dd6a49f2,5/9/2023,65000,Peter Alfond Fou Bill.com          025MXBIXHAHXH9G Peter Alfond Foundation Bill.com 025MXBIXHAHXH9G,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_ed23522fe3c2edb6de2f9e43,11/3/2017,499,INTUIT PYMT SOLN DEPOSIT 171103 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
@@ -594,11 +594,11 @@ bdep_1d85ed076b81067956988f9c,3/10/2020,2500,ASTER MONTESSORI MARCH 2020        
 bdep_5173f0fceba71a8363fc7695,8/9/2019,2000,INTUIT PYMT SOLN DEPOSIT    190809 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_0bb529bd24fe9c81939477ad,10/27/2017,1604.17,INTUIT PYMT SOLN DEPOSIT 171027 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_188700e0845fb67d20507532,1/27/2026,1347.33,Roxbury Roots Mo Receivable        016EJQHSU3ZNMOI 016EJQHSU3ZNMOI Roxbury Roots Mo Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_09b2eea83f02932ce1ba9bbf,6/5/2026,3960.88,Bill.com         Receivable        016UVWJOM115BMY Multiple Payments Bill.com Receivables 016UVWJOM,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_09b2eea83f02932ce1ba9bbf,6/5/2026,3960.88,Bill.com         Receivable        016UVWJOM115BMY Multiple Payments Bill.com Receivables 016UVWJOM,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_93ad3aae0c9b87c0b26bec51,4/28/2025,454.55,Bergamot Montess Bill.com          026EWLNVR1DFX8W Bergamot Montessori Bill.com 026EWLNVR1DFX8W Inv,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_af241a50e4069ca137935606,1/29/2025,653.68,Sundrops Montess Receivable        016ZHQUDB3MGIS6 016ZHQUDB3MGIS6 Sundrops Montess Bill.com Inv 17,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_766b636b7bb6eb88bb22ac51,6/8/2026,23168.51,ONLINE TRANSFER CSP GROVE DEC 25 AND JAN 26 GRANT REF #BB0YFTKWTB,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
-bdep_81f0ef2bc29f80214802d5f8,12/15/2025,3708.66,Bill.com         Receivable        015QAOIHNMS7ND7 Multiple Payments Bill.com Receivables 015QAOIHN,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_81f0ef2bc29f80214802d5f8,12/15/2025,3708.66,Bill.com         Receivable        015QAOIHNMS7ND7 Multiple Payments Bill.com Receivables 015QAOIHN,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_ae805c62b718913eb9c3f3ec,7/31/2025,107587.12,ONLINE TRANSFER CSP TRANSFER  REF #BB0TC9W7PF,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_078887ef1257be17d18f1722,9/17/2019,1451,"1330 Lagoon Aven PAYMENTS   190916 EFT-00787987    NTE*ZZZ*POQZ4BC5G39WFQA24U,POP963H26Z3X3TGFD5,PO",exclusion_reason,RENT_REFUND,approved,owner annotation 2026-07-23
 bdep_9d5e05ff64b503728479ce07,12/14/2022,198.55,STRIPE           TRANSFER          ST-K0L0J6V0O9R6 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
@@ -610,7 +610,7 @@ bdep_1e28a585ef42085de13fc32b,3/11/2019,237.5,INTUIT PYMT SOLN DEPOSIT    190309
 bdep_46d4933b62099803d405a0a6,7/10/2019,868.27,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_1c6ebea3e0f7d3b86faa893c,8/11/2023,552.48,BASIC            BASICCOBRA 230811                 The Wildflower Foundat,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_0024f734bc285a8b0a7edbf8,1/7/2025,194.9,STRIPE           TRANSFER          ST-Y4Z8C4D9B6I1 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_28735fac8f5e1d35ca64adf3,6/6/2025,1622.16,Snowdrop Montess Receivable        016FYFGJI3R9HA5 016FYFGJI3R9HA5 Snowdrop Montess Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_28735fac8f5e1d35ca64adf3,6/6/2025,1622.16,Snowdrop Montess Receivable        016FYFGJI3R9HA5 016FYFGJI3R9HA5 Snowdrop Montess Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_75cb64ca917ea625bf5bb630,12/13/2021,194.87,STRIPE           TRANSFER          ST-L7D9M6T8N5R4 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_0d3207e650978cd618d9131a,8/23/2018,1604.17,INTUIT PYMT SOLN DEPOSIT 180823 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_ad015efd7ebf40b0b342c57b,3/11/2026,191.99,STRIPE           TRANSFER          ST-N5X7Q1T6S0B3 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
@@ -663,7 +663,7 @@ bdep_6587f7eb165949741a1640e9,10/4/2022,99.27,STRIPE           TRANSFER         
 bdep_79b1e52606e71bbddd8be66b,1/28/2025,811.08,Snowdrop Montess Receivable        016MZHKHY3MEUIJ 016MZHKHY3MEUIJ Snowdrop Montess Bill.com Inv G,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_6308c167980fd7dd5cd2f723,1/25/2021,650,ACH RETURNS       - THE WILDFLOWER F - FILE 7878782339 COID 1812826681,exclusion_reason,RETURN_WIRE,approved,owner annotation 2026-07-23
 bdep_25735b02a2ec9209c9a5513a,4/9/2021,650,ACH RETURNS       - THE WILDFLOWER F - FILE 7878782339 COID 1812826681,exclusion_reason,RETURN_WIRE,approved,owner annotation 2026-07-23
-bdep_d9d5cdb7c9b67966600f5516,2/9/2026,8964.89,Bill.com         Receivable        015RBDZKYBUU8O9 Multiple Payments Bill.com Receivables 015RBDZKY,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_d9d5cdb7c9b67966600f5516,2/9/2026,8964.89,Bill.com         Receivable        015RBDZKYBUU8O9 Multiple Payments Bill.com Receivables 015RBDZKY,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_1ab5c1107974350d7dc77e91,11/4/2025,25000,Flor de Loto Mon Receivable        016QGXSUM3WR3KP 016QGXSUM3WR3KP Flor de Loto Mon Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_1a2af154421d78a31357dd5d,7/22/2024,637.83,We Are Rally     Vendor PMT        XXXXXXXX8090203 WILDFLOWER SCHOOLS,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_144c90ed90f3ade9897be0ff,8/29/2019,1404,INTUIT PYMT SOLN DEPOSIT    190829 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
@@ -691,7 +691,7 @@ bdep_b99a41843e4f9e27b1db155b,8/15/2019,549,"1330 Lagoon Aven PAYMENTS   190814 
 bdep_f8e0aa5b65b2524e04aed156,2/28/2019,549,"MSP02 - 1330 Lag PAYMENTS   190227 EFT-00484394    NTE*ZZZ*I699UTMSP02-Feb19,POXPC4MHNWJ8RR8AAT,\",exclusion_reason,RENT_REFUND,approved,owner annotation 2026-07-23
 bdep_a34ef9128e93c2344376d5bf,12/31/2020,99.27,STRIPE           TRANSFER          ST-M2V3F1I2G3M5 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_b7c2e1f074283e80c191818f,6/24/2026,99.27,STRIPE           TRANSFER          ST-E3A5C3Z3T6E4 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_c26dcd46ed943bd0162443c5,4/8/2026,5166,Bill.com         Receivable        015TAWMUDRXUMHL Multiple Payments Bill.com Receivables 015TAWMUD,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_c26dcd46ed943bd0162443c5,4/8/2026,5166,Bill.com         Receivable        015TAWMUDRXUMHL Multiple Payments Bill.com Receivables 015TAWMUD,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_35ede3947c2589a9c3a038cb,10/31/2024,1282.33,Urban Village Mo Receivable        016SIRSZO3J8OJZ 016SIRSZO3J8OJZ Urban Village Mo Bill.com Inv 79,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_dc63f8424b48e7bb75cd9089,12/18/2020,6000,INTUIT PYMT SOLN DEPOSIT    201218 524771990592861 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_8a94809350ad1e7cc7e7cfa1,4/13/2026,1251.44,Bill.com         Receivable        015NBXENKBY2S7G Trout Lily Montessori Bill.com 015NBXENKBY2S7G I,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -704,7 +704,7 @@ bdep_c651e50a2ad60580a4ebbad6,7/24/2020,500,INTUIT PYMT SOLN DEPOSIT    200724 5
 bdep_032d5b446b4da6a1c3e0bebf,12/2/2021,500,eDeposit in Branch/Store 12/02/21 12:16:27 PM 4712 CHICAGO AVE MINNEAPOLIS MN 7365,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_4f79f692adc69f700bf157c6,9/22/2023,500,ATM CHECK DEPOSIT              ON              09/22 6445 Nicollet Ave         Richfield     MN  0001950           ATM ID 5822O    CARD 7365,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_11b464ae094b6c967431062a,3/2/2026,47.25,STRIPE           TRANSFER          ST-G6W1P1F5E9P2 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_c264f3e843e5692388cf45cf,4/21/2026,3960.88,Bill.com         Receivable        015SBDLRCMYNL6Y Multiple Payments Bill.com Receivables 015SBDLRC,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_c264f3e843e5692388cf45cf,4/21/2026,3960.88,Bill.com         Receivable        015SBDLRCMYNL6Y Multiple Payments Bill.com Receivables 015SBDLRC,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_db112d6f2819a5171d48b537,12/23/2025,94.8,STRIPE           TRANSFER          ST-V5T0A2X4T0G8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_b098f08c0bd354bde86a5c44,11/28/2023,100000,Center for Educa Bill.com          025TGKNUXLPG21Q Center for Education Reform dba Yass Foundation,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_ac999f61c383d5af51f9b57c,9/13/2024,858.18,Minnesota Wildfl Receivable        016TLZCCX3HF4N1 016TLZCCX3HF4N1 Minnesota Wildfl Bill.com Inv 79,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -729,7 +729,7 @@ bdep_0a05da3da157ae3e9cfce90c,10/30/2019,72.52,STRIPE           TRANSFER        
 bdep_6ed6d2667230d19d9735bc80,3/9/2026,666.67,Bill.com         Receivable        015TGETOHDWA3DD Pinyon Montessori Bill.com 015TGETOHDWA3DD Inv #,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_ca613db72b87c91fb9aa6473,3/2/2026,167897.19,ONLINE TRANSFER JAN 26 CSP NONPAYROLL REF #BB0X3Q6824,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_0fc9f9dd9c91de203d32bcc3,9/22/2023,468.9,BUSINESS CHECKIN Expensify         R00d7NqAPlSp    BUSINESS CHECKING,exclusion_reason,EXPENSIFY_REFUND,approved,owner annotation 2026-07-23
-bdep_7e7b79c8ebd86d04d4d5ffdf,4/2/2026,2694.66,Roxbury Roots Mo Receivable        016NRTJSD425QX1 016NRTJSD425QX1 Roxbury Roots Mo Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_7e7b79c8ebd86d04d4d5ffdf,4/2/2026,2694.66,Roxbury Roots Mo Receivable        016NRTJSD425QX1 016NRTJSD425QX1 Roxbury Roots Mo Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_09520f73568c566d47b63825,6/8/2026,48739.6,ONLINE TRANSFER CSP APRIL 26 PAYROLL REF #BB0YFTJP3R,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_0a5acc83ece9471c05070a59,7/7/2026,65.62,GUSTO PAYROLL    TAX 832906 260707 6seml615btc     The Wildflower Foundat,exclusion_reason,PAYROLL_TAX_REFUND,approved,owner annotation 2026-07-23
 bdep_685574cb775051468fffa3f0,5/28/2025,545.45,Sage Montessori  Receivable        016BFBSFU3QUT6T 016BFBSFU3QUT6T Sage Montessori Bill.com Inv TWF,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -742,12 +742,12 @@ bdep_71d795172dfc764f2a529437,4/7/2020,60.31,STRIPE           TRANSFER          
 bdep_4796b525d7df470c44e0e9aa,3/6/2025,2522.44,Wild Rose Montes Receivable        016WFONFX3NTHPJ 016WFONFX3NTHPJ Wild Rose Montes Bill.com Wild R,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_3575e3c02e48c3f9ba2369b2,4/9/2021,681.3,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_d54950364585d7dfb1540ace,11/23/2022,53.95,STRIPE           TRANSFER          ST-M6Y8K2N2I0E8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_7d3c41124d03eaa3a254b222,12/12/2025,2990.35,Bill.com         Receivable        015ZKNJEXYS4Y36 Multiple Payments Bill.com Receivables 015ZKNJEX,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_7d3c41124d03eaa3a254b222,12/12/2025,2990.35,Bill.com         Receivable        015ZKNJEXYS4Y36 Multiple Payments Bill.com Receivables 015ZKNJEX,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_51ed2514d8242b30368f4f05,4/2/2020,50.26,STRIPE           TRANSFER          ST-Z5Q4J7P9G1U8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_81848504d3b9a1ac08da0f4d,12/2/2020,351.63,MIGHTYCAUSE FDN  GRANTDEP   201201       XXXXX6681 WILDFLOWER FOUNDATION,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_fad32a35325f2135b3925c9a,9/24/2019,5000,INTUIT PYMT SOLN DEPOSIT    190924 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_2912f67dddf8f3db925586f1,8/16/2019,335.39,"1330 Lagoon Aven PAYMENTS   190815 EFT-00740619    NTE*ZZZ*POAHFHSNKYP9XMKJND,\",exclusion_reason,RENT_REFUND,approved,owner annotation 2026-07-23
-bdep_81da606b043dea0c7374dd4f,5/18/2026,5351.78,Bill.com         Receivable        016RXYDPT103TX2 Multiple Payments Bill.com Receivables 016RXYDPT,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_81da606b043dea0c7374dd4f,5/18/2026,5351.78,Bill.com         Receivable        016RXYDPT103TX2 Multiple Payments Bill.com Receivables 016RXYDPT,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_1eaffcf4b6f867735cd82766,5/2/2022,290.77,BENEVITY FUND    DONATION   220331 7ZNZZ99HHD      WILDFLOWER FOUNDATION,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_8df6536955806037835c0d5a,8/24/2022,49.64,STRIPE           TRANSFER          ST-Z2E9D8U6X0A3 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_dc4e13d2b4d550c327b434d4,12/27/2019,1404,INTUIT PYMT SOLN DEPOSIT    191227 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
@@ -760,7 +760,7 @@ bdep_0781ed02a01651fb98739643,11/7/2019,1677.5,INTUIT PYMT SOLN DEPOSIT    19110
 bdep_a3eb8d1d39d0a281776d2b24,1/10/2019,250,Varde Management Wells Farg 190109 0000000566      RMR*IV*Contribution 201**250\,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_ee092f6cb7bfebf60226e03f,9/22/2022,49.64,STRIPE           TRANSFER          ST-V7X6O1U7M9S7 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_c478362a2d13e2adc9e2e624,5/19/2023,40000,Education Forwar Bill.com          016CZJEMZ2NJR4X Education Forward DC Bill.com 016CZJEMZ2NJR4X In,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
-bdep_dd2ed363dc8760b7dddbbed2,10/7/2025,34506.38,Bill.com         Receivable        015ZTOPTVFOQFTY Multiple Payments Bill.com Receivables 015ZTOPTV,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_dd2ed363dc8760b7dddbbed2,10/7/2025,34506.38,Bill.com         Receivable        015ZTOPTVFOQFTY Multiple Payments Bill.com Receivables 015ZTOPTV,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_75594fff3d4899631eb5f9f4,2/9/2024,250,Common Future    BILL PAY                          Common Future PAYING BILL VIA RAMP,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_8e1716ab115ee93b87641ab4,7/22/2022,49.64,STRIPE           TRANSFER          ST-V4S1F6A3C8U1 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_3752ba0db4d3073e6c6a3a5b,1/15/2026,150,Bill.com         VoidPaymnt        015DZMIGNMTMDGX Banco Popular de Puerto Rico Bill.com 015DZMIGNM,exclusion_reason,PAYMENT_REFUND,approved,owner annotation 2026-07-23
@@ -791,7 +791,7 @@ bdep_d61721dea6fc7c9226a84b69,12/10/2024,47.37,STRIPE           TRANSFER        
 bdep_d57e765331dedbdbf26454dd,6/13/2022,1611.67,BASIC            BASICCOBRA 220613                 The Wildflower Foundat,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
 bdep_9c6709ce571496404ac198be,8/15/2024,75000,Bainum Family Fo Receivable        016HSGIPU3G6EAY 016HSGIPU3G6EAY Bainum Family Fo Bill.com Inv G,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_ab56a568f98e0e055987eb59,1/29/2025,545.45,Desert Peach Mon Bill.com          026TYCBOR193LZY Desert Peach Montessori School Bill.com 026TYCBO,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_3fa44f3e6e3996ecba31bc16,10/9/2025,1474.11,Bill.com         Receivable        015MFIZRTAOVDJM Multiple Payments Bill.com Receivables 015MFIZRT,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_3fa44f3e6e3996ecba31bc16,10/9/2025,1474.11,Bill.com         Receivable        015MFIZRTAOVDJM Multiple Payments Bill.com Receivables 015MFIZRT,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_ba31f6567d362fe10b5569a7,5/14/2025,69833.29,ONLINE TRANSFER CSP MARCH PAYROLL REF #BB0SDM78S3,inclusion_descriptor,CSP,approved,owner annotation 2026-07-23
 bdep_c9686a81b7d08e4d34265495,3/25/2026,47.25,STRIPE           TRANSFER          ST-D5H5Q6R7R7S8 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_9624069355457b80e28f44a1,10/8/2025,666.67,Orchid Montessor Bill.com          016IEZUWD3VRBRP Orchid Montessori Bill.com 016IEZUWD3VRBRP Inv T,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -855,8 +855,8 @@ bdep_f1aec8ed14f5d8b79399e9a1,6/29/2026,2675.89,"Bill.com         Receivable    
 bdep_1729e1f0f5b5f22e6bb27666,7/23/2025,1363.65,Orchid Montessor Bill.com          016PITAOC3SWRLU Orchid Montessori Bill.com 016PITAOC3SWRLU Multi,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_84652e5a393079c871d72872,9/19/2024,811.08,"Snowdrop Montess Bill.com          026NOHNLJ12YEJZ Snowdrop Montessori School, Inc. Bill.com 026NOH",exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_beb87fdebb748aba6bd15f2c,1/15/2026,4990.56,Wildflower New Y Receivable        016DIWVSS3ZATNZ 016DIWVSS3ZATNZ Wildflower New Y Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_d19d4c32b0e8ca29f189aa81,9/17/2025,9247.32,Minnesota Wildfl Receivable        016QNELPI3UZZA3 016QNELPI3UZZA3 Minnesota Wildfl Bill.com Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
-bdep_5392964f787e7176da6644d4,4/7/2026,35169.5,Bill.com         Receivable        015ZRLSHBSXS5J2 Multiple Payments Bill.com Receivables 015ZRLSHB,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_d19d4c32b0e8ca29f189aa81,9/17/2025,9247.32,Minnesota Wildfl Receivable        016QNELPI3UZZA3 016QNELPI3UZZA3 Minnesota Wildfl Bill.com Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
+bdep_5392964f787e7176da6644d4,4/7/2026,35169.5,Bill.com         Receivable        015ZRLSHBSXS5J2 Multiple Payments Bill.com Receivables 015ZRLSHB,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_91f1d7a03d0991a17de00bcf,8/11/2021,23.67,STRIPE           TRANSFER          ST-H7A9O5E5Q2W3 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
 bdep_25c72f7208af44dc9f224289,1/9/2017,48.88,GUSTO TAX 786957 170109 6semjmf7vfv The Wildflower Foundat,exclusion_reason,PAYROLL_TAX_REFUND,approved,owner annotation 2026-07-23
 bdep_be552e24c05354ca51b49e47,1/10/2024,540,National Black C Bill.com          016OZFCYX37K8GG National Black Child Development Institute Bill.,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
@@ -874,7 +874,7 @@ bdep_0dacc1f00e3889bf69fe664d,4/12/2019,237.5,INTUIT PYMT SOLN DEPOSIT    190412
 bdep_4f00a38ab61f681199974988,9/18/2017,18331.95,INTUIT PYMT SOLN DEPOSIT 170917 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_ec9e01e54be38073b17e726f,2/22/2021,40.54,AMZNDC603YDK     AmazonSmil 210222 6AIUDA2Q87IHXTN payments.amazon.com ID#6AIUDA2Q87IHXTN,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_dcc7280c5e7558fa7c12bd1d,7/12/2021,23.67,STRIPE           TRANSFER          ST-N1V6A5D0H8S2 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
-bdep_026a22e1f4084f6ee6242896,1/6/2025,1090.9,Sage Montessori  Bill.com          016ZTAUTK3LM5P0  Sage Montessori Bill.com 016ZTAUTK3LM5P0 Multip,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_026a22e1f4084f6ee6242896,1/6/2025,1090.9,Sage Montessori  Bill.com          016ZTAUTK3LM5P0  Sage Montessori Bill.com 016ZTAUTK3LM5P0 Multip,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_8908a628ef3d9f5f9d14224c,5/23/2025,1454.55,Wildflower Monte Receivable        016AQXAXL3QQV35 016AQXAXL3QQV35 Wildflower Monte Bill.com Inv TW,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_2e617625a540423ebdfc820f,9/17/2025,200000,Bainum Family Fo Receivable        016YMRPZX3UZZA4 016YMRPZX3UZZA4 Bainum Family Fo Bill.com Inv G,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_e859e3dd498c09cb7f24e5d2,10/17/2025,975,Bill.com         Receivable        015UBDZXPCPACKM Miramelinda Montessori School Bill.com 015UBDZXP,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -897,7 +897,7 @@ bdep_f66d5c0faee07189f1f0d260,4/23/2019,1745,INTUIT PYMT SOLN DEPOSIT    190423 
 bdep_7b30b719f3eba60bca684ee4,11/26/2024,545.45,Rain Lily Montes Receivable        016RYAICK3K7MOL 016RYAICK3K7MOL Rain Lily Montes Bill.com Inv CS,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_08d6533922c8c22ba4da84bb,4/4/2025,454.55,Bergamot Montess Bill.com          026UHPZJV1CBXKR Bergamot Montessori Bill.com 026UHPZJV1CBXKR Inv,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
 bdep_b5bac8dce7a7d357486d5f30,5/16/2024,13300,Wild Rose Montes Bill.com          015HVMGFEU1SSZU Wild Rose Montessori School Bill.com 015HVMGFEU1,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
-bdep_4c457d9780afb9c1524a08c9,5/7/2026,37986.28,Bill.com         Receivable        015ACWLRNFZJTG0 Multiple Payments Bill.com Receivables 015ACWLRN,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_4c457d9780afb9c1524a08c9,5/7/2026,37986.28,Bill.com         Receivable        015ACWLRNFZJTG0 Multiple Payments Bill.com Receivables 015ACWLRN,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_2c3e4b55acdc03dc91b39d33,5/22/2020,23.47,AMZNN0JU5ZS2     AmazonSmil 200522 4MOBXIQHMQ7IRLI payments.amazon.com ID#4MOBXIQHMQ7IRLI,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_909d6b9e9122e415346663ec,7/7/2023,23.46,GUSTO            TAX 257344 230707 6semjukqncv     The Wildflower Foundat,exclusion_reason,PAYROLL_TAX_REFUND,approved,owner annotation 2026-07-23
 bdep_669916cc73e319d6724d2c85,10/29/2024,545.45,Rain Lily Montes Receivable        016OMOKHX3J5AN1 016OMOKHX3J5AN1 Rain Lily Montes Bill.com Inv 79,exclusion_reason,MEMBERSHIP_FEE,approved,owner annotation 2026-07-23
@@ -939,7 +939,7 @@ bdep_c7c5f21ed2a3a3347212c81e,5/31/2022,8.75,AMZNXFX9EGHK     AmazonSmil 220530 
 bdep_a305fb6234b756ada8337e78,7/5/2019,400,INTUIT PYMT SOLN DEPOSIT    190704 524771997507722 THE WILDFLOWER FOUNDAT,exclusion_reason,LOAN_PAYMENT,approved,owner annotation 2026-07-23
 bdep_3015d2982c695f84850b3f2f,5/4/2023,7.57,AMZNII0K4WBE     AmazonSmil 230504 4C3D492MTCV37LE payments.amazon.com ID#4C3D492MTCV37LE,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_02d4dbd58f375e7f620bae15,3/10/2021,681.3,COBRA TRUST ACCT BASICPacif                        COBRA REMIT,exclusion_reason,COBRA,approved,owner annotation 2026-07-23
-bdep_97caf51c35119f3a052bf513,3/6/2026,43072.13,Bill.com         Receivable        015IXQSSZIW72JN Multiple Payments Bill.com Receivables 015IXQSSZ,inclusion_descriptor,MULTIPLE_PAYMENT_RESEARCH,approved,owner annotation 2026-07-23
+bdep_97caf51c35119f3a052bf513,3/6/2026,43072.13,Bill.com         Receivable        015IXQSSZIW72JN Multiple Payments Bill.com Receivables 015IXQSSZ,needs_research,MULTIPLE_PAYMENT_RESEARCH,unresolved,owner annotation 2026-07-23
 bdep_bcb0afdc8be2ec732aa87fea,8/13/2020,6.36,AMZN3G96BA5Y     AmazonSmil 200813 4ONT7YVPOP5MQJQ payments.amazon.com ID#4ONT7YVPOP5MQJQ,inclusion_descriptor,DONATION,approved,owner annotation 2026-07-23
 bdep_70334c436b2a586ce7bf6611,3/8/2022,5.39,PURCHASE RETURN                         AUTHORIZED ON   03/08 TARGET T- 1300 W Lake     Minneapolis   MN  P000000275208494   CARD 7365,exclusion_reason,PURCHASE_REFUND,approved,owner annotation 2026-07-23
 bdep_7b8119b30f2f5f51975f9b28,11/1/2024,4.46,STRIPE           TRANSFER          ST-V0Z6N3P9L1Q7 THE WILDFLOWER FOUNDAT,inclusion_descriptor,STRIPE_DONATION,approved,owner annotation 2026-07-23
