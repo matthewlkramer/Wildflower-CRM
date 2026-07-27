@@ -1183,11 +1183,6 @@ export const bankDepositComponentSourceEnum = pgEnum(
   ["qbo_inferred", "check_register", "bank_data", "manual"],
 );
 
-export const depositQboMatchBasisEnum = pgEnum("deposit_qbo_match_basis", [
-  "deposit_header_exact",
-  "deposit_header_ambiguous",
-]);
-
 // Disposition of a QBO expected-vs-actual accounting comparison
 // (docs/adr-bank-spine-money-model.md, Phase 7). Accounting REVIEW state, not
 // a money ledger: `consistent` — QBO matches the expected posting;

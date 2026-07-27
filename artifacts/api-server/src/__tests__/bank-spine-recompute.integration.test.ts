@@ -26,7 +26,6 @@ let schema: {
   paymentUnits: Db["paymentUnits"];
   bankDepositComponents: Db["bankDepositComponents"];
   bankTransactions: Db["bankTransactions"];
-  bankDepositQboRegister: Db["bankDepositQboRegister"];
   qboAccountingChecks: Db["qboAccountingChecks"];
   sourceLinks: Db["sourceLinks"];
   giftsAndPayments: Db["giftsAndPayments"];
@@ -43,7 +42,6 @@ const depositIds: string[] = [];
 const paymentUnitIds: string[] = [];
 const componentIds: string[] = [];
 const bankTransactionIds: string[] = [];
-const registerLinkIds: string[] = [];
 const giftIds: string[] = [];
 const applicationIds: string[] = [];
 const orgIds: string[] = [];
@@ -138,7 +136,6 @@ beforeAll(async () => {
     paymentUnits: dbMod.paymentUnits,
     bankDepositComponents: dbMod.bankDepositComponents,
     bankTransactions: dbMod.bankTransactions,
-    bankDepositQboRegister: dbMod.bankDepositQboRegister,
     qboAccountingChecks: dbMod.qboAccountingChecks,
     sourceLinks: dbMod.sourceLinks,
     giftsAndPayments: dbMod.giftsAndPayments,
@@ -194,11 +191,6 @@ afterAll(async () => {
     await db
       .delete(schema.sourceLinks)
       .where(inArrayFn(schema.sourceLinks.bankTransactionId, bankTransactionIds));
-  }
-  if (registerLinkIds.length) {
-    await db
-      .delete(schema.bankDepositQboRegister)
-      .where(inArrayFn(schema.bankDepositQboRegister.id, registerLinkIds));
   }
   if (bankTransactionIds.length) {
     await db
@@ -417,10 +409,9 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("projects a legacy register tie into a qbo_register_deposit source_link", async () => {
+  it("writes a same-day match as a qbo_register_deposit source_link", async () => {
     const depositId = await seedDeposit("711.00", "2026-08-10");
     const registerId = await seedQboRegister("711.00", "2026-08-10");
-    registerLinkIds.push(`bdqr_${depositId}`);
 
     await recompute.recomputeBankSpine();
 
