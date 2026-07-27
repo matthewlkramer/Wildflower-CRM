@@ -24,6 +24,7 @@
 import type { db } from "@workspace/db";
 import { paymentApplications, paymentUnits } from "@workspace/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { syncUnitGiftPointers } from "./paymentApplications";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -96,6 +97,7 @@ export async function absorbGiftEvidenceIntoSurvivor(
     .select({
       id: paymentApplications.id,
       giftId: paymentApplications.giftId,
+      paymentUnitId: paymentApplications.paymentUnitId,
       paymentId: paymentUnits.sourceStagedPaymentId,
       stripeChargeId: paymentUnits.stripeChargeId,
       donorboxDonationId: paymentUnits.donorboxDonationId,
@@ -232,6 +234,10 @@ export async function absorbGiftEvidenceIntoSurvivor(
       })
       .where(eq(paymentApplications.id, keeper.id));
   }
+  await syncUnitGiftPointers(
+    tx,
+    ledgerRows.map((r) => r.paymentUnitId),
+  );
 
   // ── 4. QuickBooks link state ──────────────────────────────────────────────
   // Nothing to normalize: the counted ledger consolidation in §3 IS the QB link

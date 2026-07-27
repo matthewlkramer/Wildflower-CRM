@@ -13,7 +13,25 @@
  * Everything is loaded via dynamic `import()` so this module has no top-level
  * `@workspace/db` side effect — preserving the integration suites' "skip when no
  * real DATABASE_URL" pattern (the parent module throws at import if unset).
+ *
+ * `payment_units.gift_id` (the successor unit→gift pointer, ON DELETE
+ * RESTRICT) is dual-written at booking time, so every clear helper also
+ * detaches the pointer on the affected units — otherwise a teardown deleting
+ * the gifts would trip the FK.
  */
+
+/** Null out payment_units.gift_id for units pointing at the given gifts. */
+async function detachUnitGiftPointersForGiftIds(
+  giftIds: string[],
+): Promise<void> {
+  if (!giftIds.length) return;
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
+  await db
+    .update(paymentUnits)
+    .set({ giftId: null })
+    .where(inArray(paymentUnits.giftId, giftIds));
+}
 
 /** Resolve the ledger-row ids whose unit sources one of the given QB payments. */
 async function ledgerIdsForStagedIds(stagedIds: string[]): Promise<string[]> {
@@ -53,9 +71,14 @@ export async function clearPaymentApplicationsForRealm(
     .where(eq(stagedPayments.realmId, realmId));
   const ids = rows.map((r) => r.id);
   if (!ids.length) return;
+  const giftRows = await db
+    .select({ giftId: paymentApplications.giftId })
+    .from(paymentApplications)
+    .where(inArray(paymentApplications.id, ids));
   await db
     .delete(paymentApplications)
     .where(inArray(paymentApplications.id, ids));
+  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
 }
 
 /** Clear ledger rows whose unit sources an explicit set of staged-payment ids. */
@@ -67,9 +90,14 @@ export async function clearPaymentApplicationsForStagedIds(
   if (!ids.length) return;
   const { db, paymentApplications } = await import("@workspace/db");
   const { inArray } = await import("drizzle-orm");
+  const giftRows = await db
+    .select({ giftId: paymentApplications.giftId })
+    .from(paymentApplications)
+    .where(inArray(paymentApplications.id, ids));
   await db
     .delete(paymentApplications)
     .where(inArray(paymentApplications.id, ids));
+  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
 }
 
 /**
@@ -217,6 +245,7 @@ export async function clearPaymentApplicationsForGiftIds(
   await db
     .delete(paymentApplications)
     .where(inArray(paymentApplications.giftId, giftIds));
+  await detachUnitGiftPointersForGiftIds(giftIds);
 }
 
 /**
@@ -335,9 +364,14 @@ export async function clearPaymentApplicationsForChargeIds(
     .where(inArray(paymentUnits.stripeChargeId, chargeIds));
   const ids = rows.map((r) => r.id);
   if (!ids.length) return;
+  const giftRows = await db
+    .select({ giftId: paymentApplications.giftId })
+    .from(paymentApplications)
+    .where(inArray(paymentApplications.id, ids));
   await db
     .delete(paymentApplications)
     .where(inArray(paymentApplications.id, ids));
+  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
 }
 
 /**

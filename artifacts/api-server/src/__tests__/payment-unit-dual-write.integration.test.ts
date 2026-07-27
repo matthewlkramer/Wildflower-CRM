@@ -351,4 +351,26 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     expect(err).not.toBeNull();
     expect(sqlState(err)).toBe("23505");
   });
+
+  it("keeps payment_units.gift_id converged with the counted ledger at write time", async () => {
+    const gift = await seedGift();
+    const ch = await seedCharge();
+    const unit = await seedStripeUnit(ch);
+
+    await apply({ evidenceSource: "stripe", stripeChargeId: ch }, gift, "100.00");
+    let [pu] = await db
+      .select({ giftId: schema.paymentUnits.giftId })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unit));
+    expect(pu?.giftId).toBe(gift);
+
+    await db.transaction(async (tx) => {
+      await pa.removePaymentApplicationsForStripeCharge(tx, ch);
+    });
+    [pu] = await db
+      .select({ giftId: schema.paymentUnits.giftId })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unit));
+    expect(pu?.giftId).toBeNull();
+  });
 });

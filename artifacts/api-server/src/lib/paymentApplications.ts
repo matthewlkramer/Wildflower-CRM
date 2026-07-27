@@ -270,6 +270,39 @@ async function resolveAndLockAnchor(
 }
 
 /**
+ * Re-derive `payment_units.gift_id` (the successor unit→gift pointer,
+ * docs/adr-unit-gift-pointer.md) for a set of units from their surviving
+ * counted ledger rows. While `payment_applications` remains the write
+ * authority, EVERY ledger mutation (insert / delete / gift re-point /
+ * link_role flip) must call this with the affected unit ids in the same
+ * transaction so the pointer never diverges. The counted-unique index
+ * guarantees at most one counted row per unit, so the subquery is scalar.
+ */
+export async function syncUnitGiftPointers(
+  tx: Tx,
+  unitIds: readonly string[],
+): Promise<void> {
+  const ids = [...new Set(unitIds)].filter(Boolean);
+  if (ids.length === 0) return;
+  const idList = sql.join(
+    ids.map((id) => sql`${id}`),
+    sql`, `,
+  );
+  await tx.execute(sql`
+    UPDATE payment_units pu
+    SET gift_id = (
+      SELECT pa.gift_id FROM payment_applications pa
+      WHERE pa.payment_unit_id = pu.id AND pa.link_role = 'counted'
+    ), updated_at = now()
+    WHERE pu.id IN (${idList})
+      AND pu.gift_id IS DISTINCT FROM (
+        SELECT pa.gift_id FROM payment_applications pa
+        WHERE pa.payment_unit_id = pu.id AND pa.link_role = 'counted'
+      )
+  `);
+}
+
+/**
  * Idempotently book a unit↔gift cash-application ledger row (one per
  * anchor↔gift pair). Caller MUST hold an open transaction.
  *
@@ -371,6 +404,7 @@ export async function applyPaymentApplication(
       targetWhere: anchor.conflictTargetWhere,
       set: values,
     });
+  await syncUnitGiftPointers(tx, [paymentUnitId]);
 }
 
 /**
@@ -381,9 +415,14 @@ export async function removePaymentApplicationsForGift(
   tx: Tx,
   giftId: string,
 ): Promise<void> {
-  await tx
+  const removed = await tx
     .delete(paymentApplications)
-    .where(eq(paymentApplications.giftId, giftId));
+    .where(eq(paymentApplications.giftId, giftId))
+    .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+  await syncUnitGiftPointers(
+    tx,
+    removed.map((r) => r.paymentUnitId),
+  );
 }
 
 /**
@@ -406,7 +445,14 @@ export async function removePaymentApplicationsForPayment(
           .where(eq(paymentUnits.sourceStagedPaymentId, paymentId)),
       ),
     )
-    .returning({ giftId: paymentApplications.giftId });
+    .returning({
+      giftId: paymentApplications.giftId,
+      paymentUnitId: paymentApplications.paymentUnitId,
+    });
+  await syncUnitGiftPointers(
+    tx,
+    removed.map((r) => r.paymentUnitId),
+  );
   return removed.map((r) => r.giftId);
 }
 
@@ -432,7 +478,14 @@ export async function removePaymentApplicationsForStripeCharge(
           .where(eq(paymentUnits.stripeChargeId, stripeChargeId)),
       ),
     )
-    .returning({ giftId: paymentApplications.giftId });
+    .returning({
+      giftId: paymentApplications.giftId,
+      paymentUnitId: paymentApplications.paymentUnitId,
+    });
+  await syncUnitGiftPointers(
+    tx,
+    removed.map((r) => r.paymentUnitId),
+  );
   return removed.map((r) => r.giftId);
 }
 
@@ -456,7 +509,14 @@ export async function removePaymentApplicationsForDonorboxDonation(
           .where(eq(paymentUnits.donorboxDonationId, donorboxDonationId)),
       ),
     )
-    .returning({ giftId: paymentApplications.giftId });
+    .returning({
+      giftId: paymentApplications.giftId,
+      paymentUnitId: paymentApplications.paymentUnitId,
+    });
+  await syncUnitGiftPointers(
+    tx,
+    removed.map((r) => r.paymentUnitId),
+  );
   return removed.map((r) => r.giftId);
 }
 

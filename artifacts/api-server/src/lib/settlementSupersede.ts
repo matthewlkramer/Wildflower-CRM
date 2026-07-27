@@ -6,7 +6,7 @@ import {
   stripeStagedCharges,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
-import { checkBookOnce } from "./paymentApplications";
+import { checkBookOnce, syncUnitGiftPointers } from "./paymentApplications";
 import { amountWithinFeeBand } from "./reconciliationGate";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -231,10 +231,15 @@ export async function applySettlementSupersedeMany(
             ne(paymentApplications.id, d.rowId),
           ),
         );
-      await tx
+      const demoted = await tx
         .update(paymentApplications)
         .set({ linkRole: "corroborating", updatedAt: now })
-        .where(eq(paymentApplications.id, d.rowId));
+        .where(eq(paymentApplications.id, d.rowId))
+        .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+      await syncUnitGiftPointers(
+        tx,
+        demoted.map((r) => r.paymentUnitId),
+      );
       affectedGiftIds.add(d.giftId);
     }
 
@@ -291,10 +296,15 @@ export async function applySettlementSupersedeMany(
       // visible as a `missing` tie) instead of double-counting; a later
       // re-run promotes it once the conflicting booking is reverted.
       if (!guard.ok) continue;
-      await tx
+      const promoted = await tx
         .update(paymentApplications)
         .set({ linkRole: "counted", updatedAt: now })
-        .where(eq(paymentApplications.id, d.rowId));
+        .where(eq(paymentApplications.id, d.rowId))
+        .returning({ paymentUnitId: paymentApplications.paymentUnitId });
+      await syncUnitGiftPointers(
+        tx,
+        promoted.map((r) => r.paymentUnitId),
+      );
       affectedGiftIds.add(d.giftId);
     }
   }
