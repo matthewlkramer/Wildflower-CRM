@@ -22,6 +22,8 @@ import type {
 import type {
   AddBankDepositComponentBody,
   ApproveCompleteMatchBody,
+  AttachDepositQboEvidenceBody,
+  AttachDepositQboEvidenceResult,
   BadRequestResponse,
   BankDepositComponentExclusion,
   BankDepositComponentMutation,
@@ -40,6 +42,8 @@ import type {
   DepositQboComponentMutationResult,
   ExcludeStagedPaymentBody,
   FinanceForbiddenResponse,
+  FlagQboAccountingErrorBody,
+  FlagQboAccountingErrorResult,
   GiftMissingQbList,
   IncompleteGiftList,
   InlineError,
@@ -1092,6 +1096,149 @@ export const useAddBankDepositComponent = <TError = ErrorType<BadRequestResponse
         TContext
       > => {
       return useMutation(getAddBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.
+ * @summary Attach a QuickBooks record to a bank deposit as accounting evidence.
+ */
+export const getAttachDepositQboEvidenceUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/qbo-evidence`
+}
+
+export const attachDepositQboEvidence = async (bankDepositId: string,
+    attachDepositQboEvidenceBody: AttachDepositQboEvidenceBody, options?: RequestInit): Promise<AttachDepositQboEvidenceResult> => {
+
+  return customFetch<AttachDepositQboEvidenceResult>(getAttachDepositQboEvidenceUrl(bankDepositId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      attachDepositQboEvidenceBody,)
+  }
+);}
+
+
+
+
+export const getAttachDepositQboEvidenceMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachDepositQboEvidence>>, TError,{bankDepositId: string;data: BodyType<AttachDepositQboEvidenceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof attachDepositQboEvidence>>, TError,{bankDepositId: string;data: BodyType<AttachDepositQboEvidenceBody>}, TContext> => {
+
+const mutationKey = ['attachDepositQboEvidence'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof attachDepositQboEvidence>>, {bankDepositId: string;data: BodyType<AttachDepositQboEvidenceBody>}> = (props) => {
+          const {bankDepositId,data} = props ?? {};
+
+          return  attachDepositQboEvidence(bankDepositId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AttachDepositQboEvidenceMutationResult = NonNullable<Awaited<ReturnType<typeof attachDepositQboEvidence>>>
+    export type AttachDepositQboEvidenceMutationBody = BodyType<AttachDepositQboEvidenceBody>
+    export type AttachDepositQboEvidenceMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Attach a QuickBooks record to a bank deposit as accounting evidence.
+ */
+export const useAttachDepositQboEvidence = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof attachDepositQboEvidence>>, TError,{bankDepositId: string;data: BodyType<AttachDepositQboEvidenceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof attachDepositQboEvidence>>,
+        TError,
+        {bankDepositId: string;data: BodyType<AttachDepositQboEvidenceBody>},
+        TContext
+      > => {
+      return useMutation(getAttachDepositQboEvidenceMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Upserts the record's qbo_accounting_checks row to correction_needed with a human note, putting it on the accounting-corrections worklist. Never changes money or QBO itself.
+ * @summary Flag a QuickBooks record as an accounting error.
+ */
+export const getFlagQboAccountingErrorUrl = () => {
+
+
+
+
+  return `/api/reconciliation/accounting-checks/flag`
+}
+
+export const flagQboAccountingError = async (flagQboAccountingErrorBody: FlagQboAccountingErrorBody, options?: RequestInit): Promise<FlagQboAccountingErrorResult> => {
+
+  return customFetch<FlagQboAccountingErrorResult>(getFlagQboAccountingErrorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      flagQboAccountingErrorBody,)
+  }
+);}
+
+
+
+
+export const getFlagQboAccountingErrorMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flagQboAccountingError>>, TError,{data: BodyType<FlagQboAccountingErrorBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof flagQboAccountingError>>, TError,{data: BodyType<FlagQboAccountingErrorBody>}, TContext> => {
+
+const mutationKey = ['flagQboAccountingError'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof flagQboAccountingError>>, {data: BodyType<FlagQboAccountingErrorBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  flagQboAccountingError(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FlagQboAccountingErrorMutationResult = NonNullable<Awaited<ReturnType<typeof flagQboAccountingError>>>
+    export type FlagQboAccountingErrorMutationBody = BodyType<FlagQboAccountingErrorBody>
+    export type FlagQboAccountingErrorMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Flag a QuickBooks record as an accounting error.
+ */
+export const useFlagQboAccountingError = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flagQboAccountingError>>, TError,{data: BodyType<FlagQboAccountingErrorBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof flagQboAccountingError>>,
+        TError,
+        {data: BodyType<FlagQboAccountingErrorBody>},
+        TContext
+      > => {
+      return useMutation(getFlagQboAccountingErrorMutationOptions(options));
     }
     /**
  * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.

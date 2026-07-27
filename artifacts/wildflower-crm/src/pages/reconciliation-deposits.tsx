@@ -51,6 +51,8 @@ import {
   useAddBankDepositComponent,
   useRemoveManualBankDepositComponent,
   useSetBankDepositComponentSourceStagedPayment,
+  useAttachDepositQboEvidence,
+  useFlagQboAccountingError,
   DepositExclusionReason,
   type BankDepositExclusion,
   useListPayoutCandidateDeposits,
@@ -69,6 +71,7 @@ import {
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
   type PayoutChargeSummary,
+  type WorkbenchDeposit,
   type WorkbenchDepositCompositionComponentsItem,
   type WorkbenchDepositLens,
   type WorkbenchRecentChange,
@@ -192,6 +195,11 @@ export default function ReconciliationDepositsPage() {
   const [tieChargeFor, setTieChargeFor] = useState<{ payoutId: string; charge: PayoutChargeSummary } | null>(null);
   const [componentQbFor, setComponentQbFor] = useState<{ id: string; charge: PayoutChargeSummary } | null>(null);
   const [clearComponentQbFor, setClearComponentQbFor] = useState<string | null>(null);
+  const [singlePaymentFor, setSinglePaymentFor] = useState<{ depositId: string; amount: string } | null>(null);
+  const [qbEvidenceFor, setQbEvidenceFor] = useState<WorkbenchDeposit | null>(null);
+  const [flagErrorFor, setFlagErrorFor] = useState<WorkbenchDeposit | null>(null);
+  const [flagErrorStagedId, setFlagErrorStagedId] = useState<string>("");
+  const [flagErrorNote, setFlagErrorNote] = useState("");
   const donorboxParams = { queue: "needs_review" as const, search: donorboxSearch.trim() || undefined, limit: 25, page: 1 };
   const donorboxRows = useListDonorboxReview(donorboxParams, {
     query: {
@@ -239,7 +247,9 @@ export default function ReconciliationDepositsPage() {
   const addBankComponent = useAddBankDepositComponent();
   const removeManualComponent = useRemoveManualBankDepositComponent();
   const setComponentQbSource = useSetBankDepositComponentSourceStagedPayment();
-  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmChargeTies.isPending || confirmMatch.isPending || rejectChargeQbTie.isPending || approveCard.isPending || setAccountingDisposition.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending || addBankComponent.isPending || removeManualComponent.isPending || setComponentQbSource.isPending;
+  const attachQboEvidence = useAttachDepositQboEvidence();
+  const flagAccountingError = useFlagQboAccountingError();
+  const busy = reIncludeStaged.isPending || reIncludeCharge.isPending || excludeComponent.isPending || reIncludeComponent.isPending || revertStaged.isPending || revertCharge.isPending || linkCharge.isPending || resolveCharge.isPending || createChargeGift.isPending || linkDonorbox.isPending || createDonorboxGift.isPending || resolveStaged.isPending || createStagedGift.isPending || reconcileStaged.isPending || excludeCharge.isPending || excludeStaged.isPending || confirmRefund.isPending || dismissRefund.isPending || confirmSettlement.isPending || confirmChargeTies.isPending || confirmMatch.isPending || rejectChargeQbTie.isPending || approveCard.isPending || setAccountingDisposition.isPending || confirmDepositQbo.isPending || dismissDepositQbo.isPending || linkPayout.isPending || unlinkPayout.isPending || confirmPayoutBankMatch.isPending || setBankDepositExclusion.isPending || clearBankDepositExclusion.isPending || addBankComponent.isPending || removeManualComponent.isPending || setComponentQbSource.isPending || attachQboEvidence.isPending || flagAccountingError.isPending;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: getListWorkbenchDepositsQueryKey() });
@@ -332,14 +342,67 @@ export default function ReconciliationDepositsPage() {
   const donorBody = (type: DonorType, id: string) => ({ organizationId: type === "organization" ? id : null, individualGiverPersonId: type === "individual" ? id : null, householdId: type === "household" ? id : null });
   const handlePickGift = async (gift: GiftOrPayment) => {
     if (!linkGiftFor) return;
-    if (donorboxLinkRow) {
-      await linkDonorbox.mutateAsync({ id: donorboxLinkRow.id, data: { giftId: gift.id } });
-      await linkAnchorToGift(linkGiftFor, gift.id);
-      setDonorboxLinkRow(null);
-    } else {
-      await linkAnchorToGift(linkGiftFor, gift.id);
+    try {
+      if (donorboxLinkRow) {
+        await linkDonorbox.mutateAsync({ id: donorboxLinkRow.id, data: { giftId: gift.id } });
+        await linkAnchorToGift(linkGiftFor, gift.id);
+        setDonorboxLinkRow(null);
+      } else {
+        await linkAnchorToGift(linkGiftFor, gift.id);
+      }
+      setLinkGiftFor(null);
+      invalidate();
+      toast({ title: "Gift linked", description: `${linkGiftFor.label} now pays “${gift.name ?? gift.id}”.` });
+    } catch (err) {
+      toast({ title: "Couldn't link gift", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
+      invalidate();
     }
-    setLinkGiftFor(null); invalidate();
+  };
+
+  const handleSinglePaymentPick = async (gift: GiftOrPayment) => {
+    if (!singlePaymentFor) return;
+    try {
+      await addBankComponent.mutateAsync({
+        bankDepositId: singlePaymentFor.depositId,
+        data: { mode: "gift", giftId: gift.id },
+      });
+      setSinglePaymentFor(null);
+      invalidate();
+      toast({ title: "Deposit linked to gift", description: `This deposit is now recorded as a single payment for “${gift.name ?? gift.id}”.` });
+    } catch (err) {
+      toast({ title: "Couldn't link deposit to gift", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleQbEvidencePick = async (qbStagedPaymentId: string) => {
+    if (!qbEvidenceFor) return;
+    try {
+      await attachQboEvidence.mutateAsync({
+        bankDepositId: qbEvidenceFor.anchorId,
+        data: { stagedPaymentId: qbStagedPaymentId },
+      });
+      setQbEvidenceFor(null);
+      invalidate();
+      toast({ title: "Accounting evidence attached", description: "The selected QuickBooks record now documents this deposit." });
+    } catch (err) {
+      toast({ title: "Couldn't attach accounting evidence", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
+    }
+  };
+
+  const handleFlagAccountingError = async () => {
+    if (!flagErrorFor || !flagErrorStagedId || !flagErrorNote.trim()) return;
+    try {
+      await flagAccountingError.mutateAsync({
+        data: { stagedPaymentId: flagErrorStagedId, note: flagErrorNote.trim() },
+      });
+      setFlagErrorFor(null);
+      setFlagErrorStagedId("");
+      setFlagErrorNote("");
+      invalidate();
+      toast({ title: "Accounting error flagged", description: "The record is on the accounting-corrections worklist." });
+    } catch (err) {
+      toast({ title: "Couldn't flag accounting error", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
+    }
   };
 
   const handleCreateFromDonorbox = async (row: DonorboxReviewRow) => {
@@ -570,6 +633,13 @@ export default function ReconciliationDepositsPage() {
       setAccountingDispositionFor({ checkId, disposition });
       setAccountingDispositionNote("");
     },
+    openSinglePaymentDeposit: (depositId, amount) => setSinglePaymentFor({ depositId, amount }),
+    openDepositQbEvidenceSearch: (deposit) => setQbEvidenceFor(deposit),
+    openFlagAccountingError: (deposit) => {
+      setFlagErrorFor(deposit);
+      setFlagErrorStagedId(deposit.qbRecords[0]?.stagedPaymentId ?? deposit.accountingChecks[0]?.stagedPaymentId ?? "");
+      setFlagErrorNote("");
+    },
   };
 
   const handleUndo = async (change: WorkbenchRecentChange) => {
@@ -715,6 +785,61 @@ export default function ReconciliationDepositsPage() {
         title="Link to an existing gift"
         description={linkGiftFor ? `Pick the CRM donation record that ${linkGiftFor.label} pays.` : undefined}
       />
+      <GiftSearchDialog
+        open={singlePaymentFor != null}
+        onOpenChange={(open) => { if (!open && !busy) setSinglePaymentFor(null); }}
+        onPick={(gift) => void handleSinglePaymentPick(gift)}
+        busy={busy}
+        title="Single payment deposit"
+        description={singlePaymentFor ? `Record this ${formatCurrency(singlePaymentFor.amount)} deposit as a single payment for an existing CRM gift.` : undefined}
+      />
+      {qbEvidenceFor ? (
+        <TieChargeQbDialog
+          payoutId=""
+          charge={{
+            id: qbEvidenceFor.anchorId,
+            payerName: qbEvidenceFor.bank.memo ?? qbEvidenceFor.bank.reference ?? qbEvidenceFor.anchorId,
+            amount: qbEvidenceFor.bank.amount,
+            date: qbEvidenceFor.date ?? null,
+          }}
+          mode="component"
+          open
+          onOpenChange={(open) => { if (!open) setQbEvidenceFor(null); }}
+          onPick={(id) => void handleQbEvidencePick(id)}
+          busy={busy}
+        />
+      ) : null}
+      <AlertDialog open={flagErrorFor != null} onOpenChange={(open) => { if (!open && !busy) setFlagErrorFor(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Flag accounting error</AlertDialogTitle>
+            <AlertDialogDescription>Puts the selected QuickBooks record on the accounting-corrections worklist. This records a review decision only — it does not change money or QuickBooks itself.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="flag-error-record">QuickBooks record</label>
+              <Select value={flagErrorStagedId} onValueChange={setFlagErrorStagedId}>
+                <SelectTrigger id="flag-error-record"><SelectValue placeholder="Pick a record" /></SelectTrigger>
+                <SelectContent>
+                  {(flagErrorFor?.qbRecords ?? []).map((record) => (
+                    <SelectItem key={record.stagedPaymentId} value={record.stagedPaymentId}>
+                      {(record.payerName ?? record.memo ?? record.lineDescription ?? record.stagedPaymentId)} · {formatCurrency(record.amount ?? "0")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="flag-error-note">What's wrong?</label>
+              <Textarea id="flag-error-note" value={flagErrorNote} onChange={(event) => setFlagErrorNote(event.target.value)} placeholder="Describe the accounting error" />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={busy || !flagErrorStagedId || !flagErrorNote.trim()} onClick={() => void handleFlagAccountingError()}>Flag error</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <DonorboxSearchDialog
         open={donorboxFor != null}
         onOpenChange={(open) => { if (!open) { setDonorboxFor(null); setDonorboxSearch(""); } }}

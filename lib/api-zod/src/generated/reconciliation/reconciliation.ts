@@ -571,7 +571,41 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
   "kind": zod.enum(['check', 'direct_ach', 'wire', 'other']),
   "amount": zod.string(),
   "receivedDate": zod.string().date().nullish()
+}),zod.object({
+  "mode": zod.enum(['gift']),
+  "giftId": zod.string(),
+  "amount": zod.string().nullish().describe('Component amount in major units; defaults to the gift\'s unclaimed unit amount or the deposit\'s unexplained remainder.')
 })])
+
+/**
+ * Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.
+ * @summary Attach a QuickBooks record to a bank deposit as accounting evidence.
+ */
+export const AttachDepositQboEvidenceParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+export const AttachDepositQboEvidenceBody = zod.object({
+  "stagedPaymentId": zod.string()
+})
+
+/**
+ * Finance/admin review only. Upserts the record's qbo_accounting_checks row to correction_needed with a human note, putting it on the accounting-corrections worklist. Never changes money or QBO itself.
+ * @summary Flag a QuickBooks record as an accounting error.
+ */
+
+
+
+export const FlagQboAccountingErrorBody = zod.object({
+  "stagedPaymentId": zod.string(),
+  "note": zod.string().min(1)
+})
+
+export const FlagQboAccountingErrorResponse = zod.object({
+  "id": zod.string(),
+  "stagedPaymentId": zod.string(),
+  "disposition": zod.enum(['correction_needed'])
+})
 
 /**
  * Finance/admin review only. Removes a manual component only when it has no counted gift/application; a now-orphaned placeholder/create payment unit is removed in the same transaction.
