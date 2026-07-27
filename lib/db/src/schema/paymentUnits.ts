@@ -140,6 +140,14 @@ export const paymentUnits = pgTable(
 
     lifecycle: paymentUnitLifecycleEnum("lifecycle").notNull().default("received"),
 
+    // FALSE when this unit's money will never appear as a bank_deposit_components
+    // tie because it was deposited outside the covered bank-export accounts
+    // (e.g. CSP federal draws landing in an uncovered account). A deposit-
+    // coverage lens should treat such units as complete, not missing evidence.
+    // The why lives in bankDepositNote.
+    bankDepositExpected: boolean("bank_deposit_expected").notNull().default(true),
+    bankDepositNote: text("bank_deposit_note"),
+
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
