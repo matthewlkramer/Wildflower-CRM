@@ -5,6 +5,7 @@ import {
   qbLedgerSumForGift,
   stripeLedgerExistsForGift,
   stripeLedgerSumForGift,
+  stripeLedgerNetSumForGift,
   donorboxLedgerExistsForGift,
   donorboxLedgerSumForGift,
 } from "./paymentApplications";
@@ -86,12 +87,16 @@ export function deriveGiftQbTie(input: GiftQbTieInput): GiftQbTie {
  *
  * Source precedence (never cross-source SUM): QB > Stripe > Donorbox.
  * Fee band: gift >= evidence − ½¢  AND  gift ≤ evidence × 1.1 + 1.
+ * Stripe evidence ties at EITHER the charge gross or its fee-net sum —
+ * whether the gift was booked gross or net is a QBO-plane accounting fact,
+ * not a money-identity mismatch.
  */
 export function deriveGiftQbTieLiveExpr(): SQL<string> {
   const hasQb = qbLedgerExistsForGift();
   const sumQb = qbLedgerSumForGift();
   const hasStripe = stripeLedgerExistsForGift();
   const sumStripe = stripeLedgerSumForGift();
+  const netStripe = stripeLedgerNetSumForGift();
   const hasDonorbox = donorboxLedgerExistsForGift();
   const sumDonorbox = donorboxLedgerSumForGift();
   const offBooks = giftIsOffBooksExpr();
@@ -101,16 +106,19 @@ export function deriveGiftQbTieLiveExpr(): SQL<string> {
     WHEN ${offBooks} THEN 'exempt'
     WHEN NOT (${hasQb} OR ${hasStripe} OR ${hasDonorbox}) THEN 'missing'
     WHEN ${amount} IS NULL THEN 'tied'
-    WHEN ${amount}::numeric >= (CASE
-          WHEN ${hasQb} THEN ${sumQb}::numeric
-          WHEN ${hasStripe} THEN ${sumStripe}::numeric
-          ELSE ${sumDonorbox}::numeric
-        END) - 0.01
-      AND ${amount}::numeric <= (CASE
-          WHEN ${hasQb} THEN ${sumQb}::numeric
-          WHEN ${hasStripe} THEN ${sumStripe}::numeric
-          ELSE ${sumDonorbox}::numeric
-        END) * 1.1 + 1
+    WHEN ${hasQb}
+      AND ${amount}::numeric >= ${sumQb}::numeric - 0.01
+      AND ${amount}::numeric <= ${sumQb}::numeric * 1.1 + 1
+      THEN 'tied'
+    WHEN NOT ${hasQb} AND ${hasStripe}
+      AND ((${amount}::numeric >= ${sumStripe}::numeric - 0.01
+            AND ${amount}::numeric <= ${sumStripe}::numeric * 1.1 + 1)
+        OR (${amount}::numeric >= ${netStripe}::numeric - 0.01
+            AND ${amount}::numeric <= ${netStripe}::numeric * 1.1 + 1))
+      THEN 'tied'
+    WHEN NOT ${hasQb} AND NOT ${hasStripe} AND ${hasDonorbox}
+      AND ${amount}::numeric >= ${sumDonorbox}::numeric - 0.01
+      AND ${amount}::numeric <= ${sumDonorbox}::numeric * 1.1 + 1
       THEN 'tied'
     ELSE 'amount_mismatch'
   END`;
@@ -129,24 +137,35 @@ export function deriveGiftQbTieLiveRaw(
   giftIdRef: string,
   amountRef: string,
 ): string {
-  const qbWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'quickbooks' AND pa_qbt.link_role = 'counted'`;
-  const stripeWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'stripe' AND pa_qbt.link_role = 'counted'`;
-  const donorboxWhere = `pa_qbt.gift_id = ${giftIdRef} AND pa_qbt.evidence_source = 'donorbox' AND pa_qbt.link_role = 'counted'`;
-  const qbEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${qbWhere})`;
-  const stripeEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${stripeWhere})`;
-  const donorboxEx = `EXISTS (SELECT 1 FROM payment_applications pa_qbt WHERE ${donorboxWhere})`;
-  const qbSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${qbWhere})`;
-  const stripeSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${stripeWhere})`;
-  const donorboxSum = `(SELECT COALESCE(SUM(pa_qbt.amount_applied), 0) FROM payment_applications pa_qbt WHERE ${donorboxWhere})`;
-  const linkAmt = `CASE WHEN ${qbEx} THEN ${qbSum}::numeric WHEN ${stripeEx} THEN ${stripeSum}::numeric ELSE ${donorboxSum}::numeric END`;
+  const qbWhere = `pu_qbt.gift_id = ${giftIdRef} AND pu_qbt.source_staged_payment_id IS NOT NULL`;
+  const stripeWhere = `pu_qbt.gift_id = ${giftIdRef} AND pu_qbt.stripe_charge_id IS NOT NULL`;
+  const donorboxWhere = `pu_qbt.gift_id = ${giftIdRef} AND pu_qbt.donorbox_donation_id IS NOT NULL AND pu_qbt.stripe_charge_id IS NULL AND pu_qbt.source_staged_payment_id IS NULL`;
+  const qbEx = `EXISTS (SELECT 1 FROM payment_units pu_qbt WHERE ${qbWhere})`;
+  const stripeEx = `EXISTS (SELECT 1 FROM payment_units pu_qbt WHERE ${stripeWhere})`;
+  const donorboxEx = `EXISTS (SELECT 1 FROM payment_units pu_qbt WHERE ${donorboxWhere})`;
+  const qbSum = `(SELECT COALESCE(SUM(pu_qbt.gross_amount), 0) FROM payment_units pu_qbt WHERE ${qbWhere})`;
+  const stripeSum = `(SELECT COALESCE(SUM(pu_qbt.gross_amount), 0) FROM payment_units pu_qbt WHERE ${stripeWhere})`;
+  const stripeNetSum = `(SELECT COALESCE(SUM(COALESCE(pu_qbt.net_amount, pu_qbt.gross_amount)), 0) FROM payment_units pu_qbt WHERE ${stripeWhere})`;
+  const donorboxSum = `(SELECT COALESCE(SUM(pu_qbt.gross_amount), 0) FROM payment_units pu_qbt WHERE ${donorboxWhere})`;
   const offBooks = `(EXISTS (SELECT 1 FROM gift_allocations ga_qbt WHERE ga_qbt.gift_id = ${giftIdRef}) AND NOT EXISTS (SELECT 1 FROM gift_allocations ga_qbt LEFT JOIN entities e_qbt ON e_qbt.id = ga_qbt.entity_id WHERE ga_qbt.gift_id = ${giftIdRef} AND (ga_qbt.entity_id IS NULL OR COALESCE(e_qbt.expects_payment, true) = true)))`;
 
   return `(CASE
     WHEN ${offBooks} THEN 'exempt'
     WHEN NOT (${qbEx} OR ${stripeEx} OR ${donorboxEx}) THEN 'missing'
     WHEN ${amountRef} IS NULL THEN 'tied'
-    WHEN ${amountRef}::numeric >= (${linkAmt}) - 0.01
-      AND ${amountRef}::numeric <= (${linkAmt}) * 1.1 + 1
+    WHEN ${qbEx}
+      AND ${amountRef}::numeric >= (${qbSum}) - 0.01
+      AND ${amountRef}::numeric <= (${qbSum}) * 1.1 + 1
+      THEN 'tied'
+    WHEN NOT ${qbEx} AND ${stripeEx}
+      AND ((${amountRef}::numeric >= (${stripeSum}) - 0.01
+            AND ${amountRef}::numeric <= (${stripeSum}) * 1.1 + 1)
+        OR (${amountRef}::numeric >= (${stripeNetSum}) - 0.01
+            AND ${amountRef}::numeric <= (${stripeNetSum}) * 1.1 + 1))
+      THEN 'tied'
+    WHEN NOT ${qbEx} AND NOT ${stripeEx} AND ${donorboxEx}
+      AND ${amountRef}::numeric >= (${donorboxSum}) - 0.01
+      AND ${amountRef}::numeric <= (${donorboxSum}) * 1.1 + 1
       THEN 'tied'
     ELSE 'amount_mismatch'
   END)`;

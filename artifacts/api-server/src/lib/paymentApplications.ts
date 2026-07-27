@@ -630,19 +630,25 @@ export async function confirmPaymentApplicationsForPayment(
   return updated.map((r) => r.giftId);
 }
 
-// ─── Read helpers — the authoritative QuickBooks cash-application ledger ─────
+// ─── Read helpers — the counted unit→gift pointer (payment_units.gift_id) ────
 //
-// These build correlated-subquery SQL chunks that read a gift's QuickBooks ledger
-// rows (evidence_source = 'quickbooks'). They are the single source the T003 read
-// cutover flips every QB-link / QB-amount surface onto.
+// These build correlated-subquery SQL chunks over PAYMENT_UNITS, the successor
+// read surface for the counted money↔gift relationship
+// (docs/adr-unit-gift-pointer.md): a unit is counted against a gift iff
+// `payment_units.gift_id` points at it. Corroborating claims live in
+// source_links (`unit_gift_corroboration`) and are invisible here by design.
 //
-// LINK-ROLE FILTER: every reader also constrains `link_role = 'counted'`. Today
-// this is a no-op — the applier and every backfill leave `link_role` at its
-// 'counted' default, so all rows qualify. It is here to fence off the future
-// Phase-5 corroborating fold: when non-counting evidence rows (e.g. a Stripe
-// charge corroborating a QB-settled gift) start landing with `link_role =
-// 'corroborating'`, these QB-tie/link readers must keep counting the settling
-// row ONCE and never double-count the corroborating one.
+// SOURCE SEMANTICS: the ledger's `evidence_source` column maps onto the unit's
+// own anchor columns — quickbooks ⇔ `source_staged_payment_id`, stripe ⇔
+// `stripe_charge_id`, donorbox ⇔ `donorbox_donation_id` with NO stripe/QB
+// anchor (a Stripe-settled Donorbox donation is counted through its charge and
+// is a stripe fact, not a donorbox one). Verified exactly equivalent to the
+// ledger's evidence_source on every prod row at both gift and anchor grain.
+//
+// AMOUNT SEMANTICS: sums read the unit's own gross_amount (net_amount for the
+// net-booked band check in giftQbTie) — `amount_applied` is an accounting-plane
+// fact about the QBO booking, not a unit→gift identity fact, and is not read
+// here.
 //
 // CRITICAL CORRELATION RULE: the gift-id correlation is passed in as a *literal*
 // SQL expression, never as an interpolated drizzle Column. Interpolating a Column
@@ -658,69 +664,86 @@ export async function confirmPaymentApplicationsForPayment(
 // or aliased callers pass their own alias, e.g. `sql.raw("g.id")`.
 export const DEFAULT_GIFT_ID_SQL: SQL = sql.raw('"gifts_and_payments"."id"');
 
-/** EXISTS a QuickBooks cash-application ledger row for the gift. */
+/** EXISTS a QuickBooks-anchored counted payment unit for the gift. */
 export function qbLedgerExistsForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.source_staged_payment_id IS NOT NULL
   )`;
 }
 
-/** SUM(amount_applied) of the gift's QuickBooks ledger rows, as text ('0' none). */
+/** SUM(gross_amount) of the gift's QuickBooks-anchored counted units, as text ('0' none). */
 export function qbLedgerSumForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<string> {
   return sql<string>`(
-    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
-    FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT COALESCE(SUM(pu.gross_amount), 0)::text
+    FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.source_staged_payment_id IS NOT NULL
   )`;
 }
 
 // ─── Per-source counted readers (source-agnostic gift-tie derivation) ────────
 //
-// Identical in shape to the QuickBooks readers above, one per non-QB evidence
-// source, each constrained to `link_role = 'counted'`. `applyGiftQbTieMany`
-// combines the three by PER-SOURCE PRECEDENCE (QB sum wins, else Stripe, else
-// Donorbox) — deliberately NOT a cross-source SUM. A gift settled by BOTH a
-// coarse QB deposit line AND its per-charge Stripe rows carries a counted row of
-// EACH source (migration 0086 does not, and must not, dedupe across sources);
-// summing them would double-count the gift (~2× ⇒ false amount_mismatch, §4.3).
-// Precedence counts exactly one source. The pure all-source SUM is deferred to
-// Phase 4, when settlement_links reclassifies the coarse QB row to
-// link_role='corroborating'. Same bare-column footgun rule — pass a
-// pre-qualified gift-id expression.
+// One per non-QB source, anchored on the unit's own anchor columns.
+// `deriveGiftQbTie*` combines the three by PER-SOURCE PRECEDENCE (QB sum wins,
+// else Stripe, else Donorbox) — deliberately NOT a cross-source SUM: a gift
+// settled by BOTH a coarse QB deposit line AND its per-charge Stripe units
+// would double-count (~2× ⇒ false amount_mismatch, §4.3). Precedence counts
+// exactly one source. Same bare-column footgun rule — pass a pre-qualified
+// gift-id expression.
 
-/** EXISTS a Stripe counted cash-application ledger row for the gift. */
+/** EXISTS a Stripe-charge-anchored counted payment unit for the gift. */
 export function stripeLedgerExistsForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.stripe_charge_id IS NOT NULL
   )`;
 }
 
-/** SUM(amount_applied) of the gift's Stripe counted ledger rows, as text. */
+/** SUM(gross_amount) of the gift's Stripe-anchored counted units, as text. */
 export function stripeLedgerSumForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<string> {
   return sql<string>`(
-    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
-    FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    SELECT COALESCE(SUM(pu.gross_amount), 0)::text
+    FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.stripe_charge_id IS NOT NULL
   )`;
 }
 
-/** EXISTS a Donorbox counted cash-application ledger row for the gift. */
+/**
+ * SUM(net_amount) of the gift's Stripe-anchored counted units, as text
+ * (gross_amount when a unit has no net). The gift QB-tie band accepts a gift
+ * booked at EITHER the charge's gross or its fee-net amount — which one the
+ * accounting record used is a QBO-plane fact, not a unit→gift identity fact.
+ */
+export function stripeLedgerNetSumForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<string> {
+  return sql<string>`(
+    SELECT COALESCE(SUM(COALESCE(pu.net_amount, pu.gross_amount)), 0)::text
+    FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.stripe_charge_id IS NOT NULL
+  )`;
+}
+
+/**
+ * EXISTS a Donorbox-anchored counted payment unit for the gift — donorbox is
+ * the counting source only when the unit has NO stripe/QB anchor (a
+ * Stripe-settled Donorbox donation counts through its charge).
+ */
 export function donorboxLedgerExistsForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.donorbox_donation_id IS NOT NULL
+      AND pu.stripe_charge_id IS NULL AND pu.source_staged_payment_id IS NULL
   )`;
 }
 
@@ -746,12 +769,11 @@ export function donorboxLedgerExistsForGift(
  */
 export function donorboxBackedExistsSql(giftRef: string): string {
   return `EXISTS (
-    SELECT 1 FROM payment_applications pa_dbx
-    JOIN payment_units pu_dbx ON pu_dbx.id = pa_dbx.payment_unit_id
-    WHERE pa_dbx.gift_id = ${giftRef} AND pa_dbx.link_role = 'counted'
+    SELECT 1 FROM payment_units pu_dbx
+    WHERE pu_dbx.gift_id = ${giftRef}
       AND (
-        pa_dbx.evidence_source = 'donorbox'
-        OR (pa_dbx.evidence_source = 'stripe' AND pu_dbx.stripe_charge_id IS NOT NULL
+        pu_dbx.donorbox_donation_id IS NOT NULL
+        OR (pu_dbx.stripe_charge_id IS NOT NULL
             AND EXISTS (
               SELECT 1 FROM donorbox_donations dd_dbx
               WHERE dd_dbx.stripe_charge_id = pu_dbx.stripe_charge_id
@@ -760,14 +782,15 @@ export function donorboxBackedExistsSql(giftRef: string): string {
   )`;
 }
 
-/** SUM(amount_applied) of the gift's Donorbox counted ledger rows, as text. */
+/** SUM(gross_amount) of the gift's Donorbox-only counted units, as text. */
 export function donorboxLedgerSumForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<string> {
   return sql<string>`(
-    SELECT COALESCE(SUM(pa.amount_applied), 0)::text
-    FROM payment_applications pa
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+    SELECT COALESCE(SUM(pu.gross_amount), 0)::text
+    FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.donorbox_donation_id IS NOT NULL
+      AND pu.stripe_charge_id IS NULL AND pu.source_staged_payment_id IS NULL
   )`;
 }
 
@@ -781,9 +804,8 @@ export function qbLedgerPaymentIdForGift(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pu.source_staged_payment_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT pu.source_staged_payment_id FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql} AND pu.source_staged_payment_id IS NOT NULL
     LIMIT 1
   )`;
 }
@@ -816,10 +838,9 @@ export function qbLedgerExistsForGiftExcludingPayment(
   excludePaymentIdSql: SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pa.gift_id = ${giftIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql}
+      AND pu.source_staged_payment_id IS NOT NULL
       AND pu.source_staged_payment_id <> ${excludePaymentIdSql}
   )`;
 }
@@ -834,10 +855,9 @@ export function qbLedgerPaymentIdForGiftExcludingPayment(
   excludePaymentIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pu.source_staged_payment_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pa.gift_id = ${giftIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT pu.source_staged_payment_id FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql}
+      AND pu.source_staged_payment_id IS NOT NULL
       AND pu.source_staged_payment_id <> ${excludePaymentIdSql}
     LIMIT 1
   )`;
@@ -862,10 +882,8 @@ export function chargeIdOwningGiftExcludingCharge(
   excludeChargeIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pu.stripe_charge_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pa.gift_id = ${giftIdSql}
-      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    SELECT pu.stripe_charge_id FROM payment_units pu
+    WHERE pu.gift_id = ${giftIdSql}
       AND pu.stripe_charge_id IS NOT NULL
       AND pu.stripe_charge_id <> ${excludeChargeIdSql}
     LIMIT 1
@@ -896,11 +914,10 @@ export function qbLedgerGiftIdForPaymentExcludingGift(
   excludeGiftIdSql: SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.gift_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    SELECT pu.gift_id FROM payment_units pu
     WHERE pu.source_staged_payment_id = ${paymentIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-      AND pa.gift_id <> ${excludeGiftIdSql}
+      AND pu.gift_id IS NOT NULL
+      AND pu.gift_id <> ${excludeGiftIdSql}
     LIMIT 1
   )`;
 }
@@ -910,9 +927,8 @@ export function qbLedgerExistsForPayment(
   paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pu.gift_id IS NOT NULL
   )`;
 }
 
@@ -937,11 +953,10 @@ export function qbLedgerSoleGiftIdForPayment(
   paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(pa.gift_id) END
-    FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    SELECT CASE WHEN COUNT(*) = 1 THEN MIN(pu.gift_id) END
+    FROM payment_units pu
     WHERE pu.source_staged_payment_id = ${paymentIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
+      AND pu.gift_id IS NOT NULL
   )`;
 }
 
@@ -1008,10 +1023,8 @@ export function stripeLedgerGiftIdForCharge(
   chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.gift_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.stripe_charge_id = ${chargeIdSql}
-      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    SELECT pu.gift_id FROM payment_units pu
+    WHERE pu.stripe_charge_id = ${chargeIdSql} AND pu.gift_id IS NOT NULL
     LIMIT 1
   )`;
 }
@@ -1077,13 +1090,10 @@ export async function giftCountedStripeChargeId(
 ): Promise<string | null> {
   const row = await q
     .select({ stripeChargeId: paymentUnits.stripeChargeId })
-    .from(paymentApplications)
-    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+    .from(paymentUnits)
     .where(
       and(
-        eq(paymentApplications.giftId, giftId),
-        eq(paymentApplications.evidenceSource, "stripe"),
-        eq(paymentApplications.linkRole, "counted"),
+        eq(paymentUnits.giftId, giftId),
         isNotNull(paymentUnits.stripeChargeId),
       ),
     )
@@ -1097,10 +1107,8 @@ export function stripeLedgerCountedExistsForCharge(
   chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.stripe_charge_id = ${chargeIdSql}
-      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.stripe_charge_id = ${chargeIdSql} AND pu.gift_id IS NOT NULL
   )`;
 }
 
@@ -1112,10 +1120,9 @@ export function donorboxLedgerGiftIdForDonation(
   donationIdSql: SQL = DEFAULT_DONATION_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.gift_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.donorbox_donation_id = ${donationIdSql}
-      AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+    SELECT pu.gift_id FROM payment_units pu
+    WHERE pu.donorbox_donation_id = ${donationIdSql} AND pu.gift_id IS NOT NULL
+      AND pu.stripe_charge_id IS NULL AND pu.source_staged_payment_id IS NULL
     LIMIT 1
   )`;
 }
@@ -1125,9 +1132,8 @@ export function donorboxLedgerCountedExistsForDonation(
   donationIdSql: SQL = DEFAULT_DONATION_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.donorbox_donation_id = ${donationIdSql}
-      AND pa.evidence_source = 'donorbox' AND pa.link_role = 'counted'
+    SELECT 1 FROM payment_units pu
+    WHERE pu.donorbox_donation_id = ${donationIdSql} AND pu.gift_id IS NOT NULL
+      AND pu.stripe_charge_id IS NULL AND pu.source_staged_payment_id IS NULL
   )`;
 }
