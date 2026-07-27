@@ -28,6 +28,7 @@ let schema: {
   bankTransactions: Db["bankTransactions"];
   bankDepositQboRegister: Db["bankDepositQboRegister"];
   qboAccountingChecks: Db["qboAccountingChecks"];
+  sourceLinks: Db["sourceLinks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -87,7 +88,11 @@ async function seedDeposit(amount: string, depositDate: string): Promise<string>
   return id;
 }
 
-async function seedQboRegister(amount: string, txnDate: string): Promise<string> {
+async function seedQboRegister(
+  amount: string,
+  txnDate: string,
+  payee?: string,
+): Promise<string> {
   const id = nextId("register");
   await db.insert(schema.bankTransactions).values({
     id,
@@ -95,6 +100,7 @@ async function seedQboRegister(amount: string, txnDate: string): Promise<string>
     sourceFile: "bank-spine-recompute-test.csv",
     txnDate,
     deposit: amount,
+    payee,
     dedupKey: nextId("dedup"),
     occurrence: 0,
   });
@@ -128,6 +134,7 @@ beforeAll(async () => {
     bankTransactions: dbMod.bankTransactions,
     bankDepositQboRegister: dbMod.bankDepositQboRegister,
     qboAccountingChecks: dbMod.qboAccountingChecks,
+    sourceLinks: dbMod.sourceLinks,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -153,6 +160,11 @@ afterAll(async () => {
     await db
       .delete(schema.stagedPayments)
       .where(inArrayFn(schema.stagedPayments.id, stagedIds));
+  }
+  if (bankTransactionIds.length) {
+    await db
+      .delete(schema.sourceLinks)
+      .where(inArrayFn(schema.sourceLinks.bankTransactionId, bankTransactionIds));
   }
   if (registerLinkIds.length) {
     await db
@@ -377,5 +389,69 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       .from(schema.bankDepositQboRegister)
       .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
     expect(rows).toEqual([]);
+  });
+
+  it("projects a legacy register tie into a qbo_register_deposit source_link", async () => {
+    const depositId = await seedDeposit("711.00", "2026-08-10");
+    const registerId = await seedQboRegister("711.00", "2026-08-10");
+    registerLinkIds.push(`bdqr_${depositId}`);
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({
+        id: schema.sourceLinks.id,
+        bankDepositId: schema.sourceLinks.bankDepositId,
+        lifecycle: schema.sourceLinks.lifecycle,
+        matchBasis: schema.sourceLinks.matchBasis,
+      })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.bankTransactionId, registerId));
+    expect(rows).toEqual([
+      {
+        id: `srcl_qrd_${registerId}`,
+        bankDepositId: depositId,
+        lifecycle: "confirmed",
+        matchBasis: "same_day_unique_amount",
+      },
+    ]);
+  });
+
+  it("links same-day/same-payee register rows whose sum equals a deposit", async () => {
+    const depositId = await seedDeposit("750.00", "2026-09-10");
+    const firstRow = await seedQboRegister("500.00", "2026-09-10", "Wend  Ventures");
+    const secondRow = await seedQboRegister("250.00", "2026-09-10", "Wend Ventures");
+
+    await recompute.recomputeBankSpine();
+
+    for (const registerId of [firstRow, secondRow]) {
+      const rows = await db
+        .select({
+          bankDepositId: schema.sourceLinks.bankDepositId,
+          matchBasis: schema.sourceLinks.matchBasis,
+        })
+        .from(schema.sourceLinks)
+        .where(eqFn(schema.sourceLinks.bankTransactionId, registerId));
+      expect(rows).toEqual([
+        { bankDepositId: depositId, matchBasis: "same_donor_multi_row_sum" },
+      ]);
+    }
+  });
+
+  it("multi-row sum does not link when two deposits are candidates", async () => {
+    await seedDeposit("760.00", "2026-10-10");
+    await seedDeposit("760.00", "2026-10-11");
+    const firstRow = await seedQboRegister("700.00", "2026-10-10", "Acme Fund");
+    const secondRow = await seedQboRegister("60.00", "2026-10-10", "Acme Fund");
+
+    await recompute.recomputeBankSpine();
+
+    for (const registerId of [firstRow, secondRow]) {
+      const rows = await db
+        .select({ id: schema.sourceLinks.id })
+        .from(schema.sourceLinks)
+        .where(eqFn(schema.sourceLinks.bankTransactionId, registerId));
+      expect(rows).toEqual([]);
+    }
   });
 });
