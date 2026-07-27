@@ -22,7 +22,9 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  *   4e. QBO-grain source_links ← legacy tie projection + register matching
  *       (docs/adr-qbo-evidence-grain.md; 0189–0191)
  *   5. donorbox pointer        ← pulled charge id / human link  (0165)
- *   6. QBO accounting sidecar  ← expected-vs-actual comparer        (0166)
+ *   6. unit→gift pointer sync  ← counted payment_applications rows
+ *      (docs/adr-unit-gift-pointer.md; 0193–0194)
+ *   7. QBO accounting sidecar  ← expected-vs-actual comparer        (0166)
  *
  * Lifecycle refresh: a charge's refund/dispute facts can change after its unit
  * exists, so step 2 also re-derives lifecycle on existing stripe units.
@@ -672,7 +674,30 @@ export async function recomputeBankSpine(): Promise<void> {
                       WHERE x.donorbox_donation_id = sl.donorbox_donation_id)
   `);
 
-  // 6. QBO expected-vs-actual sidecar (0166's comparer).
+  // 6. Unit→gift pointer sync (docs/adr-unit-gift-pointer.md): while
+  //    payment_applications is still the write authority, keep the successor
+  //    pointer converged with the counted ledger (set from counted rows,
+  //    cleared when none survives). At most one counted row per unit
+  //    (counted-unique index), so the join is scalar-safe.
+  await db.execute(sql`
+    UPDATE payment_units pu
+    SET gift_id = pa.gift_id, updated_at = now()
+    FROM payment_applications pa
+    WHERE pa.payment_unit_id = pu.id
+      AND pa.link_role = 'counted'
+      AND pu.gift_id IS DISTINCT FROM pa.gift_id
+  `);
+  await db.execute(sql`
+    UPDATE payment_units pu
+    SET gift_id = NULL, updated_at = now()
+    WHERE pu.gift_id IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_applications pa
+        WHERE pa.payment_unit_id = pu.id AND pa.link_role = 'counted'
+      )
+  `);
+
+  // 7. QBO expected-vs-actual sidecar (0166's comparer).
   await recomputeQboAccountingChecks();
 }
 

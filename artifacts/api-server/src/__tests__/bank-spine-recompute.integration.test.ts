@@ -29,6 +29,9 @@ let schema: {
   bankDepositQboRegister: Db["bankDepositQboRegister"];
   qboAccountingChecks: Db["qboAccountingChecks"];
   sourceLinks: Db["sourceLinks"];
+  giftsAndPayments: Db["giftsAndPayments"];
+  paymentApplications: Db["paymentApplications"];
+  organizations: Db["organizations"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -41,6 +44,9 @@ const paymentUnitIds: string[] = [];
 const componentIds: string[] = [];
 const bankTransactionIds: string[] = [];
 const registerLinkIds: string[] = [];
+const giftIds: string[] = [];
+const applicationIds: string[] = [];
+const orgIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -135,6 +141,9 @@ beforeAll(async () => {
     bankDepositQboRegister: dbMod.bankDepositQboRegister,
     qboAccountingChecks: dbMod.qboAccountingChecks,
     sourceLinks: dbMod.sourceLinks,
+    giftsAndPayments: dbMod.giftsAndPayments,
+    paymentApplications: dbMod.paymentApplications,
+    organizations: dbMod.organizations,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -143,6 +152,26 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
+  if (applicationIds.length) {
+    await db
+      .delete(schema.paymentApplications)
+      .where(inArrayFn(schema.paymentApplications.id, applicationIds));
+  }
+  if (giftIds.length) {
+    // Clear the pointer first (gift_id is RESTRICT).
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId: null })
+      .where(inArrayFn(schema.paymentUnits.giftId, giftIds));
+    await db
+      .delete(schema.giftsAndPayments)
+      .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  }
+  if (orgIds.length) {
+    await db
+      .delete(schema.organizations)
+      .where(inArrayFn(schema.organizations.id, orgIds));
+  }
   if (componentIds.length) {
     await db
       .delete(schema.bankDepositComponents)
@@ -436,6 +465,58 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
         { bankDepositId: depositId, matchBasis: "same_donor_multi_row_sum" },
       ]);
     }
+  });
+
+  it("syncs the unit→gift pointer with the counted ledger", async () => {
+    const orgId = nextId("org");
+    await db
+      .insert(schema.organizations)
+      .values({ id: orgId, name: `pointer sync org ${RUN}` });
+    orgIds.push(orgId);
+
+    const giftId = nextId("gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      name: "pointer sync test gift",
+      organizationId: orgId,
+      amount: "55.00",
+    });
+    giftIds.push(giftId);
+
+    const unitId = nextId("pu");
+    await db.insert(schema.paymentUnits).values({
+      id: unitId,
+      kind: "check",
+      grossAmount: "55.00",
+    });
+    paymentUnitIds.push(unitId);
+
+    const appId = nextId("pa");
+    await db.insert(schema.paymentApplications).values({
+      id: appId,
+      giftId,
+      paymentUnitId: unitId,
+      amountApplied: "55.00",
+      evidenceSource: "quickbooks",
+    });
+    applicationIds.push(appId);
+
+    await recompute.recomputeBankSpine();
+    let unit = await db
+      .select({ giftId: schema.paymentUnits.giftId })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unitId));
+    expect(unit[0]?.giftId).toBe(giftId);
+
+    await db
+      .delete(schema.paymentApplications)
+      .where(eqFn(schema.paymentApplications.id, appId));
+    await recompute.recomputeBankSpine();
+    unit = await db
+      .select({ giftId: schema.paymentUnits.giftId })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unitId));
+    expect(unit[0]?.giftId).toBeNull();
   });
 
   it("multi-row sum does not link when two deposits are candidates", async () => {
