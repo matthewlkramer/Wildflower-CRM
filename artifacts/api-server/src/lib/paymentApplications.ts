@@ -270,13 +270,16 @@ async function resolveAndLockAnchor(
 }
 
 /**
- * Re-derive `payment_units.gift_id` (the successor unit→gift pointer,
- * docs/adr-unit-gift-pointer.md) for a set of units from their surviving
- * counted ledger rows. While `payment_applications` remains the write
- * authority, EVERY ledger mutation (insert / delete / gift re-point /
- * link_role flip) must call this with the affected unit ids in the same
- * transaction so the pointer never diverges. The counted-unique index
- * guarantees at most one counted row per unit, so the subquery is scalar.
+ * Re-derive the unit→gift pointer AND its tie facts
+ * (docs/adr-unit-gift-pointer.md; fact columns added by 0201:
+ * gift_allocation_id / gift_match_method / gift_confirmed_by_user_id /
+ * gift_confirmed_at / gift_note / created_the_gift) for a set of units from
+ * their surviving counted ledger rows. While `payment_applications` remains
+ * the write authority, EVERY ledger mutation (insert / delete / gift
+ * re-point / link_role flip / confirm) must call this with the affected unit
+ * ids in the same transaction so the successor columns never diverge. The
+ * counted-unique index guarantees at most one counted row per unit, so the
+ * lateral join is scalar; a unit with no counted row clears everything.
  */
 export async function syncUnitGiftPointers(
   tx: Tx,
@@ -290,15 +293,25 @@ export async function syncUnitGiftPointers(
   );
   await tx.execute(sql`
     UPDATE payment_units pu
-    SET gift_id = (
-      SELECT pa.gift_id FROM payment_applications pa
-      WHERE pa.payment_unit_id = pu.id AND pa.link_role = 'counted'
-    ), updated_at = now()
-    WHERE pu.id IN (${idList})
-      AND pu.gift_id IS DISTINCT FROM (
-        SELECT pa.gift_id FROM payment_applications pa
-        WHERE pa.payment_unit_id = pu.id AND pa.link_role = 'counted'
-      )
+    SET gift_id = pa.gift_id,
+        gift_allocation_id = pa.gift_allocation_id,
+        gift_match_method = pa.match_method,
+        gift_confirmed_by_user_id = pa.confirmed_by_user_id,
+        gift_confirmed_at = pa.confirmed_at,
+        gift_note = pa.note,
+        created_the_gift = COALESCE(pa.created_the_gift, false),
+        updated_at = now()
+    FROM (SELECT unnest(ARRAY[${idList}]::text[]) AS id) u
+    LEFT JOIN payment_applications pa
+      ON pa.payment_unit_id = u.id AND pa.link_role = 'counted'
+    WHERE pu.id = u.id
+      AND (pu.gift_id IS DISTINCT FROM pa.gift_id
+        OR pu.gift_allocation_id IS DISTINCT FROM pa.gift_allocation_id
+        OR pu.gift_match_method IS DISTINCT FROM pa.match_method
+        OR pu.gift_confirmed_by_user_id IS DISTINCT FROM pa.confirmed_by_user_id
+        OR pu.gift_confirmed_at IS DISTINCT FROM pa.confirmed_at
+        OR pu.gift_note IS DISTINCT FROM pa.note
+        OR pu.created_the_gift IS DISTINCT FROM COALESCE(pa.created_the_gift, false))
   `);
 }
 
@@ -626,7 +639,14 @@ export async function confirmPaymentApplicationsForPayment(
         eq(paymentApplications.matchMethod, "system"),
       ),
     )
-    .returning({ giftId: paymentApplications.giftId });
+    .returning({
+      giftId: paymentApplications.giftId,
+      paymentUnitId: paymentApplications.paymentUnitId,
+    });
+  await syncUnitGiftPointers(
+    tx,
+    updated.map((r) => r.paymentUnitId),
+  );
   return updated.map((r) => r.giftId);
 }
 

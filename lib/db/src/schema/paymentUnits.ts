@@ -2,6 +2,7 @@ import {
   pgTable,
   text,
   numeric,
+  boolean,
   date,
   timestamp,
   uniqueIndex,
@@ -9,11 +10,17 @@ import {
   check,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { paymentUnitKindEnum, paymentUnitLifecycleEnum } from "./_enums";
+import {
+  paymentUnitKindEnum,
+  paymentUnitLifecycleEnum,
+  paymentApplicationMatchMethodEnum,
+} from "./_enums";
 import { stripeStagedCharges } from "./stripeStagedCharges";
 import { donorboxDonations } from "./donorboxDonations";
 import { stagedPayments } from "./stagedPayments";
 import { giftsAndPayments } from "./giftsAndPayments";
+import { giftAllocations } from "./giftAllocations";
+import { users } from "./users";
 
 /**
  * The canonical **donor-level payment unit** (docs/adr-bank-spine-money-model.md).
@@ -92,6 +99,30 @@ export const paymentUnits = pgTable(
       onDelete: "restrict",
     }),
 
+    // ── Tie facts (0201) — scalar per-unit facts of the unit→gift tie, the
+    // successor home of the counted payment_applications row's columns
+    // (docs/adr-unit-gift-pointer.md, write retirement). All NULL/false while
+    // gift_id is NULL. amount_applied deliberately has no successor here:
+    // gross-vs-net booking is a QBO/accounting-plane fact.
+    // Narrowing pointer to the specific allocation the reviewer chose when
+    // linking (NULL = header-level, the default). SET NULL: dropping an
+    // allocation degrades the tie gracefully to header grain.
+    giftAllocationId: text("gift_allocation_id").references(
+      () => giftAllocations.id,
+      { onDelete: "set null" },
+    ),
+    // How the unit→gift tie was made (system / system_confirmed / human /
+    // charge_tie_supersede).
+    giftMatchMethod: paymentApplicationMatchMethodEnum("gift_match_method"),
+    giftConfirmedByUserId: text("gift_confirmed_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    giftConfirmedAt: timestamp("gift_confirmed_at"),
+    giftNote: text("gift_note"),
+    // TRUE when booking this unit MINTED the gift (vs. matched an existing one).
+    createdTheGift: boolean("created_the_gift").notNull().default(false),
+
     // Provisional provenance for QBO-inferred check units (Phase 3). SET NULL
     // when a bank-native source replaces QBO. Not an application authority.
     sourceStagedPaymentId: text("source_staged_payment_id").references(
@@ -126,6 +157,7 @@ export const paymentUnits = pgTable(
     ),
     index("payment_units_received_date_idx").on(t.receivedDate),
     index("payment_units_gift_id_idx").on(t.giftId),
+    index("payment_units_gift_allocation_id_idx").on(t.giftAllocationId),
     // A stripe_charge unit MUST carry its charge id; a non-stripe unit MUST NOT
     // (its charge id is meaningless — checks/ACH/wires are not Stripe charges).
     check(

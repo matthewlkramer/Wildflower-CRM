@@ -373,4 +373,94 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
       .where(eqFn(schema.paymentUnits.id, unit));
     expect(pu?.giftId).toBeNull();
   });
+
+  it("keeps the tie fact columns (0201) converged with the counted ledger", async () => {
+    const gift = await seedGift();
+    const ch = await seedCharge();
+    const unit = await seedStripeUnit(ch);
+
+    const readFacts = () =>
+      db
+        .select({
+          giftId: schema.paymentUnits.giftId,
+          giftMatchMethod: schema.paymentUnits.giftMatchMethod,
+          giftConfirmedByUserId: schema.paymentUnits.giftConfirmedByUserId,
+          giftConfirmedAt: schema.paymentUnits.giftConfirmedAt,
+          createdTheGift: schema.paymentUnits.createdTheGift,
+        })
+        .from(schema.paymentUnits)
+        .where(eqFn(schema.paymentUnits.id, unit))
+        .then((r) => r[0]);
+
+    await db.transaction((tx) =>
+      pa.applyPaymentApplication(tx, {
+        evidenceSource: "stripe",
+        stripeChargeId: ch,
+        giftId: gift,
+        amountApplied: "100.00",
+        matchMethod: "human",
+        confirmedByUserId: USER_ID,
+        confirmedAt: new Date("2026-05-02T00:00:00Z"),
+        createdTheGift: true,
+      }),
+    );
+    let facts = await readFacts();
+    expect(facts).toEqual({
+      giftId: gift,
+      giftMatchMethod: "human",
+      giftConfirmedByUserId: USER_ID,
+      giftConfirmedAt: new Date("2026-05-02T00:00:00Z"),
+      createdTheGift: true,
+    });
+
+    // Removing the counted row clears the facts back to the untied shape.
+    await db.transaction(async (tx) => {
+      await pa.removePaymentApplicationsForStripeCharge(tx, ch);
+    });
+    facts = await readFacts();
+    expect(facts).toEqual({
+      giftId: null,
+      giftMatchMethod: null,
+      giftConfirmedByUserId: null,
+      giftConfirmedAt: null,
+      createdTheGift: false,
+    });
+  });
+
+  it("confirm promotes system → system_confirmed on the unit facts too", async () => {
+    const gift = await seedGift();
+    const sp = await seedQbStagedPayment();
+
+    await db.transaction((tx) =>
+      pa.applyPaymentApplication(tx, {
+        evidenceSource: "quickbooks",
+        paymentId: sp,
+        giftId: gift,
+        amountApplied: "100.00",
+        matchMethod: "system",
+      }),
+    );
+    const unit = await unitIdForAnchor("quickbooks", sp);
+    unitIds.push(unit!);
+
+    await db.transaction(async (tx) => {
+      await pa.confirmPaymentApplicationsForPayment(
+        tx,
+        sp,
+        USER_ID,
+        new Date("2026-05-03T00:00:00Z"),
+      );
+    });
+    const [facts] = await db
+      .select({
+        giftMatchMethod: schema.paymentUnits.giftMatchMethod,
+        giftConfirmedByUserId: schema.paymentUnits.giftConfirmedByUserId,
+      })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unit!));
+    expect(facts).toEqual({
+      giftMatchMethod: "system_confirmed",
+      giftConfirmedByUserId: USER_ID,
+    });
+  });
 });
