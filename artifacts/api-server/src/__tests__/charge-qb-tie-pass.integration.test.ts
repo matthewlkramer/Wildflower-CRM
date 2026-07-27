@@ -221,10 +221,15 @@ describe.skipIf(!HAS_DB)("runChargeTiePass (DB)", () => {
         dateReceived: "2026-02-11",
         payerName: "Stripe",
       });
-      await db
-        .update(schema.stagedPayments)
-        .set({ settledStripePayoutId: po2 })
-        .where(eqFn(schema.stagedPayments.id, qbDep));
+      await db.insert(schema.sourceLinks).values({
+        id: `srcl_pqs_${po2}`,
+        linkType: "payout_qb_settlement",
+        qbStagedPaymentId: qbDep,
+        stripePayoutId: po2,
+        lifecycle: "confirmed",
+        provenance: "system",
+        matchBasis: "settled_pairing",
+      });
       const ch2 = await seedCharge({
         payoutId: po2,
         grossAmount: AMT_B,

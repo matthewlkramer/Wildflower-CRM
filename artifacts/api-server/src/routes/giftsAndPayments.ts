@@ -2270,10 +2270,17 @@ router.get(
         eq(stripePayouts.id, stripeStagedCharges.stripePayoutId),
       )
       // Payout↔deposit tie reads from the settled-payout pairing fact
-      // (staged_payments.settled_stripe_payout_id, 0168).
+      // (payout_qb_settlement source_link, 0168).
+      .leftJoin(
+        sourceLinks,
+        and(
+          eq(sourceLinks.linkType, "payout_qb_settlement"),
+          eq(sourceLinks.stripePayoutId, stripePayouts.id),
+        ),
+      )
       .leftJoin(
         stagedPayments,
-        eq(stagedPayments.settledStripePayoutId, stripePayouts.id),
+        eq(stagedPayments.id, sourceLinks.qbStagedPaymentId),
       )
       .where(sql`${stripeLedgerGiftIdForCharge()} = ${id}`)
       .orderBy(

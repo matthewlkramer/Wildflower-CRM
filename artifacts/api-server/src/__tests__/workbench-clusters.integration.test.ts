@@ -209,14 +209,17 @@ async function seedPayout(
     chargeCount: 1,
   });
   payoutIds.push(id);
-  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
-  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
-  // lifecycle is retired.
+  // The payout\u2194QBO-lump pairing is a payout_qb_settlement source_link.
   if (opts.settledDeposit) {
-    await db
-      .update(schema.stagedPayments)
-      .set({ settledStripePayoutId: id })
-      .where(eqFn(schema.stagedPayments.id, opts.settledDeposit));
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_pqs_${id}`,
+      linkType: "payout_qb_settlement",
+      qbStagedPaymentId: opts.settledDeposit,
+      stripePayoutId: id,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "settled_pairing",
+    });
   }
   return id;
 }

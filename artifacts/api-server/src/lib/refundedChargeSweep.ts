@@ -11,7 +11,7 @@ import { stagedStatusWhere } from "./derivedStatus";
  * A QB deposit/payment row is only excludable when we can tie it to specific
  * Stripe charges — the "trace" is the union of:
  *   - the charges of the payout this row settles as the QBO deposit lump
- *     (`staged_payments.settled_stripe_payout_id`; a settled row already
+ *     (the `payout_qb_settlement` pairing fact; a settled row already
  *     derives match_confirmed, so this arm rarely fires — kept for
  *     completeness), and
  *   - any per-charge QB ties naming this row (source_links rows with
@@ -42,7 +42,12 @@ export async function sweepRefundedQbStagedPayments(): Promise<number> {
         AND srcl_tr.stripe_charge_id = "stripe_staged_charges"."id"
         AND srcl_tr.qb_staged_payment_id = "staged_payments"."id"
     )
-    OR ${stripeStagedCharges.stripePayoutId} = ${stagedPayments.settledStripePayoutId}
+    OR EXISTS (
+      SELECT 1 FROM source_links pqs_tr
+      WHERE pqs_tr.link_type = 'payout_qb_settlement'
+        AND pqs_tr.qb_staged_payment_id = "staged_payments"."id"
+        AND pqs_tr.stripe_payout_id = ${stripeStagedCharges.stripePayoutId}
+    )
   )`;
 
   const rows = await db

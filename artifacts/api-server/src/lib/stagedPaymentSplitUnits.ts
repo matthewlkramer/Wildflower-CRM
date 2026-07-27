@@ -73,12 +73,12 @@ async function childrenOf(tx: Tx, parentId: string) {
     .for("update");
 }
 
-/** Ids among `rowIds` that carry ANY claim: a cash application, a settled
- * payout pairing (settled_stripe_payout_id), or a source_link (any
- * type/lifecycle) naming them. */
+/** Ids among `rowIds` that carry ANY claim: a cash application or a
+ * source_link (any type/lifecycle — including the payout_qb_settlement
+ * pairing) naming them. */
 async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
   if (rowIds.length === 0) return new Set();
-  const [apps, setl, links] = await Promise.all([
+  const [apps, links] = await Promise.all([
     tx
       .select({ id: paymentUnits.sourceStagedPaymentId })
       .from(paymentUnits)
@@ -89,21 +89,12 @@ async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
         ),
       ),
     tx
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(
-        and(
-          inArray(stagedPayments.id, rowIds),
-          isNotNull(stagedPayments.settledStripePayoutId),
-        ),
-      ),
-    tx
       .select({ id: sourceLinks.qbStagedPaymentId })
       .from(sourceLinks)
       .where(inArray(sourceLinks.qbStagedPaymentId, rowIds)),
   ]);
   const out = new Set<string>();
-  for (const r of [...apps, ...setl, ...links]) {
+  for (const r of [...apps, ...links]) {
     if (r.id != null) out.add(r.id);
   }
   return out;
@@ -195,7 +186,7 @@ export async function splitStagedPaymentIntoUnits(
   // A parent with a live claim already tells a money story — splitting it
   // would fork that story. Confirmed claims block; PROPOSED machine guesses
   // are cleared below (the human split is the stronger statement).
-  const [apps, setl, confirmedLinks] = await Promise.all([
+  const [apps, confirmedLinks] = await Promise.all([
     tx
       .select({ id: paymentUnits.id })
       .from(paymentUnits)
@@ -203,16 +194,6 @@ export async function splitStagedPaymentIntoUnits(
         and(
           eq(paymentUnits.sourceStagedPaymentId, parentId),
           isNotNull(paymentUnits.giftId),
-        ),
-      )
-      .limit(1),
-    tx
-      .select({ id: stagedPayments.id })
-      .from(stagedPayments)
-      .where(
-        and(
-          eq(stagedPayments.id, parentId),
-          isNotNull(stagedPayments.settledStripePayoutId),
         ),
       )
       .limit(1),
@@ -227,7 +208,7 @@ export async function splitStagedPaymentIntoUnits(
       )
       .limit(1),
   ]);
-  if (apps.length || setl.length || confirmedLinks.length) {
+  if (apps.length || confirmedLinks.length) {
     throw new ReconcileAbort(409, {
       error: "consistency_gate",
       code: "parent_has_claims",

@@ -225,7 +225,6 @@ describe("buildSuperfluousHeaderDelete — reference guards", () => {
   });
 
   it("keeps any header that review work references (settled pairing / source link / ledger row)", () => {
-    expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain('not exists (');
     expect(lower).toContain('select 1 from "payment_units"');
@@ -249,7 +248,6 @@ describe("buildSuperfluousLineDelete — reverse-transition guards", () => {
   });
 
   it("keeps any line that review work references (settled pairing / source link / ledger row)", () => {
-    expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain('not exists (');
     expect(lower).toContain('select 1 from "payment_units"');

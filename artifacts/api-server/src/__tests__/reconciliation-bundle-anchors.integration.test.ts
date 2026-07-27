@@ -164,14 +164,18 @@ async function seedPayout(opts: {
     chargeCount: 1,
   });
   payoutIds.push(id);
-  // The payout↔QBO-lump pairing is a plain fact on the QBO row
-  // (staged_payments.settled_stripe_payout_id, 0168) — the settlement-link
-  // lifecycle is retired. Stamp the pairing for a settled fixture.
+  // The payout↔QBO-lump pairing is a payout_qb_settlement source_link.
+  // Stamp the pairing for a settled fixture.
   if (opts.status === "confirmed_reconciled" && opts.matched) {
-    await db
-      .update(schema.stagedPayments)
-      .set({ settledStripePayoutId: id })
-      .where(eqFn(schema.stagedPayments.id, opts.matched));
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_pqs_${id}`,
+      linkType: "payout_qb_settlement",
+      qbStagedPaymentId: opts.matched,
+      stripePayoutId: id,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "settled_pairing",
+    });
   }
   return id;
 }
@@ -778,10 +782,10 @@ describe.skipIf(!HAS_DB)("Resolve-confirm settlement tie (integration)", () => {
 
     // The pairing fact is recorded in one transaction.
     const [paired] = await db
-      .select({ settledStripePayoutId: schema.stagedPayments.settledStripePayoutId })
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.id, dep));
-    expect(paired!.settledStripePayoutId).toBe(po);
+      .select({ stripePayoutId: schema.sourceLinks.stripePayoutId })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.qbStagedPaymentId, dep));
+    expect(paired!.stripePayoutId).toBe(po);
 
     // Idempotent re-confirm: already settled → success, never re-booked.
     const again = await post(
@@ -885,10 +889,10 @@ describe.skipIf(!HAS_DB)("Resolve-confirm settlement tie (integration)", () => {
     expect(row!.classificationSource).toBe("manual");
 
     const [paired] = await db
-      .select({ settledStripePayoutId: schema.stagedPayments.settledStripePayoutId })
-      .from(schema.stagedPayments)
-      .where(eqFn(schema.stagedPayments.id, dep));
-    expect(paired!.settledStripePayoutId).toBe(po);
+      .select({ stripePayoutId: schema.sourceLinks.stripePayoutId })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.qbStagedPaymentId, dep));
+    expect(paired!.stripePayoutId).toBe(po);
   });
 
   it("overrideExclusion NEVER bypasses a deposit settled against a different payout", async () => {

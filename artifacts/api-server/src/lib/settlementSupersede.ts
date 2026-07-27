@@ -13,6 +13,10 @@ import {
   writeSupersedeDemotionCrumb,
   type PaymentApplicationMatchMethod,
 } from "./paymentApplications";
+import {
+  settledDepositIdForPayout,
+  settledPayoutIdForDeposit,
+} from "./payoutSettlement";
 import { amountWithinFeeBand } from "./reconciliationGate";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -20,7 +24,7 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 /**
  * §4.3 settlement supersede (docs/reconciliation-design.md): when a coarse QB
  * deposit lump is settled against a Stripe payout (the
- * `settled_stripe_payout_id` pairing fact, 0168) AND a gift's money
+ * `payout_qb_settlement` pairing fact, 0168) AND a gift's money
  * is fully re-expressed by that payout's per-charge counted Stripe units, the
  * deposit unit's coarse tie for that gift is DEMOTED — the granular
  * per-charge units become the money trail, and source-agnostic SUM readers
@@ -138,13 +142,13 @@ export async function applySettlementSupersedeMany(
       .select({
         id: stagedPayments.id,
         amount: stagedPayments.amount,
-        settledStripePayoutId: stagedPayments.settledStripePayoutId,
       })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, depositId))
       .for("update")
       .then((r) => r[0]);
     if (!deposit) continue;
+    const settledPayoutId = await settledPayoutIdForDeposit(tx, depositId);
 
     const units = await tx
       .select({
@@ -194,9 +198,7 @@ export async function applySettlementSupersedeMany(
 
     // The payout this deposit settles as the QBO lump (0168 pairing fact;
     // UNIQUE per payout, at most one per deposit row).
-    const payoutIds = deposit.settledStripePayoutId
-      ? [deposit.settledStripePayoutId]
-      : [];
+    const payoutIds = settledPayoutId ? [settledPayoutId] : [];
 
     const stripeSumByGift = new Map<string, string>();
     if (payoutIds.length > 0) {
@@ -325,7 +327,7 @@ export async function applySettlementSupersedeMany(
 /**
  * Convenience for the per-charge booking/revert paths, which know the PAYOUT
  * (from the charge) rather than the deposit: resolve the QBO lump settled
- * against the payout (settled_stripe_payout_id) and recompute supersede state
+ * against the payout (payout_qb_settlement) and recompute supersede state
  * for it. No settled lump → no-op.
  */
 export async function applySupersedeForPayoutInTx(
@@ -333,11 +335,7 @@ export async function applySupersedeForPayoutInTx(
   payoutId: string | null | undefined,
 ): Promise<string[]> {
   if (!payoutId) return [];
-  const lump = await tx
-    .select({ id: stagedPayments.id })
-    .from(stagedPayments)
-    .where(eq(stagedPayments.settledStripePayoutId, payoutId))
-    .then((r) => r[0]);
-  if (!lump) return [];
-  return applySettlementSupersedeMany(tx, [lump.id]);
+  const lumpId = await settledDepositIdForPayout(tx, payoutId);
+  if (!lumpId) return [];
+  return applySettlementSupersedeMany(tx, [lumpId]);
 }

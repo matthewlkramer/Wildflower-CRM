@@ -162,6 +162,7 @@ const RESERVED_INTERNAL_ALIASES = new Set([
   "cc_ds",
   "pa_ct_ds",
   "sp_ds",
+  "srcl_pqs_ds",
 ]);
 
 /**
@@ -198,11 +199,12 @@ export function qbCountedExistsText(alias: string): string {
   )`;
 }
 
-/** QB row `alias` is the settled QBO lump of a Stripe payout (the plain
- *  pairing fact that replaced the settlement_links workflow, 0168). */
+/** QB row `alias` is the settled QBO lump of a Stripe payout (the
+ *  payout_qb_settlement source_link — successor of the 0168
+ *  settled_stripe_payout_id pairing fact). */
 export function qbSettledExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `(${a}."settled_stripe_payout_id" IS NOT NULL)`;
+  return `EXISTS (SELECT 1 FROM "source_links" "srcl_pqs_ds" WHERE "srcl_pqs_ds"."link_type" = 'payout_qb_settlement' AND "srcl_pqs_ds"."lifecycle" = 'confirmed' AND "srcl_pqs_ds"."qb_staged_payment_id" = ${a}."id")`;
 }
 
 /** EXISTS: a BOOKED charge-grain tie claims QB row `alias` — some Stripe

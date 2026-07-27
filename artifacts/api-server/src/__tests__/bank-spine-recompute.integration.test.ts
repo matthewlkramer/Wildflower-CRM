@@ -366,31 +366,28 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
   it("links a unique exact-amount register row within the +/- 3-day window and is idempotent", async () => {
     const depositId = await seedDeposit("701.00", "2026-07-10");
     const registerId = await seedQboRegister("701.00", "2026-07-12");
-    registerLinkIds.push(`bdqr_${depositId}`);
 
     await recompute.recomputeBankSpine();
     const first = await db
       .select({
-        bankDepositId: schema.bankDepositQboRegister.bankDepositId,
-        bankTransactionId: schema.bankDepositQboRegister.bankTransactionId,
-        amount: schema.bankDepositQboRegister.amount,
-        ambiguous: schema.bankDepositQboRegister.ambiguous,
+        bankDepositId: schema.sourceLinks.bankDepositId,
+        bankTransactionId: schema.sourceLinks.bankTransactionId,
+        matchBasis: schema.sourceLinks.matchBasis,
       })
-      .from(schema.bankDepositQboRegister)
-      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.bankDepositId, depositId));
     expect(first).toEqual([{
       bankDepositId: depositId,
       bankTransactionId: registerId,
-      amount: "701.00",
-      ambiguous: false,
+      matchBasis: "two_day_unique_amount",
     }]);
 
     await recompute.recomputeBankSpine();
     const second = await db
-      .select({ id: schema.bankDepositQboRegister.id })
-      .from(schema.bankDepositQboRegister)
-      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
-    expect(second).toEqual([{ id: `bdqr_${depositId}` }]);
+      .select({ id: schema.sourceLinks.id })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.bankDepositId, depositId));
+    expect(second).toEqual([{ id: `srcl_qrd_${registerId}` }]);
   });
 
   it("does not link when two register rows are candidates for one deposit", async () => {
@@ -401,9 +398,9 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     await recompute.recomputeBankSpine();
 
     const rows = await db
-      .select({ id: schema.bankDepositQboRegister.id })
-      .from(schema.bankDepositQboRegister)
-      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+      .select({ id: schema.sourceLinks.id })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.bankDepositId, depositId));
     expect(rows).toEqual([]);
   });
 
@@ -414,9 +411,9 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     await recompute.recomputeBankSpine();
 
     const rows = await db
-      .select({ id: schema.bankDepositQboRegister.id })
-      .from(schema.bankDepositQboRegister)
-      .where(eqFn(schema.bankDepositQboRegister.bankDepositId, depositId));
+      .select({ id: schema.sourceLinks.id })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.bankDepositId, depositId));
     expect(rows).toEqual([]);
   });
 

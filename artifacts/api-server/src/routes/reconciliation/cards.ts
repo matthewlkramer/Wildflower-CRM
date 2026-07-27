@@ -192,7 +192,11 @@ const stripeEvidenceExpr = sql<{
     )
   )
   FROM stripe_payouts p
-  WHERE p.id = ${stagedPayments.settledStripePayoutId}
+  WHERE p.id = (
+    SELECT pqs.stripe_payout_id FROM source_links pqs
+    WHERE pqs.link_type = 'payout_qb_settlement'
+      AND pqs.qb_staged_payment_id = ${stagedPayments.id}
+  )
   LIMIT 1
 )`;
 
@@ -240,7 +244,11 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         ${stagedPayments.exclusionReason} IS NULL
         AND ${qbLedgerMintedGiftIdForPayment()} IS NULL
         AND ${qbLedgerExistsForPayment()}
-        AND ${stagedPayments.settledStripePayoutId} IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM source_links pqs
+          WHERE pqs.link_type = 'payout_qb_settlement'
+            AND pqs.qb_staged_payment_id = ${stagedPayments.id}
+        )
       )
       OR (
         -- Re-admit for per-charge crediting ONLY a SETTLEMENT-only-confirmed
@@ -258,7 +266,11 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
         AND NOT ${qbLedgerExistsForPayment()}
         AND EXISTS (
           SELECT 1 FROM stripe_staged_charges c
-          WHERE c.stripe_payout_id = ${stagedPayments.settledStripePayoutId}
+          WHERE c.stripe_payout_id = (
+              SELECT pqs.stripe_payout_id FROM source_links pqs
+              WHERE pqs.link_type = 'payout_qb_settlement'
+                AND pqs.qb_staged_payment_id = ${stagedPayments.id}
+            )
             AND NOT EXISTS (
               SELECT 1 FROM payment_units pu
               WHERE pu.stripe_charge_id = c.id
@@ -501,7 +513,11 @@ router.get(
         // LEFT JOIN NULL-extension, so it stays visible as its own piece of
         // work.
         sql`${shouldExpand ? sql`TRUE` : sql`FALSE`}
-          AND ${stripePayouts.id} = ${stagedPayments.settledStripePayoutId}
+          AND ${stripePayouts.id} = (
+            SELECT pqs.stripe_payout_id FROM source_links pqs
+            WHERE pqs.link_type = 'payout_qb_settlement'
+              AND pqs.qb_staged_payment_id = ${stagedPayments.id}
+          )
           AND ${stripeStagedCharges.exclusionReason} IS NULL`,
       )
       .as("charge_unit");

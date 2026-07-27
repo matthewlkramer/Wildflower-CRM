@@ -8,6 +8,7 @@ import {
   people,
   households,
   paymentUnits,
+  sourceLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1242,9 +1243,9 @@ export async function loadBundleBase(opts: {
   const conn = opts.conn ?? db;
 
   // Resolve the payout + deposit lump for the anchor. The payout↔deposit tie
-  // reads from the pairing fact on the QBO row
-  // (staged_payments.settled_stripe_payout_id). No pairing ⇒ unmatched.
-  const settledDeposit = alias(stagedPayments, "settled_deposit");
+  // reads from the pairing fact (the payout_qb_settlement source_link).
+  // No pairing ⇒ unmatched.
+  const pairing = alias(sourceLinks, "pqs_pairing");
   let payout:
     | {
         id: string;
@@ -1262,12 +1263,15 @@ export async function loadBundleBase(opts: {
         amount: stripePayouts.amount,
         netTotal: stripePayouts.netTotal,
         chargeCount: stripePayouts.chargeCount,
-        linkDepositId: settledDeposit.id,
+        linkDepositId: pairing.qbStagedPaymentId,
       })
       .from(stripePayouts)
       .leftJoin(
-        settledDeposit,
-        eq(settledDeposit.settledStripePayoutId, stripePayouts.id),
+        pairing,
+        and(
+          eq(pairing.linkType, "payout_qb_settlement"),
+          eq(pairing.stripePayoutId, stripePayouts.id),
+        ),
       )
       .where(eq(stripePayouts.id, opts.anchorId));
     if (!p) return null;
@@ -1285,9 +1289,13 @@ export async function loadBundleBase(opts: {
       })
       .from(stagedPayments)
       .innerJoin(
-        stripePayouts,
-        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
+        pairing,
+        and(
+          eq(pairing.linkType, "payout_qb_settlement"),
+          eq(pairing.qbStagedPaymentId, stagedPayments.id),
+        ),
       )
+      .innerJoin(stripePayouts, eq(stripePayouts.id, pairing.stripePayoutId))
       .where(eq(stagedPayments.id, opts.anchorId));
     payout = p ?? null;
   }

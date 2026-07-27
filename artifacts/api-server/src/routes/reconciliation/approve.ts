@@ -31,6 +31,7 @@ import {
   linkGiftInTx,
 } from "../../lib/reconciliationCommit";
 import { createGiftFromChargeInTx } from "../../lib/reconciliationBundleCommit";
+import { settledPayoutIdForDeposit } from "../../lib/payoutSettlement";
 import {
   qbLedgerPaymentIdForGiftExcludingPayment,
   qbLedgerGiftIdForPaymentExcludingGift,
@@ -215,18 +216,14 @@ async function mintGiftFromEvidence(
     }
   }
 
-  // Payout settled into this staged row (pairing fact on the QBO row) — a
-  // selected charge must belong to it, and it's the lock target that
+  // Payout settled into this staged row (payout_qb_settlement pairing fact) —
+  // a selected charge must belong to it, and it's the lock target that
   // serializes concurrent money paths.
-  const stagedPayoutRows = await db
-    .select({ id: stripePayouts.id })
-    .from(stagedPayments)
-    .innerJoin(
-      stripePayouts,
-      eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
-    )
-    .where(eq(stagedPayments.id, stagedPaymentId));
-  const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
+  const stagedSettledPayoutId = await settledPayoutIdForDeposit(
+    db,
+    stagedPaymentId,
+  );
+  const stagedPayoutIds = stagedSettledPayoutId ? [stagedSettledPayoutId] : [];
   const confirmedPayoutIds = stagedPayoutIds;
 
   const newGiftId = newId();
@@ -750,19 +747,17 @@ router.post(
       // dead-end.
     }
 
-    // Payout settled into this staged row (pairing fact on the QBO row) — a
-    // selected charge must belong to it; it's the lock target that serializes
-    // concurrent money paths. (Read-only; the charge↔payout membership is
-    // re-validated by the gate.)
-    const stagedPayoutRows = await db
-      .select({ id: stripePayouts.id })
-      .from(stagedPayments)
-      .innerJoin(
-        stripePayouts,
-        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
-      )
-      .where(eq(stagedPayments.id, stagedPaymentId));
-    const stagedPayoutIds = stagedPayoutRows.map((r) => r.id);
+    // Payout settled into this staged row (payout_qb_settlement pairing fact)
+    // — a selected charge must belong to it; it's the lock target that
+    // serializes concurrent money paths. (Read-only; the charge↔payout
+    // membership is re-validated by the gate.)
+    const stagedSettledPayoutId = await settledPayoutIdForDeposit(
+      db,
+      stagedPaymentId,
+    );
+    const stagedPayoutIds = stagedSettledPayoutId
+      ? [stagedSettledPayoutId]
+      : [];
 
     // Pledges whose derived fields must be recomputed AFTER commit (a newly
     // linked payment, or a changed gift amount, shifts a pledge's paid total).

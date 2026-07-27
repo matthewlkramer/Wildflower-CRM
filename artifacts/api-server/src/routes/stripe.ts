@@ -14,6 +14,7 @@ import {
   people,
   paymentIntermediaries,
   paymentUnits,
+  sourceLinks,
 } from "@workspace/db/schema";
 import {
   and,
@@ -1546,8 +1547,9 @@ router.get(
         LIMIT 1
       ) m ON true
       WHERE NOT EXISTS (
-          SELECT 1 FROM staged_payments sl
-          WHERE sl.settled_stripe_payout_id = p.id
+          SELECT 1 FROM source_links pqs
+          WHERE pqs.link_type = 'payout_qb_settlement'
+            AND pqs.stripe_payout_id = p.id
         )
         AND COALESCE(p.amount, p.net_total) > 0
       ORDER BY p.arrival_date DESC NULLS LAST
@@ -1636,8 +1638,8 @@ router.get(
 );
 
 // ─── Stripe payout ↔ QuickBooks settlement report ──────────────────────────
-// Read-only. The payout ↔ QBO-lump pairing is a plain fact
-// (staged_payments.settled_stripe_payout_id), filled deterministically by the
+// Read-only. The payout ↔ QBO-lump pairing is a plain fact (the
+// payout_qb_settlement source_link), filled deterministically by the
 // accounting recompute (lib/qboAccountingRecompute.ts) — the propose/confirm/
 // revert settlement workflow is retired. Expected-vs-actual discrepancies for
 // paired lumps surface in qbo_accounting_checks, not here.
@@ -1645,7 +1647,9 @@ router.get(
 type ReconQueue = "unmatched" | "confirmed" | "all";
 const RECON_QUEUES = ["unmatched", "confirmed", "all"] as const;
 
-// The QBO deposit lump this payout settled into (unique per payout).
+// The QBO deposit lump this payout settled into (unique per payout),
+// resolved through the pairing source_link.
+const settlementPairing = alias(sourceLinks, "settlement_pairing");
 const settledDeposit = alias(stagedPayments, "settled_deposit");
 
 function reconQueueWhere(queue: ReconQueue) {
@@ -1694,8 +1698,15 @@ router.get(
         .select(reconSelect)
         .from(stripePayouts)
         .leftJoin(
+          settlementPairing,
+          and(
+            eq(settlementPairing.linkType, "payout_qb_settlement"),
+            eq(settlementPairing.stripePayoutId, stripePayouts.id),
+          ),
+        )
+        .leftJoin(
           settledDeposit,
-          eq(settledDeposit.settledStripePayoutId, stripePayouts.id),
+          eq(settledDeposit.id, settlementPairing.qbStagedPaymentId),
         )
         .where(where)
         .orderBy(desc(stripePayouts.arrivalDate), desc(stripePayouts.id))
@@ -1705,8 +1716,15 @@ router.get(
         .select({ value: count() })
         .from(stripePayouts)
         .leftJoin(
+          settlementPairing,
+          and(
+            eq(settlementPairing.linkType, "payout_qb_settlement"),
+            eq(settlementPairing.stripePayoutId, stripePayouts.id),
+          ),
+        )
+        .leftJoin(
           settledDeposit,
-          eq(settledDeposit.settledStripePayoutId, stripePayouts.id),
+          eq(settledDeposit.id, settlementPairing.qbStagedPaymentId),
         )
         .where(where)
         .then((r) => r[0]),

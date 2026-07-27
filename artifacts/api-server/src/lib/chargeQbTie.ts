@@ -517,7 +517,7 @@ export async function runChargeTiePass(
   let cleared = 0;
 
   // Scope exit: a charge whose payout IS SETTLED as a QBO lump (the lump path
-  // owns it — staged_payments.settled_stripe_payout_id, 0168) must not keep a
+  // owns it — the payout_qb_settlement pairing fact, 0168) must not keep a
   // stale charge-grain proposal around. Confirmed ties are untouched — only
   // PROPOSED claims clear. The ledger is the sole authority.
   const scopeExitLedger = await db.execute<{ charge_id: string }>(sql`
@@ -527,8 +527,9 @@ export async function runChargeTiePass(
       AND srcl.lifecycle = 'proposed'
       AND srcl.stripe_charge_id = c.id
       AND EXISTS (
-        SELECT 1 FROM staged_payments t
-        WHERE t.settled_stripe_payout_id = c.stripe_payout_id
+        SELECT 1 FROM source_links pqs
+        WHERE pqs.link_type = 'payout_qb_settlement'
+          AND pqs.stripe_payout_id = c.stripe_payout_id
       )
     RETURNING c.id AS charge_id
   `);
@@ -536,8 +537,9 @@ export async function runChargeTiePass(
 
   // Payouts with NO settled QBO lump (the "Missing deposit" pool).
   const noLink = sql`NOT EXISTS (
-    SELECT 1 FROM staged_payments t
-    WHERE t.settled_stripe_payout_id = ${stripePayouts.id}
+    SELECT 1 FROM source_links pqs
+    WHERE pqs.link_type = 'payout_qb_settlement'
+      AND pqs.stripe_payout_id = ${stripePayouts.id}
   )`;
   const payouts = await db
     .select({ id: stripePayouts.id })
@@ -637,7 +639,11 @@ export async function runChargeTiePass(
               // a swept row's tie already exists (confirmed → filtered below).
               sql`${stagedPayments.dateReceived} >= ${fromStr}`,
               sql`${stagedPayments.dateReceived} <= ${toStr}`,
-              sql`${stagedPayments.settledStripePayoutId} IS NULL`,
+              sql`NOT EXISTS (
+                SELECT 1 FROM source_links pqs
+                WHERE pqs.link_type = 'payout_qb_settlement'
+                  AND pqs.qb_staged_payment_id = "staged_payments"."id"
+              )`,
               sql`NOT EXISTS (
                 SELECT 1 FROM source_links srcl
                 WHERE srcl.link_type = 'charge_qb_tie'
@@ -905,7 +911,11 @@ export async function claimSiblingFeeRows(
           WHERE srcl.link_type = 'charge_qb_tie'
             AND srcl.qb_staged_payment_id = "staged_payments"."id"
         )`,
-        sql`${stagedPayments.settledStripePayoutId} IS NULL`,
+        sql`NOT EXISTS (
+          SELECT 1 FROM source_links pqs
+          WHERE pqs.link_type = 'payout_qb_settlement'
+            AND pqs.qb_staged_payment_id = "staged_payments"."id"
+        )`,
       ),
     )
     .for("update");

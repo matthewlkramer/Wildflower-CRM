@@ -494,8 +494,9 @@ function buildUniverse(q: string | null) {
       ) OR EXISTS (
         SELECT 1
         FROM qbo_accounting_checks pqc
-        JOIN staged_payments psp ON psp.id = pqc.staged_payment_id
-        JOIN stripe_payouts psp_payout ON psp_payout.id = psp.settled_stripe_payout_id
+        JOIN source_links pqs_c ON pqs_c.link_type = 'payout_qb_settlement'
+          AND pqs_c.qb_staged_payment_id = pqc.staged_payment_id
+        JOIN stripe_payouts psp_payout ON psp_payout.id = pqs_c.stripe_payout_id
         WHERE psp_payout.bank_deposit_id = d.id
           AND pqc.disposition = 'correction_needed'
       ) AS f_correction,
@@ -527,8 +528,9 @@ function buildUniverse(q: string | null) {
         AND NOT EXISTS (
           SELECT 1
           FROM qbo_accounting_checks pqc
-          JOIN staged_payments psp ON psp.id = pqc.staged_payment_id
-          JOIN stripe_payouts psp_payout ON psp_payout.id = psp.settled_stripe_payout_id
+          JOIN source_links pqs_cc ON pqs_cc.link_type = 'payout_qb_settlement'
+            AND pqs_cc.qb_staged_payment_id = pqc.staged_payment_id
+          JOIN stripe_payouts psp_payout ON psp_payout.id = pqs_cc.stripe_payout_id
           WHERE psp_payout.bank_deposit_id = d.id AND pqc.disposition = 'correction_needed'
         )
       ) AS f_completed,
@@ -543,8 +545,9 @@ function buildUniverse(q: string | null) {
             WHERE c_all.bank_deposit_id = d.id
             UNION ALL
             SELECT dqc_all.id
-            FROM deposit_qbo_components dqc_all
-            WHERE dqc_all.bank_deposit_id = d.id
+            FROM source_links dqc_all
+            WHERE dqc_all.link_type = 'qbo_line_deposit'
+              AND dqc_all.bank_deposit_id = d.id
             UNION ALL
             SELECT ch_all.id
             FROM stripe_payouts p_all
@@ -558,9 +561,10 @@ function buildUniverse(q: string | null) {
               AND c_open.exclusion_reason IS NULL
             UNION ALL
             SELECT dqc_open.id
-            FROM deposit_qbo_components dqc_open
-            JOIN staged_payments sp_open ON sp_open.id = dqc_open.staged_payment_id
-            WHERE dqc_open.bank_deposit_id = d.id
+            FROM source_links dqc_open
+            JOIN staged_payments sp_open ON sp_open.id = dqc_open.qb_staged_payment_id
+            WHERE dqc_open.link_type = 'qbo_line_deposit'
+              AND dqc_open.bank_deposit_id = d.id
               AND sp_open.exclusion_reason IS NULL
             UNION ALL
             SELECT ch_open.id
@@ -578,9 +582,10 @@ function buildUniverse(q: string | null) {
               SELECT 1
               FROM (
                 SELECT qsp.id, qsp.exclusion_reason
-                FROM deposit_qbo_components dqc
-                JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
-                WHERE dqc.bank_deposit_id = d.id
+                FROM source_links dqc
+                JOIN staged_payments qsp ON qsp.id = dqc.qb_staged_payment_id
+                WHERE dqc.link_type = 'qbo_line_deposit'
+                  AND dqc.bank_deposit_id = d.id
                   AND (
                     qsp.funding_source IS NULL
                     OR qsp.funding_source <> 'stripe'
@@ -602,9 +607,10 @@ function buildUniverse(q: string | null) {
               SELECT 1
               FROM (
                 SELECT qsp.id, qsp.exclusion_reason
-                FROM deposit_qbo_components dqc
-                JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
-                WHERE dqc.bank_deposit_id = d.id
+                FROM source_links dqc
+                JOIN staged_payments qsp ON qsp.id = dqc.qb_staged_payment_id
+                WHERE dqc.link_type = 'qbo_line_deposit'
+                  AND dqc.bank_deposit_id = d.id
                   AND (
                     qsp.funding_source IS NULL
                     OR qsp.funding_source <> 'stripe'
@@ -722,9 +728,10 @@ router.get(
           SELECT qbo_lines.exclusion_reason::text
           FROM (
             SELECT qsp.exclusion_reason
-            FROM deposit_qbo_components dqc
-            JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
-            WHERE dqc.bank_deposit_id = d.id
+            FROM source_links dqc
+            JOIN staged_payments qsp ON qsp.id = dqc.qb_staged_payment_id
+            WHERE dqc.link_type = 'qbo_line_deposit'
+              AND dqc.bank_deposit_id = d.id
               AND (qsp.funding_source IS NULL OR qsp.funding_source <> 'stripe')
             UNION ALL
             SELECT rsp.exclusion_reason
@@ -777,7 +784,7 @@ router.get(
         COALESCE((
           SELECT jsonb_agg(jsonb_build_object(
             'componentId', dqc.id, 'paymentUnitId', NULL,
-            'amount', dqc.amount::text,
+            'amount', sp.amount::text,
             'kind', CASE
               WHEN (${inferredPaymentMethod("sp")}) ILIKE '%check%' THEN 'check'
               WHEN (${inferredPaymentMethod("sp")}) ILIKE '%wire%' THEN 'wire'
@@ -786,7 +793,7 @@ router.get(
             END,
             'needsReview', dqc.match_basis = 'deposit_header_ambiguous',
             'ambiguousDepositMatch', dqc.match_basis = 'deposit_header_ambiguous',
-            'unconfirmed', NOT dqc.confirmed, 'source', 'qbo_provisional',
+            'unconfirmed', dqc.confirmed_at IS NULL, 'source', 'qbo_provisional',
             'manual', false,
             'stagedPaymentId', sp.id,
             'label', COALESCE(sp.payer_name, sp.qb_transaction_memo, sp.line_description, sp.raw_reference, sp.id),
@@ -794,9 +801,10 @@ router.get(
             'matchBasis', dqc.match_basis,
             'countedGiftIds', '[]'::jsonb
           ) ORDER BY dqc.id)
-          FROM deposit_qbo_components dqc
-          JOIN staged_payments sp ON sp.id = dqc.staged_payment_id
-          WHERE dqc.bank_deposit_id = d.id
+          FROM source_links dqc
+          JOIN staged_payments sp ON sp.id = dqc.qb_staged_payment_id
+          WHERE dqc.link_type = 'qbo_line_deposit'
+            AND dqc.bank_deposit_id = d.id
         ), '[]'::jsonb) AS provisional_components,
         COALESCE((
           SELECT jsonb_agg(jsonb_build_object(
@@ -905,7 +913,9 @@ router.get(
               'unconfirmed', false, 'source', 'bank_spine'
             ) AS item
             FROM staged_payments psp
-            JOIN stripe_payouts pp ON pp.id = psp.settled_stripe_payout_id
+            JOIN source_links pqs_r ON pqs_r.link_type = 'payout_qb_settlement'
+              AND pqs_r.qb_staged_payment_id = psp.id
+            JOIN stripe_payouts pp ON pp.id = pqs_r.stripe_payout_id
             WHERE pp.bank_deposit_id = d.id
             UNION ALL
             SELECT jsonb_build_object(
@@ -919,12 +929,13 @@ router.get(
               'qbPayerType', qsp.qb_payer_type, 'qbEntityType', qsp.qb_entity_type,
               'qbEntityId', qsp.qb_entity_id, 'qbDepositId', qsp.qb_deposit_id,
               'exclusionReason', qsp.exclusion_reason,
-              'depositQboComponentId', dqc.id, 'unconfirmed', NOT dqc.confirmed,
+              'depositQboComponentId', dqc.id, 'unconfirmed', dqc.confirmed_at IS NULL,
               'source', 'qbo_provisional', 'matchBasis', dqc.match_basis
             ) AS item
-            FROM deposit_qbo_components dqc
-            JOIN staged_payments qsp ON qsp.id = dqc.staged_payment_id
-            WHERE dqc.bank_deposit_id = d.id
+            FROM source_links dqc
+            JOIN staged_payments qsp ON qsp.id = dqc.qb_staged_payment_id
+            WHERE dqc.link_type = 'qbo_line_deposit'
+              AND dqc.bank_deposit_id = d.id
             UNION ALL
             SELECT jsonb_build_object(
               'stagedPaymentId', bt.id, 'role', 'deposit', 'reference', bt.ref_no,
@@ -936,9 +947,10 @@ router.get(
               'reconciliationStatus', bt.reconciliation_status,
               'account', bt.account
             ) AS item
-            FROM bank_deposit_qbo_register bqr
+            FROM source_links bqr
             JOIN bank_transactions bt ON bt.id = bqr.bank_transaction_id
-            WHERE bqr.bank_deposit_id = d.id
+            WHERE bqr.link_type = 'qbo_register_deposit'
+              AND bqr.bank_deposit_id = d.id
           ) records
         ), '[]'::jsonb) AS qb_records,
         COALESCE((
@@ -976,7 +988,9 @@ router.get(
             ) AS item
             FROM qbo_accounting_checks pqc
             JOIN staged_payments psp ON psp.id = pqc.staged_payment_id
-            JOIN stripe_payouts pp ON pp.id = psp.settled_stripe_payout_id
+            JOIN source_links pqs_a ON pqs_a.link_type = 'payout_qb_settlement'
+              AND pqs_a.qb_staged_payment_id = psp.id
+            JOIN stripe_payouts pp ON pp.id = pqs_a.stripe_payout_id
             WHERE pp.bank_deposit_id = d.id
           ) checks
         ), '[]'::jsonb) AS accounting_checks
@@ -1443,9 +1457,11 @@ router.get(
       SELECT d.amount::text AS amount,
              COALESCE(SUM(c.amount), 0)::text AS component_total,
              COALESCE((
-               SELECT SUM(dqc.amount)
-               FROM deposit_qbo_components dqc
-               WHERE dqc.bank_deposit_id = d.id
+               SELECT SUM(dq_sp.amount)
+               FROM source_links dqc
+               JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
+               WHERE dqc.link_type = 'qbo_line_deposit'
+                 AND dqc.bank_deposit_id = d.id
              ), 0)::text AS provisional_total,
              p.amount::text AS payout_amount
       FROM bank_deposits d
@@ -1546,9 +1562,11 @@ router.post(
                p.amount::text AS payout_amount,
                COALESCE(SUM(c.amount), 0)::text AS component_total,
                COALESCE((
-                 SELECT SUM(dqc.amount)
-                 FROM deposit_qbo_components dqc
-                 WHERE dqc.bank_deposit_id = d.id
+                 SELECT SUM(dq_sp.amount)
+                 FROM source_links dqc
+                 JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
+                 WHERE dqc.link_type = 'qbo_line_deposit'
+                   AND dqc.bank_deposit_id = d.id
                ), 0)::text AS provisional_total
         FROM bank_deposits d
         LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
@@ -1824,13 +1842,13 @@ router.post(
       return;
     }
     const result = await db.execute(sql`
-      UPDATE deposit_qbo_components
-      SET confirmed = true,
-          confirmed_by_user_id = ${user.id},
+      UPDATE source_links
+      SET confirmed_by_user_id = ${user.id},
           confirmed_at = now(),
           updated_at = now()
       WHERE id = ${req.params.id}
-      RETURNING id, confirmed
+        AND link_type = 'qbo_line_deposit'
+      RETURNING id, (confirmed_at IS NOT NULL) AS confirmed
     `);
     const row = (result.rows as Array<{ id: string; confirmed: boolean }>)[0];
     if (!row) {
@@ -1846,8 +1864,9 @@ router.delete(
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
     const result = await db.execute(sql`
-      DELETE FROM deposit_qbo_components
+      DELETE FROM source_links
       WHERE id = ${req.params.id}
+        AND link_type = 'qbo_line_deposit'
       RETURNING id
     `);
     if (!result.rows.length) {

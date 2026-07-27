@@ -28,6 +28,7 @@ import { stagedStatusIn } from "./derivedStatus";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
 import { isFullyRefunded } from "./stripeRefund";
 import { applySettlementSupersedeMany } from "./settlementSupersede";
+import { recordPayoutQbSettlement } from "./payoutSettlement";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
@@ -420,22 +421,10 @@ export async function mintGiftInTx(
         .from(stripePayouts)
         .where(eq(stripePayouts.id, charge.stripePayoutId))
         .for("update");
-      await tx
-        .update(stagedPayments)
-        .set({
-          settledStripePayoutId: charge.stripePayoutId,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(stagedPayments.id, stagedPaymentId),
-            isNull(stagedPayments.settledStripePayoutId),
-            sql`NOT EXISTS (
-              SELECT 1 FROM staged_payments t
-              WHERE t.settled_stripe_payout_id = ${charge.stripePayoutId}
-            )`,
-          ),
-        );
+      await recordPayoutQbSettlement(tx, {
+        stagedPaymentId,
+        payoutId: charge.stripePayoutId,
+      });
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence. The QB
     // anchor OWNS the mint (createdTheGift:true on its row); this Stripe row is
@@ -859,22 +848,10 @@ export async function linkGiftInTx(
         .from(stripePayouts)
         .where(eq(stripePayouts.id, charge.stripePayoutId))
         .for("update");
-      await tx
-        .update(stagedPayments)
-        .set({
-          settledStripePayoutId: charge.stripePayoutId,
-          updatedAt: new Date(),
-        })
-        .where(
-          and(
-            eq(stagedPayments.id, stagedPaymentId),
-            isNull(stagedPayments.settledStripePayoutId),
-            sql`NOT EXISTS (
-              SELECT 1 FROM staged_payments t
-              WHERE t.settled_stripe_payout_id = ${charge.stripePayoutId}
-            )`,
-          ),
-        );
+      await recordPayoutQbSettlement(tx, {
+        stagedPaymentId,
+        payoutId: charge.stripePayoutId,
+      });
     }
     // Dual-write (Phase 2): book the Stripe charge as parallel evidence (GROSS
     // source). The QB row already recorded the QB-settled amount above; this is

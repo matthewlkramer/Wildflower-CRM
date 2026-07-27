@@ -3,7 +3,6 @@ import { requireFinance } from "../../lib/financeGuard";
 import { db } from "@workspace/db";
 import {
   stagedPayments,
-  stripePayouts,
   stripeStagedCharges,
   donorboxDonations,
 } from "@workspace/db/schema";
@@ -12,6 +11,7 @@ import { asyncHandler, notFound } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { sweepRefundedQbStagedPayments } from "../../lib/refundedChargeSweep";
 import { upsertDonorboxCounterpartLink } from "../../lib/sourceLinkWrites";
+import { settledPayoutIdForDeposit } from "../../lib/payoutSettlement";
 
 // ─── POST /reconciliation/bundles/:stagedPaymentId/confirm-ties ────────────
 // Persist the human-confirmed cross-processor links for one settlement bundle
@@ -21,7 +21,7 @@ import { upsertDonorboxCounterpartLink } from "../../lib/sourceLinkWrites";
 // join keys already drive the lineage display; this stamps the reviewer's
 // affirmation onto the Donorbox counterpart links so the three sources are
 // directly tied with who/when provenance. Charge↔deposit membership is
-// already authoritative via the settled_stripe_payout_id pairing fact +
+// already authoritative via the payout_qb_settlement pairing fact +
 // stripe_payout_id (see NOTE in the handler) — no charge_qb_tie rows are
 // minted here.
 const router: IRouter = Router();
@@ -45,17 +45,10 @@ router.post(
       .limit(1);
     if (!staged) return notFound(res, "reconciliation card");
 
-    // The Stripe payout settled into this deposit lump (pairing fact on the
-    // QBO row — staged_payments.settled_stripe_payout_id).
-    const [payout] = await db
-      .select({ id: stripePayouts.id })
-      .from(stagedPayments)
-      .innerJoin(
-        stripePayouts,
-        eq(stripePayouts.id, stagedPayments.settledStripePayoutId),
-      )
-      .where(eq(stagedPayments.id, id))
-      .limit(1);
+    // The Stripe payout settled into this deposit lump (the
+    // payout_qb_settlement pairing fact).
+    const settledPayoutId = await settledPayoutIdForDeposit(db, id);
+    const payout = settledPayoutId ? { id: settledPayoutId } : undefined;
 
     // NOTE: this route deliberately does NOT mint `charge_qb_tie` ledger rows.
     // Per the source-link ADR, `charge_qb_tie` means "charge ↔ individually-

@@ -157,19 +157,28 @@ async function seedPayout(over?: { depositId?: string | null }): Promise<string>
   });
   payoutIds.push(id);
   if (over?.depositId) {
-    await db
-      .update(schema.stagedPayments)
-      .set({ settledStripePayoutId: id })
-      .where(eqFn(schema.stagedPayments.id, over.depositId));
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_pqs_${id}`,
+      linkType: "payout_qb_settlement",
+      qbStagedPaymentId: over.depositId,
+      stripePayoutId: id,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "settled_pairing",
+    });
   }
   return id;
 }
 
 async function clearPairing(dep: string): Promise<void> {
   await db
-    .update(schema.stagedPayments)
-    .set({ settledStripePayoutId: null })
-    .where(eqFn(schema.stagedPayments.id, dep));
+    .delete(schema.sourceLinks)
+    .where(
+      andFn(
+        eqFn(schema.sourceLinks.linkType, "payout_qb_settlement"),
+        eqFn(schema.sourceLinks.qbStagedPaymentId, dep),
+      ),
+    );
 }
 
 /** A settled Stripe charge on `payoutId` + its counted per-charge ledger row

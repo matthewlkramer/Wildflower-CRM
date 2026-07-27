@@ -143,13 +143,17 @@ async function seedSettledPairing(
   payoutId: string,
   depositStagedPaymentId: string,
 ): Promise<void> {
-  // The payout\u2194QBO-lump pairing is a plain fact on the QBO row
-  // (staged_payments.settled_stripe_payout_id, 0168) \u2014 the settlement-link
-  // lifecycle is retired; there is no proposed shape.
-  await db
-    .update(schema.stagedPayments)
-    .set({ settledStripePayoutId: payoutId })
-    .where(eqFn(schema.stagedPayments.id, depositStagedPaymentId));
+  // The payout\u2194QBO-lump pairing is a payout_qb_settlement source_link;
+  // there is no proposed shape.
+  await db.insert(schema.sourceLinks).values({
+    id: `srcl_pqs_${payoutId}`,
+    linkType: "payout_qb_settlement",
+    qbStagedPaymentId: depositStagedPaymentId,
+    stripePayoutId: payoutId,
+    lifecycle: "confirmed",
+    provenance: "system",
+    matchBasis: "settled_pairing",
+  });
 }
 
 async function seedCharge(

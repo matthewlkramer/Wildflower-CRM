@@ -32,6 +32,7 @@ import {
   stripeStagedCharges,
   pledgeAllocations,
   pledgeExpectedPayments,
+  sourceLinks,
 } from "@workspace/db/schema";
 import {
   and,
@@ -81,6 +82,7 @@ import {
   qbLedgerSoleGiftIdForPayment,
   stripeLedgerGiftIdForCharge,
 } from "./paymentApplications";
+import { settledPayoutIdForDeposit } from "./payoutSettlement";
 import { personDisplayNameSql } from "./personNameSql";
 import {
   ANON_LABEL,
@@ -811,8 +813,9 @@ export async function buildReconciliationGraph(
 
   // ── Evidence: QB anchor (always) + optional Stripe payout/charge ──
   // The payout tied to this deposit is resolved through the settled-payout
-  // pairing fact on the row itself (settled_stripe_payout_id, 0168).
-  const stripePayout = staged.settledStripePayoutId
+  // pairing fact (payout_qb_settlement source_link, 0168).
+  const settledPayoutId = await settledPayoutIdForDeposit(db, stagedPaymentId);
+  const stripePayout = settledPayoutId
     ? await db
         .select({
           id: stripePayouts.id,
@@ -821,7 +824,7 @@ export async function buildReconciliationGraph(
           netTotal: stripePayouts.netTotal,
         })
         .from(stripePayouts)
-        .where(eq(stripePayouts.id, staged.settledStripePayoutId))
+        .where(eq(stripePayouts.id, settledPayoutId))
         .limit(1)
         .then((r) => r[0] ?? null)
     : null;
@@ -1474,7 +1477,11 @@ export async function searchPayouts(
 
   // Only orphan payouts (no settled QBO lump) are eligible resolve targets.
   const conds: SQL[] = [
-    sql`NOT EXISTS (SELECT 1 FROM ${stagedPayments} WHERE ${stagedPayments.settledStripePayoutId} = ${stripePayouts.id})`,
+    sql`NOT EXISTS (
+      SELECT 1 FROM ${sourceLinks}
+      WHERE ${sourceLinks.linkType} = 'payout_qb_settlement'
+        AND ${sourceLinks.stripePayoutId} = ${stripePayouts.id}
+    )`,
   ];
   if (hasText) {
     // A payout has no human-readable name of its own — the donor names live on
