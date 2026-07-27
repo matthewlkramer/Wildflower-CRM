@@ -13,6 +13,7 @@ import { paymentUnitKindEnum, paymentUnitLifecycleEnum } from "./_enums";
 import { stripeStagedCharges } from "./stripeStagedCharges";
 import { donorboxDonations } from "./donorboxDonations";
 import { stagedPayments } from "./stagedPayments";
+import { giftsAndPayments } from "./giftsAndPayments";
 
 /**
  * The canonical **donor-level payment unit** (docs/adr-bank-spine-money-model.md).
@@ -78,6 +79,19 @@ export const paymentUnits = pgTable(
       { onDelete: "set null" },
     ),
 
+    // The gift this unit's money funds — the backward pointer of the tie
+    // stage (deposit ← bundle ← unit → gift). Successor of the counted
+    // payment_applications row: one unit funds exactly one gift (installments
+    // are separate gift records, so several units may point at one gift only
+    // as a legacy shape pending per-installment splits). Derived from the
+    // counted ledger during the transition; becomes the authority when
+    // payment_applications retires. Non-counting unit↔gift evidence lives in
+    // source_links (unit_gift_corroboration), never here. RESTRICT: a funded
+    // gift cannot be deleted out from under its money.
+    giftId: text("gift_id").references(() => giftsAndPayments.id, {
+      onDelete: "restrict",
+    }),
+
     // Provisional provenance for QBO-inferred check units (Phase 3). SET NULL
     // when a bank-native source replaces QBO. Not an application authority.
     sourceStagedPaymentId: text("source_staged_payment_id").references(
@@ -111,6 +125,7 @@ export const paymentUnits = pgTable(
       t.sourceStagedPaymentId,
     ),
     index("payment_units_received_date_idx").on(t.receivedDate),
+    index("payment_units_gift_id_idx").on(t.giftId),
     // A stripe_charge unit MUST carry its charge id; a non-stripe unit MUST NOT
     // (its charge id is meaningless — checks/ACH/wires are not Stripe charges).
     check(

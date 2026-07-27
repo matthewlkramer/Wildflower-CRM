@@ -526,6 +526,7 @@ export const sourceLinkTypeEnum = pgEnum("source_link_type", [
   "qbo_register_unit",
   "qbo_line_deposit",
   "payout_qb_settlement",
+  "unit_gift_corroboration",
 ]);
 
 // HOW a machine-made claim was matched (docs/adr-qbo-evidence-grain.md §2).
