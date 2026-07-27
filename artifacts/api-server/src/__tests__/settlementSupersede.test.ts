@@ -16,6 +16,7 @@ import {
 
 const counted = (id: string, giftId: string, amount: string): SupersedeQbRow => ({
   id,
+  paymentUnitId: id,
   giftId,
   amountApplied: amount,
   linkRole: "counted",
@@ -26,6 +27,7 @@ const corroborating = (
   amount: string | null,
 ): SupersedeQbRow => ({
   id,
+  paymentUnitId: `pu_${id}`,
   giftId,
   amountApplied: amount,
   linkRole: "corroborating",

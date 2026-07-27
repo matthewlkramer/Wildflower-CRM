@@ -6,17 +6,15 @@ import {
 } from "./paymentApplicationsTestUtil";
 
 /**
- * DB-backed coverage for the bank-spine ledger dual-write
- * (docs/adr-bank-spine-money-model.md, Phases 5b/9a):
+ * DB-backed coverage for the unit→gift booking write surface
+ * (docs/adr-bank-spine-money-model.md, docs/adr-unit-gift-pointer.md):
  *
- *   - applyPaymentApplication resolves the canonical payment_units row for its
- *     source anchor and stamps payment_unit_id on the ledger row;
- *   - anchors without a unit yet write NULL (the post-sync recompute catches
- *     up later — never an error);
+ *   - applyPaymentApplication resolves (or creates) the canonical
+ *     payment_units row for its source anchor and sets the counted tie
+ *     facts (gift_id + 0201 columns) on it;
  *   - UNIT-level counted uniqueness: booking the SAME unit via a DIFFERENT
- *     source anchor consolidates (same gift — the old description row is
- *     replaced) or throws AnchorAlreadyCountedError (different gift), and the
- *     0167 partial unique index backstops it raw.
+ *     source anchor converges (same gift) or throws
+ *     AnchorAlreadyCountedError (different gift) — one gift per unit.
  *
  * Skips automatically when no real DATABASE_URL is configured.
  */
@@ -151,16 +149,18 @@ async function apply(anchor: AnchorArgs, giftId: string, amount: string) {
   );
 }
 
+/** The unit's counted tie (empty when untied). */
 async function readUnitRows(unitId: string) {
-  return db
+  const rows = await db
     .select({
-      giftId: schema.paymentApplications.giftId,
-      evidenceSource: schema.paymentApplications.evidenceSource,
-      amountApplied: schema.paymentApplications.amountApplied,
-      paymentUnitId: schema.paymentApplications.paymentUnitId,
+      id: schema.paymentUnits.id,
+      giftId: schema.paymentUnits.giftId,
     })
-    .from(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.paymentUnitId, unitId));
+    .from(schema.paymentUnits)
+    .where(eqFn(schema.paymentUnits.id, unitId));
+  return rows.flatMap((r) =>
+    r.giftId ? [{ giftId: r.giftId, paymentUnitId: r.id }] : [],
+  );
 }
 
 function sqlState(e: unknown): string | undefined {
@@ -229,7 +229,7 @@ afterAll(async () => {
 });
 
 describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
-  it("stamps payment_unit_id on a stripe application when the unit exists", async () => {
+  it("sets the counted tie on the anchor's existing unit", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
     const unit = await seedStripeUnit(ch);
@@ -237,37 +237,26 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     await apply({ evidenceSource: "stripe", stripeChargeId: ch }, gift, "100.00");
 
     const rows = await readUnitRows(unit);
-    expect(rows).toEqual([
-      {
-        giftId: gift,
-        evidenceSource: "stripe",
-        amountApplied: "100.00",
-        paymentUnitId: unit,
-      },
-    ]);
+    expect(rows).toEqual([{ giftId: gift, paymentUnitId: unit }]);
   });
 
-  it("creates and stamps a unit when the anchor has no unit yet", async () => {
+  it("creates the canonical unit when the anchor has no unit yet", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
 
     await apply({ evidenceSource: "stripe", stripeChargeId: ch }, gift, "100.00");
 
     const rows = await db
-      .select({ paymentUnitId: schema.paymentApplications.paymentUnitId })
-      .from(schema.paymentApplications)
-      .innerJoin(
-        schema.paymentUnits,
-        eqFn(
-          schema.paymentApplications.paymentUnitId,
-          schema.paymentUnits.id,
-        ),
-      )
+      .select({
+        id: schema.paymentUnits.id,
+        giftId: schema.paymentUnits.giftId,
+      })
+      .from(schema.paymentUnits)
       .where(eqFn(schema.paymentUnits.stripeChargeId, ch));
-    expect(rows).toEqual([{ paymentUnitId: `pu_${ch}` }]);
+    expect(rows).toEqual([{ id: `pu_${ch}`, giftId: gift }]);
   });
 
-  it("same unit, same gift via another source: consolidates to ONE counted row", async () => {
+  it("same unit, same gift via another source: converges on ONE counted tie", async () => {
     const gift = await seedGift();
     const sp = await seedQbStagedPayment();
     const dn = await seedDonation();
@@ -280,14 +269,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     await apply({ evidenceSource: "quickbooks", paymentId: sp }, gift, "100.00");
 
     const rows = await readUnitRows(unit);
-    expect(rows).toEqual([
-      {
-        giftId: gift,
-        evidenceSource: "quickbooks",
-        amountApplied: "100.00",
-        paymentUnitId: unit,
-      },
-    ]);
+    expect(rows).toEqual([{ giftId: gift, paymentUnitId: unit }]);
   });
 
   it("same unit via another source but a DIFFERENT gift: throws", async () => {
@@ -309,14 +291,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     expect(err).toBeInstanceOf(pa.AnchorAlreadyCountedError);
 
     const rows = await readUnitRows(unit);
-    expect(rows).toEqual([
-      {
-        giftId: giftA,
-        evidenceSource: "donorbox",
-        amountApplied: "100.00",
-        paymentUnitId: unit,
-      },
-    ]);
+    expect(rows).toEqual([{ giftId: giftA, paymentUnitId: unit }]);
   });
 
   it("DB backstop (0167): raw second counted row for one unit is rejected", async () => {

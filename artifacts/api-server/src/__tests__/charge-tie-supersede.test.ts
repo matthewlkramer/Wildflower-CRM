@@ -19,6 +19,7 @@ const MARKER = chargeTieSupersedeMarker(QB_ID);
 
 const qbRow = (over: Partial<TieQbLedgerRow> = {}): TieQbLedgerRow => ({
   id: "pa_qb_1",
+  paymentUnitId: "pu_qb_1",
   giftId: "gift_1",
   giftAllocationId: null,
   amountApplied: "100.00",

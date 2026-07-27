@@ -510,7 +510,7 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([]);
   });
 
-  it("syncs the unit→gift pointer with the counted ledger", async () => {
+  it("recompute leaves the counted unit→gift pointer untouched (it IS the authority)", async () => {
     const orgId = nextId("org");
     await db
       .insert(schema.organizations)
@@ -531,35 +531,17 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       id: unitId,
       kind: "check",
       grossAmount: "55.00",
+      giftId,
+      giftMatchMethod: "human",
     });
     paymentUnitIds.push(unitId);
 
-    const appId = nextId("pa");
-    await db.insert(schema.paymentApplications).values({
-      id: appId,
-      giftId,
-      paymentUnitId: unitId,
-      amountApplied: "55.00",
-      evidenceSource: "quickbooks",
-    });
-    applicationIds.push(appId);
-
     await recompute.recomputeBankSpine();
-    let unit = await db
+    const unit = await db
       .select({ giftId: schema.paymentUnits.giftId })
       .from(schema.paymentUnits)
       .where(eqFn(schema.paymentUnits.id, unitId));
     expect(unit[0]?.giftId).toBe(giftId);
-
-    await db
-      .delete(schema.paymentApplications)
-      .where(eqFn(schema.paymentApplications.id, appId));
-    await recompute.recomputeBankSpine();
-    unit = await db
-      .select({ giftId: schema.paymentUnits.giftId })
-      .from(schema.paymentUnits)
-      .where(eqFn(schema.paymentUnits.id, unitId));
-    expect(unit[0]?.giftId).toBeNull();
   });
 
   it("multi-row sum does not link when two deposits are candidates", async () => {

@@ -90,13 +90,12 @@ async function seed(
     entityId: opts.entityId,
   } satisfies StagedInsert);
   if (opts.linkedGiftId) {
-    await db.insert(paymentApplications).values({
-      id: `${id}_pa`,
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
-      giftId: opts.linkedGiftId,
-      amountApplied: "100.00",
-      evidenceSource: "quickbooks",
-    });
+    const dbMod = await import("@workspace/db");
+    const unitId = await unitIdForAnchor("quickbooks", id);
+    await db
+      .update(dbMod.paymentUnits)
+      .set({ giftId: opts.linkedGiftId, giftMatchMethod: "system" })
+      .where(eqFn(dbMod.paymentUnits.id, unitId));
   }
 }
 

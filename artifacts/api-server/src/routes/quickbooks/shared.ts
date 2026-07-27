@@ -3,7 +3,6 @@ import { db } from "@workspace/db";
 import {
   stagedPayments,
   giftsAndPayments,
-  paymentApplications,
   paymentUnits,
   organizations,
   households,
@@ -20,6 +19,7 @@ import {
   getTableColumns,
   ilike,
   inArray,
+  isNotNull,
   isNull,
   not,
   or,
@@ -112,15 +112,14 @@ export const isParkedFiscallyRow = sql`(${isFiscallySponsoredRow} AND ${hasNoGif
 // staged_payments through an alias (the drizzle table fragments above render
 // unqualified/base-table-qualified there — e.g. the workbench-clusters slim
 // UNION). Entity ids are code constants, safe to inline. KEEP IN LOCKSTEP with
-// isParkedFiscallyRow: same entity list, same no-counted-QB-ledger-row test.
+// isParkedFiscallyRow: same entity list, same no-counted-tie test.
 export const parkedFiscallyExpr = (a: string): string =>
   `(${a}.entity_id IS NOT NULL
     AND ${a}.entity_id IN (${FISCALLY_SPONSORED_ENTITY_IDS.map((id) => `'${id}'`).join(", ")})
     AND NOT EXISTS (
-      SELECT 1 FROM payment_applications pa_fs
-      JOIN payment_units pu_fs ON pu_fs.id = pa_fs.payment_unit_id
+      SELECT 1 FROM payment_units pu_fs
       WHERE pu_fs.source_staged_payment_id = ${a}.id
-        AND pa_fs.evidence_source = 'quickbooks' AND pa_fs.link_role = 'counted'
+        AND pu_fs.gift_id IS NOT NULL
     ))`;
 
 // Derived queue bucket for a staged row (kept in sync with the where-clauses
@@ -232,38 +231,31 @@ export const stagedSelect = {
     WHERE ga.gift_id = ${qbLedgerSoleGiftIdForPayment()}
   )`.as("resolved_gift_allocations"),
   // Split summary: when a staged row is split across several existing gifts its
-  // resolution lives entirely in counted payment_applications ledger rows
-  // anchored to the payment (resolvedGift above is null because
-  // qbLedgerSoleGiftIdForPayment returns null for >1 counted rows). These
-  // correlated subqueries surface the count, combined gross total, and gift
-  // names so the UI can render "Split across N gifts · $total". Gated on the
-  // ledger split shape (MORE THAN ONE counted row) so a direct/mint/group row —
-  // exactly one counted row — stays 0/null exactly as before. 0/null when not
-  // split.
+  // resolution lives entirely in counted unit→gift ties anchored to the
+  // payment (resolvedGift above is null because qbLedgerSoleGiftIdForPayment
+  // returns null for >1 counted ties). These correlated subqueries surface
+  // the count, combined gross total, and gift names so the UI can render
+  // "Split across N gifts · $total". Gated on the split shape (MORE THAN ONE
+  // counted tie) so a direct/mint/group row — exactly one counted tie —
+  // stays 0/null exactly as before. 0/null when not split.
   splitCount: sql<number>`(
     SELECT CASE WHEN COUNT(*) > 1 THEN COUNT(*)::int ELSE 0 END
-    FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    FROM payment_units pu
     WHERE pu.source_staged_payment_id = ${stagedPayments.id}
-      AND pa.evidence_source = 'quickbooks'
-      AND pa.link_role = 'counted'
+      AND pu.gift_id IS NOT NULL
   )`.as("split_count"),
   splitTotal: sql<string | null>`(
-    SELECT CASE WHEN COUNT(*) > 1 THEN SUM(pa.amount_applied) END
-    FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    SELECT CASE WHEN COUNT(*) > 1 THEN SUM(pu.gross_amount) END
+    FROM payment_units pu
     WHERE pu.source_staged_payment_id = ${stagedPayments.id}
-      AND pa.evidence_source = 'quickbooks'
-      AND pa.link_role = 'counted'
+      AND pu.gift_id IS NOT NULL
   )`.as("split_total"),
   splitGiftNames: sql<string[] | null>`(
     SELECT CASE WHEN COUNT(*) > 1 THEN array_agg(g.name ORDER BY g.name) END
-    FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    JOIN gifts_and_payments g ON g.id = pa.gift_id
+    FROM payment_units pu
+    JOIN gifts_and_payments g ON g.id = pu.gift_id
     WHERE pu.source_staged_payment_id = ${stagedPayments.id}
-      AND pa.evidence_source = 'quickbooks'
-      AND pa.link_role = 'counted'
+      AND pu.gift_id IS NOT NULL
   )`.as("split_gift_names"),
   // Unit-split lineage (distinct from the gift-split fields above, which fan
   // ONE payment across gifts): a synthetic reconciliation unit points at its
@@ -553,16 +545,14 @@ export async function revertOneStagedPayment(
       // revert, not here).
       const countedApps = await tx
         .select({
-          giftId: paymentApplications.giftId,
-          createdTheGift: paymentApplications.createdTheGift,
+          giftId: paymentUnits.giftId,
+          createdTheGift: paymentUnits.createdTheGift,
         })
-        .from(paymentApplications)
-        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+        .from(paymentUnits)
         .where(
           and(
             eq(paymentUnits.sourceStagedPaymentId, id),
-            eq(paymentApplications.evidenceSource, "quickbooks"),
-            eq(paymentApplications.linkRole, "counted"),
+            isNotNull(paymentUnits.giftId),
           ),
         );
       if (countedApps.length === 0) throw new Error(REVERT_NOT_REVERTIBLE);
@@ -621,9 +611,8 @@ export async function revertOneStagedPayment(
       }
 
       if (isAutoMint) {
-        // payment_applications.gift_id is RESTRICT — clear the QB cash-
-        // application ledger row(s) booked at mint for this auto-minted gift
-        // before deleting it.
+        // payment_units.gift_id is RESTRICT — clear the counted tie(s)
+        // booked at mint for this auto-minted gift before deleting it.
         await removePaymentApplicationsForGift(tx, gid);
         await tx.delete(giftsAndPayments).where(eq(giftsAndPayments.id, gid));
       }

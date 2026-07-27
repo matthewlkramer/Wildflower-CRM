@@ -324,14 +324,11 @@ describe.skipIf(!HAS_DB)("staged payment split units (DB)", () => {
       organizationId: ORG_ID,
     });
     giftIds.push(gift);
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", parent),
-      giftId: gift,
-      amountApplied: "100.00",
-      evidenceSource: "quickbooks",
-      linkRole: "counted",
-    });
+    const unitId = await unitIdForAnchor("quickbooks", parent);
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId: gift, giftMatchMethod: "system" })
+      .where(eqFn(schema.paymentUnits.id, unitId));
     const a = await abortOf(() =>
       split(parent, [{ amount: "60.00" }, { amount: "40.00" }]),
     );

@@ -7,7 +7,6 @@ import {
   organizations,
   people,
   households,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
@@ -1062,40 +1061,34 @@ async function loadFacts(
     // linkedElsewhereFor).
     const linkedByStaged = new Map<string, string>();
     const linkedByCharge = new Map<string, string>();
-    // QB side reads the counted cash-application ledger (the legacy staged
-    // gift-link columns are @deprecated and no longer written).
+    // QB side reads the counted unit→gift tie (the legacy staged gift-link
+    // columns are @deprecated and no longer written).
     const stagedLinks = await conn
       .select({
-        gid: paymentApplications.giftId,
+        gid: paymentUnits.giftId,
         sid: paymentUnits.sourceStagedPaymentId,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .from(paymentUnits)
       .where(
         and(
-          inArray(paymentApplications.giftId, [...giftIds]),
-          eq(paymentApplications.evidenceSource, "quickbooks"),
-          eq(paymentApplications.linkRole, "counted"),
+          inArray(paymentUnits.giftId, [...giftIds]),
+          isNotNull(paymentUnits.sourceStagedPaymentId),
         ),
       );
     for (const r of stagedLinks) {
       if (r.gid && r.sid && !bundleStagedIds.includes(r.sid))
         linkedByStaged.set(r.gid, r.sid);
     }
-    // Ledger read (pointer columns retired): a counted stripe application IS
-    // the charge↔gift link.
+    // A counted stripe unit→gift tie IS the charge↔gift link.
     const chargeLinks = await conn
       .select({
-        gid: paymentApplications.giftId,
+        gid: paymentUnits.giftId,
         cid: paymentUnits.stripeChargeId,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .from(paymentUnits)
       .where(
         and(
-          inArray(paymentApplications.giftId, [...giftIds]),
-          eq(paymentApplications.evidenceSource, "stripe"),
-          eq(paymentApplications.linkRole, "counted"),
+          inArray(paymentUnits.giftId, [...giftIds]),
           isNotNull(paymentUnits.stripeChargeId),
         ),
       );

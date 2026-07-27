@@ -1,12 +1,18 @@
 import { db } from "@workspace/db";
 import {
-  paymentApplications,
   paymentUnits,
   stagedPayments,
   stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
-import { checkBookOnce, syncUnitGiftPointers } from "./paymentApplications";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import {
+  checkBookOnce,
+  CLEARED_TIE_FACTS,
+  deleteSupersedeDemotionCrumb,
+  supersedeDemotionCrumbsForUnits,
+  writeSupersedeDemotionCrumb,
+  type PaymentApplicationMatchMethod,
+} from "./paymentApplications";
 import { amountWithinFeeBand } from "./reconciliationGate";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -15,20 +21,20 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * §4.3 settlement supersede (docs/reconciliation-design.md): when a coarse QB
  * deposit lump is settled against a Stripe payout (the
  * `settled_stripe_payout_id` pairing fact, 0168) AND a gift's money
- * is fully re-expressed by that payout's per-charge counted Stripe rows, the
- * deposit's coarse QB row for that gift is DEMOTED to `corroborating` — the
- * granular per-charge rows become the money trail, and source-agnostic
- * SUM readers can never count the same dollars twice. The demotion is fully
- * reversible: when the coverage fact goes away (pairing cleared, charge
- * unbooked), the row is PROMOTED back to `counted`.
+ * is fully re-expressed by that payout's per-charge counted Stripe units, the
+ * deposit unit's coarse tie for that gift is DEMOTED — the granular
+ * per-charge units become the money trail, and source-agnostic SUM readers
+ * can never count the same dollars twice. The demotion is fully reversible:
+ * when the coverage fact goes away (pairing cleared, charge unbooked), the
+ * tie is PROMOTED back onto the deposit unit.
  *
- * Discriminator — which corroborating rows this module owns:
- *   - A demoted row KEEPS its `amount_applied` (the CHECK allows > 0 on
- *     corroborating rows). A corroborating QB row WITH an amount is
- *     supersede-managed and eligible for promotion.
- *   - The corrections flow (gift_evidence_links fold) writes corroborating
- *     rows with `amount_applied` NULL. Those are audit-only annotations and
- *     are NEVER touched here.
+ * Discriminator — which facts this module owns:
+ *   - A demoted tie is preserved as a supersede demotion crumb: a
+ *     unit_gift_corroboration source_link with
+ *     match_basis = 'supersede_demotion' (provenance carries the original
+ *     match method; confirmed_by/confirmed_at its confirmation stamp).
+ *   - Corrections-flow corroboration claims (other bases) are audit-only
+ *     annotations and are NEVER touched here.
  *
  * Idempotent + re-runnable: the decision is a pure function of current facts
  * (settled pairing, per-gift Stripe counted sums, fee band), so re-applying on
@@ -36,10 +42,12 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  */
 
 export interface SupersedeQbRow {
-  /** payment_applications.id */
+  /** The unit id for a counted tie; the source_links id for a crumb. */
   id: string;
+  /** The QB-anchored payment unit carrying/carried the tie. */
+  paymentUnitId: string;
   giftId: string;
-  /** Numeric string; NULL only on corrections-flow corroborating rows. */
+  /** The unit's own amount (numeric string). */
   amountApplied: string | null;
   linkRole: "counted" | "corroborating";
 }
@@ -51,32 +59,30 @@ export interface SupersedeDecision {
 }
 
 /**
- * PURE decision core (DB-free, unit-testable). Given a deposit's QB ledger
- * rows, whether the deposit is currently settled against a payout, and the
- * per-gift counted Stripe sums booked from that payout, decide which rows
- * flip role.
+ * PURE decision core (DB-free, unit-testable). Given a deposit's unit ties
+ * (counted) and supersede crumbs (corroborating), whether the deposit is
+ * currently settled against a payout, and the per-gift counted Stripe sums
+ * booked from that payout, decide which ties flip.
  *
- * Coverage = the settled payout's counted Stripe rows for the SAME gift sum to
- * the QB row's amount within the processor fee band (`amountWithinFeeBand`
- * QB-only band: equal to the cent, or gross within ~10% + $1 above the net) —
- * the same-money test used everywhere else in reconciliation.
+ * Coverage = the settled payout's counted Stripe units for the SAME gift sum
+ * to the deposit unit's amount within the processor fee band
+ * (`amountWithinFeeBand` QB-only band: equal to the cent, or gross within
+ * ~10% + $1 above the net) — the same-money test used everywhere else in
+ * reconciliation.
  *
- *   - counted row, covered      → demote (granular rows own the money trail)
- *   - corroborating row (with an amount — supersede-managed), NOT covered
- *                               → promote (coverage fact disappeared)
- *   - corroborating row with NULL amount (corrections flow) → never touched
+ *   - counted tie, covered      → demote (granular units own the money trail)
+ *   - crumb, NOT covered        → promote (coverage fact disappeared)
  */
 export function decideSupersedeActions(args: {
   hasConfirmedLink: boolean;
   rows: SupersedeQbRow[];
-  /** Per-gift SUM of counted Stripe rows anchored on the linked payout(s). */
+  /** Per-gift SUM of counted Stripe units anchored on the linked payout(s). */
   stripeSumByGift: ReadonlyMap<string, string>;
 }): SupersedeDecision[] {
   const { hasConfirmedLink, rows, stripeSumByGift } = args;
   const decisions: SupersedeDecision[] = [];
   for (const row of rows) {
-    // Corrections-flow annotation rows (NULL amount) are not ours.
-    if (row.linkRole === "corroborating" && row.amountApplied == null) continue;
+    if (row.amountApplied == null) continue;
     const stripeSum = stripeSumByGift.get(row.giftId) ?? null;
     const covered =
       hasConfirmedLink &&
@@ -95,33 +101,30 @@ export function decideSupersedeActions(args: {
 /**
  * Recompute + apply supersede state for a set of QB deposits inside the
  * caller's transaction. Call AFTER the facts changed in the same tx (a payout
- * pairing filled/cleared, a per-charge Stripe row booked/unbooked, a QB row
+ * pairing filled/cleared, a per-charge Stripe unit booked/unbooked, a QB row
  * booked against a settled deposit).
  *
  * Per deposit:
  *   1. FOR UPDATE lock the staged payment (serializes against every other
- *      ledger writer for the anchor — applyPaymentApplication locks the same
+ *      tie writer for the anchor — applyPaymentApplication locks the same
  *      row).
- *   2. Read its QB ledger rows (counted + supersede-managed corroborating).
+ *   2. Read its unit ties (counted) + supersede crumbs (corroborating).
  *   3. Read its settled payout pairing → per-gift counted Stripe sums for
  *      that payout.
  *   4. Decide (pure) + apply:
- *      - demote: flip counted → corroborating, KEEPING the amount. Any
- *        pre-existing corroborating row for the same (payment, gift) pair —
- *        e.g. a corrections-flow annotation — is deleted first so the partial
- *        UNIQUE can't collide (the demoted row carries strictly more
- *        information: the amount).
- *      - promote: flip corroborating → counted. If a counted row for the pair
- *        already exists (a fresh booking raced ahead), the stale demoted row
+ *      - demote: clear the unit's tie facts, preserving them as a supersede
+ *        crumb (upsert on the deterministic per-pair id — a pre-existing
+ *        corrections annotation for the pair is re-stamped as the crumb).
+ *      - promote: restore the tie onto the crumb's unit. If the unit already
+ *        carries a fresh counted tie (a booking raced ahead), the stale crumb
  *        is deleted instead. The book-once guard runs first with the fee-band
- *        tolerance (the row was legally booked before demotion, so this only
+ *        tolerance (the tie was legally booked before demotion, so this only
  *        blocks a genuine over-application that arose meanwhile); a guard
- *        failure SKIPS the promote — the row stays corroborating, a safe
- *        conservative state a later re-run can still fix.
+ *        failure SKIPS the promote — the crumb stays, a safe conservative
+ *        state a later re-run can still fix.
  *
- * Returns the DISTINCT gift ids whose ledger rows changed, so callers can
- * recompute each gift's QuickBooks tie status post-commit
- * (`applyGiftQbTieMany`).
+ * Returns the DISTINCT gift ids whose ties changed, so callers can recompute
+ * each gift's QuickBooks tie status post-commit (`applyGiftQbTieMany`).
  */
 export async function applySettlementSupersedeMany(
   tx: Tx,
@@ -143,28 +146,50 @@ export async function applySettlementSupersedeMany(
       .then((r) => r[0]);
     if (!deposit) continue;
 
-    const rows: SupersedeQbRow[] = await tx
+    const units = await tx
       .select({
-        id: paymentApplications.id,
-        giftId: paymentApplications.giftId,
-        amountApplied: paymentApplications.amountApplied,
-        linkRole: paymentApplications.linkRole,
+        id: paymentUnits.id,
+        grossAmount: paymentUnits.grossAmount,
+        giftId: paymentUnits.giftId,
+        giftMatchMethod: paymentUnits.giftMatchMethod,
+        giftConfirmedByUserId: paymentUnits.giftConfirmedByUserId,
+        giftConfirmedAt: paymentUnits.giftConfirmedAt,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-      .where(
-        and(
-          eq(paymentUnits.sourceStagedPaymentId, depositId),
-          eq(paymentApplications.evidenceSource, "quickbooks"),
-          or(
-            eq(paymentApplications.linkRole, "counted"),
-            and(
-              eq(paymentApplications.linkRole, "corroborating"),
-              isNotNull(paymentApplications.amountApplied),
-            ),
-          ),
-        ),
-      );
+      .from(paymentUnits)
+      .where(eq(paymentUnits.sourceStagedPaymentId, depositId))
+      .for("update");
+    if (units.length === 0) continue;
+    const unitById = new Map(units.map((u) => [u.id, u]));
+    const crumbs = await supersedeDemotionCrumbsForUnits(
+      tx,
+      units.map((u) => u.id),
+    );
+    const crumbById = new Map(crumbs.map((c) => [c.id, c]));
+
+    const rows: SupersedeQbRow[] = [
+      ...units.flatMap((u): SupersedeQbRow[] =>
+        u.giftId
+          ? [
+              {
+                id: u.id,
+                paymentUnitId: u.id,
+                giftId: u.giftId,
+                amountApplied: u.grossAmount,
+                linkRole: "counted",
+              },
+            ]
+          : [],
+      ),
+      ...crumbs.map(
+        (c): SupersedeQbRow => ({
+          id: c.id,
+          paymentUnitId: c.paymentUnitId,
+          giftId: c.giftId,
+          amountApplied: unitById.get(c.paymentUnitId)?.grossAmount ?? null,
+          linkRole: "corroborating",
+        }),
+      ),
+    ];
     if (rows.length === 0) continue;
 
     // The payout this deposit settles as the QBO lump (0168 pairing fact;
@@ -178,24 +203,22 @@ export async function applySettlementSupersedeMany(
       const giftIds = [...new Set(rows.map((r) => r.giftId))];
       const sums = await tx
         .select({
-          giftId: paymentApplications.giftId,
-          total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
-      })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+          giftId: sql<string>`${paymentUnits.giftId}`,
+          total: sql<string>`coalesce(sum(${paymentUnits.grossAmount}), 0)::text`,
+        })
+        .from(paymentUnits)
         .innerJoin(
           stripeStagedCharges,
           eq(stripeStagedCharges.id, paymentUnits.stripeChargeId),
         )
-      .where(
+        .where(
           and(
-            eq(paymentApplications.evidenceSource, "stripe"),
-            eq(paymentApplications.linkRole, "counted"),
+            isNotNull(paymentUnits.stripeChargeId),
             inArray(stripeStagedCharges.stripePayoutId, payoutIds),
-            inArray(paymentApplications.giftId, giftIds),
+            inArray(paymentUnits.giftId, giftIds),
           ),
         )
-        .groupBy(paymentApplications.giftId);
+        .groupBy(paymentUnits.giftId);
       for (const s of sums) stripeSumByGift.set(s.giftId, s.total);
     }
 
@@ -213,76 +236,58 @@ export async function applySettlementSupersedeMany(
     const now = new Date();
     for (const d of decisions) {
       if (d.action !== "demote") continue;
-      // Clear any pre-existing corroborating row for the pair (partial UNIQUE
-      // (payment_id, gift_id) WHERE corroborating would collide).
+      const unit = unitById.get(d.rowId);
+      if (!unit?.giftId) continue;
+      await writeSupersedeDemotionCrumb(tx, {
+        paymentUnitId: unit.id,
+        giftId: unit.giftId,
+        matchMethod: (unit.giftMatchMethod ??
+          "system") as PaymentApplicationMatchMethod,
+        confirmedByUserId: unit.giftConfirmedByUserId,
+        confirmedAt: unit.giftConfirmedAt,
+      });
       await tx
-        .delete(paymentApplications)
-        .where(
-          and(
-            inArray(
-              paymentApplications.paymentUnitId,
-              tx
-                .select({ id: paymentUnits.id })
-                .from(paymentUnits)
-                .where(eq(paymentUnits.sourceStagedPaymentId, depositId)),
-            ),
-            eq(paymentApplications.giftId, d.giftId),
-            eq(paymentApplications.linkRole, "corroborating"),
-            ne(paymentApplications.id, d.rowId),
-          ),
-        );
-      const demoted = await tx
-        .update(paymentApplications)
-        .set({ linkRole: "corroborating", updatedAt: now })
-        .where(eq(paymentApplications.id, d.rowId))
-        .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-      await syncUnitGiftPointers(
-        tx,
-        demoted.map((r) => r.paymentUnitId),
-      );
+        .update(paymentUnits)
+        .set({ ...CLEARED_TIE_FACTS, updatedAt: now })
+        .where(eq(paymentUnits.id, unit.id));
       affectedGiftIds.add(d.giftId);
     }
 
     for (const d of decisions) {
       if (d.action !== "promote") continue;
-      // A fresh counted booking for the pair supersedes the stale demoted row
-      // (the counted partial UNIQUE forbids two): drop the crumb instead.
-      const countedExists = await tx
-        .select({ id: paymentApplications.id })
-        .from(paymentApplications)
-        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-        .where(
-          and(
-            eq(paymentUnits.sourceStagedPaymentId, depositId),
-            eq(paymentApplications.giftId, d.giftId),
-            eq(paymentApplications.linkRole, "counted"),
-          ),
-        )
-        .limit(1)
-        .then((r) => r[0]);
-      if (countedExists) {
-        await tx
-          .delete(paymentApplications)
-          .where(eq(paymentApplications.id, d.rowId));
-        affectedGiftIds.add(d.giftId);
+      const crumb = crumbById.get(d.rowId);
+      if (!crumb) continue;
+      // A fresh counted booking on the crumb's unit:
+      //   - for the SAME gift → the crumb is stale, drop it;
+      //   - for a DIFFERENT gift → conservative skip (the crumb stays a safe
+      //     under-count; a later re-run promotes it once that tie clears).
+      const liveGiftId = await tx
+        .select({ giftId: paymentUnits.giftId })
+        .from(paymentUnits)
+        .where(eq(paymentUnits.id, crumb.paymentUnitId))
+        .then((r) => r[0]?.giftId ?? null);
+      if (liveGiftId) {
+        if (liveGiftId === crumb.giftId) {
+          await deleteSupersedeDemotionCrumb(tx, crumb.id);
+          affectedGiftIds.add(d.giftId);
+        }
         continue;
       }
       // Book-once guard (mirrors applyPaymentApplication): the promoted amount
-      // plus the deposit's OTHER counted rows must fit the deposit's value +
+      // plus the deposit's OTHER counted units must fit the deposit's value +
       // fee-band headroom (splits book gross sub-amounts against a net lump,
       // so the plain epsilon would false-fail a legal restore).
       const row = rows.find((r) => r.id === d.rowId);
       const otherSum = await tx
         .select({
-          total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
+          total: sql<string>`coalesce(sum(${paymentUnits.grossAmount}), 0)::text`,
         })
-        .from(paymentApplications)
-        .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+        .from(paymentUnits)
         .where(
           and(
             eq(paymentUnits.sourceStagedPaymentId, depositId),
-            eq(paymentApplications.linkRole, "counted"),
-            ne(paymentApplications.giftId, d.giftId),
+            isNotNull(paymentUnits.giftId),
+            ne(paymentUnits.id, crumb.paymentUnitId),
           ),
         )
         .then((r) => r[0]?.total ?? "0");
@@ -292,19 +297,24 @@ export async function applySettlementSupersedeMany(
         newAmount: row?.amountApplied ?? null,
         tolerance: Number(deposit.amount ?? 0) * 0.1 + 1,
       });
-      // Conservative skip: leaving the row corroborating under-counts (safe,
+      // Conservative skip: leaving the tie demoted under-counts (safe,
       // visible as a `missing` tie) instead of double-counting; a later
       // re-run promotes it once the conflicting booking is reverted.
       if (!guard.ok) continue;
-      const promoted = await tx
-        .update(paymentApplications)
-        .set({ linkRole: "counted", updatedAt: now })
-        .where(eq(paymentApplications.id, d.rowId))
-        .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-      await syncUnitGiftPointers(
-        tx,
-        promoted.map((r) => r.paymentUnitId),
-      );
+      await tx
+        .update(paymentUnits)
+        .set({
+          giftId: crumb.giftId,
+          giftAllocationId: null,
+          giftMatchMethod: crumb.matchMethod,
+          giftConfirmedByUserId: crumb.confirmedByUserId,
+          giftConfirmedAt: crumb.confirmedAt,
+          giftNote: null,
+          createdTheGift: false,
+          updatedAt: now,
+        })
+        .where(eq(paymentUnits.id, crumb.paymentUnitId));
+      await deleteSupersedeDemotionCrumb(tx, crumb.id);
       affectedGiftIds.add(d.giftId);
     }
   }

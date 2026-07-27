@@ -13,7 +13,6 @@ import {
   households,
   people,
   paymentIntermediaries,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db/schema";
 import {
@@ -662,16 +661,14 @@ router.post(
         // counted charges on one gift, and the unstamp is pointer-safe),
         // then this charge is linked below. The gift is never deleted, even
         // if the incumbent minted it — it is the switch target. Resolved via
-        // the counted ledger rows (pointer columns are retired).
+        // the counted unit→gift ties (pointer columns are retired).
         const incumbentLedger = await tx
           .select({ chargeId: paymentUnits.stripeChargeId })
-          .from(paymentApplications)
-          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+          .from(paymentUnits)
           .where(
             and(
-              eq(paymentApplications.giftId, giftId),
-              eq(paymentApplications.evidenceSource, "stripe"),
-              eq(paymentApplications.linkRole, "counted"),
+              eq(paymentUnits.giftId, giftId),
+              isNotNull(paymentUnits.stripeChargeId),
               ne(paymentUnits.stripeChargeId, charge.id),
             ),
           )

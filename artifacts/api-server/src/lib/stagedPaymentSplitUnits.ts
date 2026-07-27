@@ -1,7 +1,6 @@
 import { db } from "@workspace/db";
 import {
   stagedPayments,
-  paymentApplications,
   paymentUnits,
   sourceLinks,
 } from "@workspace/db/schema";
@@ -82,9 +81,13 @@ async function claimedIdsAmong(tx: Tx, rowIds: string[]): Promise<Set<string>> {
   const [apps, setl, links] = await Promise.all([
     tx
       .select({ id: paymentUnits.sourceStagedPaymentId })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-      .where(inArray(paymentUnits.sourceStagedPaymentId, rowIds)),
+      .from(paymentUnits)
+      .where(
+        and(
+          inArray(paymentUnits.sourceStagedPaymentId, rowIds),
+          isNotNull(paymentUnits.giftId),
+        ),
+      ),
     tx
       .select({ id: stagedPayments.id })
       .from(stagedPayments)
@@ -194,10 +197,14 @@ export async function splitStagedPaymentIntoUnits(
   // are cleared below (the human split is the stronger statement).
   const [apps, setl, confirmedLinks] = await Promise.all([
     tx
-      .select({ id: paymentApplications.id })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-      .where(eq(paymentUnits.sourceStagedPaymentId, parentId))
+      .select({ id: paymentUnits.id })
+      .from(paymentUnits)
+      .where(
+        and(
+          eq(paymentUnits.sourceStagedPaymentId, parentId),
+          isNotNull(paymentUnits.giftId),
+        ),
+      )
       .limit(1),
     tx
       .select({ id: stagedPayments.id })

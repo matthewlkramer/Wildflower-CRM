@@ -474,18 +474,15 @@ function buildUniverse(q: string | null) {
               AND COALESCE(pc.amount_refunded, 0) >= pc.gross_amount
             )
             AND NOT EXISTS (
-              SELECT 1 FROM payment_applications ppa
-              JOIN payment_units ppu ON ppu.id = ppa.payment_unit_id
+              SELECT 1 FROM payment_units ppu
               WHERE ppu.stripe_charge_id = pc.id
-                AND ppa.link_role = 'counted'
-                AND ppa.lifecycle = 'confirmed'
+                AND ppu.gift_id IS NOT NULL
             )
         )
         OR COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
-        SELECT 1 FROM payment_applications pa
-        WHERE pa.payment_unit_id = c.payment_unit_id
-          AND pa.link_role = 'counted'
-          AND pa.lifecycle = 'confirmed'
+        SELECT 1 FROM payment_units pu
+        WHERE pu.id = c.payment_unit_id
+          AND pu.gift_id IS NOT NULL
       )), false)
       ) AS f_needs_gift,
       EXISTS (
@@ -516,10 +513,9 @@ function buildUniverse(q: string | null) {
         AND abs(COALESCE(sum(c.amount), 0) - d.amount) < 0.005
         AND NOT COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
         AND NOT COALESCE(bool_or(NOT EXISTS (
-          SELECT 1 FROM payment_applications pa
-          WHERE pa.payment_unit_id = c.payment_unit_id
-            AND pa.link_role = 'counted'
-            AND pa.lifecycle = 'confirmed'
+          SELECT 1 FROM payment_units pu
+          WHERE pu.id = c.payment_unit_id
+            AND pu.gift_id IS NOT NULL
         )), false)
         AND NOT EXISTS (
           SELECT 1
@@ -642,8 +638,7 @@ function buildUniverse(q: string | null) {
           OR EXISTS (
             SELECT 1 FROM bank_deposit_components sqc
             JOIN payment_units squ ON squ.id = sqc.payment_unit_id
-            LEFT JOIN payment_applications sqpa ON sqpa.payment_unit_id = squ.id AND sqpa.link_role = 'counted' AND sqpa.lifecycle = 'confirmed'
-            LEFT JOIN gifts_and_payments sqg ON sqg.id = sqpa.gift_id
+            LEFT JOIN gifts_and_payments sqg ON sqg.id = squ.gift_id
             WHERE sqc.bank_deposit_id = d.id
               AND (squ.id ILIKE ${search} OR sqg.name ILIKE ${search})
           )
@@ -772,10 +767,8 @@ router.get(
               AND c.source_staged_payment_id IS DISTINCT FROM u.source_staged_payment_id
             ),
             'exclusionReason', c.exclusion_reason,
-            'countedGiftIds', COALESCE((
-              SELECT jsonb_agg(pa.gift_id) FROM payment_applications pa
-              WHERE pa.payment_unit_id = u.id AND pa.link_role = 'counted' AND pa.lifecycle = 'confirmed'
-            ), '[]'::jsonb)
+            'countedGiftIds', CASE WHEN u.gift_id IS NULL THEN '[]'::jsonb
+              ELSE jsonb_build_array(u.gift_id) END
           ) ORDER BY c.id)
           FROM bank_deposit_components c
           JOIN payment_units u ON u.id = c.payment_unit_id
@@ -809,10 +802,8 @@ router.get(
           SELECT jsonb_agg(jsonb_build_object(
             'paymentUnitId', u.id, 'kind', u.kind, 'amount', COALESCE(u.gross_amount, u.net_amount)::text,
             'lifecycle', u.lifecycle, 'sourceStagedPaymentId', u.source_staged_payment_id,
-            'countedGiftIds', COALESCE((
-              SELECT jsonb_agg(pa.gift_id) FROM payment_applications pa
-              WHERE pa.payment_unit_id = u.id AND pa.link_role = 'counted' AND pa.lifecycle = 'confirmed'
-            ), '[]'::jsonb)
+            'countedGiftIds', CASE WHEN u.gift_id IS NULL THEN '[]'::jsonb
+              ELSE jsonb_build_array(u.gift_id) END
           ) ORDER BY u.id)
           FROM bank_deposit_components c JOIN payment_units u ON u.id = c.payment_unit_id
           WHERE c.bank_deposit_id = d.id
@@ -831,30 +822,29 @@ router.get(
               AND EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = g.id),
             'linkedChargeIds', COALESCE((
               SELECT jsonb_agg(pu2.stripe_charge_id)
-              FROM payment_applications pa2
-              JOIN payment_units pu2 ON pu2.id = pa2.payment_unit_id
-              WHERE pa2.gift_id = g.id AND pa2.link_role = 'counted' AND pa2.lifecycle = 'confirmed' AND pu2.stripe_charge_id IS NOT NULL
+              FROM payment_units pu2
+              WHERE pu2.gift_id = g.id AND pu2.stripe_charge_id IS NOT NULL
             ), '[]'::jsonb),
             'linkedStagedPaymentIds', COALESCE((
               SELECT jsonb_agg(pu3.source_staged_payment_id)
-              FROM payment_applications pa3
-              JOIN payment_units pu3 ON pu3.id = pa3.payment_unit_id
-              WHERE pa3.gift_id = g.id AND pa3.link_role = 'counted' AND pa3.lifecycle = 'confirmed' AND pu3.source_staged_payment_id IS NOT NULL
+              FROM payment_units pu3
+              WHERE pu3.gift_id = g.id AND pu3.source_staged_payment_id IS NOT NULL
             ), '[]'::jsonb)
           ))
-          FROM payment_applications pa
-          JOIN gifts_and_payments g ON g.id = pa.gift_id
+          FROM payment_units pa_u
+          JOIN gifts_and_payments g ON g.id = pa_u.gift_id
           LEFT JOIN organizations o ON o.id = g.organization_id
           LEFT JOIN households h ON h.id = g.household_id
           LEFT JOIN people p2 ON p2.id = g.individual_giver_person_id
-          WHERE pa.link_role = 'counted' AND pa.lifecycle = 'confirmed' AND (
-            pa.payment_unit_id IN (SELECT c2.payment_unit_id FROM bank_deposit_components c2 WHERE c2.bank_deposit_id = d.id)
-            OR pa.payment_unit_id IN (
-              SELECT pu2.id
-              FROM payment_units pu2
-              JOIN stripe_staged_charges ch2 ON ch2.id = pu2.stripe_charge_id
-              WHERE ch2.stripe_payout_id = p.id
-                AND ch2.raw_charge->>'status' = 'succeeded'
+          WHERE pa_u.gift_id IS NOT NULL AND (
+            pa_u.id IN (SELECT c2.payment_unit_id FROM bank_deposit_components c2 WHERE c2.bank_deposit_id = d.id)
+            OR (
+              pa_u.stripe_charge_id IN (
+                SELECT ch2.id
+                FROM stripe_staged_charges ch2
+                WHERE ch2.stripe_payout_id = p.id
+                  AND ch2.raw_charge->>'status' = 'succeeded'
+              )
             )
           )
           AND g.archived_at IS NULL
@@ -865,10 +855,9 @@ router.get(
             'description', ch.description, 'statementDescriptor', ch.statement_descriptor,
             'amount', ch.gross_amount::text, 'feeAmount', ch.fee_amount::text,
             'netAmount', ch.net_amount::text, 'chargeDate', ch.date_received::text,
-            'linkedGiftId', (SELECT pa.gift_id FROM payment_applications pa
-              JOIN payment_units pu ON pu.id = pa.payment_unit_id
-              WHERE pu.stripe_charge_id = ch.id AND pa.link_role = 'counted'
-                AND pa.lifecycle = 'confirmed' LIMIT 1),
+            'linkedGiftId', (SELECT pu.gift_id FROM payment_units pu
+              WHERE pu.stripe_charge_id = ch.id AND pu.gift_id IS NOT NULL
+              LIMIT 1),
             'refunded', ch.refunded, 'amountRefunded', ch.amount_refunded::text,
             'refundPropagationStatus', ch.refund_propagation_status,
             'refundPropagationKind', ch.refund_propagation_kind,
@@ -1285,10 +1274,8 @@ router.patch(
           EXISTS (
             SELECT 1
             FROM payment_units booked_unit
-            JOIN payment_applications pa ON pa.payment_unit_id = booked_unit.id
             WHERE booked_unit.source_staged_payment_id = sp.id
-              AND pa.link_role = 'counted'
-              AND pa.lifecycle = 'confirmed'
+              AND booked_unit.gift_id IS NOT NULL
           ) AS counted_to_gift
         FROM staged_payments sp
         WHERE sp.id = ${body.stagedPaymentId}
@@ -1713,12 +1700,7 @@ router.delete(
       const componentResult = await tx.execute(sql`
         SELECT c.id, c.source, c.payment_unit_id,
                u.id AS unit_id, u.id LIKE 'pu_manual_%' AS minted,
-               EXISTS (
-                 SELECT 1 FROM payment_applications pa
-                 WHERE pa.payment_unit_id = c.payment_unit_id
-                   AND pa.link_role = 'counted'
-                   AND pa.lifecycle = 'confirmed'
-               ) AS has_counted_application
+               u.gift_id IS NOT NULL AS has_counted_application
         FROM bank_deposit_components c
         JOIN payment_units u ON u.id = c.payment_unit_id
         WHERE c.id = ${params.id}
@@ -1741,7 +1723,11 @@ router.delete(
       `);
       if (component.minted) {
         const hasApplications = await tx.execute(sql`
-          SELECT 1 FROM payment_applications
+          SELECT 1 FROM payment_units
+          WHERE id = ${component.payment_unit_id}
+            AND gift_id IS NOT NULL
+          UNION ALL
+          SELECT 1 FROM source_links
           WHERE payment_unit_id = ${component.payment_unit_id}
           LIMIT 1
         `);

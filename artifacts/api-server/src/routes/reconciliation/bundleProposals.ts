@@ -7,10 +7,9 @@ import {
   stagedPayments,
   stripePayouts,
   giftsAndPayments,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { getViewer } from "../../lib/identityVisibility";
@@ -978,17 +977,16 @@ router.post(
           });
         }
 
-        // Derive the deposit's status from facts: its counted ledger rows (the
-        // sole gift-link source) — the pairing-elsewhere case was rejected
-        // above, so hasConfirmedSettlementLink is false here.
+        // Derive the deposit's status from facts: its counted unit→gift ties
+        // (the sole gift-link source) — the pairing-elsewhere case was
+        // rejected above, so hasConfirmedSettlementLink is false here.
         const hasCountedLedgerRows = await tx
-          .select({ id: paymentApplications.id })
-          .from(paymentApplications)
-          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
           .where(
             and(
               eq(paymentUnits.sourceStagedPaymentId, pickedDepositId),
-              eq(paymentApplications.linkRole, "counted"),
+              isNotNull(paymentUnits.giftId),
             ),
           )
           .limit(1)

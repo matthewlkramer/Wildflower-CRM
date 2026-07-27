@@ -548,6 +548,12 @@ export const sourceLinkMatchBasisEnum = pgEnum("source_link_match_basis", [
   "deposit_header_ambiguous",
   "settled_pairing",
   "human",
+  // A supersede-managed demotion crumb on a unit_gift_corroboration row: the
+  // unit's counted tie was moved to a finer grain (charge-tie / settlement
+  // supersede) and this claim preserves the demoted booking so a revert can
+  // promote it back. `provenance` carries the demoted tie's original match
+  // method; confirmed_by/confirmed_at carry its confirmation stamp.
+  "supersede_demotion",
 ]);
 
 // The claim's lifecycle.

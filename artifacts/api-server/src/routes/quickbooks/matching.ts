@@ -4,7 +4,6 @@ import {
   stagedPayments,
   giftsAndPayments,
   giftAllocations,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db/schema";
 import {
@@ -12,6 +11,7 @@ import {
   eq,
   getTableColumns,
   inArray,
+  isNotNull,
   isNull,
   notInArray,
   or,
@@ -461,17 +461,16 @@ router.post(
         }
 
         // Gift must not already be QB-linked to a staged payment OUTSIDE this
-        // group. The ledger unifies direct + split + group-reconciled links, so
-        // one existence check (excluding this group's payments) replaces the
-        // legacy direct + split guards.
+        // group. The counted unit→gift ties unify direct + split +
+        // group-reconciled links, so one existence check (excluding this
+        // group's payments) replaces the legacy direct + split guards.
         const conflict = await tx
           .select({ paymentId: paymentUnits.sourceStagedPaymentId })
-          .from(paymentApplications)
-          .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+          .from(paymentUnits)
           .where(
             and(
-              eq(paymentApplications.giftId, giftId),
-              eq(paymentApplications.evidenceSource, "quickbooks"),
+              eq(paymentUnits.giftId, giftId),
+              isNotNull(paymentUnits.sourceStagedPaymentId),
               notInArray(paymentUnits.sourceStagedPaymentId, ids),
             ),
           )
@@ -720,15 +719,15 @@ router.post(
       // system_confirmed; no-op when the row wasn't confirmable or had none.
       if (updated) {
         await confirmPaymentApplicationsForPayment(tx, id, user.id, now);
-        // Echo status from the ledger: an auto-applied row keeps its counted
-        // application (now confirmed); a donor-only row has none.
+        // Echo status from the ties: an auto-applied row keeps its counted
+        // tie (now confirmed); a donor-only row has none.
         const hasApp = await tx
-          .select({ id: paymentApplications.id })
-          .from(paymentApplications)
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
           .where(
             and(
               eq(paymentUnits.sourceStagedPaymentId, id),
-              eq(paymentApplications.linkRole, "counted"),
+              isNotNull(paymentUnits.giftId),
             ),
           )
           .limit(1)

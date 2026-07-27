@@ -255,19 +255,14 @@ END)`;
 
 // stripe_payout half — per-payout rollup predicates.
 // A settled QBO lump (settled_stripe_payout_id pairing fact, 0168) with at
-// least one counted payment_application: one gift covers the whole payout
+// least one counted unit→gift tie: one gift covers the whole payout
 // (deposit-grain / coarse §4.3 booking). When true, every charge is
-// effectively covered even though no individual charge has its own
-// payment_application.
+// effectively covered even though no individual charge has its own tie.
 const depositGrainGiftExists = `EXISTS (
   SELECT 1 FROM staged_payments sl_dg
-  JOIN payment_applications pa_dg
-    ON pa_dg.payment_unit_id IN (
-      SELECT pu_dg.id
-      FROM payment_units pu_dg
-      WHERE pu_dg.source_staged_payment_id = sl_dg.id
-    )
-    AND pa_dg.link_role = 'counted'
+  JOIN payment_units pu_dg
+    ON pu_dg.source_staged_payment_id = sl_dg.id
+    AND pu_dg.gift_id IS NOT NULL
   WHERE sl_dg.settled_stripe_payout_id = sp.id
 )`;
 const payoutAnyOpenCharge = `(EXISTS (
@@ -375,61 +370,54 @@ const qbSaysDonation = (a: string) => `(
 const qbExcludedSaysDonation = `(${qbAllExcluded} AND ${qbSaysDonation("s")})`;
 
 // ── f_completed sub-predicates ───────────────────────────────────────────
-// At least one charge has a counted charge-grain Stripe PA.
+// At least one charge has a counted charge-grain unit→gift tie.
 const chargeGrainGiftExists = `EXISTS (
   SELECT 1 FROM stripe_staged_charges cc_cg
-  JOIN payment_applications pa_cg ON pa_cg.payment_unit_id IN (
-    SELECT pu_cg.id FROM payment_units pu_cg WHERE pu_cg.stripe_charge_id = cc_cg.id
-  )
-    AND pa_cg.evidence_source = 'stripe' AND pa_cg.link_role = 'counted'
+  JOIN payment_units pu_cg
+    ON pu_cg.stripe_charge_id = cc_cg.id
+    AND pu_cg.gift_id IS NOT NULL
   WHERE cc_cg.stripe_payout_id = sp.id
 )`;
-// Total PA amount applied to the settled deposit >= net_total (±0.005 tolerance).
+// Total counted unit gross tied on the settled deposit >= net_total (±0.005 tolerance).
 const depositFullyCovered = `EXISTS (
   SELECT 1 FROM staged_payments sl_dfc
   WHERE sl_dfc.settled_stripe_payout_id = sp.id
     AND (
-      SELECT COALESCE(SUM(pa_dfc.amount_applied), 0)
-      FROM payment_applications pa_dfc
-      JOIN payment_units pu_dfc ON pu_dfc.id = pa_dfc.payment_unit_id
+      SELECT COALESCE(SUM(pu_dfc.gross_amount), 0)
+      FROM payment_units pu_dfc
       WHERE pu_dfc.source_staged_payment_id = sl_dfc.id
-        AND pa_dfc.link_role = 'counted' AND pa_dfc.evidence_source = 'quickbooks'
+        AND pu_dfc.gift_id IS NOT NULL
     ) >= COALESCE(sp.net_total, sp.amount) - 0.005
 )`;
 // No charge-linked gift fails giftComplete.
 const allChargeLinkedGiftsComplete = `NOT EXISTS (
   SELECT 1 FROM stripe_staged_charges cc_gc
-  JOIN payment_applications pa_gc ON pa_gc.payment_unit_id IN (
-    SELECT pu_gc.id FROM payment_units pu_gc WHERE pu_gc.stripe_charge_id = cc_gc.id
-  )
-    AND pa_gc.evidence_source = 'stripe' AND pa_gc.link_role = 'counted'
-  JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
+  JOIN payment_units pu_gc
+    ON pu_gc.stripe_charge_id = cc_gc.id
+    AND pu_gc.gift_id IS NOT NULL
+  JOIN gifts_and_payments g ON g.id = pu_gc.gift_id
   WHERE cc_gc.stripe_payout_id = sp.id AND NOT (${giftComplete})
 )`;
 // No deposit-linked gift fails giftComplete.
 const allDepositLinkedGiftsComplete = `NOT EXISTS (
   SELECT 1 FROM staged_payments sl_gc
-  JOIN payment_applications pa_gc ON pa_gc.payment_unit_id IN (
-    SELECT pu_gc.id FROM payment_units pu_gc WHERE pu_gc.source_staged_payment_id = sl_gc.id
-  )
-    AND pa_gc.evidence_source = 'quickbooks' AND pa_gc.link_role = 'counted'
-  JOIN gifts_and_payments g ON g.id = pa_gc.gift_id
+  JOIN payment_units pu_gc
+    ON pu_gc.source_staged_payment_id = sl_gc.id
+    AND pu_gc.gift_id IS NOT NULL
+  JOIN gifts_and_payments g ON g.id = pu_gc.gift_id
   WHERE sl_gc.settled_stripe_payout_id = sp.id
     AND NOT (${giftComplete})
 )`;
 // No QB-linked gift fails giftComplete.
 const allQbLinkedGiftsComplete = `NOT EXISTS (
-  SELECT 1 FROM payment_applications pa_qgc
-  JOIN gifts_and_payments g ON g.id = pa_qgc.gift_id
-  WHERE pa_qgc.link_role = 'counted'
+  SELECT 1 FROM payment_units pu_qgc
+  JOIN gifts_and_payments g ON g.id = pu_qgc.gift_id
+  WHERE pu_qgc.source_staged_payment_id = s.id
+    AND pu_qgc.gift_id IS NOT NULL
     AND NOT (${giftComplete})
-    AND pa_qgc.payment_unit_id IN (
-      SELECT pu_qgc.id FROM payment_units pu_qgc
-      WHERE pu_qgc.source_staged_payment_id = s.id
-    )
 )`;
 
-// crm_only half — an on-books gift with no counted QB/Stripe ledger row.
+// crm_only half — an on-books gift with no counted QB/Stripe unit→gift tie.
 // Donorbox-only gifts stay (badge); exempt/off-books and reimbursable
 // placeholders are omitted; archived and awaiting-settlement gifts too.
 const crmEligibleBase = `
@@ -437,9 +425,9 @@ const crmEligibleBase = `
   AND g.awaiting_settlement = false
   AND (${deriveGiftQbTieLiveRaw("g.id", "g.amount")}) <> 'exempt'
   AND NOT EXISTS (
-    SELECT 1 FROM payment_applications pa_g
-    WHERE pa_g.gift_id = g.id AND pa_g.link_role = 'counted'
-      AND pa_g.evidence_source IN ('quickbooks', 'stripe')
+    SELECT 1 FROM payment_units pu_g
+    WHERE pu_g.gift_id = g.id
+      AND (pu_g.source_staged_payment_id IS NOT NULL OR pu_g.stripe_charge_id IS NOT NULL)
   )`;
 
 function buildUniverse(q: string | null): SQL {
@@ -1021,7 +1009,7 @@ function buildClusterCoverage(
         : { state: "partial", grain: "unit", relationshipCount: aeCoveredIds.length }
       : { state: "missing", grain: "none", relationshipCount: 0 };
 
-  // transactionToCrm: Stripe ↔ CRM (payment_applications)
+  // transactionToCrm: Stripe ↔ CRM (counted unit→gift ties)
   const txnToCrm: WbCoverageState = (() => {
     if (dpGrain === "none") return { state: "missing" as const, grain: "none" as const, relationshipCount: 0 };
     if (dpGrain === "mixed") return { state: "mixed" as const, grain: "mixed" as const, relationshipCount: coveredChargeIds.length + depositRows.length };
@@ -1400,10 +1388,9 @@ router.get(
                    cc.net_amount::text AS net_amount,
                    cc.date_received::text AS charge_date,
                    ${sql.raw(chargeStatusCaseText("cc"))} AS status,
-                   (SELECT pa_l.gift_id FROM payment_applications pa_l
-                     JOIN payment_units pu_l ON pu_l.id = pa_l.payment_unit_id
+                   (SELECT pu_l.gift_id FROM payment_units pu_l
                      WHERE pu_l.stripe_charge_id = cc.id
-                       AND pa_l.evidence_source = 'stripe' AND pa_l.link_role = 'counted'
+                       AND pu_l.gift_id IS NOT NULL
                      LIMIT 1) AS linked_gift_id,
                    (cc.refund_propagation_status = 'proposed') AS refund_proposed,
                    (CASE WHEN cc.refund_propagation_status = 'proposed'
@@ -1547,11 +1534,9 @@ router.get(
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
       FROM stripe_staged_charges cc
-      JOIN payment_applications pa_j ON pa_j.payment_unit_id IN (
-        SELECT pu_j.id FROM payment_units pu_j WHERE pu_j.stripe_charge_id = cc.id
-      )
-        AND pa_j.evidence_source = 'stripe' AND pa_j.link_role = 'counted'
-      JOIN gifts_and_payments g ON g.id = pa_j.gift_id
+      JOIN payment_units pu_j ON pu_j.stripe_charge_id = cc.id
+        AND pu_j.gift_id IS NOT NULL
+      JOIN gifts_and_payments g ON g.id = pu_j.gift_id
       ${sql.raw(donorJoins)}
       WHERE cc.stripe_payout_id IN (${inList(payoutIds)})`)
           .then((r) => r.rows as unknown as PayoutGiftRow[])
@@ -1629,11 +1614,10 @@ router.get(
         ${sql.raw(giftComplete)} AS gift_complete,
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
-      FROM payment_applications pa_j
-      JOIN payment_units pu_j ON pu_j.id = pa_j.payment_unit_id
-      JOIN gifts_and_payments g ON g.id = pa_j.gift_id
+      FROM payment_units pu_j
+      JOIN gifts_and_payments g ON g.id = pu_j.gift_id
       ${sql.raw(donorJoins)}
-      WHERE pa_j.link_role = 'counted' AND pu_j.source_staged_payment_id IN (${inList(qbIds)})`)
+      WHERE pu_j.gift_id IS NOT NULL AND pu_j.source_staged_payment_id IN (${inList(qbIds)})`)
           .then((r) => r.rows as unknown as QbGiftRow[])
       : Promise.resolve([]);
 
@@ -1665,11 +1649,10 @@ router.get(
         ${sql.raw(giftComplete)} AS gift_complete,
         ${sql.raw(giftSatisfiedBy)}::text AS satisfied_by,
         ${sql.raw(giftCrmReason)}::text AS crm_reason
-      FROM payment_applications pa_j
-      JOIN payment_units pu_j ON pu_j.id = pa_j.payment_unit_id
-      JOIN gifts_and_payments g ON g.id = pa_j.gift_id
+      FROM payment_units pu_j
+      JOIN gifts_and_payments g ON g.id = pu_j.gift_id
       ${sql.raw(donorJoins)}
-      WHERE pa_j.link_role = 'counted' AND pu_j.source_staged_payment_id IN (${inList(depIds)})`);
+      WHERE pu_j.gift_id IS NOT NULL AND pu_j.source_staged_payment_id IN (${inList(depIds)})`);
           return result.rows as unknown as QbGiftRow[];
         })
       : Promise.resolve([]);
@@ -1698,40 +1681,38 @@ router.get(
           .then((r) => r.rows as unknown as CrmGiftRow[])
       : Promise.resolve([]);
 
-    // Coverage: per-payout counted PA rows for both grains (charge-grain and
-    // deposit-grain). Used to compute the explicit coverage object replacing the
-    // old depositGrainGift shortcut and the cluster-level candidateDonor.
+    // Coverage: per-payout counted unit→gift ties for both grains
+    // (charge-grain and deposit-grain). Used to compute the explicit coverage
+    // object replacing the old depositGrainGift shortcut and the
+    // cluster-level candidateDonor.
     const payoutCoverageP: Promise<CoverageRow[]> = payoutIds.length
       ? db
           .execute(sql`
       SELECT
         'charge'::text AS grain,
         cc.stripe_payout_id AS payout_id,
-        pa.id AS pa_id,
-        pa.gift_id,
+        pu.id AS pa_id,
+        pu.gift_id,
         pu.stripe_charge_id AS charge_id,
-        pa.amount_applied::text AS amount_applied
-      FROM payment_applications pa
-      JOIN payment_units pu ON pu.id = pa.payment_unit_id
+        pu.gross_amount::text AS amount_applied
+      FROM payment_units pu
       JOIN stripe_staged_charges cc ON cc.id = pu.stripe_charge_id
       WHERE cc.stripe_payout_id IN (${inList(payoutIds)})
-        AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+        AND pu.gift_id IS NOT NULL
 
       UNION ALL
 
       SELECT
         'deposit'::text AS grain,
         sl.settled_stripe_payout_id AS payout_id,
-        pa.id AS pa_id,
-        pa.gift_id,
+        pu.id AS pa_id,
+        pu.gift_id,
         NULL AS charge_id,
-        pa.amount_applied::text AS amount_applied
-      FROM payment_applications pa
-      JOIN payment_units pu ON pu.id = pa.payment_unit_id
+        pu.gross_amount::text AS amount_applied
+      FROM payment_units pu
       JOIN staged_payments sl ON pu.source_staged_payment_id = sl.id
       WHERE sl.settled_stripe_payout_id IN (${inList(payoutIds)})
-        AND pa.evidence_source = 'quickbooks'
-        AND pa.link_role = 'counted'`)
+        AND pu.gift_id IS NOT NULL`)
           .then((r) => r.rows as unknown as CoverageRow[])
       : Promise.resolve([]);
 

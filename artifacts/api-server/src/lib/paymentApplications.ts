@@ -4,14 +4,14 @@
 // `db` singleton at runtime.
 import type { db } from "@workspace/db";
 import {
-  paymentApplications,
   paymentUnits,
   stagedPayments,
   stripeStagedCharges,
   donorboxDonations,
+  sourceLinks,
+  sourceLinkId,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
-import { newId } from "./helpers";
 import { ensurePaymentUnit } from "./paymentUnits";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -152,18 +152,14 @@ export interface ApplyPaymentApplicationArgs {
 }
 
 /**
- * The resolved anchor for a ledger row: which processor row it hangs off and
- * its cap amount (for the book-once guard). The ledger no longer stores the
- * source anchor id — `payment_unit_id` is the row's identity — so the anchor
- * only resolves/locks the source row and mints its canonical unit.
+ * The resolved anchor for a booking: which processor row it hangs off and
+ * its cap amount (for the book-once guard). The anchor only resolves/locks
+ * the source row and mints its canonical unit — the unit is the tie's
+ * identity.
  */
 interface ResolvedAnchor {
   id: string;
   cap: string | null;
-  /** ON CONFLICT arbiter for counted payment-unit uniqueness. */
-  conflictTarget: [typeof paymentApplications.paymentUnitId];
-  /** Counted partial-index predicate. */
-  conflictTargetWhere?: SQL;
 }
 
 /**
@@ -211,12 +207,7 @@ async function resolveAndLockAnchor(
             "payment application",
         );
       }
-      return {
-        id: args.paymentId,
-        cap: row.amount,
-        conflictTarget: [paymentApplications.paymentUnitId],
-        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
-      };
+      return { id: args.paymentId, cap: row.amount };
     }
     case "stripe": {
       if (!args.stripeChargeId) {
@@ -235,12 +226,7 @@ async function resolveAndLockAnchor(
           `applyPaymentApplication: stripe charge ${args.stripeChargeId} not found`,
         );
       }
-      return {
-        id: args.stripeChargeId,
-        cap: row.amount,
-        conflictTarget: [paymentApplications.paymentUnitId],
-        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
-      };
+      return { id: args.stripeChargeId, cap: row.amount };
     }
     case "donorbox": {
       if (!args.donorboxDonationId) {
@@ -259,75 +245,148 @@ async function resolveAndLockAnchor(
           `applyPaymentApplication: donorbox donation ${args.donorboxDonationId} not found`,
         );
       }
-      return {
-        id: args.donorboxDonationId,
-        cap: row.amount,
-        conflictTarget: [paymentApplications.paymentUnitId],
-        conflictTargetWhere: sql`${paymentApplications.linkRole} = 'counted'`,
-      };
+      return { id: args.donorboxDonationId, cap: row.amount };
     }
   }
 }
 
-/**
- * Re-derive the unit→gift pointer AND its tie facts
- * (docs/adr-unit-gift-pointer.md; fact columns added by 0201:
- * gift_allocation_id / gift_match_method / gift_confirmed_by_user_id /
- * gift_confirmed_at / gift_note / created_the_gift) for a set of units from
- * their surviving counted ledger rows. While `payment_applications` remains
- * the write authority, EVERY ledger mutation (insert / delete / gift
- * re-point / link_role flip / confirm) must call this with the affected unit
- * ids in the same transaction so the successor columns never diverge. The
- * counted-unique index guarantees at most one counted row per unit, so the
- * lateral join is scalar; a unit with no counted row clears everything.
- */
-export async function syncUnitGiftPointers(
+/** The cleared (untied) shape of the unit→gift tie facts. */
+export const CLEARED_TIE_FACTS = {
+  giftId: null,
+  giftAllocationId: null,
+  giftMatchMethod: null,
+  giftConfirmedByUserId: null,
+  giftConfirmedAt: null,
+  giftNote: null,
+  createdTheGift: false,
+} as const;
+
+// ─── Supersede demotion crumbs (source_links unit_gift_corroboration) ───────
+//
+// When charge-tie / settlement supersede demotes a unit's counted tie to a
+// finer grain, the demoted booking is preserved as a corroboration claim
+// discriminated by match_basis = 'supersede_demotion', so a tie revert can
+// promote it back losslessly. `provenance` carries the original match method
+// (system / system_confirmed / human — a supersede-derived tie is never
+// itself demoted) and confirmed_by / confirmed_at its confirmation stamp.
+
+/** A demoted counted tie preserved for revert. */
+export interface SupersedeDemotionCrumb {
+  /** source_links.id */
+  id: string;
+  paymentUnitId: string;
+  giftId: string;
+  matchMethod: PaymentApplicationMatchMethod;
+  confirmedByUserId: string | null;
+  confirmedAt: Date | null;
+}
+
+const crumbProvenance = (
+  m: PaymentApplicationMatchMethod,
+): "system" | "system_confirmed" | "human" =>
+  m === "human" || m === "system_confirmed" ? m : "system";
+
+/** Record the demoted tie as a supersede crumb (idempotent upsert on the
+ * deterministic per-pair id — a colliding plain corroboration claim for the
+ * same pair is re-stamped as the crumb). */
+export async function writeSupersedeDemotionCrumb(
+  tx: Tx,
+  args: {
+    paymentUnitId: string;
+    giftId: string;
+    matchMethod: PaymentApplicationMatchMethod;
+    confirmedByUserId: string | null;
+    confirmedAt: Date | null;
+  },
+): Promise<void> {
+  const values = {
+    linkType: "unit_gift_corroboration" as const,
+    paymentUnitId: args.paymentUnitId,
+    giftId: args.giftId,
+    lifecycle: "confirmed" as const,
+    provenance: crumbProvenance(args.matchMethod),
+    matchBasis: "supersede_demotion" as const,
+    confirmedByUserId: args.confirmedByUserId,
+    confirmedAt: args.confirmedAt,
+    updatedAt: new Date(),
+  };
+  await tx
+    .insert(sourceLinks)
+    .values({
+      id: sourceLinkId(
+        "unit_gift_corroboration",
+        `${args.paymentUnitId}_${args.giftId}`,
+      ),
+      ...values,
+    })
+    .onConflictDoUpdate({ target: sourceLinks.id, set: values });
+}
+
+/** The supersede crumbs anchored on a set of units. */
+export async function supersedeDemotionCrumbsForUnits(
   tx: Tx,
   unitIds: readonly string[],
-): Promise<void> {
+): Promise<SupersedeDemotionCrumb[]> {
   const ids = [...new Set(unitIds)].filter(Boolean);
-  if (ids.length === 0) return;
-  const idList = sql.join(
-    ids.map((id) => sql`${id}`),
-    sql`, `,
+  if (ids.length === 0) return [];
+  const rows = await tx
+    .select({
+      id: sourceLinks.id,
+      paymentUnitId: sourceLinks.paymentUnitId,
+      giftId: sourceLinks.giftId,
+      provenance: sourceLinks.provenance,
+      confirmedByUserId: sourceLinks.confirmedByUserId,
+      confirmedAt: sourceLinks.confirmedAt,
+    })
+    .from(sourceLinks)
+    .where(
+      and(
+        eq(sourceLinks.linkType, "unit_gift_corroboration"),
+        eq(sourceLinks.matchBasis, "supersede_demotion"),
+        inArray(sourceLinks.paymentUnitId, ids),
+      ),
+    );
+  return rows.flatMap((r) =>
+    r.paymentUnitId && r.giftId
+      ? [
+          {
+            id: r.id,
+            paymentUnitId: r.paymentUnitId,
+            giftId: r.giftId,
+            matchMethod: r.provenance,
+            confirmedByUserId: r.confirmedByUserId,
+            confirmedAt: r.confirmedAt,
+          },
+        ]
+      : [],
   );
-  await tx.execute(sql`
-    UPDATE payment_units pu
-    SET gift_id = pa.gift_id,
-        gift_allocation_id = pa.gift_allocation_id,
-        gift_match_method = pa.match_method,
-        gift_confirmed_by_user_id = pa.confirmed_by_user_id,
-        gift_confirmed_at = pa.confirmed_at,
-        gift_note = pa.note,
-        created_the_gift = COALESCE(pa.created_the_gift, false),
-        updated_at = now()
-    FROM (SELECT unnest(ARRAY[${idList}]::text[]) AS id) u
-    LEFT JOIN payment_applications pa
-      ON pa.payment_unit_id = u.id AND pa.link_role = 'counted'
-    WHERE pu.id = u.id
-      AND (pu.gift_id IS DISTINCT FROM pa.gift_id
-        OR pu.gift_allocation_id IS DISTINCT FROM pa.gift_allocation_id
-        OR pu.gift_match_method IS DISTINCT FROM pa.match_method
-        OR pu.gift_confirmed_by_user_id IS DISTINCT FROM pa.confirmed_by_user_id
-        OR pu.gift_confirmed_at IS DISTINCT FROM pa.confirmed_at
-        OR pu.gift_note IS DISTINCT FROM pa.note
-        OR pu.created_the_gift IS DISTINCT FROM COALESCE(pa.created_the_gift, false))
-  `);
+}
+
+/** Consume (delete) a supersede crumb — on promote-back, or when the demoted
+ * booking is superseded by a fresh counted tie for the same pair. */
+export async function deleteSupersedeDemotionCrumb(
+  tx: Tx,
+  crumbId: string,
+): Promise<void> {
+  await tx.delete(sourceLinks).where(eq(sourceLinks.id, crumbId));
 }
 
 /**
- * Idempotently book a unit↔gift cash-application ledger row (one per
- * anchor↔gift pair). Caller MUST hold an open transaction.
+ * Idempotently book the unit→gift tie (docs/adr-unit-gift-pointer.md). The
+ * write surface is `payment_units.gift_id` + the tie fact columns — the
+ * counted `payment_applications` ledger is retired and never written. Caller
+ * MUST hold an open transaction.
  *
  *  1. Resolves + locks the anchor FOR UPDATE (staged_payment for quickbooks,
  *     stripe_staged_charge for stripe, donorbox_donation for donorbox) so
  *     concurrent applications of the same anchor serialize.
- *  2. Reads the live SUM(amount_applied) already booked to OTHER gifts against
- *     THIS anchor (counted rows only).
- *  3. Runs the pure book-once guard; throws PaymentOverApplicationError on
- *     over-application.
- *  4. Upserts the (anchor_id, gift_id) row via the per-anchor UNIQUE key —
- *     re-runs replace the amount instead of duplicating.
+ *  2. Ensures the anchor's canonical unit and locks it; a unit already tied
+ *     to a DIFFERENT gift throws AnchorAlreadyCountedError (one real payment
+ *     settles one gift — re-point flows clear the tie earlier in the same
+ *     tx, so they never see this). Same gift → the write refreshes the facts.
+ *  3. Runs the pure book-once guard (amount vs. the anchor's own cap);
+ *     throws PaymentOverApplicationError on over-application.
+ *  4. Stamps the tie facts on the unit — re-runs converge.
  */
 export async function applyPaymentApplication(
   tx: Tx,
@@ -337,109 +396,72 @@ export async function applyPaymentApplication(
   const anchor = await resolveAndLockAnchor(tx, args);
 
   // 2. Counted-uniqueness invariant (linear money model §7 step 5, bank-spine
-  //    ADR): ONE counted row per canonical payment unit — one real payment
-  //    settles one gift. The unit is the row's identity, so a counted row for
-  //    the SAME unit reached via a DIFFERENT source anchor (an offline check
-  //    booked from both its QB row and its Donorbox donation) is the same real
-  //    payment: same gift → the old description is consolidated away (this
-  //    write supersedes it); different gift → hard conflict regardless of
-  //    amounts (the fee-band split era, where several counted rows could share
-  //    one payment, is retired). Re-point flows delete the old counted row
-  //    earlier in this same tx, so this read sees the post-delete state and
-  //    passes. Runs before the upsert so the counted payment-unit index never
-  //    fires a raw 23505.
+  //    ADR): ONE gift per canonical payment unit. The unit is the tie's
+  //    identity, so booking the SAME unit via a DIFFERENT source anchor (an
+  //    offline check booked from both its QB row and its Donorbox donation)
+  //    is the same real payment: same gift → this write supersedes the old
+  //    facts; different gift → hard conflict regardless of amounts.
   const paymentUnitId = await ensurePaymentUnit(
     tx,
     args.evidenceSource,
     anchor.id,
   );
-  const unitRows = await tx
-    .select({
-      id: paymentApplications.id,
-      giftId: paymentApplications.giftId,
-    })
-    .from(paymentApplications)
-    .where(
-      and(
-        eq(paymentApplications.paymentUnitId, paymentUnitId),
-        eq(paymentApplications.linkRole, "counted"),
-      ),
-    );
-  const conflicting = unitRows.find((r) => r.giftId !== args.giftId);
-  if (conflicting) {
-    throw new AnchorAlreadyCountedError(
-      anchor.id,
-      conflicting.giftId,
-      args.giftId,
-    );
+  const unit = await tx
+    .select({ giftId: paymentUnits.giftId })
+    .from(paymentUnits)
+    .where(eq(paymentUnits.id, paymentUnitId))
+    .for("update")
+    .then((r) => r[0]);
+  if (unit?.giftId && unit.giftId !== args.giftId) {
+    throw new AnchorAlreadyCountedError(anchor.id, unit.giftId, args.giftId);
   }
-  for (const dup of unitRows) {
-    await tx
-      .delete(paymentApplications)
-      .where(eq(paymentApplications.id, dup.id));
-  }
-  // No counted row survives against this unit for another gift, so the
-  // book-once guard below weighs this write against an empty ledger slot.
-  const otherSum = "0";
 
-  // 3. Pure book-once guard.
+  // 3. Pure book-once guard: the amount being applied must fit the anchor's
+  //    own cap (one gift per unit, so there is never an "other gifts" sum).
   const result = checkBookOnce({
     paymentAmount: anchor.cap,
-    otherAppliedSum: otherSum,
+    otherAppliedSum: "0",
     newAmount: args.amountApplied,
     tolerance: args.tolerance,
   });
   if (!result.ok) throw new PaymentOverApplicationError(anchor.id, result);
 
-  // 4. Idempotent upsert (the counted payment-unit UNIQUE key is the
-  //    book-once key).
-  //    link_role / lifecycle keep their column defaults (counted / confirmed)
-  //    for every current caller, so they are intentionally not written here.
-  const now = new Date();
-  const values = {
-    paymentUnitId,
-    giftId: args.giftId,
-    giftAllocationId: args.giftAllocationId ?? null,
-    amountApplied: args.amountApplied,
-    evidenceSource: args.evidenceSource,
-    matchMethod: args.matchMethod ?? ("system" as const),
-    confirmedByUserId: args.confirmedByUserId ?? null,
-    confirmedAt: args.confirmedAt ?? null,
-    note: args.note ?? null,
-    createdTheGift: args.createdTheGift ?? false,
-    updatedAt: now,
-  };
+  // 4. Stamp the tie facts (idempotent — a re-run writes the same values).
+  //    amount_applied has NO successor column: gross-vs-net booking is a
+  //    QBO/accounting-plane fact, not a unit→gift identity fact.
   await tx
-    .insert(paymentApplications)
-    .values({ id: newId(), ...values })
-    .onConflictDoUpdate({
-      target: anchor.conflictTarget,
-      targetWhere: anchor.conflictTargetWhere,
-      set: values,
-    });
-  await syncUnitGiftPointers(tx, [paymentUnitId]);
+    .update(paymentUnits)
+    .set({
+      giftId: args.giftId,
+      giftAllocationId: args.giftAllocationId ?? null,
+      giftMatchMethod: args.matchMethod ?? "system",
+      giftConfirmedByUserId: args.confirmedByUserId ?? null,
+      giftConfirmedAt: args.confirmedAt ?? null,
+      giftNote: args.note ?? null,
+      createdTheGift: args.createdTheGift ?? false,
+      updatedAt: new Date(),
+    })
+    .where(eq(paymentUnits.id, paymentUnitId));
 }
 
 /**
- * Remove every ledger row for a gift about to be hard-deleted (gift_id is
- * RESTRICT, so the rows must go first). Caller holds the transaction.
+ * Clear the tie on every unit counted against a gift about to be
+ * hard-deleted (payment_units.gift_id is RESTRICT, so the ties must go
+ * first; corroborating source_links cascade with the gift). Caller holds
+ * the transaction.
  */
 export async function removePaymentApplicationsForGift(
   tx: Tx,
   giftId: string,
 ): Promise<void> {
-  const removed = await tx
-    .delete(paymentApplications)
-    .where(eq(paymentApplications.giftId, giftId))
-    .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-  await syncUnitGiftPointers(
-    tx,
-    removed.map((r) => r.paymentUnitId),
-  );
+  await tx
+    .update(paymentUnits)
+    .set({ ...CLEARED_TIE_FACTS, updatedAt: new Date() })
+    .where(eq(paymentUnits.giftId, giftId));
 }
 
 /**
- * Remove every ledger row anchored to a staged payment being reverted to
+ * Clear the tie on every unit anchored to a staged payment being reverted to
  * pending. Returns the affected gift ids (recompute their tie). Caller holds
  * the transaction.
  */
@@ -447,90 +469,74 @@ export async function removePaymentApplicationsForPayment(
   tx: Tx,
   paymentId: string,
 ): Promise<string[]> {
-  const removed = await tx
-    .delete(paymentApplications)
+  return clearTieByAnchor(
+    tx,
+    and(
+      eq(paymentUnits.sourceStagedPaymentId, paymentId),
+      isNotNull(paymentUnits.giftId),
+    )!,
+  );
+}
+
+/** Clear the tie facts on every tied unit matching `where`; returns the
+ * previously-tied gift ids (RETURNING reports NEW values, so the old gift
+ * ids are read first under the same tx). Corroborating unit↔gift claims in
+ * source_links are deliberately untouched — they are evidence, not the tie. */
+async function clearTieByAnchor(tx: Tx, where: SQL): Promise<string[]> {
+  const tied = await tx
+    .select({ id: paymentUnits.id, giftId: paymentUnits.giftId })
+    .from(paymentUnits)
+    .where(where)
+    .for("update");
+  if (tied.length === 0) return [];
+  await tx
+    .update(paymentUnits)
+    .set({ ...CLEARED_TIE_FACTS, updatedAt: new Date() })
     .where(
       inArray(
-        paymentApplications.paymentUnitId,
-        tx
-          .select({ id: paymentUnits.id })
-          .from(paymentUnits)
-          .where(eq(paymentUnits.sourceStagedPaymentId, paymentId)),
+        paymentUnits.id,
+        tied.map((r) => r.id),
       ),
-    )
-    .returning({
-      giftId: paymentApplications.giftId,
-      paymentUnitId: paymentApplications.paymentUnitId,
-    });
-  await syncUnitGiftPointers(
-    tx,
-    removed.map((r) => r.paymentUnitId),
-  );
-  return removed.map((r) => r.giftId);
+    );
+  return [...new Set(tied.map((r) => r.giftId).filter((g): g is string => !!g))];
 }
 
 /**
- * Remove every ledger row anchored to a Stripe charge (across ALL gifts).
- * Returns the affected gift ids (recompute their tie). Caller holds the
- * transaction. Used to make a charge→gift tie idempotent + re-tie-safe:
- * delete-by-anchor, then re-apply (a charge settles at most one gift, so a
- * stale row for a previously-tied gift must not linger and double-count).
+ * Clear the tie on the unit anchored to a Stripe charge. Returns the
+ * affected gift ids (recompute their tie). Caller holds the transaction.
+ * Used to make a charge→gift tie idempotent + re-tie-safe: clear-by-anchor,
+ * then re-apply (a charge settles at most one gift, so a stale tie for a
+ * previously-tied gift must not linger and double-count).
  */
 export async function removePaymentApplicationsForStripeCharge(
   tx: Tx,
   stripeChargeId: string,
 ): Promise<string[]> {
-  const removed = await tx
-    .delete(paymentApplications)
-    .where(
-      inArray(
-        paymentApplications.paymentUnitId,
-        tx
-          .select({ id: paymentUnits.id })
-          .from(paymentUnits)
-          .where(eq(paymentUnits.stripeChargeId, stripeChargeId)),
-      ),
-    )
-    .returning({
-      giftId: paymentApplications.giftId,
-      paymentUnitId: paymentApplications.paymentUnitId,
-    });
-  await syncUnitGiftPointers(
+  return clearTieByAnchor(
     tx,
-    removed.map((r) => r.paymentUnitId),
+    and(
+      eq(paymentUnits.stripeChargeId, stripeChargeId),
+      isNotNull(paymentUnits.giftId),
+    )!,
   );
-  return removed.map((r) => r.giftId);
 }
 
 /**
- * Remove every ledger row anchored to a Donorbox donation (across ALL gifts).
- * Returns the affected gift ids. Caller holds the transaction. Same
- * delete-by-anchor-then-apply idempotency contract as the Stripe helper.
+ * Clear the tie on the unit(s) anchored to a Donorbox donation. Returns the
+ * affected gift ids. Caller holds the transaction. Same
+ * clear-by-anchor-then-apply idempotency contract as the Stripe helper.
  */
 export async function removePaymentApplicationsForDonorboxDonation(
   tx: Tx,
   donorboxDonationId: string,
 ): Promise<string[]> {
-  const removed = await tx
-    .delete(paymentApplications)
-    .where(
-      inArray(
-        paymentApplications.paymentUnitId,
-        tx
-          .select({ id: paymentUnits.id })
-          .from(paymentUnits)
-          .where(eq(paymentUnits.donorboxDonationId, donorboxDonationId)),
-      ),
-    )
-    .returning({
-      giftId: paymentApplications.giftId,
-      paymentUnitId: paymentApplications.paymentUnitId,
-    });
-  await syncUnitGiftPointers(
+  return clearTieByAnchor(
     tx,
-    removed.map((r) => r.paymentUnitId),
+    and(
+      eq(paymentUnits.donorboxDonationId, donorboxDonationId),
+      isNotNull(paymentUnits.giftId),
+    )!,
   );
-  return removed.map((r) => r.giftId);
 }
 
 /**
@@ -605,13 +611,13 @@ export async function bookDonorboxDonationApplication(
 
 /**
  * Human confirmation of an auto-applied (`system`) match: promote every
- * `system` ledger row anchored to this payment to `system_confirmed` and stamp
- * who/when. No amount or link change, so no book-once re-check is needed. Rows
- * already `human` or `system_confirmed` are deliberately left untouched (a
- * confirm only graduates auto-applied rows). A payment with no `system` rows —
- * e.g. confirming a pending donor match that never minted a gift — is a clean
- * no-op. Returns the affected gift ids (recompute their tie). Caller holds the
- * transaction.
+ * `system` unit tie anchored to this payment to `system_confirmed` and stamp
+ * who/when. No amount or link change, so no book-once re-check is needed.
+ * Ties already `human` or `system_confirmed` are deliberately left untouched
+ * (a confirm only graduates auto-applied ties). A payment with no `system`
+ * ties — e.g. confirming a pending donor match that never minted a gift — is
+ * a clean no-op. Returns the affected gift ids (recompute their tie). Caller
+ * holds the transaction.
  */
 export async function confirmPaymentApplicationsForPayment(
   tx: Tx,
@@ -620,34 +626,22 @@ export async function confirmPaymentApplicationsForPayment(
   confirmedAt: Date,
 ): Promise<string[]> {
   const updated = await tx
-    .update(paymentApplications)
+    .update(paymentUnits)
     .set({
-      matchMethod: "system_confirmed",
-      confirmedByUserId: confirmedByUserId ?? null,
-      confirmedAt,
+      giftMatchMethod: "system_confirmed",
+      giftConfirmedByUserId: confirmedByUserId ?? null,
+      giftConfirmedAt: confirmedAt,
       updatedAt: new Date(),
     })
     .where(
       and(
-        inArray(
-          paymentApplications.paymentUnitId,
-          tx
-            .select({ id: paymentUnits.id })
-            .from(paymentUnits)
-            .where(eq(paymentUnits.sourceStagedPaymentId, paymentId)),
-        ),
-        eq(paymentApplications.matchMethod, "system"),
+        eq(paymentUnits.sourceStagedPaymentId, paymentId),
+        eq(paymentUnits.giftMatchMethod, "system"),
+        isNotNull(paymentUnits.giftId),
       ),
     )
-    .returning({
-      giftId: paymentApplications.giftId,
-      paymentUnitId: paymentApplications.paymentUnitId,
-    });
-  await syncUnitGiftPointers(
-    tx,
-    updated.map((r) => r.paymentUnitId),
-  );
-  return updated.map((r) => r.giftId);
+    .returning({ giftId: paymentUnits.giftId });
+  return updated.map((r) => r.giftId).filter((g): g is string => !!g);
 }
 
 // ─── Read helpers — the counted unit→gift pointer (payment_units.gift_id) ────
@@ -989,11 +983,9 @@ export function qbLedgerMintedGiftIdForPayment(
   paymentIdSql: SQL = DEFAULT_PAYMENT_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.gift_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    SELECT pu.gift_id FROM payment_units pu
     WHERE pu.source_staged_payment_id = ${paymentIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-      AND pa.created_the_gift = true
+      AND pu.gift_id IS NOT NULL AND pu.created_the_gift = true
     LIMIT 1
   )`;
 }
@@ -1012,11 +1004,9 @@ export function qbLedgerDirectMatchExists(
   giftIdSql: SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
-    SELECT 1 FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
-    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pa.gift_id = ${giftIdSql}
-      AND pa.evidence_source = 'quickbooks' AND pa.link_role = 'counted'
-      AND pa.created_the_gift = false
+    SELECT 1 FROM payment_units pu
+    WHERE pu.source_staged_payment_id = ${paymentIdSql} AND pu.gift_id = ${giftIdSql}
+      AND pu.created_the_gift = false
   )`;
 }
 
@@ -1058,11 +1048,9 @@ export function stripeLedgerMintedGiftIdForCharge(
   chargeIdSql: SQL = DEFAULT_CHARGE_ID_SQL,
 ): SQL<string | null> {
   return sql<string | null>`(
-    SELECT pa.gift_id FROM payment_applications pa
-    JOIN payment_units pu ON pu.id = pa.payment_unit_id
+    SELECT pu.gift_id FROM payment_units pu
     WHERE pu.stripe_charge_id = ${chargeIdSql}
-      AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
-      AND pa.created_the_gift = true
+      AND pu.gift_id IS NOT NULL AND pu.created_the_gift = true
     LIMIT 1
   )`;
 }
@@ -1080,21 +1068,21 @@ export async function chargeCountedLedgerRow(
 ): Promise<{ giftId: string; createdTheGift: boolean } | null> {
   const row = await q
     .select({
-      giftId: paymentApplications.giftId,
-      createdTheGift: paymentApplications.createdTheGift,
+      giftId: paymentUnits.giftId,
+      createdTheGift: paymentUnits.createdTheGift,
     })
-    .from(paymentApplications)
-    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+    .from(paymentUnits)
     .where(
       and(
         eq(paymentUnits.stripeChargeId, chargeId),
-        eq(paymentApplications.evidenceSource, "stripe"),
-        eq(paymentApplications.linkRole, "counted"),
+        isNotNull(paymentUnits.giftId),
       ),
     )
     .limit(1)
     .then((r) => r[0]);
-  return row ?? null;
+  return row?.giftId
+    ? { giftId: row.giftId, createdTheGift: row.createdTheGift }
+    : null;
 }
 
 /**
