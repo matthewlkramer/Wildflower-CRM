@@ -187,15 +187,14 @@ export function quotedSqlAlias(alias: string): string {
 
 /* ── Alias-parameterized text builders — THE canonical derivation ──────── */
 
-/** EXISTS: a counted cash-application ledger row anchored on QB row `alias`. */
+/** EXISTS: a counted unit→gift tie anchored on QB row `alias`. */
 export function qbCountedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `EXISTS (
     SELECT 1
-    FROM "payment_applications" "pa_ds"
-    JOIN "payment_units" "pu_ds" ON "pu_ds"."id" = "pa_ds"."payment_unit_id"
+    FROM "payment_units" "pu_ds"
     WHERE "pu_ds"."source_staged_payment_id" = ${a}."id"
-      AND "pa_ds"."link_role" = 'counted'
+      AND "pu_ds"."gift_id" IS NOT NULL
   )`;
 }
 
@@ -214,7 +213,7 @@ export function qbSettledExistsText(alias: string): string {
  *  status untouched (the refund sweep and the workbench still own that work). */
 export function qbChargeTieBookedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
-  return `EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_qb_tie' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id" AND EXISTS (SELECT 1 FROM "payment_applications" "pa_ct_ds" JOIN "payment_units" "pu_ct_ds" ON "pu_ct_ds"."id" = "pa_ct_ds"."payment_unit_id" WHERE "pu_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id" AND "pa_ct_ds"."evidence_source" = 'stripe' AND "pa_ct_ds"."link_role" = 'counted'))`;
+  return `EXISTS (SELECT 1 FROM "source_links" "srcl_ds" WHERE "srcl_ds"."link_type" = 'charge_qb_tie' AND "srcl_ds"."lifecycle" = 'confirmed' AND "srcl_ds"."qb_staged_payment_id" = ${a}."id" AND EXISTS (SELECT 1 FROM "payment_units" "pu_ct_ds" WHERE "pu_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id" AND "pu_ct_ds"."gift_id" IS NOT NULL))`;
 }
 
 /** EXISTS: RAW charge-grain tie linkage — some Stripe charge names QB row
@@ -317,16 +316,14 @@ export function qbOpenText(alias: string): string {
 ))`;
 }
 
-/** EXISTS: a counted Stripe cash-application ledger row anchored on charge `alias`. */
+/** EXISTS: a counted unit→gift tie anchored on Stripe charge `alias`. */
 export function chargeCountedExistsText(alias: string): string {
   const a = quotedSqlAlias(alias);
   return `EXISTS (
     SELECT 1
-    FROM "payment_applications" "pa_ds"
-    JOIN "payment_units" "pu_ds" ON "pu_ds"."id" = "pa_ds"."payment_unit_id"
+    FROM "payment_units" "pu_ds"
     WHERE "pu_ds"."stripe_charge_id" = ${a}."id"
-      AND "pa_ds"."evidence_source" = 'stripe'
-      AND "pa_ds"."link_role" = 'counted'
+      AND "pu_ds"."gift_id" IS NOT NULL
   )`;
 }
 

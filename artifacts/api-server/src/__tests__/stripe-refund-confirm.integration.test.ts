@@ -10,10 +10,11 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  *
  * The money-safety contract under test:
  *   - confirming a full refund / chargeback NEVER archives or resizes the
- *     linked gift — it demotes the charge's counted payment_applications row
- *     to `corroborating` (audit crumb retained, out of live coverage),
- *   - confirming a partial refund caps the counted amount_applied at what
- *     actually stayed (gross − amount_refunded), gift untouched,
+ *     linked gift — it clears the charge unit's counted tie, preserving the
+ *     gift link as a unit_gift_corroboration source_link (audit crumb
+ *     retained, out of live coverage),
+ *   - confirming a partial refund with a surviving remainder keeps the tie
+ *     counted (the refunded portion is a charge-level accounting fact),
  *   - a partial refund that consumes the whole charge demotes entirely,
  *   - a second confirm of the same charge returns `not_proposed` (the route
  *     maps this to 409),
@@ -41,6 +42,7 @@ let schema: {
   stripeStagedCharges: Db["stripeStagedCharges"];
   paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
+  sourceLinks: Db["sourceLinks"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
@@ -71,7 +73,6 @@ async function seedChargeWithProposal(opts: {
   kind: "full_refund" | "partial_refund" | "chargeback";
   grossAmount?: string;
   amountRefunded?: string;
-  amountApplied?: string;
 }): Promise<string> {
   const id = nextId("ch");
   const gross = opts.grossAmount ?? "100.00";
@@ -92,16 +93,16 @@ async function seedChargeWithProposal(opts: {
     refundProposedAmount: opts.amountRefunded ?? gross,
   });
   chargeIds.push(id);
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    giftId: opts.giftId,
-    amountApplied: opts.amountApplied ?? gross,
-    evidenceSource: "stripe",
-    paymentUnitId: await unitIdForAnchor("stripe", id),
-    matchMethod: "human",
-    confirmedAt: new Date(),
-    createdTheGift: false,
-  });
+  const unitId = await unitIdForAnchor("stripe", id);
+  await db
+    .update(schema.paymentUnits)
+    .set({
+      giftId: opts.giftId,
+      giftMatchMethod: "human",
+      giftConfirmedAt: new Date(),
+      createdTheGift: false,
+    })
+    .where(eqFn(schema.paymentUnits.id, unitId));
   return id;
 }
 
@@ -116,27 +117,51 @@ async function giftRow(giftId: string) {
   return row;
 }
 
+/** The charge unit's tie state: a counted unit tie or the retired-coverage
+ * corroboration source_link (amount is the unit gross in both). */
 async function ledgerRowsForCharge(chargeId: string) {
-  return db
+  const units = await db
     .select({
-      linkRole: schema.paymentApplications.linkRole,
-      amountApplied: schema.paymentApplications.amountApplied,
-      note: schema.paymentApplications.note,
+      id: schema.paymentUnits.id,
+      giftId: schema.paymentUnits.giftId,
+      grossAmount: schema.paymentUnits.grossAmount,
     })
-    .from(schema.paymentApplications)
-    .innerJoin(
-      schema.paymentUnits,
-      eqFn(
-        schema.paymentApplications.paymentUnitId,
-        schema.paymentUnits.id,
-      ),
-    )
-    .where(
-      andFn(
-        eqFn(schema.paymentUnits.stripeChargeId, chargeId),
-        eqFn(schema.paymentApplications.evidenceSource, "stripe"),
-      ),
-    );
+    .from(schema.paymentUnits)
+    .where(eqFn(schema.paymentUnits.stripeChargeId, chargeId));
+  const unitIds = units.map((u) => u.id);
+  const links = unitIds.length
+    ? await db
+        .select({
+          paymentUnitId: schema.sourceLinks.paymentUnitId,
+          note: schema.sourceLinks.note,
+        })
+        .from(schema.sourceLinks)
+        .where(
+          andFn(
+            eqFn(schema.sourceLinks.linkType, "unit_gift_corroboration"),
+            inArrayFn(schema.sourceLinks.paymentUnitId, unitIds),
+          ),
+        )
+    : [];
+  const grossByUnit = new Map(units.map((u) => [u.id, u.grossAmount]));
+  return [
+    ...units.flatMap((u) =>
+      u.giftId
+        ? [
+            {
+              linkRole: "counted" as const,
+              amountApplied: u.grossAmount,
+              note: null as string | null,
+            },
+          ]
+        : [],
+    ),
+    ...links.map((l) => ({
+      linkRole: "corroborating" as const,
+      amountApplied: grossByUnit.get(l.paymentUnitId as string) ?? null,
+      note: l.note,
+    })),
+  ];
 }
 
 async function chargeStatus(chargeId: string): Promise<string | null> {
@@ -159,6 +184,7 @@ beforeAll(async () => {
     stripeStagedCharges: dbMod.stripeStagedCharges,
     paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
+    sourceLinks: dbMod.sourceLinks,
   };
   eqFn = drizzle.eq;
   andFn = drizzle.and;
@@ -233,7 +259,6 @@ describe.skipIf(!HAS_DB)(
         giftId,
         kind: "chargeback",
         grossAmount: "250.00",
-        amountApplied: "250.00",
       });
 
       const res = await confirmRefundPropagation(chargeId, USER_ID);
@@ -256,7 +281,6 @@ describe.skipIf(!HAS_DB)(
         kind: "partial_refund",
         grossAmount: "100.00",
         amountRefunded: "30.00",
-        amountApplied: "100.00",
       });
 
       const res = await confirmRefundPropagation(chargeId, USER_ID);
@@ -270,8 +294,10 @@ describe.skipIf(!HAS_DB)(
 
       const rows = await ledgerRowsForCharge(chargeId);
       expect(rows).toHaveLength(1);
-      expect(rows[0].linkRole).toBe("counted");
-      expect(rows[0].amountApplied).toBe("70.00");
+      expect(rows[0].linkRole).toBe("counted"); // tie survives the remainder
+      // The refunded 30.00 is a charge-level accounting fact
+      // (amount_refunded) — the unit's own gross is unchanged.
+      expect(rows[0].amountApplied).toBe("100.00");
     });
 
     it("partial refund consuming the whole charge demotes entirely", async () => {
@@ -294,25 +320,6 @@ describe.skipIf(!HAS_DB)(
       expect((await giftRow(giftId)).amount).toBe("100.00");
     });
 
-    it("partial refund with counted amount already below the cap is left as-is", async () => {
-      const giftId = await seedGift("100.00");
-      const chargeId = await seedChargeWithProposal({
-        giftId,
-        kind: "partial_refund",
-        grossAmount: "100.00",
-        amountRefunded: "30.00",
-        amountApplied: "50.00",
-      });
-
-      const res = await confirmRefundPropagation(chargeId, USER_ID);
-      expect(res.code).toBe("ok");
-      expect(res.remainingApplied).toBe("50.00");
-
-      const rows = await ledgerRowsForCharge(chargeId);
-      expect(rows[0].linkRole).toBe("counted");
-      expect(rows[0].amountApplied).toBe("50.00");
-    });
-
     it("re-confirming an applied charge returns not_proposed", async () => {
       const giftId = await seedGift();
       const chargeId = await seedChargeWithProposal({
@@ -333,7 +340,6 @@ describe.skipIf(!HAS_DB)(
         giftId,
         kind: "full_refund",
         grossAmount: "80.00",
-        amountApplied: "80.00",
       });
 
       const res = await dismissRefundPropagation(chargeId, USER_ID);

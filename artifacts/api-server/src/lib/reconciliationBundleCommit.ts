@@ -1,7 +1,6 @@
 import { type Request } from "express";
 import {
   giftsAndPayments,
-  paymentApplications,
   paymentUnits,
   stripeStagedCharges,
   stagedPayments,
@@ -11,7 +10,7 @@ import {
   emails,
   giftAllocations,
 } from "@workspace/db/schema";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 import { buildGiftValuesFromStripeCharge } from "./stripeGift";
 import { recordAudit } from "./audit";
@@ -247,17 +246,15 @@ export async function linkChargeToGiftInTx(
   const rederivePledgeIds: string[] = [];
 
   // Reject if ANOTHER Stripe charge already owns this gift as evidence
-  // (matched OR minted). The counted ledger is the sole link surface — a
-  // clean 409 instead of a silent double-tie.
+  // (matched OR minted). The counted unit→gift tie is the sole link surface —
+  // a clean 409 instead of a silent double-tie.
   const ownedByOtherCharge = await tx
-    .select({ id: paymentApplications.id })
-    .from(paymentApplications)
-    .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+    .select({ id: paymentUnits.id })
+    .from(paymentUnits)
     .where(
       and(
-        eq(paymentApplications.giftId, giftId),
-        eq(paymentApplications.evidenceSource, "stripe"),
-        eq(paymentApplications.linkRole, "counted"),
+        eq(paymentUnits.giftId, giftId),
+        isNotNull(paymentUnits.stripeChargeId),
         ne(paymentUnits.stripeChargeId, charge.id),
       ),
     )

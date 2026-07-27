@@ -260,10 +260,9 @@ function reconciliationQueueWhere(queue: string | undefined): SQL | undefined {
           SELECT 1 FROM stripe_staged_charges c
           WHERE c.stripe_payout_id = ${stagedPayments.settledStripePayoutId}
             AND NOT EXISTS (
-              SELECT 1 FROM payment_applications pa
-              JOIN payment_units pu ON pu.id = pa.payment_unit_id
+              SELECT 1 FROM payment_units pu
               WHERE pu.stripe_charge_id = c.id
-                AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                AND pu.gift_id IS NOT NULL
             )
             -- An excluded charge (e.g. a failed payment attempt) is terminal,
             -- not unbooked work — it must not re-admit the deposit.

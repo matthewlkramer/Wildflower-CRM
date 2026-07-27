@@ -113,16 +113,14 @@ async function seedQbRow(
   return id;
 }
 
-/** Counted QB cash-application ledger row anchored on a staged payment. */
+/** Counted unit→gift tie on the staged payment's canonical unit. */
 async function seedQbApplication(paymentId: string): Promise<void> {
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    giftId: await seedGift(),
-    paymentUnitId: await unitIdForAnchor("quickbooks", paymentId),
-    amountApplied: "50.00",
-    evidenceSource: "quickbooks",
-    matchMethod: "system",
-  });
+  const dbMod = await import("@workspace/db");
+  const unitId = await unitIdForAnchor("quickbooks", paymentId);
+  await db
+    .update(dbMod.paymentUnits)
+    .set({ giftId: await seedGift(), giftMatchMethod: "system" })
+    .where(eqFn(dbMod.paymentUnits.id, unitId));
 }
 
 async function seedPayout(): Promise<string> {

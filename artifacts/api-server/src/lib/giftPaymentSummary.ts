@@ -57,24 +57,24 @@ export function settledGrossForGift(
 ): SQL<string> {
   return sql<string>`(
     COALESCE((
-      SELECT SUM(pa.amount_applied)
-      FROM payment_applications pa
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
-        AND pa.link_role = 'counted'
+      SELECT SUM(pu_sg.gross_amount)
+      FROM payment_units pu_sg
+      WHERE pu_sg.gift_id = ${giftIdSql}
+        AND pu_sg.source_staged_payment_id IS NOT NULL
     ), 0)
     + COALESCE((
-      SELECT SUM(pa.amount_applied)
-      FROM payment_applications pa
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
-        AND pa.link_role = 'counted'
+      SELECT SUM(pu_sg.gross_amount)
+      FROM payment_units pu_sg
+      WHERE pu_sg.gift_id = ${giftIdSql}
+        AND pu_sg.stripe_charge_id IS NOT NULL
     ), 0)
     + COALESCE((
-      SELECT SUM(pa.amount_applied)
-      FROM payment_applications pa
-      JOIN payment_units pu_sg ON pu_sg.id = pa.payment_unit_id
+      SELECT SUM(pu_sg.gross_amount)
+      FROM payment_units pu_sg
       JOIN donorbox_donations dd ON dd.id = pu_sg.donorbox_donation_id
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
-        AND pa.link_role = 'counted'
+      WHERE pu_sg.gift_id = ${giftIdSql}
+        AND pu_sg.stripe_charge_id IS NULL
+        AND pu_sg.source_staged_payment_id IS NULL
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     ), 0)
   )::text`;
@@ -91,19 +91,17 @@ export function totalFeesForGift(
   return sql<string>`(
     COALESCE((
       SELECT SUM(ssc.fee_amount)
-      FROM payment_applications pa
-      JOIN payment_units pu_tf ON pu_tf.id = pa.payment_unit_id
+      FROM payment_units pu_tf
       JOIN stripe_staged_charges ssc ON ssc.id = pu_tf.stripe_charge_id
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
-        AND pa.link_role = 'counted'
+      WHERE pu_tf.gift_id = ${giftIdSql}
     ), 0)
     + COALESCE((
       SELECT SUM(dd.processing_fee)
-      FROM payment_applications pa
-      JOIN payment_units pu_tf_dbx ON pu_tf_dbx.id = pa.payment_unit_id
+      FROM payment_units pu_tf_dbx
       JOIN donorbox_donations dd ON dd.id = pu_tf_dbx.donorbox_donation_id
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
-        AND pa.link_role = 'counted'
+      WHERE pu_tf_dbx.gift_id = ${giftIdSql}
+        AND pu_tf_dbx.stripe_charge_id IS NULL
+        AND pu_tf_dbx.source_staged_payment_id IS NULL
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     ), 0)
   )::text`;
@@ -119,21 +117,21 @@ export function hasLinkedPaymentForGift(
 ): SQL<boolean> {
   return sql<boolean>`(
     EXISTS (
-      SELECT 1 FROM payment_applications pa
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'quickbooks'
-        AND pa.link_role = 'counted'
+      SELECT 1 FROM payment_units pu_hp
+      WHERE pu_hp.gift_id = ${giftIdSql}
+        AND pu_hp.source_staged_payment_id IS NOT NULL
     )
     OR EXISTS (
-      SELECT 1 FROM payment_applications pa
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'stripe'
-        AND pa.link_role = 'counted'
+      SELECT 1 FROM payment_units pu_hp
+      WHERE pu_hp.gift_id = ${giftIdSql}
+        AND pu_hp.stripe_charge_id IS NOT NULL
     )
     OR EXISTS (
-      SELECT 1 FROM payment_applications pa
-      JOIN payment_units pu_hp ON pu_hp.id = pa.payment_unit_id
+      SELECT 1 FROM payment_units pu_hp
       JOIN donorbox_donations dd ON dd.id = pu_hp.donorbox_donation_id
-      WHERE pa.gift_id = ${giftIdSql} AND pa.evidence_source = 'donorbox'
-        AND pa.link_role = 'counted'
+      WHERE pu_hp.gift_id = ${giftIdSql}
+        AND pu_hp.stripe_charge_id IS NULL
+        AND pu_hp.source_staged_payment_id IS NULL
         AND dd.donation_type IS DISTINCT FROM 'stripe'
     )
   )`;

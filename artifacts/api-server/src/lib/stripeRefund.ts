@@ -2,12 +2,12 @@ import {
   db,
   giftsAndPayments,
   stripeStagedCharges,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db";
-import { and, eq, ne } from "drizzle-orm";
+import { sourceLinks, sourceLinkId } from "@workspace/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { applyDerivedOppFieldsMany } from "./pledgeStage";
-import { syncUnitGiftPointers } from "./paymentApplications";
+import { CLEARED_TIE_FACTS } from "./paymentApplications";
 
 /* ────────────────────────────────────────────────────────────────────────
  * Stripe refund / chargeback propagation (INV-13).
@@ -22,17 +22,20 @@ import { syncUnitGiftPointers } from "./paymentApplications";
  * gift and its allocations are NEVER archived or resized here.
  *
  *   full refund   → the charge stops counting as live payment evidence: its
- *                   counted cash-application row is demoted to `corroborating`
- *                   (audit trail retained, out of the money-trail SUM).
+ *                   unit's counted tie is cleared, preserved as a
+ *                   unit_gift_corroboration source_link (audit trail
+ *                   retained, out of the money-trail SUM).
  *   chargeback    → same as a full refund.
- *   partial refund→ the refunded portion is recorded against the transaction
- *                   only: the counted row's amount_applied is capped at
- *                   gross − amount_refunded (demoted entirely when nothing
- *                   remains). The gift amount is untouched.
+ *   partial refund→ recorded against the transaction only. When nothing
+ *                   remains (gross − amount_refunded ≤ 0) the tie is retired
+ *                   like a full refund; otherwise the tie stays counted —
+ *                   the refunded portion is a charge-level fact
+ *                   (`amount_refunded` on the staged charge) readers subtract
+ *                   on the accounting plane. The gift amount is untouched.
  *
  * On confirm, any linked pledge re-derives its paid-amount / status against
  * the (unchanged) gift, and the gift's QB-tie status — live-derived from the
- * counted ledger — reflects the reduced coverage automatically. The evidence
+ * counted ties — reflects the reduced coverage automatically. The evidence
  * row (stripe_staged_charges) is retained, marked applied. Whether the money
  * will be replaced or the opportunity is lost/dormant stays a separate,
  * explicit human decision. Idempotency lives in `deriveRefundProposal`: a
@@ -168,13 +171,13 @@ export interface RefundConfirmResult {
 
 /**
  * Human-confirm a proposed refund/chargeback at the TRANSACTION level: retire
- * (full refund / chargeback) or reduce (partial refund) the charge's counted
- * cash-application row so the refunded money leaves live payment coverage,
- * then mark the staged charge `applied`. The linked gift and its allocations
- * are never archived or resized. Re-runs the linked pledge's derivation after
- * commit; the gift's QB-tie status is live-derived from the counted ledger, so
- * it reflects the reduced coverage without a recompute call. Guarded so only a
- * `proposed` row can be confirmed (409 otherwise).
+ * the charge unit's counted tie (full refund / chargeback / exhausted partial)
+ * so the refunded money leaves live payment coverage, then mark the staged
+ * charge `applied`. The linked gift and its allocations are never archived or
+ * resized. Re-runs the linked pledge's derivation after commit; the gift's
+ * QB-tie status is live-derived from the counted ties, so it reflects the
+ * reduced coverage without a recompute call. Guarded so only a `proposed` row
+ * can be confirmed (409 otherwise).
  */
 export async function confirmRefundPropagation(
   chargeId: string,
@@ -197,33 +200,21 @@ export async function confirmRefundPropagation(
       result = { code: "not_proposed", chargeId };
       return;
     }
-    const chargePaymentUnitId = await tx
-      .select({ id: paymentUnits.id })
+    // Tie fallback: the gift this charge's unit is counted against (the
+    // legacy matched/created gift-pointer columns are retired, never read).
+    const chargeUnit = await tx
+      .select({
+        id: paymentUnits.id,
+        giftId: paymentUnits.giftId,
+        giftNote: paymentUnits.giftNote,
+      })
       .from(paymentUnits)
       .where(eq(paymentUnits.stripeChargeId, chargeId))
-      .then((r) => r[0]?.id ?? null);
-
-    // Ledger fallback: the gift this charge is counted against (the legacy
-    // matched/created gift-pointer columns are retired, never read).
-    const countedRow = await tx
-      .select({
-        id: paymentApplications.id,
-        giftId: paymentApplications.giftId,
-        amountApplied: paymentApplications.amountApplied,
-        note: paymentApplications.note,
-      })
-      .from(paymentApplications)
-      .where(
-        and(
-          eq(paymentApplications.paymentUnitId, chargePaymentUnitId ?? ""),
-          eq(paymentApplications.evidenceSource, "stripe"),
-          eq(paymentApplications.linkRole, "counted"),
-        ),
-      )
       .for("update")
       .limit(1)
       .then((r) => r[0]);
-    const giftId = locked.refundPropagationGiftId ?? countedRow?.giftId ?? null;
+    const countedGiftId = chargeUnit?.giftId ?? null;
+    const giftId = locked.refundPropagationGiftId ?? countedGiftId ?? null;
     if (!giftId) {
       result = { code: "no_linked_gift", chargeId };
       return;
@@ -252,63 +243,72 @@ export async function confirmRefundPropagation(
     let retiredFromCoverage = false;
     let remainingApplied: string | null = null;
 
-    // Retire the charge's counted application from live coverage — the same
-    // demote convention as chargeTieSupersede: linkRole → 'corroborating'
-    // (audit crumb retained, out of every counted SUM). Clear a colliding
-    // corroborating row for the (charge, gift) pair first (partial UNIQUE).
-    const demoteCounted = async (rowId: string, rowGiftId: string) => {
+    // Retire the charge unit's counted tie from live coverage: clear the tie
+    // facts, keeping the gift link as a corroboration claim (audit crumb
+    // retained, out of every counted SUM). Upserting on the deterministic
+    // per-pair id absorbs any pre-existing claim for the pair.
+    const demoteCounted = async (unitId: string, unitGiftId: string) => {
+      const auditNote = appendAudit(
+        chargeUnit?.giftNote ?? null,
+        `Retired from live coverage by Stripe ${kind === "chargeback" ? "chargeback" : "refund"} confirm (charge ${chargeId}).`,
+      );
       await tx
-        .delete(paymentApplications)
-        .where(
-          and(
-            eq(paymentApplications.paymentUnitId, chargePaymentUnitId ?? ""),
-            eq(paymentApplications.giftId, rowGiftId),
-            eq(paymentApplications.linkRole, "corroborating"),
-            ne(paymentApplications.id, rowId),
+        .insert(sourceLinks)
+        .values({
+          id: sourceLinkId(
+            "unit_gift_corroboration",
+            `${unitId}_${unitGiftId}`,
           ),
-        );
-      await tx
-        .update(paymentApplications)
-        .set({
-          linkRole: "corroborating",
-          note: appendAudit(
-            countedRow?.note ?? null,
-            `Retired from live coverage by Stripe ${kind === "chargeback" ? "chargeback" : "refund"} confirm (charge ${chargeId}).`,
-          ),
+          linkType: "unit_gift_corroboration",
+          paymentUnitId: unitId,
+          giftId: unitGiftId,
+          lifecycle: "confirmed",
+          provenance: "human",
+          matchBasis: "human",
+          confirmedByUserId: userId,
+          confirmedAt: now,
+          note: auditNote,
           updatedAt: now,
         })
-        .where(eq(paymentApplications.id, rowId));
-      if (chargePaymentUnitId) {
-        await syncUnitGiftPointers(tx, [chargePaymentUnitId]);
-      }
+        .onConflictDoUpdate({
+          target: sourceLinks.id,
+          set: {
+            lifecycle: "confirmed",
+            provenance: "human",
+            matchBasis: "human",
+            confirmedByUserId: userId,
+            confirmedAt: now,
+            note: sql`coalesce(${sourceLinks.note} || E'\n', '') || ${auditNote}`,
+            updatedAt: now,
+          },
+        });
+      await tx
+        .update(paymentUnits)
+        .set({ ...CLEARED_TIE_FACTS, updatedAt: now })
+        .where(eq(paymentUnits.id, unitId));
       retiredFromCoverage = true;
     };
 
-    if (countedRow) {
+    if (chargeUnit && countedGiftId) {
       if (kind === "partial_refund") {
-        // Cap the counted application at what actually stayed after the
-        // refund (gross − amount_refunded); demote entirely when nothing
-        // remains. The gift amount is untouched.
+        // Retire the tie only when nothing remains (gross − amount_refunded
+        // ≤ 0). A surviving remainder keeps the tie counted — the refunded
+        // portion is a charge-level fact (`amount_refunded`) subtracted on
+        // the accounting plane, never a tie-identity change. The gift amount
+        // is untouched.
         const remaining = Math.max(
           0,
           num(locked.grossAmount) - num(locked.amountRefunded),
         );
-        const applied = num(countedRow.amountApplied);
         if (remaining <= TOLERANCE) {
-          await demoteCounted(countedRow.id, countedRow.giftId);
-        } else if (applied > remaining + TOLERANCE) {
-          remainingApplied = remaining.toFixed(2);
-          await tx
-            .update(paymentApplications)
-            .set({ amountApplied: remainingApplied, updatedAt: now })
-            .where(eq(paymentApplications.id, countedRow.id));
+          await demoteCounted(chargeUnit.id, countedGiftId);
         } else {
-          remainingApplied = countedRow.amountApplied;
+          remainingApplied = remaining.toFixed(2);
         }
       } else {
         // full_refund or chargeback — the whole transaction stops counting
         // as live payment evidence.
-        await demoteCounted(countedRow.id, countedRow.giftId);
+        await demoteCounted(chargeUnit.id, countedGiftId);
       }
     }
 

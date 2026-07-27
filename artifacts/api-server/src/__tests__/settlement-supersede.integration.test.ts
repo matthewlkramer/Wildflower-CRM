@@ -45,11 +45,14 @@ let schema: {
   paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
+  sourceLinks: Db["sourceLinks"];
+  sourceLinkId: Db["sourceLinkId"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let andFn: (typeof import("drizzle-orm"))["and"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let supersede: typeof import("../lib/settlementSupersede");
+let pa: typeof import("../lib/paymentApplications");
 
 const payoutIds: string[] = [];
 const stagedIds: string[] = [];
@@ -92,22 +95,54 @@ async function seedDeposit(over?: { amount?: string }): Promise<string> {
   return id;
 }
 
-/** A counted QB ledger row anchoring `dep`'s money onto `gift`. */
+/**
+ * Seed a QB-side tie fact for `dep`'s unit onto `gift`:
+ *   counted → the unit's own tie facts (returns the UNIT id);
+ *   corroborating with an amount → a supersede demotion crumb;
+ *   corroborating with a NULL amount → a plain corrections-flow claim
+ * (both return the source_links id).
+ */
 async function seedQbRow(
   dep: string,
   gift: string,
   over?: { amount?: string | null; linkRole?: "counted" | "corroborating" },
 ): Promise<string> {
-  const id = nextId("pa");
-  await db.insert(schema.paymentApplications).values({
-    id,
-    paymentUnitId: await unitIdForAnchor("quickbooks", dep),
-    giftId: gift,
-    amountApplied: over?.amount === undefined ? "1000.00" : over.amount,
-    evidenceSource: "quickbooks",
-    linkRole: over?.linkRole ?? "counted",
-  });
-  return id;
+  const unitId = await unitIdForAnchor("quickbooks", dep);
+  const role = over?.linkRole ?? "counted";
+  if (role === "counted") {
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId: gift, giftMatchMethod: "system" })
+      .where(eqFn(schema.paymentUnits.id, unitId));
+    return unitId;
+  }
+  const linkId = schema.sourceLinkId(
+    "unit_gift_corroboration",
+    `${unitId}_${gift}`,
+  );
+  if (over?.amount != null) {
+    await db.transaction((tx) =>
+      pa.writeSupersedeDemotionCrumb(tx, {
+        paymentUnitId: unitId,
+        giftId: gift,
+        matchMethod: "system",
+        confirmedByUserId: null,
+        confirmedAt: null,
+      }),
+    );
+  } else {
+    await db.insert(schema.sourceLinks).values({
+      id: linkId,
+      linkType: "unit_gift_corroboration",
+      paymentUnitId: unitId,
+      giftId: gift,
+      lifecycle: "confirmed",
+      provenance: "human",
+      confirmedByUserId: USER_ID,
+      confirmedAt: new Date(),
+    });
+  }
+  return linkId;
 }
 
 /** A payout, optionally SETTLED against `depositId` via the pairing fact. */
@@ -155,39 +190,69 @@ async function seedCountedCharge(
     dateReceived: "2026-03-14",
   });
   chargeIds.push(id);
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    giftId: gift,
-    amountApplied: over?.gross ?? "1030.00",
-    evidenceSource: "stripe",
-    paymentUnitId: await unitIdForAnchor("stripe", id),
-    createdTheGift: true,
-  });
+  const unitId = await unitIdForAnchor("stripe", id);
+  await db
+    .update(schema.paymentUnits)
+    .set({ giftId: gift, giftMatchMethod: "system", createdTheGift: true })
+    .where(eqFn(schema.paymentUnits.id, unitId));
   return id;
 }
 
+/** The QB-side tie facts for `dep`'s unit: the counted unit tie (id = unit
+ * id, amount = unit gross) + every unit_gift_corroboration source_link
+ * (id = link id; crumbs carry the unit gross, plain claims a NULL amount). */
 async function readQbRows(dep: string) {
-  return db
+  const units = await db
     .select({
-      id: schema.paymentApplications.id,
-      giftId: schema.paymentApplications.giftId,
-      amountApplied: schema.paymentApplications.amountApplied,
-      linkRole: schema.paymentApplications.linkRole,
+      id: schema.paymentUnits.id,
+      giftId: schema.paymentUnits.giftId,
+      grossAmount: schema.paymentUnits.grossAmount,
     })
-    .from(schema.paymentApplications)
-    .innerJoin(
-      schema.paymentUnits,
-      eqFn(
-        schema.paymentApplications.paymentUnitId,
-        schema.paymentUnits.id,
-      ),
-    )
-    .where(
-      andFn(
-        eqFn(schema.paymentUnits.sourceStagedPaymentId, dep),
-        eqFn(schema.paymentApplications.evidenceSource, "quickbooks"),
-      ),
-    );
+    .from(schema.paymentUnits)
+    .where(eqFn(schema.paymentUnits.sourceStagedPaymentId, dep));
+  const unitIds = units.map((u) => u.id);
+  const links = unitIds.length
+    ? await db
+        .select({
+          id: schema.sourceLinks.id,
+          giftId: schema.sourceLinks.giftId,
+          paymentUnitId: schema.sourceLinks.paymentUnitId,
+          matchBasis: schema.sourceLinks.matchBasis,
+        })
+        .from(schema.sourceLinks)
+        .where(
+          andFn(
+            eqFn(schema.sourceLinks.linkType, "unit_gift_corroboration"),
+            inArrayFn(schema.sourceLinks.paymentUnitId, unitIds),
+          ),
+        )
+    : [];
+  const grossByUnit = new Map(units.map((u) => [u.id, u.grossAmount]));
+  return [
+    ...units.flatMap((u) =>
+      u.giftId
+        ? [
+            {
+              id: u.id,
+              giftId: u.giftId,
+              amountApplied: u.grossAmount,
+              linkRole: "counted" as const,
+              matchBasis: null as string | null,
+            },
+          ]
+        : [],
+    ),
+    ...links.map((l) => ({
+      id: l.id,
+      giftId: l.giftId as string,
+      amountApplied:
+        l.matchBasis === "supersede_demotion"
+          ? (grossByUnit.get(l.paymentUnitId as string) ?? null)
+          : null,
+      linkRole: "corroborating" as const,
+      matchBasis: l.matchBasis as string | null,
+    })),
+  ];
 }
 
 beforeAll(async () => {
@@ -205,11 +270,14 @@ beforeAll(async () => {
     paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
+    sourceLinks: dbMod.sourceLinks,
+    sourceLinkId: dbMod.sourceLinkId,
   };
   eqFn = drizzle.eq;
   andFn = drizzle.and;
   inArrayFn = drizzle.inArray;
   supersede = await import("../lib/settlementSupersede");
+  pa = await import("../lib/paymentApplications");
 
   await db.insert(schema.users).values({
     id: USER_ID,
@@ -271,9 +339,9 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
 
     let rows = await readQbRows(dep);
     expect(rows).toHaveLength(1);
-    expect(rows[0].id).toBe(paId);
-    expect(rows[0].linkRole).toBe("corroborating");
-    expect(rows[0].amountApplied).toBe("1000.00"); // amount KEPT (supersede-managed)
+    expect(rows[0].linkRole).toBe("corroborating"); // demoted → crumb
+    expect(rows[0].matchBasis).toBe("supersede_demotion");
+    expect(rows[0].amountApplied).toBe("1000.00"); // amount KEPT (unit gross)
 
     // Idempotent re-run on the converged deposit: no-op.
     const rerun = await db.transaction((tx) =>
@@ -290,6 +358,7 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
 
     rows = await readQbRows(dep);
     expect(rows).toHaveLength(1);
+    expect(rows[0].id).toBe(paId); // the tie is back on the deposit's unit
     expect(rows[0].linkRole).toBe("counted");
     expect(rows[0].amountApplied).toBe("1000.00");
   });
@@ -313,13 +382,13 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
     expect(rows[0].linkRole).toBe("counted");
   });
 
-  it("demote deletes a colliding corrections-flow corroborating row; unrelated NULL-amount rows survive", async () => {
+  it("demote re-stamps a colliding corrections-flow claim as the crumb; unrelated claims survive", async () => {
     const gift = await seedGift();
     const bystanderGift = await seedGift();
     const dep = await seedDeposit();
     const countedId = await seedQbRow(dep, gift);
-    // Corrections-flow annotations (amount NULL): one COLLIDING with the pair
-    // about to demote (must be deleted — partial UNIQUE), one for another gift
+    // Corrections-flow claims: one COLLIDING with the pair about to demote
+    // (shares the deterministic (unit, gift) link id), one for another gift
     // (must survive untouched).
     const collidingId = await seedQbRow(dep, gift, {
       amount: null,
@@ -339,11 +408,15 @@ describe.skipIf(!HAS_DB)("settlement supersede (DB)", () => {
 
     const rows = await readQbRows(dep);
     const byId = new Map(rows.map((r) => [r.id, r]));
-    expect(byId.get(countedId)?.linkRole).toBe("corroborating");
-    expect(byId.get(countedId)?.amountApplied).toBe("1000.00");
-    expect(byId.has(collidingId)).toBe(false); // deleted (UNIQUE collision)
+    // The counted unit tie demoted into the crumb — which shares the
+    // deterministic (unit, gift) id with the colliding claim, so the
+    // demote's upsert re-stamped that claim as the supersede crumb.
+    expect(rows.filter((r) => r.linkRole === "counted")).toHaveLength(0);
+    expect(byId.get(collidingId)?.matchBasis).toBe("supersede_demotion");
+    expect(byId.get(collidingId)?.amountApplied).toBe("1000.00");
     expect(byId.get(bystanderId)?.linkRole).toBe("corroborating");
-    expect(byId.get(bystanderId)?.amountApplied).toBeNull(); // never touched
+    expect(byId.get(bystanderId)?.matchBasis).toBeNull(); // never touched
+    expect(byId.get(bystanderId)?.amountApplied).toBeNull();
   });
 
   it("promote drops the stale crumb when a fresh counted row raced ahead", async () => {

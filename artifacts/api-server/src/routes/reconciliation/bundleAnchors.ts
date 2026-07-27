@@ -84,12 +84,11 @@ function stripeWhere(queue: AnchorQueue): SQL {
             SELECT 1 FROM stripe_staged_charges c
             WHERE c.stripe_payout_id = sp.id
               AND c.exclusion_reason IS NULL
-              -- pending = no counted ledger row (pointer columns retired)
+              -- pending = no counted unit→gift tie
               AND NOT EXISTS (
-                SELECT 1 FROM payment_applications pa
-                JOIN payment_units pu ON pu.id = pa.payment_unit_id
+                SELECT 1 FROM payment_units pu
                 WHERE pu.stripe_charge_id = c.id
-                  AND pa.evidence_source = 'stripe' AND pa.link_role = 'counted'
+                  AND pu.gift_id IS NOT NULL
               )
           )
           -- A proposed charge-grain QB tie is actionable work here even when
@@ -139,12 +138,11 @@ function qbWhere(queue: AnchorQueue): SQL {
         'brokerage','daf','paypal','wire_ach','check','cash','employer_match','other'
       )
     )`;
-  // Counted-ledger rows are the SOLE gift-link source (the legacy staged
+  // Counted unit→gift ties are the SOLE gift-link source (the legacy staged
   // gift-link columns are @deprecated and no longer written).
   const resolvedEvidence = `EXISTS (
-      SELECT 1 FROM payment_applications pa
-      JOIN payment_units pu ON pu.id = pa.payment_unit_id
-      WHERE pu.source_staged_payment_id = s.id AND pa.link_role = 'counted'
+      SELECT 1 FROM payment_units pu
+      WHERE pu.source_staged_payment_id = s.id AND pu.gift_id IS NOT NULL
     )`;
   const statusClause =
     queue === "confirmed"

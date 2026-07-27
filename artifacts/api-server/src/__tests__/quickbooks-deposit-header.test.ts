@@ -228,7 +228,8 @@ describe("buildSuperfluousHeaderDelete — reference guards", () => {
     expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain('not exists (');
-    expect(lower).toContain('join "payment_units"');
+    expect(lower).toContain('select 1 from "payment_units"');
+    expect(lower).toContain('"payment_units"."gift_id" is not null');
   });
 });
 
@@ -251,7 +252,8 @@ describe("buildSuperfluousLineDelete — reverse-transition guards", () => {
     expect(lower).toContain('"settled_stripe_payout_id" is null');
     expect(lower).toContain('not exists (select 1 from "source_links"');
     expect(lower).toContain('not exists (');
-    expect(lower).toContain('join "payment_units"');
+    expect(lower).toContain('select 1 from "payment_units"');
+    expect(lower).toContain('"payment_units"."gift_id" is not null');
   });
 
   it("additionally keeps human-resolved rows: a derived-status open guard is present (unlike the header delete, which needs none)", () => {

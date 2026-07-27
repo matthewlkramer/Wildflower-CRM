@@ -43,11 +43,11 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
     expect(lower).toContain("where");
     // The guard is the DERIVED pending/excluded predicate (no stored status
     // column, and the legacy gift-link columns are @deprecated — never read):
-    // pending = no counted ledger row + no settled payout pairing;
+    // pending = no counted unit→gift tie + no settled payout pairing;
     // excluded = exclusion_reason set.
     expect(lower).toContain("settled_stripe_payout_id");
-    expect(lower).toContain("payment_applications");
-    expect(lower).toContain("link_role");
+    expect(lower).toContain("payment_units");
+    expect(lower).toContain("gift_id");
     expect(lower).not.toContain("matched_gift_id\" is null");
     expect(lower).toContain('"staged_payments"."exclusion_reason" is not null');
   });
@@ -142,7 +142,7 @@ describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
       .sql.toLowerCase();
     // No derived-status guard at all: neither the pending arm's EXISTS probes…
     expect(sql).not.toContain('"settled_stripe_payout_id" is not null');
-    expect(sql).not.toContain("payment_applications");
+    expect(sql).not.toContain("payment_units");
     // …nor the excluded arm.
     expect(sql).not.toContain('"staged_payments"."exclusion_reason" is not null');
   });

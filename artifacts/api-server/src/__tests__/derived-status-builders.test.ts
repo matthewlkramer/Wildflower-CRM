@@ -137,7 +137,7 @@ describe("builders emit consistently quoted identifiers", () => {
 
   it("quotes the internal subquery tables and aliases", () => {
     expect(qbCountedExistsText("s")).toContain(
-      'FROM "payment_applications" "pa_ds"',
+      'FROM "payment_units" "pu_ds"',
     );
     expect(qbSettledExistsText("s")).toContain(
       '"s"."settled_stripe_payout_id"',
@@ -270,10 +270,7 @@ describe("tie consultation: booked = evidence, raw link = settlement claim", () 
     expect(booked).toContain(
       `"pu_ct_ds"."stripe_charge_id" = "srcl_ds"."stripe_charge_id"`,
     );
-    expect(booked).toContain(
-      `JOIN "payment_units" "pu_ct_ds" ON "pu_ct_ds"."id" = "pa_ct_ds"."payment_unit_id"`,
-    );
-    expect(booked).toContain(`"pa_ct_ds"."link_role" = 'counted'`);
-    expect(booked).toContain(`"pa_ct_ds"."evidence_source" = 'stripe'`);
+    expect(booked).toContain(`FROM "payment_units" "pu_ct_ds"`);
+    expect(booked).toContain(`"pu_ct_ds"."gift_id" IS NOT NULL`);
   });
 });

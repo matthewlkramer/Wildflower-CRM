@@ -2,17 +2,19 @@
 // paymentApplications.ts) — nothing here touches the singleton at runtime.
 import type { db } from "@workspace/db";
 import {
-  paymentApplications,
   paymentUnits,
   stagedPayments,
   stripeStagedCharges,
 } from "@workspace/db/schema";
-import { and, eq, inArray, isNotNull, ne, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import {
   AnchorAlreadyCountedError,
   applyPaymentApplication,
   checkBookOnce,
-  syncUnitGiftPointers,
+  CLEARED_TIE_FACTS,
+  deleteSupersedeDemotionCrumb,
+  supersedeDemotionCrumbsForUnits,
+  writeSupersedeDemotionCrumb,
   type PaymentApplicationMatchMethod,
 } from "./paymentApplications";
 
@@ -27,17 +29,19 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * charge (a confirmed source_links charge_qb_tie row; the legacy
  * `linked_qb_staged_payment_id` column is retired — SQL aliases keep the
  * name for API compatibility only), the money is
- * ONE unit seen by two systems. The counted cash-application ledger row must
- * live at the CHARGE grain so the ledger — the sole gift-link record — shows
- * gift ↔ charge ↔ QB row as one trail:
+ * ONE unit seen by two systems. The counted unit→gift tie must live at the
+ * CHARGE grain so the tie — `payment_units.gift_id` + fact columns, the sole
+ * gift-link record — shows gift ↔ charge ↔ QB row as one trail:
  *
- *   tie CONFIRMED  → the QB row's counted rows MOVE to the charge (a copied
- *                    stripe counted row per gift, amount + provenance carried
- *                    over) and the QB rows are DEMOTED to `corroborating`,
- *                    KEEPING their amounts (supersede-managed, reversible).
- *   tie REVERTED   → the tie-derived stripe rows are deleted and the demoted
- *                    QB rows are PROMOTED back to `counted` — the booking
- *                    returns to where the human originally ratified it.
+ *   tie CONFIRMED  → the QB unit's tie MOVES to the charge unit (facts +
+ *                    provenance carried over) and the QB unit is DEMOTED:
+ *                    tie cleared, preserved as a supersede demotion crumb
+ *                    (source_links unit_gift_corroboration,
+ *                    match_basis = 'supersede_demotion' — reversible).
+ *   tie REVERTED   → the tie-derived charge tie is cleared and the demoted
+ *                    QB crumb is PROMOTED back to the counted tie — the
+ *                    booking returns to where the human originally ratified
+ *                    it.
  *
  * SAME-MONEY TEST IS EXACT — deliberately NO fee-band tolerance. A tied QB
  * row records either the charge GROSS (its sibling negative "Stripe fee" row
@@ -48,22 +52,22 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * conservatively STAYS on the QB row (still match_confirmed via its counted
  * row; the charge stays open for a human to book explicitly).
  *
- * Discriminators (which rows this module owns):
- *   - QB side: a demoted row KEEPS its `amount_applied`. A corroborating QB
- *     row WITH an amount anchored on a (currently or formerly) tied row is
- *     supersede-managed. Corrections-flow annotation rows (`amount_applied`
- *     NULL) are NEVER touched. Settlement supersede's demoted rows live on
- *     settlement-link DEPOSITS, which can never be charge-tied (the confirm
- *     route 409s them), so the two modules never manage the same row.
- *   - Stripe side: a MOVED row carries the first-class
- *     `match_method = 'charge_tie_supersede'` (the note keeps the
+ * Discriminators (which facts this module owns):
+ *   - QB side: a demotion crumb is a unit_gift_corroboration source_link
+ *     with match_basis = 'supersede_demotion'. Corrections-flow annotation
+ *     claims (other bases) are NEVER touched. Settlement supersede's crumbs
+ *     live on settlement-link DEPOSIT units, which can never be charge-tied
+ *     (the confirm route 409s them), so the two modules never manage the
+ *     same claim.
+ *   - Stripe side: a MOVED tie carries the first-class
+ *     `gift_match_method = 'charge_tie_supersede'` (the note keeps the
  *     `charge_tie_supersede:<qbId>` text purely as a human-readable trail —
- *     it is never machine-parsed). Only supersede-derived rows are deleted on
- *     revert — a pre-existing human/system charge booking (e.g. the gift was
- *     booked from the charge BEFORE the tie) is never destroyed by an untie.
- *     A charge holds at most ONE confirmed tie at a time (source_links
- *     partial unique), so every supersede-derived row on the charge belongs
- *     to the tie being reverted.
+ *     it is never machine-parsed). Only supersede-derived ties are cleared
+ *     on revert — a pre-existing human/system charge booking (e.g. the gift
+ *     was booked from the charge BEFORE the tie) is never destroyed by an
+ *     untie. A charge holds at most ONE confirmed tie at a time
+ *     (source_links partial unique), so a supersede-derived tie on the
+ *     charge belongs to the tie being reverted.
  *
  * Idempotent + re-runnable: every decision is a pure function of current
  * facts, so re-applying on a converged pair is a no-op.
@@ -101,13 +105,16 @@ export function qbRowAmountMatchesCharge(args: {
   return (gross != null && qb === gross) || (net != null && qb === net);
 }
 
-/** One QB-anchored ledger row on the tied QB staged payment. */
+/** One QB-anchored tie fact on the tied QB staged payment: a COUNTED unit
+ * tie (`linkRole: "counted"`, id = the unit id) or a supersede demotion
+ * crumb (`linkRole: "corroborating"`, id = the source_links id). */
 export interface TieQbLedgerRow {
-  /** payment_applications.id */
   id: string;
+  /** The QB-anchored payment unit carrying/carried the tie. */
+  paymentUnitId: string;
   giftId: string;
   giftAllocationId: string | null;
-  /** Numeric string; NULL only on corrections-flow annotation rows. */
+  /** The unit's own amount (numeric string). */
   amountApplied: string | null;
   linkRole: "counted" | "corroborating";
   matchMethod: PaymentApplicationMatchMethod;
@@ -115,9 +122,9 @@ export interface TieQbLedgerRow {
   confirmedAt: Date | null;
 }
 
-/** One counted stripe ledger row already anchored on the charge. */
+/** The counted tie already on the charge's unit. */
 export interface TieChargeLedgerRow {
-  /** payment_applications.id */
+  /** The charge-anchored payment unit id. */
   id: string;
   giftId: string;
   matchMethod: PaymentApplicationMatchMethod;
@@ -283,49 +290,82 @@ export async function applyChargeTieSupersedePairs(
       .then((r) => r[0]);
     if (!qbRow) continue;
 
-    const qbLedgerRows: TieQbLedgerRow[] = await tx
+    // QB-side tie facts: counted unit ties + supersede demotion crumbs.
+    const qbUnits = await tx
       .select({
-        id: paymentApplications.id,
-        giftId: paymentApplications.giftId,
-        giftAllocationId: paymentApplications.giftAllocationId,
-        amountApplied: paymentApplications.amountApplied,
-        linkRole: paymentApplications.linkRole,
-        matchMethod: paymentApplications.matchMethod,
-        confirmedByUserId: paymentApplications.confirmedByUserId,
-        confirmedAt: paymentApplications.confirmedAt,
+        id: paymentUnits.id,
+        grossAmount: paymentUnits.grossAmount,
+        giftId: paymentUnits.giftId,
+        giftAllocationId: paymentUnits.giftAllocationId,
+        giftMatchMethod: paymentUnits.giftMatchMethod,
+        giftConfirmedByUserId: paymentUnits.giftConfirmedByUserId,
+        giftConfirmedAt: paymentUnits.giftConfirmedAt,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-      .where(
-        and(
-          eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
-          eq(paymentApplications.evidenceSource, "quickbooks"),
-          or(
-            eq(paymentApplications.linkRole, "counted"),
-            and(
-              eq(paymentApplications.linkRole, "corroborating"),
-              isNotNull(paymentApplications.amountApplied),
-            ),
-          ),
-        ),
-      );
+      .from(paymentUnits)
+      .where(eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId))
+      .for("update");
+    const unitAmountById = new Map(qbUnits.map((u) => [u.id, u.grossAmount]));
+    const crumbs = await supersedeDemotionCrumbsForUnits(
+      tx,
+      qbUnits.map((u) => u.id),
+    );
+    const qbLedgerRows: TieQbLedgerRow[] = [
+      ...qbUnits.flatMap((u): TieQbLedgerRow[] =>
+        u.giftId
+          ? [
+              {
+                id: u.id,
+                paymentUnitId: u.id,
+                giftId: u.giftId,
+                giftAllocationId: u.giftAllocationId,
+                amountApplied: u.grossAmount,
+                linkRole: "counted",
+                matchMethod: u.giftMatchMethod ?? "system",
+                confirmedByUserId: u.giftConfirmedByUserId,
+                confirmedAt: u.giftConfirmedAt,
+              },
+            ]
+          : [],
+      ),
+      ...crumbs.map(
+        (c): TieQbLedgerRow => ({
+          id: c.id,
+          paymentUnitId: c.paymentUnitId,
+          giftId: c.giftId,
+          giftAllocationId: null,
+          amountApplied: unitAmountById.get(c.paymentUnitId) ?? null,
+          linkRole: "corroborating",
+          matchMethod: c.matchMethod,
+          confirmedByUserId: c.confirmedByUserId,
+          confirmedAt: c.confirmedAt,
+        }),
+      ),
+    ];
 
-    const chargeCountedRows: TieChargeLedgerRow[] = await tx
+    // Charge-side counted tie: the charge unit's own fact columns.
+    const chargeUnit = await tx
       .select({
-        id: paymentApplications.id,
-        giftId: paymentApplications.giftId,
-        matchMethod: paymentApplications.matchMethod,
-        note: paymentApplications.note,
+        id: paymentUnits.id,
+        giftId: paymentUnits.giftId,
+        giftAllocationId: paymentUnits.giftAllocationId,
+        giftMatchMethod: paymentUnits.giftMatchMethod,
+        giftNote: paymentUnits.giftNote,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-      .where(
-        and(
-          eq(paymentUnits.stripeChargeId, pair.chargeId),
-          eq(paymentApplications.evidenceSource, "stripe"),
-          eq(paymentApplications.linkRole, "counted"),
-        ),
-      );
+      .from(paymentUnits)
+      .where(eq(paymentUnits.stripeChargeId, pair.chargeId))
+      .for("update")
+      .then((r) => r[0]);
+    const chargeCountedRows: TieChargeLedgerRow[] =
+      chargeUnit?.giftId != null
+        ? [
+            {
+              id: chargeUnit.id,
+              giftId: chargeUnit.giftId,
+              matchMethod: chargeUnit.giftMatchMethod ?? "system",
+              note: chargeUnit.giftNote,
+            },
+          ]
+        : [];
 
     const decisions = decideChargeTieSupersede({
       tieConfirmed: charge.linkedQbStagedPaymentId === pair.qbStagedPaymentId,
@@ -341,28 +381,12 @@ export async function applyChargeTieSupersedePairs(
     const now = new Date();
     const marker = chargeTieSupersedeMarker(pair.qbStagedPaymentId);
 
-    // Live counted SUM on the charge for OTHER gifts feeds the gross-cap
-    // pre-check for move/book (so a failure SKIPS instead of aborting the tx).
-    const chargeOtherSum = async (giftId: string): Promise<string> =>
-      tx
-        .select({
-          total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
-        })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-        .where(
-          and(
-            eq(paymentUnits.stripeChargeId, pair.chargeId),
-            eq(paymentApplications.linkRole, "counted"),
-            ne(paymentApplications.giftId, giftId),
-          ),
-        )
-        .then((r) => r[0]?.total ?? "0");
-
     const bookCopyOnCharge = async (row: TieQbLedgerRow): Promise<boolean> => {
       const guard = checkBookOnce({
         paymentAmount: charge.grossAmount,
-        otherAppliedSum: await chargeOtherSum(row.giftId),
+        // One gift per unit — a charge tie for a DIFFERENT gift surfaces as
+        // AnchorAlreadyCountedError below, so there is no "other gifts" sum.
+        otherAppliedSum: "0",
         newAmount: row.amountApplied,
       });
       // Conservative skip: booking stays on the QB row — safe, visible,
@@ -377,7 +401,7 @@ export async function applyChargeTieSupersedePairs(
           // COPY the human-ratified amount (exact-cents contract: it equals the
           // charge gross or net) — never re-stamp the gross over a net booking.
           amountApplied: row.amountApplied as string,
-          // First-class supersede discriminator (revert deletes by it); the
+          // First-class supersede discriminator (revert clears by it); the
           // note below keeps the source QB row id as human-readable trail.
           matchMethod: "charge_tie_supersede",
           confirmedByUserId: row.confirmedByUserId,
@@ -386,78 +410,42 @@ export async function applyChargeTieSupersedePairs(
           createdTheGift: false,
         });
       } catch (e) {
-        // Counted-uniqueness conservative skip: the charge already carries a
-        // counted row for a DIFFERENT gift (amounts small enough to pass the
-        // gross-cap pre-check above, e.g. after a partial refund demotion).
-        // Same semantics as the guard skip — booking stays on the QB row,
-        // converged by a later re-run once the conflicting booking clears.
+        // Counted-uniqueness conservative skip: the charge unit is already
+        // tied to a DIFFERENT gift. Same semantics as the guard skip —
+        // booking stays on the QB row, converged by a later re-run once the
+        // conflicting booking clears.
         if (e instanceof AnchorAlreadyCountedError) return false;
         throw e;
       }
       return true;
     };
 
+    // Demote a counted QB unit tie: clear the tie facts, preserving them as
+    // a supersede crumb so a revert can promote the booking back.
+    const demoteQbUnit = async (row: TieQbLedgerRow): Promise<void> => {
+      await writeSupersedeDemotionCrumb(tx, {
+        paymentUnitId: row.paymentUnitId,
+        giftId: row.giftId,
+        matchMethod: row.matchMethod,
+        confirmedByUserId: row.confirmedByUserId,
+        confirmedAt: row.confirmedAt,
+      });
+      await tx
+        .update(paymentUnits)
+        .set({ ...CLEARED_TIE_FACTS, updatedAt: now })
+        .where(eq(paymentUnits.id, row.paymentUnitId));
+    };
+
     for (const d of decisions) {
       switch (d.action) {
         case "move": {
           if (!(await bookCopyOnCharge(d.qbRow))) break;
-          // Demote the QB source row, clearing any colliding corroborating
-          // row for the pair first (partial UNIQUE (payment_id, gift_id)
-          // WHERE corroborating).
-          await tx
-            .delete(paymentApplications)
-            .where(
-              and(
-                inArray(
-                  paymentApplications.paymentUnitId,
-                  tx
-                    .select({ id: paymentUnits.id })
-                    .from(paymentUnits)
-                    .where(eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId)),
-                ),
-                eq(paymentApplications.giftId, d.qbRow.giftId),
-                eq(paymentApplications.linkRole, "corroborating"),
-                ne(paymentApplications.id, d.qbRow.id),
-              ),
-            );
-          const demoted = await tx
-            .update(paymentApplications)
-            .set({ linkRole: "corroborating", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id))
-            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-          await syncUnitGiftPointers(
-            tx,
-            demoted.map((r) => r.paymentUnitId),
-          );
+          await demoteQbUnit(d.qbRow);
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }
         case "demote_only": {
-          await tx
-            .delete(paymentApplications)
-            .where(
-              and(
-                inArray(
-                  paymentApplications.paymentUnitId,
-                  tx
-                    .select({ id: paymentUnits.id })
-                    .from(paymentUnits)
-                    .where(eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId)),
-                ),
-                eq(paymentApplications.giftId, d.qbRow.giftId),
-                eq(paymentApplications.linkRole, "corroborating"),
-                ne(paymentApplications.id, d.qbRow.id),
-              ),
-            );
-          const demotedOnly = await tx
-            .update(paymentApplications)
-            .set({ linkRole: "corroborating", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id))
-            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-          await syncUnitGiftPointers(
-            tx,
-            demotedOnly.map((r) => r.paymentUnitId),
-          );
+          await demoteQbUnit(d.qbRow);
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }
@@ -468,54 +456,41 @@ export async function applyChargeTieSupersedePairs(
           break;
         }
         case "remove_charge_row": {
-          const removedCharge = await tx
-            .delete(paymentApplications)
-            .where(eq(paymentApplications.id, d.chargeRow.id))
-            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-          await syncUnitGiftPointers(
-            tx,
-            removedCharge.map((r) => r.paymentUnitId),
-          );
+          // Clear the tie-derived charge tie (d.chargeRow.id is the charge
+          // unit id).
+          await tx
+            .update(paymentUnits)
+            .set({ ...CLEARED_TIE_FACTS, updatedAt: now })
+            .where(eq(paymentUnits.id, d.chargeRow.id));
           affectedGiftIds.add(d.chargeRow.giftId);
           break;
         }
         case "promote": {
-          // A fresh counted booking for the pair supersedes the stale demoted
-          // row (the counted partial UNIQUE forbids two): drop the crumb.
-          const countedExists = await tx
-            .select({ id: paymentApplications.id })
-            .from(paymentApplications)
-            .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
-            .where(
-              and(
-                eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
-                eq(paymentApplications.giftId, d.qbRow.giftId),
-                eq(paymentApplications.linkRole, "counted"),
-              ),
-            )
-            .limit(1)
-            .then((r) => r[0]);
-          if (countedExists) {
-            await tx
-              .delete(paymentApplications)
-              .where(eq(paymentApplications.id, d.qbRow.id));
-            affectedGiftIds.add(d.qbRow.giftId);
+          // A fresh counted booking on the crumb's unit: for the SAME gift
+          // the crumb is stale — drop it; for a DIFFERENT gift skip
+          // conservatively (the crumb stays; a later re-run promotes it once
+          // that tie clears).
+          const unit = qbUnits.find((u) => u.id === d.qbRow.paymentUnitId);
+          if (unit?.giftId) {
+            if (unit.giftId === d.qbRow.giftId) {
+              await deleteSupersedeDemotionCrumb(tx, d.qbRow.id);
+              affectedGiftIds.add(d.qbRow.giftId);
+            }
             break;
           }
           // Book-once guard against the QB row's own cap. Plain epsilon — a
           // tied QB row was booked exactly (no gross-vs-net lump headroom
-          // needed). A failure SKIPS the promote (stays corroborating: safe).
+          // needed). A failure SKIPS the promote (stays a crumb: safe).
           const otherSum = await tx
             .select({
-              total: sql<string>`coalesce(sum(${paymentApplications.amountApplied}), 0)::text`,
+              total: sql<string>`coalesce(sum(${paymentUnits.grossAmount}), 0)::text`,
             })
-            .from(paymentApplications)
-            .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+            .from(paymentUnits)
             .where(
               and(
                 eq(paymentUnits.sourceStagedPaymentId, pair.qbStagedPaymentId),
-                eq(paymentApplications.linkRole, "counted"),
-                ne(paymentApplications.giftId, d.qbRow.giftId),
+                isNotNull(paymentUnits.giftId),
+                ne(paymentUnits.id, d.qbRow.paymentUnitId),
               ),
             )
             .then((r) => r[0]?.total ?? "0");
@@ -525,15 +500,28 @@ export async function applyChargeTieSupersedePairs(
             newAmount: d.qbRow.amountApplied,
           });
           if (!guard.ok) break;
-          const promoted = await tx
-            .update(paymentApplications)
-            .set({ linkRole: "counted", updatedAt: now })
-            .where(eq(paymentApplications.id, d.qbRow.id))
-            .returning({ paymentUnitId: paymentApplications.paymentUnitId });
-          await syncUnitGiftPointers(
-            tx,
-            promoted.map((r) => r.paymentUnitId),
-          );
+          // Restore the tie onto the crumb's unit. The allocation pointer
+          // travels with the charge-side copy (the crumb cannot carry it),
+          // so it is restored from the tie-derived charge tie when present.
+          const restoredAllocationId =
+            chargeUnit?.giftId === d.qbRow.giftId &&
+            chargeUnit.giftMatchMethod === "charge_tie_supersede"
+              ? chargeUnit.giftAllocationId
+              : null;
+          await tx
+            .update(paymentUnits)
+            .set({
+              giftId: d.qbRow.giftId,
+              giftAllocationId: restoredAllocationId,
+              giftMatchMethod: d.qbRow.matchMethod,
+              giftConfirmedByUserId: d.qbRow.confirmedByUserId,
+              giftConfirmedAt: d.qbRow.confirmedAt,
+              giftNote: null,
+              createdTheGift: false,
+              updatedAt: now,
+            })
+            .where(eq(paymentUnits.id, d.qbRow.paymentUnitId));
+          await deleteSupersedeDemotionCrumb(tx, d.qbRow.id);
           affectedGiftIds.add(d.qbRow.giftId);
           break;
         }

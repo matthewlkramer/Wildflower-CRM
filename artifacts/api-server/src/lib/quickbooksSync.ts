@@ -8,7 +8,6 @@ import {
   organizations,
   fundableProjects,
   sourceLinks,
-  paymentApplications,
   paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
@@ -175,9 +174,9 @@ export function buildSuperfluousHeaderDelete(
         sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (
-          SELECT 1 FROM ${paymentApplications}
-          JOIN ${paymentUnits} ON ${paymentUnits.id} = ${paymentApplications.paymentUnitId}
+          SELECT 1 FROM ${paymentUnits}
           WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
+            AND ${paymentUnits.giftId} IS NOT NULL
         )`,
       ),
     );
@@ -219,9 +218,9 @@ export function buildSuperfluousLineDelete(
         sql`${stagedPayments.settledStripePayoutId} IS NULL`,
         sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
         sql`NOT EXISTS (
-          SELECT 1 FROM ${paymentApplications}
-          JOIN ${paymentUnits} ON ${paymentUnits.id} = ${paymentApplications.paymentUnitId}
+          SELECT 1 FROM ${paymentUnits}
           WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
+            AND ${paymentUnits.giftId} IS NOT NULL
         )`,
       ),
     );

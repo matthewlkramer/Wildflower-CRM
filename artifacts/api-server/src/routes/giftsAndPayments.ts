@@ -18,12 +18,11 @@ import {
   stripeStagedCharges,
   stripePayouts,
   donorboxDonations,
-  paymentApplications,
   paymentUnits,
   sourceLinks,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
 import { getViewer, type Viewer } from "../lib/identityVisibility";
 import {
@@ -1591,17 +1590,16 @@ router.post(
       // A gift wired into a QuickBooks staged payment must be unlinked first —
       // splitting changes its amount and would falsify an approved
       // reconciliation. New payment-gifts intentionally carry no QB links.
-      // The counted QB ledger unifies direct + split + group links, so one
-      // existence check covers every link shape (the legacy staged gift-link
-      // columns are @deprecated and no longer written).
+      // The counted unit→gift tie unifies direct + split + group links, so
+      // one existence check covers every link shape (the legacy staged
+      // gift-link columns are @deprecated and no longer written).
       const qbLedgerLink = await tx
-        .select({ id: paymentApplications.id })
-        .from(paymentApplications)
+        .select({ id: paymentUnits.id })
+        .from(paymentUnits)
         .where(
           and(
-            eq(paymentApplications.giftId, id),
-            eq(paymentApplications.evidenceSource, "quickbooks"),
-            eq(paymentApplications.linkRole, "counted"),
+            eq(paymentUnits.giftId, id),
+            isNotNull(paymentUnits.sourceStagedPaymentId),
           ),
         )
         .limit(1);
@@ -1856,22 +1854,23 @@ router.post(
         };
       }
 
-      // A gift with ANY counted payment application must be unlinked first —
-      // reverting archives the gift, and a live counted link (QuickBooks,
+      // A gift with ANY counted payment unit must be unlinked first —
+      // reverting archives the gift, and a live counted tie (QuickBooks,
       // Stripe, or Donorbox evidence alike) pointing at an archived gift would
-      // orphan booked money and falsify reconciliation. The counted ledger
-      // unifies direct + split + group links, so one existence check covers
-      // every link shape (the legacy staged gift-link columns are @deprecated
-      // and no longer written).
+      // orphan booked money and falsify reconciliation. The counted unit→gift
+      // tie unifies direct + split + group links, so one existence check
+      // covers every link shape (the legacy staged gift-link columns are
+      // @deprecated and no longer written).
       const countedLinks = await tx
-        .select({ evidenceSource: paymentApplications.evidenceSource })
-        .from(paymentApplications)
-        .where(
-          and(
-            eq(paymentApplications.giftId, id),
-            eq(paymentApplications.linkRole, "counted"),
-          ),
-        );
+        .select({
+          evidenceSource: sql<string>`CASE
+            WHEN ${paymentUnits.stripeChargeId} IS NOT NULL THEN 'stripe'
+            WHEN ${paymentUnits.sourceStagedPaymentId} IS NOT NULL THEN 'quickbooks'
+            ELSE 'donorbox'
+          END`,
+        })
+        .from(paymentUnits)
+        .where(eq(paymentUnits.giftId, id));
       if (countedLinks.length) {
         const sources = [...new Set(countedLinks.map((l) => l.evidenceSource))].sort();
         return {
@@ -2402,23 +2401,23 @@ router.get(
       donor = { kind: "household", id: gift.householdId, name };
     }
 
-    // WHERE — the QuickBooks staged record(s) this gift ties to, sourced from the
-    // authoritative cash-application ledger (payment_applications): one row per QB
-    // payment applied to this gift, `amount` = the applied amount (the split
+    // WHERE — the QuickBooks staged record(s) this gift ties to, sourced from
+    // the counted unit→gift ties (payment_units.gift_id): one row per QB
+    // payment unit tied to this gift, `amount` = the unit's gross (the split
     // sub-amount for split rows, the full staged amount for direct rows).
     // The staged_payments join supplies the QB record detail; the cosmetic
-    // linkType label is derived from the ledger itself (the legacy staged
+    // linkType label is derived from the ties themselves (the legacy staged
     // gift-link columns are @deprecated and no longer written): a payment
-    // whose counted rows fan out to >1 application is a split; created comes
+    // whose counted units fan out to >1 tie is a split; created comes
     // straight from created_the_gift. (Legacy unit_groups membership is no
     // longer read — retired, docs/adr-linear-money-model.md; a multi-matched
-    // member's counted row renders as a direct match.) Off-books gifts may
+    // member's counted tie renders as a direct match.) Off-books gifts may
     // still surface evidence if any exists, but it isn't required of them.
     const ledgerRows = await db
       .select({
         stagedPaymentId: paymentUnits.sourceStagedPaymentId,
-        amountApplied: paymentApplications.amountApplied,
-        createdTheGift: paymentApplications.createdTheGift,
+        amountApplied: paymentUnits.grossAmount,
+        createdTheGift: paymentUnits.createdTheGift,
         realmId: stagedPayments.realmId,
         qbEntityType: stagedPayments.qbEntityType,
         qbEntityId: stagedPayments.qbEntityId,
@@ -2428,27 +2427,17 @@ router.get(
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
         countedAppCount: sql<number>`(
-          SELECT COUNT(*)::int FROM payment_applications pa2
-          JOIN payment_units pu2 ON pu2.id = pa2.payment_unit_id
+          SELECT COUNT(*)::int FROM payment_units pu2
           WHERE pu2.source_staged_payment_id = ${paymentUnits.sourceStagedPaymentId}
-            AND pa2.evidence_source = 'quickbooks'
-            AND pa2.link_role = 'counted'
+            AND pu2.gift_id IS NOT NULL
         )`,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .from(paymentUnits)
       .innerJoin(
         stagedPayments,
         eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
-      .where(
-        and(
-          eq(paymentApplications.giftId, id),
-          eq(paymentApplications.evidenceSource, "quickbooks"),
-          // Money-trail display only — corroborating rows (Phase 5) never appear here.
-          eq(paymentApplications.linkRole, "counted"),
-        ),
-      );
+      .where(eq(paymentUnits.giftId, id));
 
     const quickbooksRecords = ledgerRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
@@ -2468,14 +2457,13 @@ router.get(
       dateReceived: r.dateReceived,
     }));
 
-    // CORROBORATING — non-counting QB evidence rows (link_role='corroborating',
-    // e.g. a coarse deposit line that corroborates a Stripe-settled gift). These
-    // are audit-only and MUST NOT be summed into the money trail, so amount is
-    // always null (mirrors payment_applications.amount_applied being null there).
+    // CORROBORATING — non-counting QB evidence claims (source_links
+    // unit_gift_corroboration, e.g. a coarse deposit line that corroborates a
+    // Stripe-settled gift). These are audit-only and MUST NOT be summed into
+    // the money trail, so amount is always null.
     const corroboratingRows = await db
       .select({
         stagedPaymentId: paymentUnits.sourceStagedPaymentId,
-        createdTheGift: paymentApplications.createdTheGift,
         realmId: stagedPayments.realmId,
         qbEntityType: stagedPayments.qbEntityType,
         qbEntityId: stagedPayments.qbEntityId,
@@ -2485,25 +2473,24 @@ router.get(
         payerName: stagedPayments.payerName,
         dateReceived: stagedPayments.dateReceived,
       })
-      .from(paymentApplications)
-      .innerJoin(paymentUnits, eq(paymentUnits.id, paymentApplications.paymentUnitId))
+      .from(sourceLinks)
+      .innerJoin(paymentUnits, eq(paymentUnits.id, sourceLinks.paymentUnitId))
       .innerJoin(
         stagedPayments,
         eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
       .where(
         and(
-          eq(paymentApplications.giftId, id),
-          eq(paymentApplications.evidenceSource, "quickbooks"),
-          eq(paymentApplications.linkRole, "corroborating"),
+          eq(sourceLinks.linkType, "unit_gift_corroboration"),
+          eq(sourceLinks.giftId, id),
         ),
       );
 
-    // A corroborating row is never how a split books (splits write counted
-    // rows), so its label needs no split branch — matched/created only.
+    // A corroborating claim is never how a split books (splits write counted
+    // ties) and never mints a gift, so its label is always matched.
     const corroboratingRecords = corroboratingRows.map((r) => ({
       stagedPaymentId: r.stagedPaymentId,
-      linkType: (r.createdTheGift ? "created" : "matched") as
+      linkType: "matched" as
         | "matched"
         | "created"
         | "split",
@@ -2521,9 +2508,9 @@ router.get(
     // STRIPE FEES — the sibling negative QB "Stripe fee" rows claimed for this
     // gift's Stripe charges when their donor-line QB ties were confirmed
     // (stripe_staged_charges.linked_fee_qb_staged_payment_id). The gift ↔
-    // charge hop is the counted stripe application (the ledger is the only
-    // gift↔charge pointer). Audit-only plane-1 evidence — fee rows never
-    // enter payment_applications and are never summed into the money trail.
+    // charge hop is the counted unit→gift tie (the only gift↔charge
+    // pointer). Audit-only plane-1 evidence — fee rows never enter the money
+    // trail sums.
     const stripeFeeRecords = await db
       .select({
         stagedPaymentId: stagedPayments.id,
@@ -2548,12 +2535,9 @@ router.get(
       .innerJoin(stagedPayments, eq(stagedPayments.id, sourceLinks.qbStagedPaymentId))
       .where(
         sql`EXISTS (
-          SELECT 1 FROM payment_applications pa
-          JOIN payment_units pu ON pu.id = pa.payment_unit_id
+          SELECT 1 FROM payment_units pu
           WHERE pu.stripe_charge_id = ${stripeStagedCharges.id}
-            AND pa.evidence_source = 'stripe'
-            AND pa.link_role = 'counted'
-            AND pa.gift_id = ${id}
+            AND pu.gift_id = ${id}
         )`,
       );
 

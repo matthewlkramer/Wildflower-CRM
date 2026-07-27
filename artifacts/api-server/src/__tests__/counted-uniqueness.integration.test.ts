@@ -140,19 +140,13 @@ function anchorWhere(anchor: AnchorArgs) {
   return eqFn(schema.paymentUnits.id, `pu_${anchorId}`);
 }
 
+/** The unit's counted tie (payment_units.gift_id — the sole tie surface). */
 async function readRows(anchor: AnchorArgs) {
-  return db
-    .select({
-      giftId: schema.paymentApplications.giftId,
-      amountApplied: schema.paymentApplications.amountApplied,
-      linkRole: schema.paymentApplications.linkRole,
-    })
-    .from(schema.paymentApplications)
-    .innerJoin(
-      schema.paymentUnits,
-      eqFn(schema.paymentApplications.paymentUnitId, schema.paymentUnits.id),
-    )
+  const rows = await db
+    .select({ giftId: schema.paymentUnits.giftId })
+    .from(schema.paymentUnits)
     .where(anchorWhere(anchor));
+  return rows.filter((r) => r.giftId !== null);
 }
 
 /** node-postgres surfaces SQLSTATE on `code`; newer drizzle wraps the driver
@@ -248,9 +242,7 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     ).toBe(giftB);
 
     const rows = await readRows(anchor);
-    expect(rows).toEqual([
-      { giftId: giftA, amountApplied: "60.00", linkRole: "counted" },
-    ]);
+    expect(rows).toEqual([{ giftId: giftA }]);
   });
 
   it("stripe anchor: second-gift apply throws even when amounts fit the cap", async () => {
@@ -265,12 +257,10 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     );
 
     const rows = await readRows(anchor);
-    expect(rows).toEqual([
-      { giftId: giftA, amountApplied: "50.00", linkRole: "counted" },
-    ]);
+    expect(rows).toEqual([{ giftId: giftA }]);
   });
 
-  it("same-gift re-apply stays idempotent: one row, amount replaced", async () => {
+  it("same-gift re-apply stays idempotent: one tie, facts refreshed", async () => {
     const gift = await seedGift();
     const sp = await seedQbStagedPayment();
     const anchor = { evidenceSource: "quickbooks", paymentId: sp } as const;
@@ -279,12 +269,10 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     await apply(anchor, gift, "55.00");
 
     const rows = await readRows(anchor);
-    expect(rows).toEqual([
-      { giftId: gift, amountApplied: "55.00", linkRole: "counted" },
-    ]);
+    expect(rows).toEqual([{ giftId: gift }]);
   });
 
-  it("re-point inside one tx (delete old counted row, then apply) passes", async () => {
+  it("re-point inside one tx (clear old tie, then apply) passes", async () => {
     const giftA = await seedGift();
     const giftB = await seedGift();
     const sp = await seedQbStagedPayment();
@@ -293,13 +281,9 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     await apply(anchor, giftA, "100.00");
     await db.transaction(async (tx) => {
       await tx
-        .delete(schema.paymentApplications)
-        .where(
-          andFn(
-            eqFn(schema.paymentApplications.paymentUnitId, `pu_${sp}`),
-            eqFn(schema.paymentApplications.linkRole, "counted"),
-          ),
-        );
+        .update(schema.paymentUnits)
+        .set({ ...pa.CLEARED_TIE_FACTS })
+        .where(eqFn(schema.paymentUnits.id, `pu_${sp}`));
       await pa.applyPaymentApplication(tx, {
         evidenceSource: "quickbooks",
         paymentId: sp,
@@ -311,9 +295,7 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     });
 
     const rows = await readRows(anchor);
-    expect(rows).toEqual([
-      { giftId: giftB, amountApplied: "100.00", linkRole: "counted" },
-    ]);
+    expect(rows).toEqual([{ giftId: giftB }]);
   });
 
   it("DB backstop: raw second counted row is rejected (23505) on every anchor", async () => {

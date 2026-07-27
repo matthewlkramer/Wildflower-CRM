@@ -95,14 +95,12 @@ beforeAll(async () => {
     qbEntityType: "payment",
     qbEntityId: stagedId,
   });
-  // QB ownership lives in the counted ledger row (the sole gift-link source).
-  await db.insert(schema.paymentApplications).values({
-    id: `${stagedId}_pa`,
-    paymentUnitId: await unitIdForAnchor("quickbooks", stagedId),
-    giftId: qbGiftId,
-    amountApplied: QB_GIFT_AMOUNT,
-    evidenceSource: "quickbooks",
-  });
+  // QB ownership lives on the counted unit tie (the sole gift-link source).
+  const qbUnitId = await unitIdForAnchor("quickbooks", stagedId);
+  await db
+    .update(schema.paymentUnits)
+    .set({ giftId: qbGiftId, giftMatchMethod: "system" })
+    .where(eqFn(schema.paymentUnits.id, qbUnitId));
   seededGiftIds.push(qbGiftId);
   seededStagedIds.push(stagedId);
 
@@ -120,13 +118,11 @@ beforeAll(async () => {
     stripeAccountId: RUN,
     grossAmount: CHARGE_GIFT_AMOUNT,
   });
-  await db.insert(schema.paymentApplications).values({
-    id: `${chargeId}_pa`,
-    paymentUnitId: await unitIdForAnchor("stripe", chargeId),
-    giftId: chargeGiftId,
-    amountApplied: CHARGE_GIFT_AMOUNT,
-    evidenceSource: "stripe",
-  });
+  const chargeUnitId = await unitIdForAnchor("stripe", chargeId);
+  await db
+    .update(schema.paymentUnits)
+    .set({ giftId: chargeGiftId, giftMatchMethod: "system" })
+    .where(eqFn(schema.paymentUnits.id, chargeUnitId));
   seededGiftIds.push(chargeGiftId);
   seededChargeIds.push(chargeId);
 }, 60_000);

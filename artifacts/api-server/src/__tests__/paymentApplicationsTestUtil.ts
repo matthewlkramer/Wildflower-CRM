@@ -1,113 +1,106 @@
 /**
- * Test-teardown helpers for the cash-application ledger
- * (`payment_applications`).
- *
- * The ledger's FKs to `payment_units` (payment_unit_id) and
- * `gifts_and_payments` (gift_id) are both `ON DELETE RESTRICT`, so any
- * integration teardown that deletes those parent rows must clear the ledger rows
- * the test created FIRST. Since the source-anchor columns were dropped
- * (bank-spine ADR), the ledger is anchored solely on `payment_unit_id`; the
- * source pointers (staged payment / Stripe charge) live on `payment_units`, so
- * these helpers resolve rows through the unit.
+ * Test seed/read/teardown helpers for the unit→gift tie surface:
+ * `payment_units.gift_id` + fact columns (the counted tie) and
+ * `source_links` `unit_gift_corroboration` rows (corroboration + supersede
+ * demotion crumbs). The retired `payment_applications` ledger is only touched
+ * on teardown (rows a test seeded raw for the DB-backstop coverage must still
+ * be cleared while the table exists).
  *
  * Everything is loaded via dynamic `import()` so this module has no top-level
- * `@workspace/db` side effect — preserving the integration suites' "skip when no
- * real DATABASE_URL" pattern (the parent module throws at import if unset).
- *
- * `payment_units.gift_id` (the successor unit→gift pointer, ON DELETE
- * RESTRICT) is dual-written at booking time, so every clear helper also
- * detaches the pointer on the affected units — otherwise a teardown deleting
- * the gifts would trip the FK.
+ * `@workspace/db` side effect — preserving the integration suites' "skip when
+ * no real DATABASE_URL" pattern (the parent module throws at import if unset).
  */
 
-/** Null out payment_units.gift_id for units pointing at the given gifts. */
+/** Clear the unit→gift tie facts for units pointing at the given gifts. */
 async function detachUnitGiftPointersForGiftIds(
-  giftIds: string[],
+  giftIds: (string | null)[],
 ): Promise<void> {
-  if (!giftIds.length) return;
-  const { db, paymentUnits } = await import("@workspace/db");
-  const { inArray } = await import("drizzle-orm");
+  const ids = giftIds.filter((g): g is string => !!g);
+  if (!ids.length) return;
+  const { db, paymentUnits, sourceLinks } = await import("@workspace/db");
+  const { inArray, and, eq } = await import("drizzle-orm");
+  const { CLEARED_TIE_FACTS } = await import("../lib/paymentApplications");
+  await db
+    .delete(sourceLinks)
+    .where(
+      and(
+        eq(sourceLinks.linkType, "unit_gift_corroboration"),
+        inArray(sourceLinks.giftId, ids),
+      ),
+    );
   await db
     .update(paymentUnits)
-    .set({ giftId: null })
-    .where(inArray(paymentUnits.giftId, giftIds));
+    .set({ ...CLEARED_TIE_FACTS })
+    .where(inArray(paymentUnits.giftId, ids));
 }
 
-/** Resolve the ledger-row ids whose unit sources one of the given QB payments. */
-async function ledgerIdsForStagedIds(stagedIds: string[]): Promise<string[]> {
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
-  const { eq, inArray } = await import("drizzle-orm");
-  const rows = await db
-    .select({ id: paymentApplications.id })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
-    .where(inArray(paymentUnits.sourceStagedPaymentId, stagedIds));
-  return rows.map((r) => r.id);
-}
-
-/** Clear ledger rows whose unit sources any staged payment in a realm. */
+/** Clear ties + legacy ledger rows whose unit sources any staged payment in a realm. */
 export async function clearPaymentApplicationsForRealm(
   realmId: string,
 ): Promise<void> {
-  const { db, paymentApplications, paymentUnits, stagedPayments } =
-    await import("@workspace/db");
-  const { eq, inArray } = await import("drizzle-orm");
+  const { db, paymentUnits, stagedPayments } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
   const rows = await db
-    .select({ id: paymentApplications.id })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .select({ id: paymentUnits.id, giftId: paymentUnits.giftId })
+    .from(paymentUnits)
     .innerJoin(
       stagedPayments,
       eq(paymentUnits.sourceStagedPaymentId, stagedPayments.id),
     )
     .where(eq(stagedPayments.realmId, realmId));
-  const ids = rows.map((r) => r.id);
-  if (!ids.length) return;
-  const giftRows = await db
-    .select({ giftId: paymentApplications.giftId })
-    .from(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
+  await clearForUnits(rows);
 }
 
-/** Clear ledger rows whose unit sources an explicit set of staged-payment ids. */
+async function clearForUnits(
+  units: { id: string; giftId: string | null }[],
+): Promise<void> {
+  if (!units.length) return;
+  const { db, paymentApplications, paymentUnits, sourceLinks } = await import(
+    "@workspace/db"
+  );
+  const { inArray, and, eq } = await import("drizzle-orm");
+  const { CLEARED_TIE_FACTS } = await import("../lib/paymentApplications");
+  const ids = units.map((u) => u.id);
+  await db
+    .delete(paymentApplications)
+    .where(inArray(paymentApplications.paymentUnitId, ids));
+  await db
+    .delete(sourceLinks)
+    .where(
+      and(
+        eq(sourceLinks.linkType, "unit_gift_corroboration"),
+        inArray(sourceLinks.paymentUnitId, ids),
+      ),
+    );
+  await db
+    .update(paymentUnits)
+    .set({ ...CLEARED_TIE_FACTS })
+    .where(inArray(paymentUnits.id, ids));
+  await detachUnitGiftPointersForGiftIds(units.map((u) => u.giftId));
+}
+
+/** Clear ties + ledger rows whose unit sources an explicit set of staged-payment ids. */
 export async function clearPaymentApplicationsForStagedIds(
   stagedIds: string[],
 ): Promise<void> {
   if (!stagedIds.length) return;
-  const ids = await ledgerIdsForStagedIds(stagedIds);
-  if (!ids.length) return;
-  const { db, paymentApplications } = await import("@workspace/db");
+  const { db, paymentUnits } = await import("@workspace/db");
   const { inArray } = await import("drizzle-orm");
-  const giftRows = await db
-    .select({ giftId: paymentApplications.giftId })
-    .from(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
+  const rows = await db
+    .select({ id: paymentUnits.id, giftId: paymentUnits.giftId })
+    .from(paymentUnits)
+    .where(inArray(paymentUnits.sourceStagedPaymentId, stagedIds));
+  await clearForUnits(rows);
 }
 
 /**
- * Ledger read-helpers for assertions — the legacy staged gift-link columns
+ * Tie read-helpers for assertions — the legacy staged gift-link columns
  * (matched_gift_id / created_gift_id / group_reconciled_gift_id) and the
  * gift's final_amount_qb_staged_payment_id are @deprecated and never written,
- * so tests assert link state against the ledger instead.
+ * so tests assert link state against the unit tie facts instead.
  */
 
-/** All counted QB ledger rows whose unit sources a staged payment. */
+/** All counted QB unit ties whose unit sources a staged payment. */
 export async function qbCountedRowsForPayment(paymentId: string): Promise<
   Array<{
     giftId: string;
@@ -116,29 +109,28 @@ export async function qbCountedRowsForPayment(paymentId: string): Promise<
     matchMethod: string;
   }>
 > {
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
-  const { and, eq } = await import("drizzle-orm");
-  return db
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { and, eq, isNotNull } = await import("drizzle-orm");
+  const rows = await db
     .select({
-      giftId: paymentApplications.giftId,
-      amountApplied: paymentApplications.amountApplied,
-      createdTheGift: paymentApplications.createdTheGift,
-      matchMethod: paymentApplications.matchMethod,
+      giftId: paymentUnits.giftId,
+      amountApplied: paymentUnits.grossAmount,
+      createdTheGift: paymentUnits.createdTheGift,
+      matchMethod: paymentUnits.giftMatchMethod,
     })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .from(paymentUnits)
     .where(
       and(
         eq(paymentUnits.sourceStagedPaymentId, paymentId),
-        eq(paymentApplications.evidenceSource, "quickbooks"),
-        eq(paymentApplications.linkRole, "counted"),
+        isNotNull(paymentUnits.giftId),
       ),
     );
+  return rows.map((r) => ({
+    giftId: r.giftId as string,
+    amountApplied: r.amountApplied,
+    createdTheGift: r.createdTheGift,
+    matchMethod: r.matchMethod ?? "system",
+  }));
 }
 
 /** The single counted QB gift for a payment (null when none or split). */
@@ -149,7 +141,7 @@ export async function qbSoleGiftIdForPayment(
   return rows.length === 1 ? rows[0].giftId : null;
 }
 
-/** The gift a payment MINTED (counted QB row with created_the_gift), or null. */
+/** The gift a payment MINTED (counted tie with created_the_gift), or null. */
 export async function qbMintedGiftIdForPayment(
   paymentId: string,
 ): Promise<string | null> {
@@ -158,12 +150,12 @@ export async function qbMintedGiftIdForPayment(
 }
 
 /**
- * All supersede-DEMOTED QB ledger rows whose unit sources a staged payment:
- * corroborating WITH an amount (the §4.3 settlement-supersede demote keeps the
- * amount so a revert can promote losslessly; corrections-flow corroborating
- * rows carry a NULL amount and are excluded). After an approve that books a
- * covering per-charge Stripe row and confirms the settlement link, the coarse
- * QB row lands here instead of in `qbCountedRowsForPayment`.
+ * All supersede-DEMOTED ties whose unit sources a staged payment: preserved
+ * as unit_gift_corroboration source_links with match_basis =
+ * 'supersede_demotion' (so a revert can promote losslessly; corrections-flow
+ * corroboration claims carry other bases and are excluded). After an approve
+ * that books a covering per-charge Stripe tie and confirms the settlement
+ * link, the coarse QB tie lands here instead of in `qbCountedRowsForPayment`.
  */
 export async function qbDemotedRowsForPayment(paymentId: string): Promise<
   Array<{
@@ -173,55 +165,46 @@ export async function qbDemotedRowsForPayment(paymentId: string): Promise<
     matchMethod: string;
   }>
 > {
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
-  const { and, eq, isNotNull } = await import("drizzle-orm");
-  return db
+  const { db, paymentUnits, sourceLinks } = await import("@workspace/db");
+  const { and, eq } = await import("drizzle-orm");
+  const rows = await db
     .select({
-      giftId: paymentApplications.giftId,
-      amountApplied: paymentApplications.amountApplied,
-      createdTheGift: paymentApplications.createdTheGift,
-      matchMethod: paymentApplications.matchMethod,
+      giftId: sourceLinks.giftId,
+      amountApplied: paymentUnits.grossAmount,
+      provenance: sourceLinks.provenance,
     })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .from(sourceLinks)
+    .innerJoin(paymentUnits, eq(sourceLinks.paymentUnitId, paymentUnits.id))
     .where(
       and(
         eq(paymentUnits.sourceStagedPaymentId, paymentId),
-        eq(paymentApplications.evidenceSource, "quickbooks"),
-        eq(paymentApplications.linkRole, "corroborating"),
-        isNotNull(paymentApplications.amountApplied),
+        eq(sourceLinks.linkType, "unit_gift_corroboration"),
+        eq(sourceLinks.matchBasis, "supersede_demotion"),
       ),
     );
+  return rows.map((r) => ({
+    giftId: r.giftId as string,
+    amountApplied: r.amountApplied,
+    createdTheGift: false,
+    matchMethod: r.provenance,
+  }));
 }
 
 /**
- * The QB staged payment whose counted ledger row sources this gift's amount
- * (ledger replacement for the legacy gift.final_amount_qb_staged_payment_id).
+ * The QB staged payment whose counted unit tie sources this gift's amount
+ * (tie replacement for the legacy gift.final_amount_qb_staged_payment_id).
  */
 export async function qbPaymentIdForGift(
   giftId: string,
 ): Promise<string | null> {
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
+  const { db, paymentUnits } = await import("@workspace/db");
   const { and, eq, isNotNull } = await import("drizzle-orm");
   const rows = await db
     .select({ paymentId: paymentUnits.sourceStagedPaymentId })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .from(paymentUnits)
     .where(
       and(
-        eq(paymentApplications.giftId, giftId),
-        eq(paymentApplications.evidenceSource, "quickbooks"),
-        eq(paymentApplications.linkRole, "counted"),
+        eq(paymentUnits.giftId, giftId),
         isNotNull(paymentUnits.sourceStagedPaymentId),
       ),
     );
@@ -229,12 +212,10 @@ export async function qbPaymentIdForGift(
 }
 
 /**
- * Clear ledger rows anchored to an explicit set of gift ids.
+ * Clear ties + ledger rows anchored to an explicit set of gift ids.
  *
- * Needed for Stripe-evidence rows, which `clearPaymentApplicationsForStagedIds`
+ * Needed for Stripe-evidence ties, which `clearPaymentApplicationsForStagedIds`
  * never reaches (their unit sources a Stripe charge, not a staged payment).
- * `payment_unit_id`'s FK is `ON DELETE RESTRICT`, so a teardown that deletes the
- * parent unit must clear these ledger rows FIRST.
  */
 export async function clearPaymentApplicationsForGiftIds(
   giftIds: string[],
@@ -249,13 +230,12 @@ export async function clearPaymentApplicationsForGiftIds(
 }
 
 /**
- * Seed a counted Stripe-evidence ledger row — the test replacement for the
- * retired `matched_gift_id` / `created_gift_id` pointer writes on
+ * Seed a counted Stripe-evidence tie — the test replacement for the retired
+ * `matched_gift_id` / `created_gift_id` pointer writes on
  * `stripe_staged_charges`. A charge is "booked" (match_confirmed /
- * match_proposed derivations, revert eligibility, ownership gates) if and only
- * if such a row exists, so tests that used to seed the pointers must seed
- * this instead. `link_role`/`lifecycle` keep their column defaults
- * (counted / confirmed), matching every production write path.
+ * match_proposed derivations, revert eligibility, ownership gates) if and
+ * only if its unit carries the gift tie, so tests that used to seed the
+ * pointers must seed this instead. Returns the payment unit id.
  */
 export async function seedStripeApplication(args: {
   stripeChargeId: string;
@@ -265,25 +245,26 @@ export async function seedStripeApplication(args: {
   matchMethod?: "system" | "system_confirmed" | "human";
   confirmedAt?: Date | null;
 }): Promise<string> {
-  const { db, paymentApplications } = await import("@workspace/db");
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
   const { ensurePaymentUnit } = await import("../lib/paymentUnits");
-  const id = `patest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   const paymentUnitId = await ensurePaymentUnit(
     db,
     "stripe",
     args.stripeChargeId,
   );
-  await db.insert(paymentApplications).values({
-    id,
-    giftId: args.giftId,
-    amountApplied: args.amountApplied,
-    evidenceSource: "stripe",
-    paymentUnitId,
-    matchMethod: args.matchMethod ?? "human",
-    confirmedAt: args.confirmedAt === undefined ? new Date() : args.confirmedAt,
-    createdTheGift: args.createdTheGift ?? false,
-  });
-  return id;
+  await db
+    .update(paymentUnits)
+    .set({
+      giftId: args.giftId,
+      giftMatchMethod: args.matchMethod ?? "human",
+      giftConfirmedAt:
+        args.confirmedAt === undefined ? new Date() : args.confirmedAt,
+      createdTheGift: args.createdTheGift ?? false,
+      updatedAt: new Date(),
+    })
+    .where(eq(paymentUnits.id, paymentUnitId));
+  return paymentUnitId;
 }
 
 export async function unitIdForAnchor(
@@ -296,37 +277,36 @@ export async function unitIdForAnchor(
 }
 
 /**
- * The counted Stripe ledger row whose unit sources a charge (ledger replacement
- * for reading the retired matched/created pointer columns in assertions).
+ * The counted tie on a charge's unit (tie replacement for reading the retired
+ * matched/created pointer columns in assertions).
  */
 export async function stripeCountedRowForCharge(stripeChargeId: string): Promise<{
   giftId: string;
   amountApplied: string | null;
   createdTheGift: boolean;
 } | null> {
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
-  const { and, eq } = await import("drizzle-orm");
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { and, eq, isNotNull } = await import("drizzle-orm");
   const rows = await db
     .select({
-      giftId: paymentApplications.giftId,
-      amountApplied: paymentApplications.amountApplied,
-      createdTheGift: paymentApplications.createdTheGift,
+      giftId: paymentUnits.giftId,
+      amountApplied: paymentUnits.grossAmount,
+      createdTheGift: paymentUnits.createdTheGift,
     })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .from(paymentUnits)
     .where(
       and(
         eq(paymentUnits.stripeChargeId, stripeChargeId),
-        eq(paymentApplications.evidenceSource, "stripe"),
-        eq(paymentApplications.linkRole, "counted"),
+        isNotNull(paymentUnits.giftId),
       ),
     );
-  return rows.length ? rows[0] : null;
+  return rows.length
+    ? {
+        giftId: rows[0].giftId as string,
+        amountApplied: rows[0].amountApplied,
+        createdTheGift: rows[0].createdTheGift,
+      }
+    : null;
 }
 
 /** The gift a charge is counted against (matched OR minted), or null. */
@@ -337,7 +317,7 @@ export async function stripeGiftIdForCharge(
   return row?.giftId ?? null;
 }
 
-/** The gift a charge MINTED (counted row with created_the_gift), or null. */
+/** The gift a charge MINTED (counted tie with created_the_gift), or null. */
 export async function stripeMintedGiftIdForCharge(
   stripeChargeId: string,
 ): Promise<string | null> {
@@ -345,49 +325,38 @@ export async function stripeMintedGiftIdForCharge(
   return row?.createdTheGift ? row.giftId : null;
 }
 
-/** Clear ledger rows whose unit sources an explicit set of Stripe charge ids. */
+/** Clear ties + ledger rows whose unit sources an explicit set of Stripe charge ids. */
 export async function clearPaymentApplicationsForChargeIds(
   chargeIds: string[],
 ): Promise<void> {
   if (!chargeIds.length) return;
-  const { db, paymentApplications, paymentUnits } = await import(
-    "@workspace/db"
-  );
-  const { eq, inArray } = await import("drizzle-orm");
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
   const rows = await db
-    .select({ id: paymentApplications.id })
-    .from(paymentApplications)
-    .innerJoin(
-      paymentUnits,
-      eq(paymentApplications.paymentUnitId, paymentUnits.id),
-    )
+    .select({ id: paymentUnits.id, giftId: paymentUnits.giftId })
+    .from(paymentUnits)
     .where(inArray(paymentUnits.stripeChargeId, chargeIds));
-  const ids = rows.map((r) => r.id);
-  if (!ids.length) return;
-  const giftRows = await db
-    .select({ giftId: paymentApplications.giftId })
-    .from(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.id, ids));
-  await detachUnitGiftPointersForGiftIds(giftRows.map((r) => r.giftId));
+  await clearForUnits(rows);
 }
 
 /**
  * Clear canonical payment units minted for a set of Stripe charges (with their
- * deposit components and ledger rows). The post-sync bank-spine recompute in a
- * concurrently running suite can mint units for ANY pending charge in the
- * shared test DB, so a teardown that deletes its charges must clear these
- * RESTRICT-parented rows first. `payment_unit_id` is NOT NULL, so the ledger
- * rows are deleted (not detached) before their units go.
+ * deposit components, tie source_links, and legacy ledger rows). The post-sync
+ * bank-spine recompute in a concurrently running suite can mint units for ANY
+ * pending charge in the shared test DB, so a teardown that deletes its charges
+ * must clear these RESTRICT-parented rows first.
  */
 export async function clearPaymentUnitsForChargeIds(
   chargeIds: string[],
 ): Promise<void> {
   if (!chargeIds.length) return;
-  const { db, bankDepositComponents, paymentApplications, paymentUnits } =
-    await import("@workspace/db");
+  const {
+    db,
+    bankDepositComponents,
+    paymentApplications,
+    paymentUnits,
+    sourceLinks,
+  } = await import("@workspace/db");
   const { inArray } = await import("drizzle-orm");
   const unitIds = db
     .select({ id: paymentUnits.id })
@@ -399,6 +368,9 @@ export async function clearPaymentUnitsForChargeIds(
   await db
     .delete(paymentApplications)
     .where(inArray(paymentApplications.paymentUnitId, unitIds));
+  await db
+    .delete(sourceLinks)
+    .where(inArray(sourceLinks.paymentUnitId, unitIds));
   await db
     .delete(paymentUnits)
     .where(inArray(paymentUnits.stripeChargeId, chargeIds));

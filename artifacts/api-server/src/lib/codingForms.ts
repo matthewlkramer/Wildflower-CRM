@@ -438,12 +438,9 @@ export async function giftCandidatesFor(
   const dateDistance = sql`LEAST(
     ABS(${giftsAndPayments.dateReceived} - ${anchorDate}),
     (SELECT MIN(ABS(sp.date_received - ${anchorDate}))
-       FROM payment_applications pa
-       JOIN payment_units pu ON pu.id = pa.payment_unit_id
+       FROM payment_units pu
        JOIN staged_payments sp ON sp.id = pu.source_staged_payment_id
-      WHERE pa.gift_id = ${giftsAndPayments.id}
-        AND pa.evidence_source = 'quickbooks'
-        AND pa.link_role = 'counted'
+      WHERE pu.gift_id = ${giftsAndPayments.id}
         AND sp.date_received IS NOT NULL)
   )`;
   const rows = await db
