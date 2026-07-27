@@ -19,6 +19,8 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  *      deterministic rank-pairing for equal amount/date classes with
  *      ambiguous_bank_match=true — the approved flag-not-workflow policy)
  *   4. check units+components  ← QBO deposit-composing rows     (0162)
+ *   4e. QBO-grain source_links ← legacy tie projection + register matching
+ *       (docs/adr-qbo-evidence-grain.md; 0189–0191)
  *   5. donorbox pointer        ← pulled charge id / human link  (0165)
  *   6. QBO accounting sidecar  ← expected-vs-actual comparer        (0166)
  *
@@ -442,6 +444,210 @@ export async function recomputeBankSpine(): Promise<void> {
       false
     FROM unique_pairs p
     ON CONFLICT DO NOTHING
+  `);
+
+  // 4e. QBO-grain source_links (docs/adr-qbo-evidence-grain.md).
+  //     source_links is the successor tie mechanism for all QBO evidence;
+  //     the legacy tables keep being written above until their read cutover
+  //     + 0192 drop. Everything here is fill-only with deterministic ids.
+
+  // 4e-i. Project the legacy ties into source_links (same derivation as the
+  //       0191 backfill, re-run so forward writes stay in lockstep).
+  await db.execute(sql`
+    INSERT INTO source_links (
+      id, link_type, bank_transaction_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qrd_' || r.bank_transaction_id, 'qbo_register_deposit',
+      r.bank_transaction_id, r.bank_deposit_id, 'confirmed', 'system',
+      CASE abs(bt.txn_date - d.deposit_date)
+        WHEN 0 THEN 'same_day_unique_amount'
+        WHEN 1 THEN 'one_day_unique_amount'
+        WHEN 2 THEN 'two_day_unique_amount'
+        ELSE 'three_day_unique_amount'
+      END::source_link_match_basis
+    FROM bank_deposit_qbo_register r
+    JOIN bank_transactions bt ON bt.id = r.bank_transaction_id
+    JOIN bank_deposits d ON d.id = r.bank_deposit_id
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await db.execute(sql`
+    INSERT INTO source_links (
+      id, link_type, qb_staged_payment_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qld_' || c.staged_payment_id, 'qbo_line_deposit',
+      c.staged_payment_id, c.bank_deposit_id, 'confirmed', 'system',
+      c.match_basis::text::source_link_match_basis
+    FROM deposit_qbo_components c
+    ON CONFLICT (id) DO NOTHING
+  `);
+  await db.execute(sql`
+    INSERT INTO source_links (
+      id, link_type, qb_staged_payment_id, stripe_payout_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_pqs_' || sp.settled_stripe_payout_id, 'payout_qb_settlement',
+      sp.id, sp.settled_stripe_payout_id, 'confirmed', 'system', 'settled_pairing'
+    FROM staged_payments sp
+    WHERE sp.settled_stripe_payout_id IS NOT NULL
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // 4e-ii. Broadened register↔deposit matching, WITHOUT the legacy residual
+  //        gating: register accounting evidence coexists with payouts,
+  //        components, and provisional decomposition (the tie is downstream
+  //        accounting documentation, never money composition). Single-row:
+  //        unique exact amount within ±3 days, unique on both sides.
+  await db.execute(sql`
+    WITH scope AS (
+      SELECT d.id, d.amount, d.deposit_date
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links sl
+          WHERE sl.link_type = 'qbo_register_deposit'
+            AND sl.bank_deposit_id = d.id
+        )
+    ),
+    candidate_pairs AS (
+      SELECT d.id AS bank_deposit_id, bt.id AS bank_transaction_id,
+        abs(bt.txn_date - d.deposit_date) AS day_gap
+      FROM scope d
+      JOIN bank_transactions bt
+        ON bt.source = 'qbo_register_export'
+       AND bt.deposit IS NOT NULL AND bt.deposit > 0
+       AND bt.deposit = d.amount
+       AND bt.txn_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
+      WHERE NOT EXISTS (
+        SELECT 1 FROM source_links sl
+        WHERE sl.link_type = 'qbo_register_deposit'
+          AND sl.bank_transaction_id = bt.id
+      )
+    ),
+    unique_pairs AS (
+      SELECT p.bank_deposit_id, p.bank_transaction_id, p.day_gap
+      FROM candidate_pairs p
+      WHERE (SELECT count(*) FROM candidate_pairs dc
+             WHERE dc.bank_deposit_id = p.bank_deposit_id) = 1
+        AND (SELECT count(*) FROM candidate_pairs rc
+             WHERE rc.bank_transaction_id = p.bank_transaction_id) = 1
+    )
+    INSERT INTO source_links (
+      id, link_type, bank_transaction_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qrd_' || p.bank_transaction_id, 'qbo_register_deposit',
+      p.bank_transaction_id, p.bank_deposit_id, 'confirmed', 'system',
+      CASE p.day_gap
+        WHEN 0 THEN 'same_day_unique_amount'
+        WHEN 1 THEN 'one_day_unique_amount'
+        WHEN 2 THEN 'two_day_unique_amount'
+        ELSE 'three_day_unique_amount'
+      END::source_link_match_basis
+    FROM unique_pairs p
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // 4e-iii. Same-day/same-donor multi-row sums: when ≥2 positive register
+  //         rows share a date + normalized payee and their SUM uniquely
+  //         equals a still-unlinked deposit within ±3 days, each row ties to
+  //         that deposit (presumed one physical payment posted as
+  //         gift-allocation-level register entries).
+  await db.execute(sql`
+    WITH open_deposits AS (
+      SELECT d.id, d.amount, d.deposit_date
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links sl
+          WHERE sl.link_type = 'qbo_register_deposit'
+            AND sl.bank_deposit_id = d.id
+        )
+    ),
+    reg AS (
+      SELECT bt.id, bt.deposit AS amount, bt.txn_date,
+        lower(regexp_replace(trim(bt.payee), '\\s+', ' ', 'g')) AS payee_norm
+      FROM bank_transactions bt
+      WHERE bt.source = 'qbo_register_export'
+        AND bt.deposit IS NOT NULL AND bt.deposit > 0
+        AND bt.payee IS NOT NULL AND trim(bt.payee) <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links sl
+          WHERE sl.link_type = 'qbo_register_deposit'
+            AND sl.bank_transaction_id = bt.id
+        )
+    ),
+    clusters AS (
+      SELECT txn_date, payee_norm, sum(amount) AS cluster_sum
+      FROM reg
+      GROUP BY txn_date, payee_norm
+      HAVING count(*) >= 2
+    ),
+    candidate_matches AS (
+      SELECT c.txn_date, c.payee_norm, d.id AS bank_deposit_id
+      FROM clusters c
+      JOIN open_deposits d
+        ON d.amount = c.cluster_sum
+       AND c.txn_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
+    ),
+    unique_matches AS (
+      SELECT m.txn_date, m.payee_norm, m.bank_deposit_id
+      FROM candidate_matches m
+      WHERE (SELECT count(*) FROM candidate_matches dm
+             WHERE dm.bank_deposit_id = m.bank_deposit_id) = 1
+        AND (SELECT count(*) FROM candidate_matches cm
+             WHERE cm.txn_date = m.txn_date AND cm.payee_norm = m.payee_norm) = 1
+    )
+    INSERT INTO source_links (
+      id, link_type, bank_transaction_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qrd_' || r.id, 'qbo_register_deposit',
+      r.id, m.bank_deposit_id, 'confirmed', 'system',
+      'same_donor_multi_row_sum'
+    FROM unique_matches m
+    JOIN reg r ON r.txn_date = m.txn_date AND r.payee_norm = m.payee_norm
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // 4e-iv. Unit-grain register claims where the deposit's composition makes
+  //        the row↔unit correspondence exact: a register row tied to a
+  //        deposit whose components include exactly one payment unit of the
+  //        SAME amount. Dollars count once — the unit link is the finer
+  //        grain; the deposit link above becomes corroboration.
+  await db.execute(sql`
+    WITH deposit_links AS (
+      SELECT sl.bank_transaction_id, sl.bank_deposit_id, bt.deposit AS amount
+      FROM source_links sl
+      JOIN bank_transactions bt ON bt.id = sl.bank_transaction_id
+      WHERE sl.link_type = 'qbo_register_deposit'
+    ),
+    unit_candidates AS (
+      SELECT dl.bank_transaction_id, c.payment_unit_id,
+        count(*) OVER (PARTITION BY dl.bank_transaction_id) AS n_units
+      FROM deposit_links dl
+      JOIN bank_deposit_components c
+        ON c.bank_deposit_id = dl.bank_deposit_id
+       AND c.amount = dl.amount
+      WHERE c.payment_unit_id IS NOT NULL
+    )
+    INSERT INTO source_links (
+      id, link_type, bank_transaction_id, payment_unit_id,
+      lifecycle, provenance, note
+    )
+    SELECT
+      'srcl_qru_' || u.bank_transaction_id, 'qbo_register_unit',
+      u.bank_transaction_id, u.payment_unit_id, 'confirmed', 'system',
+      'unique same-amount component unit within the linked deposit'
+    FROM unit_candidates u
+    WHERE u.n_units = 1
+    ON CONFLICT (id) DO NOTHING
   `);
 
   // 5. Donorbox pointer on card units (0165): pulled charge id first, then the

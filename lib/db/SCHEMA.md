@@ -408,7 +408,14 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
 - `source_links` — unit↔unit evidence claims (`charge_qb_tie`,
   `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
   and lifecycle. Sole authority for evidence↔evidence ties; a claim blocks
-  re-picking but is never itself status evidence.
+  re-picking but is never itself status evidence. Also carries the QBO-grain
+  claim types (`qbo_register_deposit`, `qbo_register_unit`, `qbo_line_deposit`,
+  `payout_qb_settlement`; docs/adr-qbo-evidence-grain.md) with spine anchors
+  (`bank_transaction_id`, `bank_deposit_id`, `payment_unit_id`,
+  `stripe_payout_id`) and a structured `match_basis` — successor of
+  `bank_deposit_qbo_register`, `deposit_qbo_components`, and
+  `staged_payments.settled_stripe_payout_id` (retired in 0192 after read
+  cutover).
 - `reconciliation_bundle_drafts`, `unit_groups` — workbench working state. (`unit_groups` is deprecated: new group creation is retired — multi-match writes N counted `payment_applications` rows instead — and the table is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3; it persists only for legacy groups.)
 
 ## Communications & workflow

@@ -10,11 +10,16 @@ import { sql } from "drizzle-orm";
 import { stripeStagedCharges } from "./stripeStagedCharges";
 import { stagedPayments } from "./stagedPayments";
 import { donorboxDonations } from "./donorboxDonations";
+import { bankTransactions } from "./bankTransactions";
+import { bankDeposits } from "./bankDeposits";
+import { paymentUnits } from "./paymentUnits";
+import { stripePayouts } from "./stripePayouts";
 import { users } from "./users";
 import {
   sourceLinkTypeEnum,
   sourceLinkLifecycleEnum,
   sourceLinkProvenanceEnum,
+  sourceLinkMatchBasisEnum,
 } from "./_enums";
 
 /**
@@ -23,8 +28,9 @@ import {
  * money systems are the SAME money" — with NO gift involved. This is the third
  * relationship kind alongside the two ratified planes:
  *
- *   • Plane 1 (batch↔batch): the settled payout pairing —
- *     `staged_payments.settled_stripe_payout_id` (payout ↔ QB deposit lump).
+ *   • Plane 1 (batch↔batch): the settled payout pairing — the
+ *     `payout_qb_settlement` link type here (payout ↔ QB deposit lump;
+ *     successor of `staged_payments.settled_stripe_payout_id`).
  *   • Plane 2 (unit↔gift):   `payment_applications` — the cash-application ledger.
  *   • THIS table:            unit↔unit claims across evidence sources.
  *
@@ -48,6 +54,16 @@ import {
  *   charge_fee_row  → `srcl_fee_<charge_id>`
  *   donorbox_qb     → `srcl_dbq_<donation_id>`
  *   donorbox_charge → `srcl_dbc_<donation_id>`
+ *   qbo_register_deposit → `srcl_qrd_<bank_transaction_id>`
+ *   qbo_register_unit    → `srcl_qru_<bank_transaction_id>`
+ *   qbo_line_deposit     → `srcl_qld_<staged_payment_id>`
+ *   payout_qb_settlement → `srcl_pqs_<payout_id>`
+ *
+ * QBO-grain claims (docs/adr-qbo-evidence-grain.md): QBO records exist at
+ * several grains; each ties to the spine node it evidences through THIS
+ * ledger — never a bespoke per-grain table. One QBO row may carry claims at
+ * several grains (clues at many grains); reconciliation arithmetic counts its
+ * amount at exactly one — the finest grain tied (dollars at one).
  */
 export const sourceLinks = pgTable(
   "source_links",
@@ -68,6 +84,23 @@ export const sourceLinks = pgTable(
       () => donorboxDonations.id,
       { onDelete: "cascade" },
     ),
+    // QBO-grain anchors (docs/adr-qbo-evidence-grain.md).
+    bankTransactionId: text("bank_transaction_id").references(
+      () => bankTransactions.id,
+      { onDelete: "cascade" },
+    ),
+    bankDepositId: text("bank_deposit_id").references(() => bankDeposits.id, {
+      onDelete: "cascade",
+    }),
+    paymentUnitId: text("payment_unit_id").references(() => paymentUnits.id, {
+      onDelete: "cascade",
+    }),
+    stripePayoutId: text("stripe_payout_id").references(
+      () => stripePayouts.id,
+      { onDelete: "cascade" },
+    ),
+    // HOW a machine claim was matched; NULL for legacy pre-basis rows.
+    matchBasis: sourceLinkMatchBasisEnum("match_basis"),
     lifecycle: sourceLinkLifecycleEnum("lifecycle").notNull(),
     provenance: sourceLinkProvenanceEnum("provenance")
       .notNull()
@@ -89,17 +122,21 @@ export const sourceLinks = pgTable(
     check(
       "source_links_fk_shape_chk",
       sql`(
-        (${t.linkType} = 'charge_qb_tie'   AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL) OR
-        (${t.linkType} = 'charge_fee_row'  AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL) OR
-        (${t.linkType} = 'donorbox_qb'     AND ${t.donorboxDonationId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripeChargeId} IS NULL) OR
-        (${t.linkType} = 'donorbox_charge' AND ${t.donorboxDonationId} IS NOT NULL AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NULL)
+        (${t.linkType} = 'charge_qb_tie'   AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'charge_fee_row'  AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'donorbox_qb'     AND ${t.donorboxDonationId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'donorbox_charge' AND ${t.donorboxDonationId} IS NOT NULL AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'qbo_register_deposit' AND ${t.bankTransactionId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'qbo_register_unit'    AND ${t.bankTransactionId} IS NOT NULL AND ${t.paymentUnitId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'qbo_line_deposit'     AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL) OR
+        (${t.linkType} = 'payout_qb_settlement' AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripePayoutId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL)
       )`,
     ),
-    // Only charge↔QB ties have a proposed state; every other claim kind is
-    // written already-confirmed (matches today's pointer semantics).
+    // Charge↔QB ties and QBO-register claims may be system-proposed (awaiting
+    // a human confirm); every other claim kind is written already-confirmed.
     check(
       "source_links_proposed_tie_only_chk",
-      sql`${t.lifecycle} = 'confirmed' OR ${t.linkType} = 'charge_qb_tie'`,
+      sql`${t.lifecycle} = 'confirmed' OR ${t.linkType} IN ('charge_qb_tie', 'qbo_register_deposit', 'qbo_register_unit')`,
     ),
     // ── DB-enforced cardinality (the app 409s stay as the friendly error) ──
     // A charge has at most one LIVE tie row (proposed or confirmed) — the
@@ -125,11 +162,35 @@ export const sourceLinks = pgTable(
     uniqueIndex("source_links_donorbox_charge_uq")
       .on(t.donorboxDonationId)
       .where(sql`${t.linkType} = 'donorbox_charge'`),
+    // One deposit claim / one unit claim per register posting row. A deposit
+    // may be claimed by MANY register rows (the same-day/same-donor multi-row
+    // pattern) — no uniqueness on the deposit side.
+    uniqueIndex("source_links_register_deposit_bt_uq")
+      .on(t.bankTransactionId)
+      .where(sql`${t.linkType} = 'qbo_register_deposit'`),
+    uniqueIndex("source_links_register_unit_bt_uq")
+      .on(t.bankTransactionId)
+      .where(sql`${t.linkType} = 'qbo_register_unit'`),
+    // One deposit claim per QBO Deposit line.
+    uniqueIndex("source_links_qbo_line_deposit_sp_uq")
+      .on(t.qbStagedPaymentId)
+      .where(sql`${t.linkType} = 'qbo_line_deposit'`),
+    // Payout settlement is 1:1 on both sides.
+    uniqueIndex("source_links_payout_settlement_payout_uq")
+      .on(t.stripePayoutId)
+      .where(sql`${t.linkType} = 'payout_qb_settlement'`),
+    uniqueIndex("source_links_payout_settlement_qb_uq")
+      .on(t.qbStagedPaymentId)
+      .where(sql`${t.linkType} = 'payout_qb_settlement'`),
     // Symmetric "what claims this row?" lookups.
     index("source_links_qb_staged_payment_id_idx").on(t.qbStagedPaymentId),
     index("source_links_stripe_charge_id_idx").on(t.stripeChargeId),
     index("source_links_donorbox_donation_id_idx").on(t.donorboxDonationId),
     index("source_links_link_type_lifecycle_idx").on(t.linkType, t.lifecycle),
+    index("source_links_bank_transaction_id_idx").on(t.bankTransactionId),
+    index("source_links_bank_deposit_id_idx").on(t.bankDepositId),
+    index("source_links_payment_unit_id_idx").on(t.paymentUnitId),
+    index("source_links_stripe_payout_id_idx").on(t.stripePayoutId),
   ],
 );
 
@@ -150,5 +211,13 @@ export function sourceLinkId(
       return `srcl_dbq_${anchorId}`;
     case "donorbox_charge":
       return `srcl_dbc_${anchorId}`;
+    case "qbo_register_deposit":
+      return `srcl_qrd_${anchorId}`;
+    case "qbo_register_unit":
+      return `srcl_qru_${anchorId}`;
+    case "qbo_line_deposit":
+      return `srcl_qld_${anchorId}`;
+    case "payout_qb_settlement":
+      return `srcl_pqs_${anchorId}`;
   }
 }

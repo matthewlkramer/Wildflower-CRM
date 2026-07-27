@@ -509,11 +509,38 @@ export const paymentApplicationLifecycleEnum = pgEnum(
 //   charge_fee_row  — Stripe charge ↔ its negative QB "Stripe fee" sibling row
 //   donorbox_qb     — Donorbox donation ↔ QB row counterpart
 //   donorbox_charge — Donorbox donation ↔ Stripe charge counterpart
+//   qbo_register_deposit — QBO register posting ↔ the bank deposit it records
+//                          (several register rows may tie to one deposit)
+//   qbo_register_unit    — QBO register posting ↔ a donor-level payment unit
+//   qbo_line_deposit     — QBO Deposit line ↔ the bank deposit it decomposes
+//                          (accounting evidence; successor of deposit_qbo_components)
+//   payout_qb_settlement — QBO booked lump ↔ its Stripe payout (successor of
+//                          staged_payments.settled_stripe_payout_id)
+// (docs/adr-qbo-evidence-grain.md)
 export const sourceLinkTypeEnum = pgEnum("source_link_type", [
   "charge_qb_tie",
   "charge_fee_row",
   "donorbox_qb",
   "donorbox_charge",
+  "qbo_register_deposit",
+  "qbo_register_unit",
+  "qbo_line_deposit",
+  "payout_qb_settlement",
+]);
+
+// HOW a machine-made claim was matched (docs/adr-qbo-evidence-grain.md §2).
+// Structured so review can filter by matcher confidence; `note` stays human
+// text. `human` marks a manually asserted tie.
+export const sourceLinkMatchBasisEnum = pgEnum("source_link_match_basis", [
+  "same_day_unique_amount",
+  "one_day_unique_amount",
+  "two_day_unique_amount",
+  "three_day_unique_amount",
+  "same_donor_multi_row_sum",
+  "deposit_header_exact",
+  "deposit_header_ambiguous",
+  "settled_pairing",
+  "human",
 ]);
 
 // The claim's lifecycle.
