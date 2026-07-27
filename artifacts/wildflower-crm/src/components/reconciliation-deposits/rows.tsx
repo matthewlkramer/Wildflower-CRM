@@ -28,6 +28,9 @@ export type DepositActions = Omit<
   openChargeQbSearch?: (charge: WorkbenchDepositCharge) => void;
   openComponentQbSearch?: (component: WorkbenchDepositCompositionComponentsItem) => void;
   clearComponentQbSource?: (componentId: string) => void;
+  openSinglePaymentDeposit?: (bankDepositId: string, amount: string) => void;
+  openDepositQbEvidenceSearch?: (deposit: WorkbenchDeposit) => void;
+  openFlagAccountingError?: (deposit: WorkbenchDeposit) => void;
 };
 
 export const DEPOSIT_GRID =
@@ -124,6 +127,9 @@ const NOOP_ACTIONS: DepositActions = {
   openChargeQbSearch: () => undefined,
   openComponentQbSearch: () => undefined,
   clearComponentQbSource: () => undefined,
+  openSinglePaymentDeposit: () => undefined,
+  openDepositQbEvidenceSearch: () => undefined,
+  openFlagAccountingError: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -163,6 +169,13 @@ function Composition({
           {money(composition.unexplainedAmount)} unresolved remainder
         </span>
         <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            className="text-[10px] font-medium text-primary hover:underline"
+            onClick={() => actions.openSinglePaymentDeposit?.(deposit.anchorId, composition.unexplainedAmount)}
+          >
+            Single payment deposit…
+          </button>
           <button
             type="button"
             className="text-[10px] font-medium text-primary hover:underline"
@@ -324,7 +337,7 @@ function Composition({
 }
 
 function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepositQbRecord): string {
-  return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.lineDescription ?? record.stagedPaymentId;
+  return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.payerName ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
 function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord }) {
@@ -335,7 +348,7 @@ function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | Workben
     <div className="rounded-md border border-dashed bg-card px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[10px] font-medium">
-          {registerRecord?.payee ?? record.lineDescription ?? record.memo ?? record.stagedPaymentId}
+          {registerRecord?.payee ?? record.memo ?? record.payerName ?? record.lineDescription ?? record.stagedPaymentId}
         </span>
         <span className="shrink-0 text-[10px] tabular-nums">{money(record.amount)}</span>
       </div>
@@ -390,11 +403,33 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
     const linkedChargeId = "linkedChargeId" in record ? record.linkedChargeId ?? "" : "";
     return !nodeRecordIds.has(`${record.role}:${record.stagedPaymentId}:${linkedChargeId}`);
   });
+  const firstRecord = records[0];
+  const firstDisplay = firstRecord ?? checks[0];
+  const firstCorrection = checks.find((check) => check.disposition === "correction_needed");
+  const columnMenu = actions.isFinanceOrAdmin ? (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Accounting actions</span>
+      <CardActionsMenu items={[
+        { label: "Search for accounting evidence…", onSelect: () => actions.openDepositQbEvidenceSearch?.(deposit) },
+        { label: "Flag accounting error…", onSelect: () => actions.openFlagAccountingError?.(deposit), disabled: !records.length && !checks.length },
+        { label: "QB detail", onSelect: () => { if (firstRecord) actions.openQbDetail(firstRecord, checksByPayment.get(firstRecord.stagedPaymentId) ? "matched" : "missing"); }, disabled: !firstRecord },
+        { label: "Exclude", onSelect: () => { if (firstDisplay) actions.openExclude({ kind: "staged", id: firstDisplay.stagedPaymentId, label: accountingLabel(firstDisplay) }); }, disabled: !firstDisplay },
+        { label: "Mark corrected", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "corrected"); }, disabled: !firstCorrection },
+        { label: "Accept historical…", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "accepted_historical"); }, disabled: !firstCorrection },
+      ]} />
+    </div>
+  ) : null;
   if (!nodeGroups.length && !unalignedItems.length) {
-    return <span className="text-xs text-muted-foreground">No accounting check</span>;
+    return (
+      <div className="space-y-1.5">
+        {columnMenu}
+        <span className="text-xs text-muted-foreground">No accounting check</span>
+      </div>
+    );
   }
   return (
     <div className="space-y-1.5">
+      {columnMenu}
       {nodeGroups.map((group) => (
         <div key={group.key} className="space-y-1 rounded-md border border-sky-200/70 bg-sky-50/30 p-1.5 dark:border-sky-900/60 dark:bg-sky-950/20">
           <div className="truncate text-[10px] font-semibold text-sky-900 dark:text-sky-200">{group.label}</div>
@@ -469,6 +504,24 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     deposit.bank.refNo,
   ].filter(Boolean).join(" · ");
   const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
+  const giftColumnAnchor: AnchorRef | null = (() => {
+    const record = deposit.qbRecords.find((item) => !linkedStagedPaymentIds.has(item.stagedPaymentId));
+    if (record) return { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.stagedPaymentId };
+    const charge = deposit.charges.find((item) => !item.linkedGiftId);
+    if (charge) return { kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId };
+    const component = deposit.composition.kind === "components"
+      ? deposit.composition.components.find((item) => item.stagedPaymentId)
+      : undefined;
+    if (component?.stagedPaymentId) return { kind: "staged", id: component.stagedPaymentId, label: component.label ?? component.kind };
+    return null;
+  })();
+  const bankPreview: EvidencePreview = {
+    amount: money(deposit.bank.amount),
+    date: deposit.date ? formatDateShort(deposit.date) : "—",
+    method: "Bank deposit",
+    source: deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId,
+    memo: deposit.bank.memo ?? null,
+  };
   return (
     <section className="border-b last:border-b-0" data-testid={`deposit-row-${deposit.anchorId}`}>
       <div className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}>
@@ -495,11 +548,24 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
           <span className="mt-1 block text-[11px] text-muted-foreground">
             {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
           </span>
-          <span className="mt-1 block truncate text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
-          {bankSourceDetails ? <span className="block truncate text-[11px] text-muted-foreground">{bankSourceDetails}</span> : null}
+          <span className="mt-1 block whitespace-normal break-words text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
+          {bankSourceDetails ? <span className="block whitespace-normal break-words text-[11px] text-muted-foreground">{bankSourceDetails}</span> : null}
         </span>
         <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>
         <span onClick={(event) => event.stopPropagation()} className="space-y-1.5">
+          {actions.isFinanceOrAdmin ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openSinglePaymentDeposit?.(deposit.anchorId, deposit.composition.unexplainedAmount ?? deposit.bank.amount ?? "")}>Search and link gift</button>
+              {giftColumnAnchor ? (
+                <>
+                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(giftColumnAnchor, bankPreview)}>Create gift</button>
+                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(giftColumnAnchor, bankPreview)}>Identify donor</button>
+                  {actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(giftColumnAnchor, bankPreview)}>Donorbox lookup</button> : null}
+                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(giftColumnAnchor, bankPreview)}>Coding form</button> : null}
+                </>
+              ) : null}
+            </div>
+          ) : null}
           {deposit.gifts.length ? deposit.gifts.map((gift) => (
             <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">
               <p className="truncate text-xs font-semibold">{gift.name ?? gift.giftId}</p>
@@ -551,7 +617,7 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
             );
           })}
           {deposit.qbRecords.filter((record) => !linkedStagedPaymentIds.has(record.stagedPaymentId)).map((record) => {
-            const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: record.lineDescription ?? record.reference ?? record.stagedPaymentId };
+            const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.reference ?? record.stagedPaymentId };
             return (
               <div key={`unlinked-qb-${record.stagedPaymentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
                 <p className="truncate text-[11px] font-medium">{anchor.label}</p>

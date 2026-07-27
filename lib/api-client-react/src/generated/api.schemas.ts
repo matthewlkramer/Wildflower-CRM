@@ -6283,7 +6283,41 @@ export type AddBankDepositComponentBody = {
   kind: 'check' | 'direct_ach' | 'wire' | 'other';
   amount: string;
   receivedDate?: string | null;
+} | {
+  mode: 'gift';
+  giftId: string;
+  /** Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder. */
+  amount?: string | null;
 };
+
+export interface AttachDepositQboEvidenceBody {
+  stagedPaymentId: string;
+}
+
+export interface AttachDepositQboEvidenceResult {
+  sourceLinkId: string;
+  stagedPaymentId: string;
+  bankDepositId: string;
+}
+
+export interface FlagQboAccountingErrorBody {
+  stagedPaymentId: string;
+  /** @minLength 1 */
+  note: string;
+}
+
+export type FlagQboAccountingErrorResultDisposition = typeof FlagQboAccountingErrorResultDisposition[keyof typeof FlagQboAccountingErrorResultDisposition];
+
+
+export const FlagQboAccountingErrorResultDisposition = {
+  correction_needed: 'correction_needed',
+} as const;
+
+export interface FlagQboAccountingErrorResult {
+  id: string;
+  stagedPaymentId: string;
+  disposition: FlagQboAccountingErrorResultDisposition;
+}
 
 export type BankDepositComponentMutationSource = typeof BankDepositComponentMutationSource[keyof typeof BankDepositComponentMutationSource];
 

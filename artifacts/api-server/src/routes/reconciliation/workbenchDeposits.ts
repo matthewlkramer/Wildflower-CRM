@@ -5,6 +5,8 @@ import {
   bankDepositExclusions,
   bankDeposits,
   qboAccountingChecks,
+  sourceLinks,
+  sourceLinkId,
 } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination } from "../../lib/helpers";
@@ -15,6 +17,9 @@ import {
   ClearBankDepositExclusionParams,
   AddBankDepositComponentBody,
   AddBankDepositComponentParams,
+  AttachDepositQboEvidenceBody,
+  AttachDepositQboEvidenceParams,
+  FlagQboAccountingErrorBody,
   ExcludeBankDepositComponentBody,
   ExcludeBankDepositComponentParams,
   ListDepositCandidatePaymentUnitsParams,
@@ -645,8 +650,44 @@ function buildUniverse(q: string | null) {
             SELECT 1 FROM bank_deposit_components sqc
             JOIN payment_units squ ON squ.id = sqc.payment_unit_id
             LEFT JOIN gifts_and_payments sqg ON sqg.id = squ.gift_id
+            LEFT JOIN staged_payments sqsp ON sqsp.id = squ.source_staged_payment_id
+            LEFT JOIN organizations sqo ON sqo.id = sqg.organization_id
+            LEFT JOIN people sqp ON sqp.id = sqg.individual_giver_person_id
+            LEFT JOIN households sqh ON sqh.id = sqg.household_id
             WHERE sqc.bank_deposit_id = d.id
-              AND (squ.id ILIKE ${search} OR sqg.name ILIKE ${search})
+              AND (
+                squ.id ILIKE ${search} OR sqg.name ILIKE ${search}
+                OR sqsp.payer_name ILIKE ${search}
+                OR sqsp.qb_transaction_memo ILIKE ${search}
+                OR sqsp.line_description ILIKE ${search}
+                OR sqo.name ILIKE ${search}
+                OR (COALESCE(sqp.first_name, '') || ' ' || COALESCE(sqp.last_name, '')) ILIKE ${search}
+                OR sqh.name ILIKE ${search}
+              )
+          )
+          OR EXISTS (
+            SELECT 1 FROM source_links sdqc
+            JOIN staged_payments ssp ON ssp.id = sdqc.qb_staged_payment_id
+            WHERE sdqc.link_type = 'qbo_line_deposit'
+              AND sdqc.bank_deposit_id = d.id
+              AND (
+                ssp.payer_name ILIKE ${search}
+                OR ssp.qb_transaction_memo ILIKE ${search}
+                OR ssp.line_description ILIKE ${search}
+              )
+          )
+          OR EXISTS (
+            SELECT 1 FROM source_links sbqr
+            JOIN bank_transactions sbt ON sbt.id = sbqr.bank_transaction_id
+            WHERE sbqr.link_type = 'qbo_register_deposit'
+              AND sbqr.bank_deposit_id = d.id
+              AND (sbt.payee ILIKE ${search} OR sbt.memo ILIKE ${search})
+          )
+          OR EXISTS (
+            SELECT 1 FROM stripe_payouts scp
+            JOIN stripe_staged_charges sch ON sch.stripe_payout_id = scp.id
+            WHERE scp.bank_deposit_id = d.id
+              AND sch.payer_name ILIKE ${search}
           )
         )`}
       )
@@ -1555,6 +1596,7 @@ router.post(
     if (!params) return;
     const body = parseOrBadRequest(AddBankDepositComponentBody, req.body, res);
     if (!body) return;
+    const user = getAppUser(req);
 
     const result = await db.transaction(async (tx) => {
       const depositResult = await tx.execute(sql`
@@ -1585,7 +1627,7 @@ router.post(
       if (!deposit) return { kind: "not_found" as const };
 
       const amount =
-        body.mode === "attach"
+        body.mode === "attach" || (body.mode === "gift" && body.amount == null)
           ? null
           : Number(body.amount);
       if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
@@ -1632,6 +1674,69 @@ router.post(
         if (claimed.rows.length) return { kind: "unit_unavailable" as const };
         paymentUnitId = unit.id;
         componentAmount = body.amount == null ? Number(unit.amount ?? 0) : Number(body.amount);
+        if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
+          return { kind: "invalid_amount" as const };
+        }
+      } else if (body.mode === "gift") {
+        const giftResult = await tx.execute(sql`
+          SELECT id FROM gifts_and_payments WHERE id = ${body.giftId}
+        `);
+        if (!giftResult.rows.length) return { kind: "gift_not_found" as const };
+        const candidatesResult = await tx.execute(sql`
+          SELECT u.id, COALESCE(u.gross_amount, u.net_amount)::text AS amount
+          FROM payment_units u
+          WHERE u.gift_id = ${body.giftId}
+            AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
+            AND u.stripe_charge_id IS NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM bank_deposit_components claimed
+              WHERE claimed.payment_unit_id = u.id
+            )
+          ORDER BY u.id
+          FOR UPDATE OF u
+        `);
+        const candidates = candidatesResult.rows as Array<{
+          id: string;
+          amount: string | null;
+        }>;
+        const target = amount ?? remainder;
+        const exact = candidates.filter(
+          (c) => c.amount != null && Math.abs(Number(c.amount) - target) <= 0.005,
+        );
+        const pool = exact.length === 1 ? exact : candidates;
+        if (pool.length > 1) return { kind: "gift_units_ambiguous" as const };
+        if (pool.length === 1) {
+          const unit = pool[0];
+          paymentUnitId = unit.id;
+          componentAmount =
+            amount ?? (unit.amount != null ? Number(unit.amount) : remainder);
+        } else {
+          paymentUnitId = `pu_manual_${newId()}`;
+          componentAmount = amount ?? remainder;
+          if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
+            return { kind: "invalid_amount" as const };
+          }
+          await tx.execute(sql`
+            INSERT INTO payment_units
+              (id, kind, gross_amount, fee_amount, net_amount, currency,
+               received_date, lifecycle, gift_id, gift_match_method,
+               gift_confirmed_by_user_id, gift_confirmed_at)
+            VALUES (
+              ${paymentUnitId},
+              'other',
+              ${componentAmount}::numeric,
+              0,
+              ${componentAmount}::numeric,
+              ${deposit.currency},
+              ${deposit.deposit_date},
+              'received',
+              ${body.giftId},
+              'human',
+              ${user?.id ?? null},
+              now()
+            )
+          `);
+        }
         if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
           return { kind: "invalid_amount" as const };
         }
@@ -1694,6 +1799,14 @@ router.post(
       res.status(409).json({ error: "payment_unit_unavailable", message: "That payment unit is already claimed or is not a direct payment." });
       return;
     }
+    if (result.kind === "gift_not_found") {
+      notFound(res, "gift");
+      return;
+    }
+    if (result.kind === "gift_units_ambiguous") {
+      res.status(409).json({ error: "gift_units_ambiguous", message: "That gift has several unclaimed payment units — use Add known payment to pick the exact one." });
+      return;
+    }
     if (result.kind === "amount_exceeds_remainder") {
       res.status(409).json({ error: "amount_exceeds_remainder", message: "The component amount exceeds this deposit's unexplained remainder." });
       return;
@@ -1704,6 +1817,100 @@ router.post(
       amount: result.amount,
       source: "manual",
       needsReview: result.needsReview,
+    });
+  }),
+);
+
+router.post(
+  "/reconciliation/deposits/:bankDepositId/qbo-evidence",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(AttachDepositQboEvidenceParams, req.params, res);
+    if (!params) return;
+    const body = parseOrBadRequest(AttachDepositQboEvidenceBody, req.body, res);
+    if (!body) return;
+    const user = getAppUser(req);
+
+    const deposit = await db
+      .select({ id: bankDeposits.id })
+      .from(bankDeposits)
+      .where(eq(bankDeposits.id, params.bankDepositId))
+      .then((r) => r[0]);
+    if (!deposit) return notFound(res, "bank deposit");
+    const staged = await db.execute(sql`
+      SELECT id FROM staged_payments WHERE id = ${body.stagedPaymentId}
+    `);
+    if (!staged.rows.length) return notFound(res, "staged payment");
+
+    const linkId = sourceLinkId("qbo_line_deposit", body.stagedPaymentId);
+    const inserted = await db
+      .insert(sourceLinks)
+      .values({
+        id: linkId,
+        linkType: "qbo_line_deposit",
+        qbStagedPaymentId: body.stagedPaymentId,
+        bankDepositId: params.bankDepositId,
+        matchBasis: "human",
+        lifecycle: "confirmed",
+        provenance: "human",
+        confirmedByUserId: user?.id ?? null,
+        confirmedAt: new Date(),
+      })
+      .onConflictDoNothing()
+      .returning({ id: sourceLinks.id });
+    if (!inserted.length) {
+      res.status(409).json({
+        error: "already_claimed",
+        message: "That QuickBooks record is already claimed as deposit evidence.",
+      });
+      return;
+    }
+    res.status(201).json({
+      sourceLinkId: linkId,
+      stagedPaymentId: body.stagedPaymentId,
+      bankDepositId: params.bankDepositId,
+    });
+  }),
+);
+
+router.post(
+  "/reconciliation/accounting-checks/flag",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const body = parseOrBadRequest(FlagQboAccountingErrorBody, req.body, res);
+    if (!body) return;
+    const user = getAppUser(req);
+
+    const staged = await db.execute(sql`
+      SELECT id FROM staged_payments WHERE id = ${body.stagedPaymentId}
+    `);
+    if (!staged.rows.length) return notFound(res, "staged payment");
+
+    const checkId = `qac_${body.stagedPaymentId}`;
+    await db
+      .insert(qboAccountingChecks)
+      .values({
+        id: checkId,
+        stagedPaymentId: body.stagedPaymentId,
+        disposition: "correction_needed",
+        note: body.note,
+        resolvedByUserId: user?.id ?? null,
+        resolvedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: qboAccountingChecks.stagedPaymentId,
+        set: {
+          disposition: "correction_needed",
+          note: body.note,
+          resolvedByUserId: user?.id ?? null,
+          resolvedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+    res.json({
+      id: checkId,
+      stagedPaymentId: body.stagedPaymentId,
+      disposition: "correction_needed",
     });
   }),
 );

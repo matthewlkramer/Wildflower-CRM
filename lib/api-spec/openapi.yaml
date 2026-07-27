@@ -4696,7 +4696,50 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: "The amount exceeds the current unexplained remainder or the selected payment unit is unavailable." }
+        "409": { description: "The amount exceeds the current unexplained remainder, the selected payment unit is unavailable, or the selected gift's payment units are ambiguous." }
+  /reconciliation/deposits/{bankDepositId}/qbo-evidence:
+    post:
+      operationId: attachDepositQboEvidence
+      tags: [reconciliation]
+      summary: Attach a QuickBooks record to a bank deposit as accounting evidence.
+      description: Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.
+      parameters:
+        - { name: bankDepositId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AttachDepositQboEvidenceBody" }
+      responses:
+        "201":
+          description: Evidence link recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AttachDepositQboEvidenceResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The QuickBooks record is already claimed as deposit evidence." }
+  /reconciliation/accounting-checks/flag:
+    post:
+      operationId: flagQboAccountingError
+      tags: [reconciliation]
+      summary: Flag a QuickBooks record as an accounting error.
+      description: Finance/admin review only. Upserts the record's qbo_accounting_checks row to correction_needed with a human note, putting it on the accounting-corrections worklist. Never changes money or QBO itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FlagQboAccountingErrorBody" }
+      responses:
+        "200":
+          description: Accounting check flagged
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FlagQboAccountingErrorResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /reconciliation/deposit-components/{id}:
     delete:
       operationId: removeManualBankDepositComponent
@@ -9735,6 +9778,37 @@ components:
             kind: { type: string, enum: [check, direct_ach, wire, other] }
             amount: { type: string }
             receivedDate: { type: string, format: date, nullable: true }
+        - type: object
+          required: [mode, giftId]
+          properties:
+            mode: { type: string, enum: [gift] }
+            giftId: { type: string }
+            amount: { type: string, nullable: true, description: "Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder." }
+    AttachDepositQboEvidenceBody:
+      type: object
+      required: [stagedPaymentId]
+      properties:
+        stagedPaymentId: { type: string }
+    AttachDepositQboEvidenceResult:
+      type: object
+      required: [sourceLinkId, stagedPaymentId, bankDepositId]
+      properties:
+        sourceLinkId: { type: string }
+        stagedPaymentId: { type: string }
+        bankDepositId: { type: string }
+    FlagQboAccountingErrorBody:
+      type: object
+      required: [stagedPaymentId, note]
+      properties:
+        stagedPaymentId: { type: string }
+        note: { type: string, minLength: 1 }
+    FlagQboAccountingErrorResult:
+      type: object
+      required: [id, stagedPaymentId, disposition]
+      properties:
+        id: { type: string }
+        stagedPaymentId: { type: string }
+        disposition: { type: string, enum: [correction_needed] }
     BankDepositComponentMutation:
       type: object
       required: [id, paymentUnitId, amount, source, needsReview]
