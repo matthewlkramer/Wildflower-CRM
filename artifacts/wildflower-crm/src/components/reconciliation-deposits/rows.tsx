@@ -51,6 +51,11 @@ function money(value: string | null | undefined): string {
   return value == null ? "—" : formatCurrency(value);
 }
 
+function amountNumber(value: string | null | undefined): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function checkTone(disposition: WorkbenchDepositAccountingCheck["disposition"]) {
   return disposition === "correction_needed"
     ? "destructive"
@@ -288,7 +293,8 @@ function Composition({
   return (
     <div className="space-y-1.5">
       {composition.components.map((component) => (
-        <div key={component.componentId} className={`flex items-center justify-between rounded-md border px-2.5 py-1.5 text-[11px] ${component.unconfirmed ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30" : "bg-card"}`}>
+        <div key={component.componentId} className={`rounded-md border px-2.5 py-1.5 text-[11px] ${component.unconfirmed ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30" : "bg-card"}`}>
+          <div className="flex items-center justify-between">
           <span className="flex min-w-0 items-center gap-1.5 truncate">
             {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
             <span className="font-medium">{component.label ?? component.kind.replace("_", " ")}</span>
@@ -317,9 +323,14 @@ function Composition({
                 Remove
               </button>
             ) : null}
-            {!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && actions.isFinanceOrAdmin ? (
+            {!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && !component.stagedPaymentId && actions.isFinanceOrAdmin ? (
               <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openComponentQbSearch?.(component)}>
                 Search QuickBooks
+              </button>
+            ) : null}
+            {!component.unconfirmed && component.source === "bank_spine" && !component.manual && component.stagedPaymentId && (component.countedGiftIds?.length ?? 0) === 0 && actions.isFinanceOrAdmin ? (
+              <button type="button" className="text-[10px] text-destructive hover:underline" onClick={() => actions.removeManualComponent?.(component.componentId, component.label ?? component.kind)}>
+                Unlink
               </button>
             ) : null}
             {component.sourceStagedPaymentManual && component.stagedPaymentId && actions.isFinanceOrAdmin ? (
@@ -328,6 +339,14 @@ function Composition({
               </button>
             ) : null}
           </span>
+          </div>
+          <div className="mt-0.5 text-[10px] text-muted-foreground">
+            {[
+              composition.components.length === 1 && amountNumber(composition.unexplainedAmount) === 0 ? "Single payment" : null,
+              component.receivedDate ? formatDateShort(component.receivedDate) : null,
+              component.kind.replaceAll("_", " "),
+            ].filter(Boolean).join(" · ")}
+          </div>
         </div>
       ))}
       {!composition.components.length ? <span className="text-xs text-muted-foreground">No components</span> : null}
@@ -348,20 +367,34 @@ function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | Workben
     <div className="rounded-md border border-dashed bg-card px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-[10px] font-medium">
-          {registerRecord?.payee ?? record.memo ?? record.payerName ?? record.lineDescription ?? record.stagedPaymentId}
+          {registerRecord?.payee ?? record.payerName ?? record.memo ?? record.lineDescription ?? record.stagedPaymentId}
         </span>
         <span className="shrink-0 text-[10px] tabular-nums">{money(record.amount)}</span>
       </div>
-      <div className="mt-0.5 truncate text-[9px] text-muted-foreground">
+      <div className="mt-0.5 whitespace-normal break-words text-[9px] text-muted-foreground">
         {registerRecord
           ? `${registerRecord.txnType ?? "register"} · ${registerRecord.refNo ?? "No ref"} · ${registerRecord.reconciliationStatus ?? "Unreconciled"} · ${registerRecord.account ?? "No account"}`
-          : `${record.role.replace("_", " ")} · ${record.dateReceived ?? "Undated"} · ${record.qbLocation ?? record.revenueLocation ?? "No location"}`}
+          : [
+              record.role.replace("_", " "),
+              record.dateReceived ?? "Undated",
+              record.qbLocation ?? record.revenueLocation ?? "No location",
+              record.qbDocNumber ? `Doc ${record.qbDocNumber}` : record.qbCheckNumber ? `Check ${record.qbCheckNumber}` : null,
+            ].filter(Boolean).join(" · ")}
       </div>
       {registerRecord ? (
-        <div className="truncate text-[9px] text-muted-foreground">
+        <div className="whitespace-normal break-words text-[9px] text-muted-foreground">
           {record.memo ?? "No memo"}
         </div>
-      ) : null}
+      ) : (
+        <>
+          {record.memo && record.memo !== record.payerName ? (
+            <div className="whitespace-normal break-words text-[9px] text-muted-foreground">{record.memo}</div>
+          ) : null}
+          {record.lineDescription && record.lineDescription !== record.memo ? (
+            <div className="whitespace-normal break-words text-[9px] text-muted-foreground">{record.lineDescription}</div>
+          ) : null}
+        </>
+      )}
     </div>
   );
 }
@@ -572,7 +605,20 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
               <p className="truncate text-[11px] text-muted-foreground">
                 {gift.donorKind ? `${gift.donorKind} · ` : ""}{gift.donorName ?? "Donor not identified"}
               </p>
-              <p className="text-[11px] tabular-nums">{money(gift.amount)}</p>
+              <p className="text-[11px] tabular-nums">{money(gift.amount)}{gift.dateReceived ? ` · ${formatDateShort(gift.dateReceived)}` : ""}</p>
+              {(gift.allocations?.length ?? 0) > 0 ? (
+                <div className="mt-1 space-y-1">
+                  {gift.allocations?.map((allocation) => (
+                    <div key={allocation.id} className="rounded border bg-muted/30 px-2 py-1">
+                      <div className="flex items-center justify-between gap-2 text-[10px]">
+                        <span className="truncate">{allocation.usage ?? "No usage coded"}</span>
+                        <span className="shrink-0 tabular-nums">{money(allocation.amount)}</span>
+                      </div>
+                      {allocation.purpose ? <div className="whitespace-normal break-words text-[9px] text-muted-foreground">{allocation.purpose}</div> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="mt-1 flex flex-wrap gap-1">
                 {(gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0 ? (
                   <button

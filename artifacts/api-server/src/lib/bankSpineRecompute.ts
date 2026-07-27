@@ -285,18 +285,27 @@ export async function recomputeBankSpine(): Promise<void> {
       FROM qside q
       JOIN bside b
         ON b.amount = q.total AND b.deposit_date = q.txn_date AND b.rn = q.rn
+    ),
+    candidates AS (
+      SELECT s.id, pr.bank_deposit_id, s.amount, pr.ambiguous, s.funding_source,
+        sum(s.amount) OVER (PARTITION BY pr.bank_deposit_id ORDER BY s.id) AS running_total,
+        (SELECT d.amount FROM bank_deposits d WHERE d.id = pr.bank_deposit_id) AS deposit_amount,
+        (SELECT COALESCE(sum(c.amount), 0) FROM bank_deposit_components c
+          WHERE c.bank_deposit_id = pr.bank_deposit_id) AS existing_total
+      FROM scope s
+      JOIN pairs pr
+        ON pr.realm_id = s.realm_id AND pr.qb_deposit_id = s.qb_deposit_id
     )
     INSERT INTO bank_deposit_components (
       id, bank_deposit_id, payment_unit_id, amount, source,
       source_staged_payment_id, ambiguous_deposit_match, needs_review
     )
     SELECT
-      'bdc_' || s.id, pr.bank_deposit_id, 'pu_' || s.id, s.amount,
-      'qbo_inferred', s.id, pr.ambiguous,
-      COALESCE(s.funding_source = 'paypal', false)
-    FROM scope s
-    JOIN pairs pr
-      ON pr.realm_id = s.realm_id AND pr.qb_deposit_id = s.qb_deposit_id
+      'bdc_' || c.id, c.bank_deposit_id, 'pu_' || c.id, c.amount,
+      'qbo_inferred', c.id, c.ambiguous,
+      COALESCE(c.funding_source = 'paypal', false)
+    FROM candidates c
+    WHERE c.existing_total + c.running_total <= c.deposit_amount + 0.005
     ON CONFLICT (id) DO NOTHING
   `);
 

@@ -766,7 +766,7 @@ export default function ReconciliationDepositsPage() {
       <AlertDialog open={manualComponentFor != null} onOpenChange={(open) => { if (!open && !busy) setManualComponentFor(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove manual component?</AlertDialogTitle>
+            <AlertDialogTitle>Remove component?</AlertDialogTitle>
             <AlertDialogDescription>
               Remove {manualComponentFor?.label ?? "this component"} and reopen the unexplained remainder. Gifts and payment applications are not changed.
             </AlertDialogDescription>

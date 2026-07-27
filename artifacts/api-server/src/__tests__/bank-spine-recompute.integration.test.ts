@@ -355,6 +355,57 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
   });
 
+  it("does not insert a QBO-inferred component past the deposit amount", async () => {
+    const stagedId = nextId("overfill_sp");
+    const deposit = await seedDeposit("605.00", "2026-06-25");
+    const qbDepositId = nextId("qbd");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedId,
+      realmId: REALM_ID,
+      qbEntityType: "deposit",
+      qbEntityId: qbDepositId,
+      qbDepositId,
+      amount: "605.00",
+      dateReceived: "2026-06-25",
+      qbRaw: { TotalAmt: "605.00", TxnDate: "2026-06-25" },
+    });
+    stagedIds.push(stagedId);
+    // The deposit is already fully explained by a differently sourced unit.
+    const fullUnitId = `pu_manual_${nextId("overfill_unit")}`;
+    await db.insert(schema.paymentUnits).values({
+      id: fullUnitId,
+      kind: "wire",
+      grossAmount: "605.00",
+      netAmount: "605.00",
+      currency: "USD",
+      receivedDate: "2026-06-25",
+    });
+    paymentUnitIds.push(fullUnitId);
+    const fullComponentId = `bdc_${nextId("overfill_component")}`;
+    await db.insert(schema.bankDepositComponents).values({
+      id: fullComponentId,
+      bankDepositId: deposit,
+      paymentUnitId: fullUnitId,
+      amount: "605.00",
+      source: "manual",
+    });
+    componentIds.push(fullComponentId);
+    paymentUnitIds.push(`pu_${stagedId}`);
+
+    await expect(recompute.recomputeBankSpine()).resolves.toBeUndefined();
+    // Re-run to prove the guard holds across recomputes.
+    await expect(recompute.recomputeBankSpine()).resolves.toBeUndefined();
+
+    const rows = await db
+      .select({
+        id: schema.bankDepositComponents.id,
+        amount: schema.bankDepositComponents.amount,
+      })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.bankDepositId, deposit));
+    expect(rows).toEqual([{ id: fullComponentId, amount: "605.00" }]);
+  });
+
   it("links a unique exact-amount register row within the +/- 3-day window and is idempotent", async () => {
     const depositId = await seedDeposit("701.00", "2026-07-10");
     const registerId = await seedQboRegister("701.00", "2026-07-12");

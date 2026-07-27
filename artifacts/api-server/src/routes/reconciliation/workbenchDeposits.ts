@@ -294,10 +294,18 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
     for (const charge of row.charges) {
       charge.qboRecords = charge.chargeId ? recordsByCharge.get(String(charge.chargeId)) ?? [] : [];
     }
+    // Records already rendered under this deposit's component or charge cards
+    // are not repeated under the gift rollup.
+    const rowComponentStaged = new Set(
+      [...row.components, ...row.provisional_components]
+        .map((component) => component.stagedPaymentId)
+        .filter((id): id is string => Boolean(id)),
+    );
+    const rowChargeIds = new Set(row.charges.map((charge) => String(charge.chargeId ?? "")).filter(Boolean));
     for (const gift of row.gifts) {
       const giftRecords = [
-        ...gift.linkedChargeIds.flatMap((id) => recordsByCharge.get(id) ?? []),
-        ...gift.linkedStagedPaymentIds.flatMap((id) => recordsByStaged.get(id) ?? []),
+        ...gift.linkedChargeIds.filter((id) => !rowChargeIds.has(id)).flatMap((id) => recordsByCharge.get(id) ?? []),
+        ...gift.linkedStagedPaymentIds.filter((id) => !rowComponentStaged.has(id)).flatMap((id) => recordsByStaged.get(id) ?? []),
       ];
       gift.qboRecords = giftRecords.filter((record, index, all) =>
         all.findIndex((candidate) => candidate.stagedPaymentId === record.stagedPaymentId && candidate.role === record.role && candidate.linkedChargeId === record.linkedChargeId) === index,
@@ -810,6 +818,7 @@ router.get(
             'unconfirmed', false, 'source', 'bank_spine',
             'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
+            'receivedDate', u.received_date::text,
             'sourceStagedPaymentManual', (
               u.source_staged_payment_id IS NOT NULL
               AND c.source_staged_payment_id IS DISTINCT FROM u.source_staged_payment_id
@@ -866,6 +875,14 @@ router.get(
             'donorAnonymous', COALESCE(o.anonymous, p2.anonymous, false),
             'donorOwnerUserId', COALESCE(o.owner_user_id, p2.owner_user_id),
             'amount', g.amount::text, 'dateReceived', g.date_received::text,
+            'allocations', COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'id', ga.id, 'amount', ga.sub_amount::text,
+                'usage', ga.display_usage,
+                'purpose', COALESCE(ga.purpose_verbatim, ga.restriction_description)
+              ) ORDER BY ga.id)
+              FROM gift_allocations ga WHERE ga.gift_id = g.id
+            ), '[]'::jsonb),
             'donorbox', false, 'grantLetter', false, 'codingForm', false,
             'recordComplete', (g.organization_id IS NOT NULL OR g.individual_giver_person_id IS NOT NULL OR g.household_id IS NOT NULL)
               AND EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = g.id),
@@ -923,6 +940,8 @@ router.get(
         COALESCE((
           SELECT jsonb_agg(item ORDER BY item->>'stagedPaymentId')
           FROM (
+            SELECT DISTINCT ON ((item->>'stagedPaymentId')) item
+            FROM (
             SELECT jsonb_build_object(
               'stagedPaymentId', sp.id, 'role', 'component', 'reference', sp.raw_reference,
               'lineDescription', sp.line_description, 'memo', sp.qb_transaction_memo,
@@ -992,6 +1011,8 @@ router.get(
             JOIN bank_transactions bt ON bt.id = bqr.bank_transaction_id
             WHERE bqr.link_type = 'qbo_register_deposit'
               AND bqr.bank_deposit_id = d.id
+            ) all_records
+            ORDER BY (item->>'stagedPaymentId'), (item->>'source')
           ) records
         ), '[]'::jsonb) AS qb_records,
         COALESCE((
@@ -1940,7 +1961,7 @@ router.delete(
         has_counted_application: boolean;
       }>)[0];
       if (!component) return { kind: "not_found" as const };
-      if (component.source !== "manual" || component.has_counted_application) {
+      if (!(["manual", "qbo_inferred"].includes(component.source)) || component.has_counted_application) {
         return { kind: "not_removable" as const };
       }
       await tx.execute(sql`
@@ -1971,7 +1992,7 @@ router.delete(
       return;
     }
     if (result.kind === "not_removable") {
-      res.status(409).json({ error: "component_not_removable", message: "Only manually-added components without a counted gift can be removed." });
+      res.status(409).json({ error: "component_not_removable", message: "Only manual or QBO-inferred components without a counted gift can be removed." });
       return;
     }
     res.status(204).send();
