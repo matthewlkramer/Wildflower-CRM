@@ -15,6 +15,7 @@ import { bankDeposits } from "./bankDeposits";
 import { paymentUnits } from "./paymentUnits";
 import { stripePayouts } from "./stripePayouts";
 import { giftsAndPayments } from "./giftsAndPayments";
+import { giftAllocations } from "./giftAllocations";
 import { users } from "./users";
 import {
   sourceLinkTypeEnum,
@@ -60,6 +61,7 @@ import {
  *   qbo_line_deposit     → `srcl_qld_<staged_payment_id>`
  *   payout_qb_settlement → `srcl_pqs_<payout_id>`
  *   unit_gift_corroboration → `srcl_ugc_<payment_unit_id>_<gift_id>`
+ *   qbo_line_allocation     → `srcl_qla_<staged_payment_id>_<allocation_id>`
  *
  * QBO-grain claims (docs/adr-qbo-evidence-grain.md): QBO records exist at
  * several grains; each ties to the spine node it evidences through THIS
@@ -107,6 +109,14 @@ export const sourceLinks = pgTable(
     giftId: text("gift_id").references(() => giftsAndPayments.id, {
       onDelete: "cascade",
     }),
+    // Allocation anchor for qbo_line_allocation: a QBO line booked at
+    // allocation grain ties to the gift_allocations row it generated.
+    // Clues at many grains, dollars at one — the dollar lives once on the
+    // merged payment unit; this preserves the line's accounting provenance.
+    giftAllocationId: text("gift_allocation_id").references(
+      () => giftAllocations.id,
+      { onDelete: "cascade" },
+    ),
     // HOW a machine claim was matched; NULL for legacy pre-basis rows.
     matchBasis: sourceLinkMatchBasisEnum("match_basis"),
     lifecycle: sourceLinkLifecycleEnum("lifecycle").notNull(),
@@ -130,15 +140,16 @@ export const sourceLinks = pgTable(
     check(
       "source_links_fk_shape_chk",
       sql`(
-        (${t.linkType} = 'charge_qb_tie'   AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'charge_fee_row'  AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'donorbox_qb'     AND ${t.donorboxDonationId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'donorbox_charge' AND ${t.donorboxDonationId} IS NOT NULL AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'qbo_register_deposit' AND ${t.bankTransactionId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'qbo_register_unit'    AND ${t.bankTransactionId} IS NOT NULL AND ${t.paymentUnitId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'qbo_line_deposit'     AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'payout_qb_settlement' AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripePayoutId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.giftId} IS NULL) OR
-        (${t.linkType} = 'unit_gift_corroboration' AND ${t.paymentUnitId} IS NOT NULL AND ${t.giftId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.stripePayoutId} IS NULL)
+        (${t.linkType} = 'charge_qb_tie'   AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'charge_fee_row'  AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'donorbox_qb'     AND ${t.donorboxDonationId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'donorbox_charge' AND ${t.donorboxDonationId} IS NOT NULL AND ${t.stripeChargeId} IS NOT NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'qbo_register_deposit' AND ${t.bankTransactionId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'qbo_register_unit'    AND ${t.bankTransactionId} IS NOT NULL AND ${t.paymentUnitId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'qbo_line_deposit'     AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.bankDepositId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'payout_qb_settlement' AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.stripePayoutId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.giftId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'unit_gift_corroboration' AND ${t.paymentUnitId} IS NOT NULL AND ${t.giftId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.qbStagedPaymentId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftAllocationId} IS NULL) OR
+        (${t.linkType} = 'qbo_line_allocation'  AND ${t.qbStagedPaymentId} IS NOT NULL AND ${t.giftAllocationId} IS NOT NULL AND ${t.stripeChargeId} IS NULL AND ${t.donorboxDonationId} IS NULL AND ${t.bankTransactionId} IS NULL AND ${t.bankDepositId} IS NULL AND ${t.paymentUnitId} IS NULL AND ${t.stripePayoutId} IS NULL AND ${t.giftId} IS NULL)
       )`,
     ),
     // Charge↔QB ties and QBO-register claims may be system-proposed (awaiting
@@ -196,6 +207,12 @@ export const sourceLinks = pgTable(
     uniqueIndex("source_links_unit_gift_corrob_uq")
       .on(t.paymentUnitId, t.giftId)
       .where(sql`${t.linkType} = 'unit_gift_corroboration'`),
+    // One claim per (line, allocation) pair. A line may evidence several
+    // allocations and an allocation may be evidenced by several lines —
+    // no single-sided uniqueness.
+    uniqueIndex("source_links_line_allocation_uq")
+      .on(t.qbStagedPaymentId, t.giftAllocationId)
+      .where(sql`${t.linkType} = 'qbo_line_allocation'`),
     // Symmetric "what claims this row?" lookups.
     index("source_links_qb_staged_payment_id_idx").on(t.qbStagedPaymentId),
     index("source_links_stripe_charge_id_idx").on(t.stripeChargeId),
@@ -206,6 +223,7 @@ export const sourceLinks = pgTable(
     index("source_links_payment_unit_id_idx").on(t.paymentUnitId),
     index("source_links_stripe_payout_id_idx").on(t.stripePayoutId),
     index("source_links_gift_id_idx").on(t.giftId),
+    index("source_links_gift_allocation_id_idx").on(t.giftAllocationId),
   ],
 );
 
@@ -237,5 +255,8 @@ export function sourceLinkId(
     case "unit_gift_corroboration":
       // anchorId is `<payment_unit_id>_<gift_id>` (two-sided identity).
       return `srcl_ugc_${anchorId}`;
+    case "qbo_line_allocation":
+      // anchorId is `<staged_payment_id>_<allocation_id>` (two-sided identity).
+      return `srcl_qla_${anchorId}`;
   }
 }

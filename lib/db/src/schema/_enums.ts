@@ -516,6 +516,10 @@ export const paymentApplicationLifecycleEnum = pgEnum(
 //                          (accounting evidence; successor of deposit_qbo_components)
 //   payout_qb_settlement — QBO booked lump ↔ its Stripe payout (successor of
 //                          staged_payments.settled_stripe_payout_id)
+//   qbo_line_allocation  — QBO line booked at allocation grain ↔ the
+//                          gift_allocations row it generated (one physical
+//                          payment split by the bookkeeper into several
+//                          allocation-level lines)
 // (docs/adr-qbo-evidence-grain.md)
 export const sourceLinkTypeEnum = pgEnum("source_link_type", [
   "charge_qb_tie",
@@ -527,6 +531,7 @@ export const sourceLinkTypeEnum = pgEnum("source_link_type", [
   "qbo_line_deposit",
   "payout_qb_settlement",
   "unit_gift_corroboration",
+  "qbo_line_allocation",
 ]);
 
 // HOW a machine-made claim was matched (docs/adr-qbo-evidence-grain.md §2).
