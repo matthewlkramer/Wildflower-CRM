@@ -662,7 +662,7 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
               </div>
             );
           })}
-          {deposit.qbRecords.filter((record) => !linkedStagedPaymentIds.has(record.stagedPaymentId)).map((record) => {
+          {deposit.qbRecords.filter((record) => !record.bankTransactionId && !linkedStagedPaymentIds.has(record.stagedPaymentId)).map((record) => {
             const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.reference ?? record.stagedPaymentId };
             return (
               <div key={`unlinked-qb-${record.stagedPaymentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
