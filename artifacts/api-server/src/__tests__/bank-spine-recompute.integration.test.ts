@@ -467,6 +467,49 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     }
   });
 
+  it("pairs equal counts of identical-amount register rows and deposits one-to-one", async () => {
+    const depositA = await seedDeposit("479.20", "2026-10-05");
+    const depositB = await seedDeposit("479.20", "2026-10-05");
+    const rowA = await seedQboRegister("479.20", "2026-10-05");
+    const rowB = await seedQboRegister("479.20", "2026-10-05");
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({
+        bankDepositId: schema.sourceLinks.bankDepositId,
+        matchBasis: schema.sourceLinks.matchBasis,
+      })
+      .from(schema.sourceLinks)
+      .where(inArrayFn(schema.sourceLinks.bankTransactionId, [rowA, rowB]));
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.matchBasis)).toEqual([
+      "same_day_equal_count_amount",
+      "same_day_equal_count_amount",
+    ]);
+    expect(new Set(rows.map((r) => r.bankDepositId))).toEqual(
+      new Set([depositA, depositB]),
+    );
+  });
+
+  it("skips equal-count pairing when counts differ", async () => {
+    await seedDeposit("481.30", "2026-10-12");
+    await seedDeposit("481.30", "2026-10-12");
+    const rowA = await seedQboRegister("481.30", "2026-10-12");
+    const rowB = await seedQboRegister("481.30", "2026-10-12");
+    const rowC = await seedQboRegister("481.30", "2026-10-12");
+
+    await recompute.recomputeBankSpine();
+
+    const rows = await db
+      .select({ id: schema.sourceLinks.id })
+      .from(schema.sourceLinks)
+      .where(
+        inArrayFn(schema.sourceLinks.bankTransactionId, [rowA, rowB, rowC]),
+      );
+    expect(rows).toEqual([]);
+  });
+
   it("syncs the unit→gift pointer with the counted ledger", async () => {
     const orgId = nextId("org");
     await db

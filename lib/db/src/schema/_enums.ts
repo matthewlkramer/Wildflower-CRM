@@ -538,6 +538,7 @@ export const sourceLinkMatchBasisEnum = pgEnum("source_link_match_basis", [
   "two_day_unique_amount",
   "three_day_unique_amount",
   "same_donor_multi_row_sum",
+  "same_day_equal_count_amount",
   "deposit_header_exact",
   "deposit_header_ambiguous",
   "settled_pairing",
