@@ -111,17 +111,17 @@ mutation.
 - `stripe_payouts.bank_deposit_id` is the current payout↔bank-deposit
   relationship: a recomputed deterministic pairing with
   `ambiguous_bank_match` and `bank_matched_at`, with no confirmation workflow.
-  The historical QBO pairing fact remains on
-  `staged_payments.settled_stripe_payout_id`; `settlement_links` is retired and
-  dropped.
+  The payout↔QBO-lump pairing fact is the `payout_qb_settlement` source_link
+  (`staged_payments.settled_stripe_payout_id` and `settlement_links` are
+  retired and dropped).
 - `source_links` is the sole unit↔unit evidence↔evidence claim ledger
   (charge↔QB tie, charge fee row, Donorbox↔QB, Donorbox↔charge). It replaced
   the retired source-specific pointer columns — **never reintroduce pointer
-  columns** on evidence or gift tables. These typed claims, together with
-  `deposit_qbo_components` (QBO deposit member line ↔ bank deposit), are the
-  QBO documentation authorities. Gift/allocation↔QBO is derived transitively
-  through the component; do not add a direct gift↔QBO link or general M:N
-  documentation table.
+  columns** on evidence or gift tables. These typed claims (including
+  `qbo_line_deposit`, the QBO deposit member line ↔ bank deposit claim that
+  replaced `deposit_qbo_components`) are the QBO documentation authorities.
+  Gift/allocation↔QBO is derived transitively through those claims; do not add
+  a direct gift↔QBO link or general M:N documentation table.
 - Statuses (QB tie, payout settlement, match status) **derive from these
   relationships at read time**; do not add stored status columns for them.
   A `source_links` claim is not itself status evidence (claim ≠ status).
@@ -323,8 +323,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   payout↔bank-deposit fact is `stripe_payouts.bank_deposit_id` (UNIQUE), with
   `ambiguous_bank_match` and `bank_matched_at`; it is a recomputed deterministic
   pairing with no confirmation workflow and no reconciliation mirror columns.
-  The historical QBO pairing remains on
-  `staged_payments.settled_stripe_payout_id`.
+  The QBO pairing is the `payout_qb_settlement` source_link.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
   evidence (not transaction evidence).
 - `bank_transactions` — raw bank-register evidence, one row per register line,
@@ -378,9 +377,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   TotalAmt+TxnDate; equal-amount/same-date classes pair deterministically by
   rank and set `ambiguous_deposit_match` (flag only, like
   `stripe_payouts.ambiguous_bank_match` — no review workflow).
-- `deposit_qbo_components` — QBO decomposition evidence for a
-  `bank_deposits` row. It explains how accounting records map into a bank
-  deposit but is not the money spine and does not replace direct
+- QBO decomposition evidence for a `bank_deposits` row lives in
+  `source_links` (`qbo_line_deposit`). It explains how accounting records map
+  into a bank deposit but is not the money spine and does not replace direct
   `bank_deposit_components`.
 - `bank_deposit_exclusions` — the current PR #42 reviewed **deposit-level
   "not fundraising" implementation**, being migrated to component/payment-unit

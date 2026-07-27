@@ -35,7 +35,6 @@ import { giftsAndPayments } from "./giftsAndPayments";
 import { users } from "./users";
 import { quickbooksHandlingRules } from "./quickbooksHandlingRules";
 import { entities } from "./entities";
-import { stripePayouts } from "./stripePayouts";
 
 /**
  * Review queue for incoming-money records pulled one-way from QuickBooks
@@ -321,15 +320,6 @@ export const stagedPayments = pgTable(
     )
       .notNull()
       .default("auto"),
-    // The Stripe payout this QBO deposit row BOOKS — the plain pairing fact
-    // that replaced the retired settlement_links workflow (0168, bank-spine
-    // ADR). Backfilled from every human-confirmed settlement link;
-    // maintained forward by the deterministic comparer pairing. UNIQUE per
-    // payout (partial index below): a payout settles as at most one QBO lump.
-    settledStripePayoutId: text("settled_stripe_payout_id").references(
-      () => stripePayouts.id,
-      { onDelete: "set null" },
-    ),
 
     // ── Revenue-accounting / QuickBooks coding snapshot (Task #449) ──────────
     // The derived QBO coding snapshot describes a QuickBooks PAYMENT, so it lives
@@ -418,9 +408,6 @@ export const stagedPayments = pgTable(
     index("staged_payments_household_id_idx").on(t.householdId),
     index("staged_payments_entity_id_idx").on(t.entityId),
     index("staged_payments_funding_source_idx").on(t.fundingSource),
-    uniqueIndex("staged_payments_settled_stripe_payout_id_uq")
-      .on(t.settledStripePayoutId)
-      .where(sql`${t.settledStripePayoutId} IS NOT NULL`),
   ],
 );
 
