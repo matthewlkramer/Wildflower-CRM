@@ -555,6 +555,75 @@ export async function recomputeBankSpine(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  // 4e-ii-b. Equal-count same-day matching: N identical-amount register rows
+  //          on one date and exactly N same-amount open deposits on the same
+  //          date are interchangeable, so they pair one-to-one — the strict
+  //          both-sides-unique rule above can never match them (e.g. two
+  //          $479.20 Stripe transfers landing the same day). Guarded so no
+  //          other open candidate of that amount exists in the ±3-day window.
+  await db.execute(sql`
+    WITH open_deposits AS (
+      SELECT d.id, d.amount, d.deposit_date
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links sl
+          WHERE sl.link_type = 'qbo_register_deposit'
+            AND sl.bank_deposit_id = d.id
+        )
+    ),
+    open_reg AS (
+      SELECT bt.id, bt.deposit AS amount, bt.txn_date
+      FROM bank_transactions bt
+      WHERE bt.source = 'qbo_register_export'
+        AND bt.deposit IS NOT NULL AND bt.deposit > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links sl
+          WHERE sl.link_type = 'qbo_register_deposit'
+            AND sl.bank_transaction_id = bt.id
+        )
+    ),
+    dep_groups AS (
+      SELECT amount, deposit_date, array_agg(id ORDER BY id) AS ids,
+        count(*) AS n
+      FROM open_deposits
+      GROUP BY amount, deposit_date
+    ),
+    reg_groups AS (
+      SELECT amount, txn_date, array_agg(id ORDER BY id) AS ids,
+        count(*) AS n
+      FROM open_reg
+      GROUP BY amount, txn_date
+    ),
+    eligible AS (
+      SELECT d.amount, d.deposit_date, d.ids AS dep_ids, r.ids AS reg_ids, d.n
+      FROM dep_groups d
+      JOIN reg_groups r
+        ON r.amount = d.amount AND r.txn_date = d.deposit_date AND r.n = d.n
+      WHERE d.n >= 2
+        AND NOT EXISTS (
+          SELECT 1 FROM open_reg o
+          WHERE o.amount = d.amount AND o.txn_date <> d.deposit_date
+            AND o.txn_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM open_deposits o
+          WHERE o.amount = d.amount AND o.deposit_date <> d.deposit_date
+            AND o.deposit_date BETWEEN d.deposit_date - 3 AND d.deposit_date + 3
+        )
+    )
+    INSERT INTO source_links (
+      id, link_type, bank_transaction_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qrd_' || e.reg_ids[i], 'qbo_register_deposit',
+      e.reg_ids[i], e.dep_ids[i], 'confirmed', 'system',
+      'same_day_equal_count_amount'
+    FROM eligible e, generate_series(1, e.n) AS i
+    ON CONFLICT (id) DO NOTHING
+  `);
+
   // 4e-iii. Same-day/same-donor multi-row sums: when ≥2 positive register
   //         rows share a date + normalized payee and their SUM uniquely
   //         equals a still-unlinked deposit within ±3 days, each row ties to
