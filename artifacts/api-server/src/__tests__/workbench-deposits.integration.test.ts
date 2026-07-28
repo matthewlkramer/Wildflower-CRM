@@ -726,9 +726,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row?.gifts.map((item: any) => item.giftId).sort()).toEqual(
       [...chargeGiftIds].sort(),
     );
-    expect(row?.gifts.some((item: any) => item.giftId === legacyGiftId)).toBe(
-      false,
-    );
+    expect(
+      row?.gifts.some((item: any) => item.giftId === legacyGiftId),
+    ).toBe(false);
   });
 
   it("surfaces correction_needed accounting checks for component units", async () => {
