@@ -1,0 +1,115 @@
+name: Fix deposit lens counts
+
+on:
+  push:
+    branches:
+      - agent/fix-deposit-lens-counts
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wildflower_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: reconciliation-test-only
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-deposit-lens-counts
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install pnpm and dependencies
+        run: |
+          npm install --global pnpm@10
+          pnpm install --frozen-lockfile
+
+      - name: Apply lens semantics fix
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          route = Path('artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts')
+          text = route.read_text()
+          text = text.replace('  QB_DOCUMENTATION_COMPLETE_SQL,\n', '')
+          text = text.replace(
+              '  if (!canonical.completed && !flags.f_not_fundraising) out.push("all_open");',
+              '  if (!flags.f_completed && !flags.f_not_fundraising) out.push("all_open");',
+          )
+          text = text.replace(
+              '  if (canonical.completed) out.push("completed");',
+              '  if (flags.f_completed) out.push("completed");',
+          )
+          old = '''      (\n        ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}\n        AND NOT f_unresolved\n        AND NOT f_ambiguous\n        AND NOT f_needs_gift\n        AND NOT f_correction\n        AND NOT f_refund\n        AND NOT f_not_fundraising\n      ) AS f_completed,'''
+          new = '''      (\n        NOT f_unresolved\n        AND NOT f_ambiguous\n        AND NOT f_needs_gift\n        AND NOT f_correction\n        AND NOT f_refund\n        AND NOT f_not_fundraising\n      ) AS f_completed,'''
+          if old not in text:
+              raise SystemExit('completion SQL block not found')
+          route.write_text(text.replace(old, new, 1))
+
+          test = Path('artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts')
+          t = test.read_text()
+          old_test = '''  it("anchors rows on deposits without treating a payout pairing as end-to-end completion", async () => {\n    const depositId = await seedDeposit("Stripe payout");\n    const payoutId = nextId("payout");\n    await db.insert(schema.stripePayouts).values({\n      id: payoutId,\n      stripeAccountId: ACCOUNT_ID,\n      amount: "100.00",\n      netTotal: "100.00",\n      arrivalDate: "2099-12-31",\n      bankDepositId: depositId,\n    });\n    payoutIds.push(payoutId);\n    const completed = await listDeposits("completed");\n    expect(\n      completed.data.some((item: any) => item.anchorId === depositId),\n    ).toBe(false);\n    const open = await listDeposits("all_open");\n    const row = open.data.find((item: any) => item.anchorId === depositId);\n    expect(row?.composition.kind).toBe("stripe_payout");\n    expect(row?.lenses).toContain("all_open");\n    expect(row?.coverage.state.linkage.state).toBe("partial");\n    expect(row?.coverage.complete).toBe(false);\n  });'''
+          new_test = '''  it("keeps a paired payout open when a live charge still needs a gift", async () => {\n    const depositId = await seedDeposit("Stripe payout");\n    const payoutId = nextId("payout");\n    await db.insert(schema.stripePayouts).values({\n      id: payoutId,\n      stripeAccountId: ACCOUNT_ID,\n      amount: "100.00",\n      netTotal: "100.00",\n      arrivalDate: "2099-12-31",\n      bankDepositId: depositId,\n    });\n    payoutIds.push(payoutId);\n    await seedCharge(payoutId, { grossAmount: "100.00" });\n\n    const completed = await listDeposits("completed", "Stripe payout");\n    expect(\n      completed.data.some((item: any) => item.anchorId === depositId),\n    ).toBe(false);\n    const open = await listDeposits("all_open", "Stripe payout");\n    const row = open.data.find((item: any) => item.anchorId === depositId);\n    expect(row?.composition.kind).toBe("stripe_payout");\n    expect(row?.lenses).toContain("all_open");\n    expect(row?.lenses).toContain("needs_gift");\n    expect(row?.coverage.state.linkage.state).toBe("partial");\n    expect(row?.coverage.complete).toBe(false);\n  });'''
+          if old_test not in t:
+              raise SystemExit('paired payout test block not found')
+          t = t.replace(old_test, new_test, 1)
+
+          old_refund = '''    const completed = await listDeposits(\n      "completed",\n      "Later refunded Stripe charge",\n    );\n    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(\n      false,\n    );\n\n    const open = await listDeposits("all_open", "Later refunded Stripe charge");\n    const row = open.data.find((item: any) => item.anchorId === deposit);'''
+          new_refund = '''    const completed = await listDeposits(\n      "completed",\n      "Later refunded Stripe charge",\n    );\n    const row = completed.data.find((item: any) => item.anchorId === deposit);\n    expect(row?.lenses).toContain("completed");\n\n    const open = await listDeposits("all_open", "Later refunded Stripe charge");\n    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);'''
+          if old_refund not in t:
+              raise SystemExit('refunded payout test block not found')
+          t = t.replace(old_refund, new_refund, 1)
+
+          old_linked = '''    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(\n      false,\n    );\n\n    const open = await listDeposits(\n      "all_open",\n      "Fully gift-linked Stripe payout",\n    );\n    const row = open.data.find((item: any) => item.anchorId === deposit);\n    expect(row?.coverage.state.linkage.state).toBe("complete");\n    expect(row?.coverage.state.information.qbComplete).toBe(false);\n    expect(row?.coverage.complete).toBe(false);'''
+          new_linked = '''    const row = completed.data.find((item: any) => item.anchorId === deposit);\n    expect(row?.lenses).toContain("completed");\n    expect(row?.coverage.state.linkage.state).toBe("complete");\n    expect(row?.coverage.state.information.qbComplete).toBe(false);\n    expect(row?.coverage.complete).toBe(false);\n\n    const open = await listDeposits(\n      "all_open",\n      "Fully gift-linked Stripe payout",\n    );\n    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);'''
+          if old_linked not in t:
+              raise SystemExit('fully linked payout test block not found')
+          test.write_text(t.replace(old_linked, new_linked, 1))
+          PY
+
+      - name: Format and validate
+        run: |
+          pnpm exec prettier --write \
+            artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
+            artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+          pnpm --filter @workspace/db run push-force
+          pnpm run check:api
+          pnpm --filter @workspace/api-server exec vitest run \
+            src/routes/reconciliation/workbenchDepositState.test.ts \
+            src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Commit validated fix
+        run: |
+          rm .github/workflows/fix-deposit-lens-counts.yml
+          rmdir .github/workflows 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix deposit workbench lens counts"
+          git push origin HEAD:agent/fix-deposit-lens-counts
