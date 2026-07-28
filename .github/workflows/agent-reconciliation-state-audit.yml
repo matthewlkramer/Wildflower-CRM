@@ -1,0 +1,98 @@
+name: Agent reconciliation state patch
+
+on:
+  push:
+    branches:
+      - agent/reconciliation-state-audit
+
+permissions:
+  contents: write
+
+concurrency:
+  group: agent-reconciliation-state-audit
+  cancel-in-progress: false
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wildflower_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
+
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/reconciliation-state-audit
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply reviewed patch
+        run: |
+          git apply --check .agent/reconciliation-state-audit.patch
+          git apply .agent/reconciliation-state-audit.patch
+
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
+            artifacts/api-server/src/routes/reconciliation/workbenchDepositState.ts \
+            artifacts/api-server/src/routes/reconciliation/workbenchDepositState.test.ts \
+            artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts \
+            scripts/src/audit-reconciliation.ts \
+            scripts/package.json
+
+      - name: Build test database schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Typecheck API and scripts
+        run: |
+          pnpm run check:api
+          pnpm --filter @workspace/scripts run typecheck
+
+      - name: Run focused reconciliation tests
+        run: >-
+          pnpm --filter @workspace/api-server exec vitest run
+          src/routes/reconciliation/workbenchDepositState.test.ts
+          src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Commit validated implementation
+        run: |
+          rm -f .agent/reconciliation-state-audit.patch
+          rm -f .github/workflows/agent-reconciliation-state-audit.yml
+          rmdir .agent 2>/dev/null || true
+          rmdir .github/workflows 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix reconciliation completion state and add audit"
+          git push origin HEAD:agent/reconciliation-state-audit
