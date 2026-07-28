@@ -84,11 +84,12 @@
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
  * zero_amount → guaranty (payer→earned_income) → loan_repayment (payer) →
- * insurance → expensify → returned_wire → note_payable → loan_proceeds →
- * loan_repayment (line) → guaranty (line→earned_income) → interest → tax_refund →
- * other_revenue → earned_income → expense_refund → membership. The first match
- * wins. (government_reimbursement and fiscally_sponsored are NO LONGER excluded —
- * they flow into the queue; see the notes in `classifyStagedPayment`.)
+ * fiscally-sponsored entity (→non_wf) → insurance → expensify → returned_wire →
+ * note_payable → loan_proceeds → loan_repayment (line) → guaranty
+ * (line→earned_income) → interest → tax_refund → other_revenue → earned_income →
+ * expense_refund → membership. The first match wins.
+ * (government_reimbursement is NO LONGER excluded — it flows into the queue; see
+ * the notes in `classifyStagedPayment`.)
  */
 
 export type ExclusionReason =
@@ -109,6 +110,7 @@ export type ExclusionReason =
   | "intercompany_transfer"
   | "other"
   | "processor_payout"
+  | "non_wf"
   // Legacy values: NO LONGER emitted by the classifier, but retained in the
   // union so historical rows + the manual exclude picker stay type-compatible.
   | "loan"
@@ -377,6 +379,22 @@ export const ENTITY_MARKERS: readonly { entityId: string; markers: readonly stri
   // can't disambiguate, so those rows stay unattributed (Foundation default) for
   // a fundraiser to file by hand. Add a disambiguating marker only once the real
   // QB Class names are confirmed against production.
+];
+
+/**
+ * Fiscally sponsored entities. Money attributed to these entities is not
+ * Wildflower's at all — it belongs to the sponsored project — so the classifier
+ * excludes it as `non_wf` (owner ruling). The entity attribution (entity_id)
+ * is still recorded so the money stays filed under its entity.
+ *
+ * Lockstep: mirrors `entities.fiscally_sponsored = true` in the entities table
+ * AND the `seed_fiscally_sponsored_non_wf` handling rule (SEED_RULES in
+ * quickbooksRules.ts + its migration seed SQL).
+ */
+export const FISCALLY_SPONSORED_ENTITY_IDS: readonly string[] = [
+  "embracing_equity",
+  "tierra_indigena",
+  "rising_tide",
 ];
 
 /**
@@ -768,10 +786,16 @@ export function classifyStagedPayment(
   // minted with counts_toward_goal=false. (`government_reimbursement` is retained
   // as a legacy enum value for historical rows only.)
   //
-  // NOTE: FISCALLY SPONSORED money is NO LONGER excluded here either. It is
-  // attributed to its Wildflower entity via `detectEntity` (entity_id) and kept
-  // in the review queue, surfaced via the "Fiscally-sponsored without
-  // corresponding gift" worklist. (`fiscally_sponsored` is likewise legacy.)
+  // 4a. Fiscally sponsored entity money (Embracing Equity, Tierra Indígena,
+  //     Rising Tide) → non_wf: it is the sponsored project's money, not
+  //     Wildflower's. Identity rule — never a gift to Wildflower, so it fires
+  //     BEFORE the donation guard. Entity attribution (detectEntity → entity_id)
+  //     is orthogonal and still recorded by the caller. (`fiscally_sponsored`
+  //     remains a legacy reason retained only for historical rows.)
+  const fsEntity = detectEntity(input);
+  if (fsEntity && FISCALLY_SPONSORED_ENTITY_IDS.includes(fsEntity)) {
+    return { excluded: true, reason: "non_wf" };
+  }
 
   // 4b. Insurance / COBRA reimbursements (the "BASICCOBRA" marker). Identity
   //     rule — never a gift, so it fires BEFORE the donation guard and scans
