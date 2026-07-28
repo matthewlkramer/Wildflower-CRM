@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - agent/fix-stripe-open-and-gift-duplicates
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
