@@ -9,9 +9,18 @@ import {
   sourceLinkId,
 } from "@workspace/db/schema";
 import { eq, sql } from "drizzle-orm";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination } from "../../lib/helpers";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+} from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
-import { requireFinance, viewerCanManageAccounting } from "../../lib/financeGuard";
+import {
+  requireFinance,
+  viewerCanManageAccounting,
+} from "../../lib/financeGuard";
 import { getViewer, maskName } from "../../lib/identityVisibility";
 import {
   ClearBankDepositExclusionParams,
@@ -33,13 +42,15 @@ import {
   SetQboAccountingCheckDispositionBody,
 } from "@workspace/api-zod";
 import {
-  informationStateOf,
+  QB_DOCUMENTATION_COMPLETE_SQL,
   lensFlagsFromState,
   rowCompleteFromState,
+  type CrmCardEntry,
+  type QbCardEntry,
+  type TransactionEntry,
   type WorkbenchRowState,
-  type CrmCardState,
-  type TransactionCardState,
 } from "./workbenchRowState";
+import { deriveDepositWorkbenchState } from "./workbenchDepositState";
 import { buildCrmRecordCompleteness } from "./workbenchClusters";
 
 const router: IRouter = Router();
@@ -57,8 +68,7 @@ const LENSES = [
 type Lens = (typeof LENSES)[number];
 
 const LENS_PREDICATE: Record<Lens, string> = {
-  all_open:
-    "(NOT f_not_fundraising AND (f_unresolved OR f_ambiguous OR f_needs_gift OR f_correction) AND NOT f_completed)",
+  all_open: "(NOT f_completed AND NOT f_not_fundraising)",
   unresolved_composition: "f_unresolved",
   ambiguous_pairing: "f_ambiguous",
   needs_gift: "f_needs_gift",
@@ -78,6 +88,21 @@ type SlimRow = {
   f_refund: boolean;
   f_completed: boolean;
   f_not_fundraising: boolean;
+};
+
+type DepositCharge = Record<string, unknown> & {
+  chargeId: string;
+  amount: string | null;
+  linkedGiftId: string | null;
+  paymentUnitId: string | null;
+  paymentUnitLifecycle: string | null;
+  refunded: boolean;
+  disputed: boolean;
+  amountRefunded: string | null;
+  refundPropagationStatus: string | null;
+  exclusionReason: string | null;
+  status: string | null;
+  qboRecords?: NodeQbRecord[];
 };
 
 type DepositRow = {
@@ -149,7 +174,7 @@ type DepositRow = {
     linkedStagedPaymentIds: string[];
     qboRecords?: NodeQbRecord[];
   }>;
-  charges: Array<Record<string, unknown> & { chargeId?: string; qboRecords?: NodeQbRecord[] }>;
+  charges: DepositCharge[];
   qb_records: Array<Record<string, unknown>>;
   accounting_checks: Array<Record<string, unknown>>;
 };
@@ -186,7 +211,15 @@ function amount(value: unknown): number {
 }
 
 async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
-  const chargeIds = [...new Set(rows.flatMap((row) => row.charges.map((charge) => String(charge.chargeId ?? "")).filter(Boolean)))];
+  const chargeIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.charges
+          .map((charge) => String(charge.chargeId ?? ""))
+          .filter(Boolean),
+      ),
+    ),
+  ];
   const componentRefs = rows.flatMap((row) =>
     [...row.components, ...row.provisional_components]
       .filter((component) => component.stagedPaymentId)
@@ -194,16 +227,27 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
         stagedPaymentId: component.stagedPaymentId as string,
         componentId: component.componentId,
         paymentUnitId: component.paymentUnitId,
-        role: component.source === "qbo_provisional" ? "provisional" as const : "component" as const,
+        role:
+          component.source === "qbo_provisional"
+            ? ("provisional" as const)
+            : ("component" as const),
       })),
   );
-  const stagedPaymentIds = [...new Set(componentRefs.map((ref) => ref.stagedPaymentId))];
+  const stagedPaymentIds = [
+    ...new Set(componentRefs.map((ref) => ref.stagedPaymentId)),
+  ];
   if (chargeIds.length === 0 && stagedPaymentIds.length === 0) return;
   const stagedFilter = stagedPaymentIds.length
-    ? sql`sp.id IN (${sql.join(stagedPaymentIds.map((id) => sql`${id}`), sql`, `)})`
+    ? sql`sp.id IN (${sql.join(
+        stagedPaymentIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`
     : sql`FALSE`;
   const chargeFilter = chargeIds.length
-    ? sql`sl.stripe_charge_id IN (${sql.join(chargeIds.map((id) => sql`${id}`), sql`, `)})`
+    ? sql`sl.stripe_charge_id IN (${sql.join(
+        chargeIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})`
     : sql`FALSE`;
 
   const result = await db.execute(sql`
@@ -237,12 +281,19 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
     WHERE ${stagedFilter} OR ${chargeFilter}
   `);
 
-  const componentByStaged = new Map(componentRefs.map((ref) => [ref.stagedPaymentId, ref]));
+  const componentByStaged = new Map(
+    componentRefs.map((ref) => [ref.stagedPaymentId, ref]),
+  );
   const recordsByCharge = new Map<string, NodeQbRecord[]>();
   const recordsByStaged = new Map<string, NodeQbRecord[]>();
   for (const raw of result.rows as Array<Record<string, unknown>>) {
     const stagedPaymentId = String(raw.staged_payment_id);
-    const linkType = raw.link_type === "charge_fee_row" ? "fee" : raw.link_type === "charge_qb_tie" ? "charge_tie" : null;
+    const linkType =
+      raw.link_type === "charge_fee_row"
+        ? "fee"
+        : raw.link_type === "charge_qb_tie"
+          ? "charge_tie"
+          : null;
     const componentRef = componentByStaged.get(stagedPaymentId);
     const role = linkType ?? componentRef?.role;
     if (!role) continue;
@@ -272,13 +323,25 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
       exclusionReason: (raw.exclusion_reason as string | null) ?? null,
     };
     const stagedRecords = recordsByStaged.get(stagedPaymentId) ?? [];
-    if (!stagedRecords.some((existing) => existing.role === record.role && existing.linkedChargeId === record.linkedChargeId)) {
+    if (
+      !stagedRecords.some(
+        (existing) =>
+          existing.role === record.role &&
+          existing.linkedChargeId === record.linkedChargeId,
+      )
+    ) {
       stagedRecords.push(record);
       recordsByStaged.set(stagedPaymentId, stagedRecords);
     }
     if (record.linkedChargeId) {
       const chargeRecords = recordsByCharge.get(record.linkedChargeId) ?? [];
-      if (!chargeRecords.some((existing) => existing.stagedPaymentId === record.stagedPaymentId && existing.role === record.role)) {
+      if (
+        !chargeRecords.some(
+          (existing) =>
+            existing.stagedPaymentId === record.stagedPaymentId &&
+            existing.role === record.role,
+        )
+      ) {
         chargeRecords.push(record);
         recordsByCharge.set(record.linkedChargeId, chargeRecords);
       }
@@ -286,13 +349,18 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
   }
 
   for (const row of rows) {
-    for (const component of [...row.components, ...row.provisional_components]) {
+    for (const component of [
+      ...row.components,
+      ...row.provisional_components,
+    ]) {
       component.qboRecords = component.stagedPaymentId
-        ? recordsByStaged.get(component.stagedPaymentId) ?? []
+        ? (recordsByStaged.get(component.stagedPaymentId) ?? [])
         : [];
     }
     for (const charge of row.charges) {
-      charge.qboRecords = charge.chargeId ? recordsByCharge.get(String(charge.chargeId)) ?? [] : [];
+      charge.qboRecords = charge.chargeId
+        ? (recordsByCharge.get(String(charge.chargeId)) ?? [])
+        : [];
     }
     // Records already rendered under this deposit's component or charge cards
     // are not repeated under the gift rollup.
@@ -301,14 +369,28 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
         .map((component) => component.stagedPaymentId)
         .filter((id): id is string => Boolean(id)),
     );
-    const rowChargeIds = new Set(row.charges.map((charge) => String(charge.chargeId ?? "")).filter(Boolean));
+    const rowChargeIds = new Set(
+      row.charges
+        .map((charge) => String(charge.chargeId ?? ""))
+        .filter(Boolean),
+    );
     for (const gift of row.gifts) {
       const giftRecords = [
-        ...gift.linkedChargeIds.filter((id) => !rowChargeIds.has(id)).flatMap((id) => recordsByCharge.get(id) ?? []),
-        ...gift.linkedStagedPaymentIds.filter((id) => !rowComponentStaged.has(id)).flatMap((id) => recordsByStaged.get(id) ?? []),
+        ...gift.linkedChargeIds
+          .filter((id) => !rowChargeIds.has(id))
+          .flatMap((id) => recordsByCharge.get(id) ?? []),
+        ...gift.linkedStagedPaymentIds
+          .filter((id) => !rowComponentStaged.has(id))
+          .flatMap((id) => recordsByStaged.get(id) ?? []),
       ];
-      gift.qboRecords = giftRecords.filter((record, index, all) =>
-        all.findIndex((candidate) => candidate.stagedPaymentId === record.stagedPaymentId && candidate.role === record.role && candidate.linkedChargeId === record.linkedChargeId) === index,
+      gift.qboRecords = giftRecords.filter(
+        (record, index, all) =>
+          all.findIndex(
+            (candidate) =>
+              candidate.stagedPaymentId === record.stagedPaymentId &&
+              candidate.role === record.role &&
+              candidate.linkedChargeId === record.linkedChargeId,
+          ) === index,
       );
     }
   }
@@ -336,124 +418,181 @@ function notFundraisingMemo(memo: string | null): boolean {
   return /\b(loan|interest|interest\s+credit|loan\s+fund)\b/i.test(memo);
 }
 
+function chargeIsFullyReversed(charge: DepositCharge): boolean {
+  const gross = amount(charge.amount);
+  const refunded = amount(charge.amountRefunded);
+  return (
+    charge.disputed === true ||
+    charge.paymentUnitLifecycle === "refunded" ||
+    (charge.refunded === true && gross > 0 && refunded >= gross - 0.005)
+  );
+}
+
 function stateForDeposit(
   row: SlimRow,
-  units: DepositRow["units"],
+  deposit: DepositRow,
   gifts: DepositRow["gifts"],
-  checks: DepositRow["accounting_checks"],
-  qbRecords: DepositRow["qb_records"],
-): WorkbenchRowState {
-  const hasPayout = Boolean((row as SlimRow & { payout_id?: string | null }).payout_id);
-  const hasUnits = units.length > 0;
-  const countedUnits = new Set(units.filter((u) => u.countedGiftIds.length > 0).map((u) => u.paymentUnitId));
-  const allUnitsBooked = hasUnits && countedUnits.size === units.length;
-  const crmCompleteness = buildCrmRecordCompleteness(
-    gifts.map((g) => ({
-      giftId: g.giftId,
-      opportunityId: g.opportunityId,
-      name: g.name,
-      donorName: g.donorName,
-      donorKind: g.donorKind,
-      donorId: g.donorId,
-      amount: g.amount,
-      dateReceived: g.dateReceived,
-      quickbooksTie: null,
-      donorbox: g.donorbox,
-      grantLetter: g.grantLetter,
-      codingForm: g.codingForm,
-      recordComplete: g.recordComplete,
-      satisfiedBy: g.recordComplete ? "donor_and_allocations" : null,
-      crmReason: g.recordComplete ? null : "missing_donor",
-      linkedChargeIds: g.linkedChargeIds,
-      linkedStagedPaymentIds: g.linkedStagedPaymentIds,
-    })),
+) {
+  const componentByUnit = new Map(
+    deposit.components
+      .filter((component) => component.paymentUnitId)
+      .map((component) => [component.paymentUnitId as string, component]),
   );
-  const crmComplete = crmCompleteness.complete;
-  const correction = checks.some((c) => c.disposition === "correction_needed");
-  const complete = row.f_completed;
-  const transactions: WorkbenchRowState["transactions"] = units.map((u) => ({
-    transactionId: u.paymentUnitId,
-    livePayment: u.lifecycle !== "refunded" && u.lifecycle !== "disputed",
-    refundStatus: u.lifecycle === "refunded" || u.lifecycle === "partially_refunded" ? "anticipated" : "none",
-    state: (u.countedGiftIds.length > 0 ? "matched" : "unmatched") as TransactionCardState,
-  }));
-  const crmCards: WorkbenchRowState["crmCards"] = gifts.map((g) => ({
+
+  const transactions: Array<{
+    entry: TransactionEntry;
+    linkedToCrm: boolean;
+  }> = deposit.payout_id
+    ? deposit.charges.map((charge) => {
+        const excluded = Boolean(charge.exclusionReason);
+        const fullyReversed = chargeIsFullyReversed(charge);
+        const linkedToCrm = Boolean(charge.linkedGiftId);
+        const refundProposed = charge.refundPropagationStatus === "proposed";
+        const state: TransactionEntry["state"] = excluded
+          ? "excluded"
+          : fullyReversed
+            ? "refunded"
+            : refundProposed
+              ? "refund_anticipated"
+              : linkedToCrm
+                ? "matched"
+                : "unmatched";
+        const refundStatus: TransactionEntry["refundStatus"] = refundProposed
+          ? "anticipated"
+          : fullyReversed || amount(charge.amountRefunded) > 0
+            ? "refunded"
+            : "none";
+        return {
+          linkedToCrm,
+          entry: {
+            transactionId: charge.paymentUnitId ?? charge.chargeId,
+            livePayment: !excluded && !fullyReversed,
+            refundStatus,
+            state,
+          },
+        };
+      })
+    : deposit.units.map((unit) => {
+        const component = componentByUnit.get(unit.paymentUnitId);
+        const excluded = Boolean(component?.exclusionReason);
+        const fullyReversed =
+          unit.lifecycle === "refunded" || unit.lifecycle === "disputed";
+        const linkedToCrm = unit.countedGiftIds.length > 0;
+        const state: TransactionEntry["state"] = excluded
+          ? "excluded"
+          : fullyReversed
+            ? "refunded"
+            : linkedToCrm
+              ? "matched"
+              : "unmatched";
+        return {
+          linkedToCrm,
+          entry: {
+            transactionId: unit.paymentUnitId,
+            livePayment: !excluded && !fullyReversed,
+            refundStatus:
+              unit.lifecycle === "refunded" ||
+              unit.lifecycle === "partially_refunded"
+                ? "refunded"
+                : "none",
+            state,
+          },
+        };
+      });
+
+  const crmCards: CrmCardEntry[] = gifts.map((g) => ({
     giftId: g.giftId,
     recordComplete: g.recordComplete,
-    state: (g.linkedStagedPaymentIds.length || g.linkedChargeIds.length
-      ? g.recordComplete ? "matched_complete" : "matched_incomplete"
-      : g.recordComplete ? "unmatched_complete" : "unmatched_incomplete") as CrmCardState,
-    satisfiedBy: g.recordComplete ? "donor_allocations_and_supporting_documents" : null,
+    state:
+      g.linkedStagedPaymentIds.length || g.linkedChargeIds.length
+        ? g.recordComplete
+          ? "matched_complete"
+          : "matched_incomplete"
+        : g.recordComplete
+          ? "unmatched_complete"
+          : "unmatched_incomplete",
+    satisfiedBy: g.recordComplete
+      ? "donor_allocations_and_supporting_documents"
+      : null,
   }));
-  const state: WorkbenchRowState = {
-    linkage: {
-      state: complete || allUnitsBooked ? "complete" : hasUnits ? "partial" : "missing",
-      accountingToTransaction: {
-        state: hasPayout || checks.length > 0 || qbRecords.length > 0 ? "complete" : hasUnits ? "partial" : "missing",
-        grain: hasPayout ? "bundle" : hasUnits ? "unit" : "none",
-        relationshipCount: hasPayout ? 1 : checks.length,
-      },
-      transactionToCrm: {
-        state: allUnitsBooked ? "complete" : hasUnits && countedUnits.size > 0 ? "partial" : "missing",
-        grain: hasUnits ? "unit" : "none",
-        relationshipCount: countedUnits.size,
-      },
-      accountingToCrm: {
-        state: allUnitsBooked && crmComplete ? "complete" : hasUnits ? "partial" : "missing",
-        grain: hasUnits ? "unit" : "none",
-        relationshipCount: gifts.length,
-      },
-    },
-    information: {
-      state: informationStateOf({
-        crmComplete,
-        qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
-        qbDocumented: complete,
-        attentionRequired: correction,
-      }),
-      crmComplete,
-      qbComplete: complete,
-      qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
-    },
-    flags: {
-      excluded: row.f_not_fundraising,
-      conflict: row.f_ambiguous,
-      attentionRequired: correction || row.f_refund,
-    },
-    settlementLinkState: hasPayout ? "confirmed" : undefined,
-    qbCards: checks.map((c) => ({
-      qbRecordId: String(c.stagedPaymentId),
-      state: c.disposition === "consistent" || c.disposition === "corrected"
+
+  const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
+    qbRecordId: String(c.stagedPaymentId),
+    state:
+      c.disposition === "consistent" || c.disposition === "corrected"
         ? "matched_complete"
-        : c.disposition === "accepted_historical" ? "excluded" : "matched_conflict",
-      isTransactionEvidence: false,
-    })),
+        : c.disposition === "accepted_historical"
+          ? "excluded"
+          : "matched_conflict",
+    isTransactionEvidence: false,
+  }));
+
+  const compositionPresent = Boolean(
+    deposit.payout_id ||
+    deposit.components.length ||
+    deposit.provisional_components.length,
+  );
+  const compositionComplete =
+    compositionPresent && !row.f_unresolved && !row.f_ambiguous;
+  const accountingCorrection = deposit.accounting_checks.some(
+    (check) => check.disposition === "correction_needed",
+  );
+
+  return deriveDepositWorkbenchState({
+    composition: {
+      present: compositionPresent,
+      complete: compositionComplete,
+      grain: deposit.payout_id
+        ? "bundle"
+        : deposit.components.length > 0
+          ? "unit"
+          : "none",
+      relationshipCount: deposit.payout_id ? 1 : deposit.components.length,
+    },
     transactions,
     crmCards,
-  };
-  return state;
+    qbCards,
+    accountingEvidencePresent:
+      deposit.qb_records.length > 0 || deposit.accounting_checks.length > 0,
+    accountingCorrection,
+    excluded: row.f_not_fundraising,
+    conflict: row.f_ambiguous,
+    attentionRequired: row.f_refund,
+    settlementLinkState: deposit.payout_id ? "confirmed" : undefined,
+  });
 }
 
 function depositLenses(
   row: SlimRow,
   state: WorkbenchRowState,
-  flags: Pick<SlimRow, "f_unresolved" | "f_ambiguous" | "f_needs_gift" | "f_correction" | "f_refund" | "f_completed" | "f_not_fundraising">,
+  flags: Pick<
+    SlimRow,
+    | "f_unresolved"
+    | "f_ambiguous"
+    | "f_needs_gift"
+    | "f_correction"
+    | "f_refund"
+    | "f_completed"
+    | "f_not_fundraising"
+  >,
 ): Lens[] {
   const out: Lens[] = [];
   const canonical = lensFlagsFromState(state);
-  if (!canonical.completed && !flags.f_not_fundraising && (flags.f_unresolved || flags.f_ambiguous || flags.f_needs_gift || flags.f_correction)) out.push("all_open");
+  if (!canonical.completed && !flags.f_not_fundraising) out.push("all_open");
   if (flags.f_unresolved) out.push("unresolved_composition");
   if (flags.f_ambiguous) out.push("ambiguous_pairing");
   if (flags.f_needs_gift) out.push("needs_gift");
   if (flags.f_correction) out.push("accounting_corrections");
   if (canonical.refunds || flags.f_refund) out.push("refunds");
-  if (canonical.completed || flags.f_completed) out.push("completed");
+  if (canonical.completed) out.push("completed");
   if (flags.f_not_fundraising) out.push("not_fundraising");
   return out;
 }
 
 function buildUniverse(q: string | null) {
-  const search = q ? `%${q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%` : null;
+  const search = q
+    ? `%${q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`
+    : null;
   return sql`
     SELECT id, anchor_date,
       (f_unresolved AND NOT f_not_fundraising) AS f_unresolved,
@@ -461,15 +600,28 @@ function buildUniverse(q: string | null) {
       (f_needs_gift AND NOT f_not_fundraising) AS f_needs_gift,
       (f_correction AND NOT f_not_fundraising) AS f_correction,
       f_refund,
-      f_completed,
+      (
+        ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}
+        AND NOT f_unresolved
+        AND NOT f_ambiguous
+        AND NOT f_needs_gift
+        AND NOT f_correction
+        AND NOT f_refund
+        AND NOT f_not_fundraising
+      ) AS f_completed,
       f_not_fundraising
     FROM (
       SELECT
         d.id,
         d.deposit_date AS anchor_date,
         (
+        (
           p.id IS NULL AND (
             count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
+          )
+          ) OR (
+            p.id IS NOT NULL AND p.net_total IS NOT NULL
+            AND abs(p.net_total - d.amount) >= 0.005
           )
         ) AS f_unresolved,
         (
@@ -520,33 +672,6 @@ function buildUniverse(q: string | null) {
           AND rc.raw_charge->>'status' = 'succeeded'
           AND rc.refund_propagation_status = 'proposed'
       ) AS f_refund,
-      (
-        p.id IS NOT NULL AND NOT COALESCE(p.ambiguous_bank_match, false)
-      ) OR (
-        count(c.id) > 0
-        AND abs(COALESCE(sum(c.amount), 0) - d.amount) < 0.005
-        AND NOT COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
-        AND NOT COALESCE(bool_or(NOT EXISTS (
-          SELECT 1 FROM payment_units pu
-          WHERE pu.id = c.payment_unit_id
-            AND pu.gift_id IS NOT NULL
-        )), false)
-        AND NOT EXISTS (
-          SELECT 1
-          FROM qbo_accounting_checks qc
-          JOIN payment_units qu ON qu.source_staged_payment_id = qc.staged_payment_id
-          JOIN bank_deposit_components qbc ON qbc.payment_unit_id = qu.id
-          WHERE qbc.bank_deposit_id = d.id AND qc.disposition = 'correction_needed'
-        )
-        AND NOT EXISTS (
-          SELECT 1
-          FROM qbo_accounting_checks pqc
-          JOIN source_links pqs_cc ON pqs_cc.link_type = 'payout_qb_settlement'
-            AND pqs_cc.qb_staged_payment_id = pqc.staged_payment_id
-          JOIN stripe_payouts psp_payout ON psp_payout.id = pqs_cc.stripe_payout_id
-          WHERE psp_payout.bank_deposit_id = d.id AND pqc.disposition = 'correction_needed'
-        )
-      ) AS f_completed,
       (
         EXISTS (
           SELECT 1 FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id
@@ -652,7 +777,10 @@ function buildUniverse(q: string | null) {
     LEFT JOIN bank_deposit_components c ON c.bank_deposit_id = d.id
     WHERE d.source = 'bank_csv_export'
       AND (
-        ${search === null ? sql`TRUE` : sql`(
+        ${
+          search === null
+            ? sql`TRUE`
+            : sql`(
           d.id ILIKE ${search} OR d.memo ILIKE ${search} OR d.reference ILIKE ${search}
           OR EXISTS (
             SELECT 1 FROM bank_deposit_components sqc
@@ -697,7 +825,8 @@ function buildUniverse(q: string | null) {
             WHERE scp.bank_deposit_id = d.id
               AND sch.payer_name ILIKE ${search}
           )
-        )`}
+        )`
+        }
       )
       GROUP BY d.id, p.id, p.ambiguous_bank_match
     ) base
@@ -709,7 +838,9 @@ router.get(
   asyncHandler(async (req, res) => {
     const viewer = getViewer(req);
     const rawLens = typeof req.query.lens === "string" ? req.query.lens : "";
-    const lens: Lens = (LENSES as readonly string[]).includes(rawLens) ? rawLens as Lens : "all_open";
+    const lens: Lens = (LENSES as readonly string[]).includes(rawLens)
+      ? (rawLens as Lens)
+      : "all_open";
     const rawQ = typeof req.query.q === "string" ? req.query.q.trim() : "";
     const q = rawQ.length >= 2 ? rawQ : null;
     const { limit, offset, page } = parsePagination({
@@ -938,7 +1069,12 @@ router.get(
             'linkedGiftId', (SELECT pu.gift_id FROM payment_units pu
               WHERE pu.stripe_charge_id = ch.id AND pu.gift_id IS NOT NULL
               LIMIT 1),
-            'refunded', ch.refunded, 'amountRefunded', ch.amount_refunded::text,
+            'paymentUnitId', (SELECT pu.id FROM payment_units pu
+              WHERE pu.stripe_charge_id = ch.id LIMIT 1),
+            'paymentUnitLifecycle', (SELECT pu.lifecycle::text FROM payment_units pu
+              WHERE pu.stripe_charge_id = ch.id LIMIT 1),
+            'refunded', ch.refunded, 'disputed', ch.disputed,
+            'amountRefunded', ch.amount_refunded::text,
             'refundPropagationStatus', ch.refund_propagation_status,
             'refundPropagationKind', ch.refund_propagation_kind,
             'refundProposedAmount', ch.refund_proposed_amount::text,
@@ -1073,10 +1209,15 @@ router.get(
       FROM bank_deposits d
       LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
       LEFT JOIN bank_transactions bt ON bt.id = d.source_bank_transaction_id
-      WHERE d.id IN (${sql.join(ids.map((id) => sql`${id}`), sql`, `)})
+      WHERE d.id IN (${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `,
+      )})
       GROUP BY d.id, p.id, bt.payee, bt.ref_no, bt.txn_type
     `);
-    const byId = new Map((rowResult.rows as unknown as DepositRow[]).map((r) => [r.id, r]));
+    const byId = new Map(
+      (rowResult.rows as unknown as DepositRow[]).map((r) => [r.id, r]),
+    );
     await hydrateQboRollups(rowResult.rows as unknown as DepositRow[]);
     const data = slim.flatMap((s) => {
       const r = byId.get(s.id);
@@ -1089,126 +1230,168 @@ router.get(
           viewer,
         ),
       }));
-      const state = stateForDeposit(
-        { ...s, payout_id: r.payout_id } as SlimRow & { payout_id: string | null },
-        r.units,
-        gifts,
-        r.accounting_checks,
-        r.qb_records,
-      );
+      const state = stateForDeposit(s, r, gifts);
       const lenses = depositLenses(s, state, s);
-      return [{
-        id: `bank_deposit:${r.id}`,
-        kind: "bank_deposit" as const,
-        anchorId: r.id,
-        status: state.information.state,
-        date: r.deposit_date,
-        title: r.memo || r.reference || r.account,
-        lenses,
-        bank: {
-          amount: r.amount,
-          currency: r.currency,
-          account: r.account,
-          location: r.location,
-          reference: r.reference,
-          memo: r.memo,
-          payee: r.payee,
-          refNo: r.ref_no,
-          txnType: r.txn_type,
-        },
-        composition: {
-          kind: r.payout_id
-            ? "stripe_payout"
-            : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
-              ? "stripe_unlinked"
-              : r.components.length
-                ? "components"
-                : r.provisional_components.length
-                  ? "qbo_provisional"
-                  : "unresolved",
-          payoutId: r.payout_id,
-          payoutDate: r.payout_date,
-          grossTotal: r.payout_gross,
-          feeTotal: r.payout_fee,
-          refundTotal: r.payout_refund_total,
-          adjustmentTotal: r.payout_adjustment,
-          netTotal: r.payout_net,
-          chargeCount: r.payout_charge_count,
-          payoutAmbiguous: r.payout_ambiguous,
-          explainedAmount: r.payout_id
-            ? r.amount
-            : [...r.components, ...r.provisional_components].reduce((sum, c) => sum + amount(c.amount), 0).toFixed(2),
-          unexplainedAmount: r.payout_id
-            ? "0.00"
-            : Math.max(0, amount(r.amount) - [...r.components, ...r.provisional_components].reduce((sum, c) => sum + amount(c.amount), 0)).toFixed(2),
-          components: [...r.components, ...r.provisional_components],
-          units: r.units,
-        },
-        gifts,
-        charges: r.charges,
-        qbRecords: r.qb_records,
-        accountingChecks: r.accounting_checks,
-        bankExclusion: r.bank_exclusion_reason
-          ? { reason: r.bank_exclusion_reason, note: r.bank_exclusion_note }
-          : null,
-        notFundraisingReason: r.not_fundraising_reason,
-        coverage: {
-          evidenceRecords: [],
-          donorPurpose: {
-            crmLinkage: {
-              grain: r.units.length ? "unit" : "none",
-              complete: r.units.length > 0 && r.units.every((u) => u.countedGiftIds.length > 0),
-              coveredIds: r.units.filter((u) => u.countedGiftIds.length > 0).map((u) => u.paymentUnitId),
-              uncoveredIds: r.units.filter((u) => u.countedGiftIds.length === 0).map((u) => u.paymentUnitId),
+      const liveTransactions = state.transactions.filter(
+        (transaction) =>
+          transaction.livePayment && transaction.state !== "excluded",
+      );
+      const coveredTransactions = liveTransactions.filter(
+        (transaction) =>
+          transaction.state === "matched" ||
+          transaction.state === "refund_anticipated",
+      );
+      const uncoveredTransactions = liveTransactions.filter(
+        (transaction) =>
+          transaction.state !== "matched" &&
+          transaction.state !== "refund_anticipated",
+      );
+      return [
+        {
+          id: `bank_deposit:${r.id}`,
+          kind: "bank_deposit" as const,
+          anchorId: r.id,
+          status: state.information.state,
+          date: r.deposit_date,
+          title: r.memo || r.reference || r.account,
+          lenses,
+          bank: {
+            amount: r.amount,
+            currency: r.currency,
+            account: r.account,
+            location: r.location,
+            reference: r.reference,
+            memo: r.memo,
+            payee: r.payee,
+            refNo: r.ref_no,
+            txnType: r.txn_type,
+          },
+          composition: {
+            kind: r.payout_id
+              ? "stripe_payout"
+              : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
+                ? "stripe_unlinked"
+                : r.components.length
+                  ? "components"
+                  : r.provisional_components.length
+                    ? "qbo_provisional"
+                    : "unresolved",
+            payoutId: r.payout_id,
+            payoutDate: r.payout_date,
+            grossTotal: r.payout_gross,
+            feeTotal: r.payout_fee,
+            refundTotal: r.payout_refund_total,
+            adjustmentTotal: r.payout_adjustment,
+            netTotal: r.payout_net,
+            chargeCount: r.payout_charge_count,
+            payoutAmbiguous: r.payout_ambiguous,
+            explainedAmount: r.payout_id
+              ? r.amount
+              : [...r.components, ...r.provisional_components]
+                  .reduce((sum, c) => sum + amount(c.amount), 0)
+                  .toFixed(2),
+            unexplainedAmount: r.payout_id
+              ? "0.00"
+              : Math.max(
+                  0,
+                  amount(r.amount) -
+                    [...r.components, ...r.provisional_components].reduce(
+                      (sum, c) => sum + amount(c.amount),
+                      0,
+                    ),
+                ).toFixed(2),
+            components: [...r.components, ...r.provisional_components],
+            units: r.units,
+          },
+          gifts,
+          charges: r.charges,
+          qbRecords: r.qb_records,
+          accountingChecks: r.accounting_checks,
+          bankExclusion: r.bank_exclusion_reason
+            ? { reason: r.bank_exclusion_reason, note: r.bank_exclusion_note }
+            : null,
+          notFundraisingReason: r.not_fundraising_reason,
+          coverage: {
+            evidenceRecords: [],
+            donorPurpose: {
+              crmLinkage: {
+                grain: state.transactions.length ? "unit" : "none",
+                complete: state.linkage.transactionToCrm.state === "complete",
+                coveredIds: coveredTransactions.map(
+                  (transaction) => transaction.transactionId,
+                ),
+                uncoveredIds: uncoveredTransactions.map(
+                  (transaction) => transaction.transactionId,
+                ),
+                expectedAmount: r.amount,
+                representedAmount: gifts
+                  .reduce((sum, g) => sum + amount(g.amount), 0)
+                  .toFixed(2),
+                representationNote: null,
+              },
+              crmRecordCompleteness: buildCrmRecordCompleteness(
+                gifts.map((g) => ({
+                  giftId: g.giftId,
+                  opportunityId: g.opportunityId,
+                  name: g.name,
+                  donorName: g.donorName,
+                  donorKind: g.donorKind,
+                  donorId: g.donorId,
+                  amount: g.amount,
+                  dateReceived: g.dateReceived,
+                  quickbooksTie: null,
+                  donorbox: g.donorbox,
+                  grantLetter: g.grantLetter,
+                  codingForm: g.codingForm,
+                  recordComplete: g.recordComplete,
+                  satisfiedBy: g.recordComplete
+                    ? "donor_and_allocations"
+                    : null,
+                  crmReason: g.recordComplete ? null : "missing_donor",
+                  linkedChargeIds: g.linkedChargeIds,
+                  linkedStagedPaymentIds: g.linkedStagedPaymentIds,
+                })),
+              ),
+              complete:
+                state.information.crmComplete &&
+                state.linkage.transactionToCrm.state === "complete",
+            },
+            paymentTransaction: {
+              grain: state.linkage.accountingToTransaction.grain,
+              complete:
+                state.linkage.accountingToTransaction.state === "complete",
+              coveredIds: state.transactions.map(
+                (transaction) => transaction.transactionId,
+              ),
+              uncoveredIds:
+                state.linkage.accountingToTransaction.state === "complete"
+                  ? []
+                  : state.transactions.map(
+                      (transaction) => transaction.transactionId,
+                    ),
               expectedAmount: r.amount,
-              representedAmount: gifts.reduce((sum, g) => sum + amount(g.amount), 0).toFixed(2),
+              representedAmount: r.amount,
               representationNote: null,
             },
-            crmRecordCompleteness: buildCrmRecordCompleteness(
-              gifts.map((g) => ({
-                giftId: g.giftId,
-                opportunityId: g.opportunityId,
-                name: g.name,
-                donorName: g.donorName,
-                donorKind: g.donorKind,
-                donorId: g.donorId,
-                amount: g.amount,
-                dateReceived: g.dateReceived,
-                quickbooksTie: null,
-                donorbox: g.donorbox,
-                grantLetter: g.grantLetter,
-                codingForm: g.codingForm,
-                recordComplete: g.recordComplete,
-                satisfiedBy: g.recordComplete ? "donor_and_allocations" : null,
-                crmReason: g.recordComplete ? null : "missing_donor",
-                linkedChargeIds: g.linkedChargeIds,
-                linkedStagedPaymentIds: g.linkedStagedPaymentIds,
-              })),
-            ),
-            complete: gifts.every((g) => g.recordComplete) && r.units.length > 0 && r.units.every((u) => u.countedGiftIds.length > 0),
+            accountingEvidence: {
+              grain:
+                r.accounting_checks.length || r.qb_records.length
+                  ? "bundle"
+                  : "none",
+              complete: state.information.qbEvidenceComplete,
+              coveredIds: r.accounting_checks.map((c) =>
+                String(c.stagedPaymentId),
+              ),
+              uncoveredIds: [],
+              expectedAmount: r.amount,
+              representedAmount: r.amount,
+              representationNote: null,
+            },
+            complete: rowCompleteFromState(state),
+            state,
           },
-          paymentTransaction: {
-            grain: r.payout_id || r.units.length ? "unit" : "none",
-            complete: Boolean(r.payout_id || r.units.length),
-            coveredIds: r.payout_id ? r.charges.map((c) => String(c.chargeId)) : r.units.map((u) => u.paymentUnitId),
-            uncoveredIds: [],
-            expectedAmount: r.amount,
-            representedAmount: r.amount,
-            representationNote: null,
-          },
-          accountingEvidence: {
-            grain: r.payout_id || r.accounting_checks.length ? "bundle" : "none",
-            complete: Boolean(r.payout_id || r.accounting_checks.length),
-            coveredIds: r.accounting_checks.map((c) => String(c.stagedPaymentId)),
-            uncoveredIds: [],
-            expectedAmount: r.amount,
-            representedAmount: r.amount,
-            representationNote: null,
-          },
-          complete: rowCompleteFromState(state),
-          state,
         },
-      }];
+      ];
     });
     return res.json({
       data,
@@ -1237,7 +1420,11 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const params = parseOrBadRequest(SetBankDepositExclusionParams, req.params, res);
+    const params = parseOrBadRequest(
+      SetBankDepositExclusionParams,
+      req.params,
+      res,
+    );
     if (!params) return;
     const body = parseOrBadRequest(SetBankDepositExclusionBody, req.body, res);
     if (!body) return;
@@ -1281,7 +1468,11 @@ router.delete(
   "/reconciliation/deposits/:bankDepositId/exclusion",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(ClearBankDepositExclusionParams, req.params, res);
+    const params = parseOrBadRequest(
+      ClearBankDepositExclusionParams,
+      req.params,
+      res,
+    );
     if (!params) return;
     const [deposit] = await db
       .select({ id: bankDeposits.id })
@@ -1294,7 +1485,9 @@ router.delete(
     }
     await db
       .delete(bankDepositExclusions)
-      .where(sql`${bankDepositExclusions.bankDepositId} = ${params.bankDepositId}`);
+      .where(
+        sql`${bankDepositExclusions.bankDepositId} = ${params.bankDepositId}`,
+      );
     res.status(204).send();
   }),
 );
@@ -1303,9 +1496,17 @@ router.patch(
   "/reconciliation/deposit-components/:id/source-staged-payment",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(SetBankDepositComponentSourceStagedPaymentParams, req.params, res);
+    const params = parseOrBadRequest(
+      SetBankDepositComponentSourceStagedPaymentParams,
+      req.params,
+      res,
+    );
     if (!params) return;
-    const body = parseOrBadRequest(SetBankDepositComponentSourceStagedPaymentBody, req.body, res);
+    const body = parseOrBadRequest(
+      SetBankDepositComponentSourceStagedPaymentBody,
+      req.body,
+      res,
+    );
     if (!body) return;
 
     const result = await db.transaction(async (tx) => {
@@ -1317,15 +1518,17 @@ router.patch(
         WHERE c.id = ${params.id}
         FOR UPDATE OF c, u
       `);
-      const component = (componentResult.rows as Array<{
-        id: string;
-        source: string;
-        needs_review: boolean;
-        payment_unit_id: string;
-        unit_id: string;
-        kind: string;
-        source_staged_payment_id: string | null;
-      }>)[0];
+      const component = (
+        componentResult.rows as Array<{
+          id: string;
+          source: string;
+          needs_review: boolean;
+          payment_unit_id: string;
+          unit_id: string;
+          kind: string;
+          source_staged_payment_id: string | null;
+        }>
+      )[0];
       if (!component) return { kind: "not_found" as const };
       if (!["check", "direct_ach", "wire", "other"].includes(component.kind)) {
         return { kind: "component_not_eligible" as const };
@@ -1371,13 +1574,15 @@ router.patch(
         WHERE sp.id = ${body.stagedPaymentId}
         FOR SHARE
       `);
-      const target = (targetResult.rows as Array<{
-        id: string;
-        exclusion_reason: string | null;
-        claimed_by_unit: boolean;
-        linked_in_source_links: boolean;
-        counted_to_gift: boolean;
-      }>)[0];
+      const target = (
+        targetResult.rows as Array<{
+          id: string;
+          exclusion_reason: string | null;
+          claimed_by_unit: boolean;
+          linked_in_source_links: boolean;
+          counted_to_gift: boolean;
+        }>
+      )[0];
       if (
         !target ||
         target.exclusion_reason ||
@@ -1388,7 +1593,8 @@ router.patch(
         return { kind: "qbo_unavailable" as const };
       }
 
-      const clearPlaceholderReview = component.unit_id.startsWith("pu_manual_") && component.needs_review;
+      const clearPlaceholderReview =
+        component.unit_id.startsWith("pu_manual_") && component.needs_review;
       await tx.execute(sql`
         UPDATE payment_units
         SET source_staged_payment_id = ${body.stagedPaymentId}, updated_at = now()
@@ -1417,14 +1623,16 @@ router.patch(
     if (result.kind === "component_not_eligible") {
       res.status(409).json({
         error: "component_not_eligible",
-        message: "Only direct check, ACH, wire, and other components can use a source QBO pointer.",
+        message:
+          "Only direct check, ACH, wire, and other components can use a source QBO pointer.",
       });
       return;
     }
     if (result.kind === "qbo_unavailable") {
       res.status(409).json({
         error: "qbo_staged_payment_unavailable",
-        message: "That QBO record is already claimed, linked as evidence, counted to a gift, or excluded.",
+        message:
+          "That QBO record is already claimed, linked as evidence, counted to a gift, or excluded.",
       });
       return;
     }
@@ -1441,9 +1649,17 @@ router.post(
   "/reconciliation/deposit-components/:id/exclude",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(ExcludeBankDepositComponentParams, req.params, res);
+    const params = parseOrBadRequest(
+      ExcludeBankDepositComponentParams,
+      req.params,
+      res,
+    );
     if (!params) return;
-    const body = parseOrBadRequest(ExcludeBankDepositComponentBody, req.body, res);
+    const body = parseOrBadRequest(
+      ExcludeBankDepositComponentBody,
+      req.body,
+      res,
+    );
     if (!body) return;
 
     const [component] = await db
@@ -1480,7 +1696,11 @@ router.post(
   "/reconciliation/deposit-components/:id/re-include",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(ReIncludeBankDepositComponentParams, req.params, res);
+    const params = parseOrBadRequest(
+      ReIncludeBankDepositComponentParams,
+      req.params,
+      res,
+    );
     if (!params) return;
 
     const [component] = await db
@@ -1524,9 +1744,17 @@ router.get(
   "/reconciliation/deposits/:bankDepositId/candidate-payment-units",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(ListDepositCandidatePaymentUnitsParams, req.params, res);
+    const params = parseOrBadRequest(
+      ListDepositCandidatePaymentUnitsParams,
+      req.params,
+      res,
+    );
     if (!params) return;
-    const query = parseOrBadRequest(ListDepositCandidatePaymentUnitsQueryParams, req.query, res);
+    const query = parseOrBadRequest(
+      ListDepositCandidatePaymentUnitsQueryParams,
+      req.query,
+      res,
+    );
     if (!query) return;
 
     const depositResult = await db.execute(sql`
@@ -1553,12 +1781,14 @@ router.get(
       WHERE d.id = ${params.bankDepositId}
       GROUP BY d.id, p.amount
     `);
-    const deposit = (depositResult.rows as Array<{
-      amount: string;
-      component_total: string;
-      provisional_total: string;
-      payout_amount: string | null;
-    }>)[0];
+    const deposit = (
+      depositResult.rows as Array<{
+        amount: string;
+        component_total: string;
+        provisional_total: string;
+        payout_amount: string | null;
+      }>
+    )[0];
     if (!deposit) {
       notFound(res, "bank deposit");
       return;
@@ -1611,14 +1841,16 @@ router.get(
       LIMIT ${query.limit}
     `);
     res.json({
-      data: (result.rows as Array<{
-        id: string;
-        kind: "check" | "direct_ach" | "wire" | "other";
-        amount: string;
-        currency: string;
-        received_date: string | null;
-        source_label: string;
-      }>).map((row) => ({
+      data: (
+        result.rows as Array<{
+          id: string;
+          kind: "check" | "direct_ach" | "wire" | "other";
+          amount: string;
+          currency: string;
+          received_date: string | null;
+          source_label: string;
+        }>
+      ).map((row) => ({
         id: row.id,
         kind: row.kind,
         amount: row.amount,
@@ -1634,7 +1866,11 @@ router.post(
   "/reconciliation/deposits/:bankDepositId/components",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(AddBankDepositComponentParams, req.params, res);
+    const params = parseOrBadRequest(
+      AddBankDepositComponentParams,
+      req.params,
+      res,
+    );
     if (!params) return;
     const body = parseOrBadRequest(AddBankDepositComponentBody, req.body, res);
     if (!body) return;
@@ -1665,14 +1901,16 @@ router.post(
         WHERE d.id = ${params.bankDepositId}
         GROUP BY d.id, p.amount
       `);
-      const deposit = (depositResult.rows as Array<{
-        amount: string;
-        currency: string;
-        deposit_date: string;
-        payout_amount: string | null;
-        component_total: string;
-        provisional_total: string;
-      }>)[0];
+      const deposit = (
+        depositResult.rows as Array<{
+          amount: string;
+          currency: string;
+          deposit_date: string;
+          payout_amount: string | null;
+          component_total: string;
+          provisional_total: string;
+        }>
+      )[0];
       if (!deposit) return { kind: "not_found" as const };
 
       const amount =
@@ -1701,12 +1939,14 @@ router.post(
           WHERE id = ${body.paymentUnitId}
           FOR UPDATE
         `);
-        const unit = (unitResult.rows as Array<{
-          id: string;
-          kind: "check" | "direct_ach" | "wire" | "other";
-          stripe_charge_id: string | null;
-          amount: string | null;
-        }>)[0];
+        const unit = (
+          unitResult.rows as Array<{
+            id: string;
+            kind: "check" | "direct_ach" | "wire" | "other";
+            stripe_charge_id: string | null;
+            amount: string | null;
+          }>
+        )[0];
         if (
           !unit ||
           unit.stripe_charge_id ||
@@ -1722,7 +1962,8 @@ router.post(
         `);
         if (claimed.rows.length) return { kind: "unit_unavailable" as const };
         paymentUnitId = unit.id;
-        componentAmount = body.amount == null ? Number(unit.amount ?? 0) : Number(body.amount);
+        componentAmount =
+          body.amount == null ? Number(unit.amount ?? 0) : Number(body.amount);
         if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
           return { kind: "invalid_amount" as const };
         }
@@ -1801,7 +2042,8 @@ router.post(
         }>;
         const target = amount ?? remainder;
         const exact = candidates.filter(
-          (c) => c.amount != null && Math.abs(Number(c.amount) - target) <= 0.005,
+          (c) =>
+            c.amount != null && Math.abs(Number(c.amount) - target) <= 0.005,
         );
         const pool = exact.length === 1 ? exact : candidates;
         if (pool.length > 1) return { kind: "gift_units_ambiguous" as const };
@@ -1892,11 +2134,18 @@ router.post(
       return;
     }
     if (result.kind === "invalid_amount") {
-      res.status(400).json({ error: "invalid_amount", message: "Amount must be greater than zero." });
+      res.status(400).json({
+        error: "invalid_amount",
+        message: "Amount must be greater than zero.",
+      });
       return;
     }
     if (result.kind === "unit_unavailable") {
-      res.status(409).json({ error: "payment_unit_unavailable", message: "That payment unit is already claimed or is not a direct payment." });
+      res.status(409).json({
+        error: "payment_unit_unavailable",
+        message:
+          "That payment unit is already claimed or is not a direct payment.",
+      });
       return;
     }
     if (result.kind === "gift_not_found") {
@@ -1904,15 +2153,27 @@ router.post(
       return;
     }
     if (result.kind === "deposit_units_ambiguous") {
-      res.status(409).json({ error: "deposit_units_ambiguous", message: "This deposit has several gift-less payments — pass the exact payment amount to pick which one pays this gift." });
+      res.status(409).json({
+        error: "deposit_units_ambiguous",
+        message:
+          "This deposit has several gift-less payments — pass the exact payment amount to pick which one pays this gift.",
+      });
       return;
     }
     if (result.kind === "gift_units_ambiguous") {
-      res.status(409).json({ error: "gift_units_ambiguous", message: "That gift has several unclaimed payment units — use Add known payment to pick the exact one." });
+      res.status(409).json({
+        error: "gift_units_ambiguous",
+        message:
+          "That gift has several unclaimed payment units — use Add known payment to pick the exact one.",
+      });
       return;
     }
     if (result.kind === "amount_exceeds_remainder") {
-      res.status(409).json({ error: "amount_exceeds_remainder", message: "The component amount exceeds this deposit's unexplained remainder." });
+      res.status(409).json({
+        error: "amount_exceeds_remainder",
+        message:
+          "The component amount exceeds this deposit's unexplained remainder.",
+      });
       return;
     }
     res.status(201).json({
@@ -1929,7 +2190,11 @@ router.post(
   "/reconciliation/deposits/:bankDepositId/qbo-evidence",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(AttachDepositQboEvidenceParams, req.params, res);
+    const params = parseOrBadRequest(
+      AttachDepositQboEvidenceParams,
+      req.params,
+      res,
+    );
     if (!params) return;
     const body = parseOrBadRequest(AttachDepositQboEvidenceBody, req.body, res);
     if (!body) return;
@@ -1965,7 +2230,8 @@ router.post(
     if (!inserted.length) {
       res.status(409).json({
         error: "already_claimed",
-        message: "That QuickBooks record is already claimed as deposit evidence.",
+        message:
+          "That QuickBooks record is already claimed as deposit evidence.",
       });
       return;
     }
@@ -2023,7 +2289,11 @@ router.delete(
   "/reconciliation/deposit-components/:id",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const params = parseOrBadRequest(RemoveManualBankDepositComponentParams, req.params, res);
+    const params = parseOrBadRequest(
+      RemoveManualBankDepositComponentParams,
+      req.params,
+      res,
+    );
     if (!params) return;
     const result = await db.transaction(async (tx) => {
       const componentResult = await tx.execute(sql`
@@ -2035,16 +2305,21 @@ router.delete(
         WHERE c.id = ${params.id}
         FOR UPDATE OF c, u
       `);
-      const component = (componentResult.rows as Array<{
-        id: string;
-        source: string;
-        payment_unit_id: string;
-        unit_id: string;
-        minted: boolean;
-        has_counted_application: boolean;
-      }>)[0];
+      const component = (
+        componentResult.rows as Array<{
+          id: string;
+          source: string;
+          payment_unit_id: string;
+          unit_id: string;
+          minted: boolean;
+          has_counted_application: boolean;
+        }>
+      )[0];
       if (!component) return { kind: "not_found" as const };
-      if (!(["manual", "qbo_inferred"].includes(component.source)) || component.has_counted_application) {
+      if (
+        !["manual", "qbo_inferred"].includes(component.source) ||
+        component.has_counted_application
+      ) {
         return { kind: "not_removable" as const };
       }
       await tx.execute(sql`
@@ -2075,7 +2350,11 @@ router.delete(
       return;
     }
     if (result.kind === "not_removable") {
-      res.status(409).json({ error: "component_not_removable", message: "Only manual or QBO-inferred components without a counted gift can be removed." });
+      res.status(409).json({
+        error: "component_not_removable",
+        message:
+          "Only manual or QBO-inferred components without a counted gift can be removed.",
+      });
       return;
     }
     res.status(204).send();
@@ -2091,7 +2370,11 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const body = parseOrBadRequest(SetQboAccountingCheckDispositionBody, req.body, res);
+    const body = parseOrBadRequest(
+      SetQboAccountingCheckDispositionBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     const checkId = req.params.id as string;
     if (body.disposition === "accepted_historical" && !body.note?.trim()) {
@@ -2117,7 +2400,8 @@ router.post(
     if (current.disposition === "consistent") {
       res.status(409).json({
         error: "comparer_owned",
-        message: "Consistent accounting checks are not eligible for human disposition.",
+        message:
+          "Consistent accounting checks are not eligible for human disposition.",
       });
       return;
     }
@@ -2163,7 +2447,10 @@ router.post(
     `);
     const row = (result.rows as Array<{ id: string; confirmed: boolean }>)[0];
     if (!row) {
-      res.status(404).json({ error: "not_found", message: "Provisional QBO component not found." });
+      res.status(404).json({
+        error: "not_found",
+        message: "Provisional QBO component not found.",
+      });
       return;
     }
     res.json(row);
@@ -2181,7 +2468,10 @@ router.delete(
       RETURNING id
     `);
     if (!result.rows.length) {
-      res.status(404).json({ error: "not_found", message: "Provisional QBO component not found." });
+      res.status(404).json({
+        error: "not_found",
+        message: "Provisional QBO component not found.",
+      });
       return;
     }
     res.status(204).send();
@@ -2197,14 +2487,18 @@ router.get(
       FROM bank_deposits
       WHERE id = ${req.params.bankDepositId}
     `);
-    const deposit = (depositResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
-      deposit_date: string;
-    }>)[0];
+    const deposit = (
+      depositResult.rows as Array<{
+        id: string;
+        amount: string;
+        currency: string;
+        deposit_date: string;
+      }>
+    )[0];
     if (!deposit) {
-      res.status(404).json({ error: "not_found", message: "Bank deposit not found." });
+      res
+        .status(404)
+        .json({ error: "not_found", message: "Bank deposit not found." });
       return;
     }
     const result = await db.execute(sql`
@@ -2230,15 +2524,17 @@ router.get(
       ORDER BY p.arrival_date ASC, p.id ASC
     `);
     res.json({
-      data: (result.rows as Array<{
-        payout_id: string;
-        arrival_date: string;
-        amount: string;
-        currency: string;
-        current_bank_deposit_id: string | null;
-        current_deposit_date: string | null;
-        ambiguous: boolean;
-      }>).map((row) => ({
+      data: (
+        result.rows as Array<{
+          payout_id: string;
+          arrival_date: string;
+          amount: string;
+          currency: string;
+          current_bank_deposit_id: string | null;
+          current_deposit_date: string | null;
+          ambiguous: boolean;
+        }>
+      ).map((row) => ({
         payoutId: row.payout_id,
         arrivalDate: row.arrival_date,
         amount: row.amount,
@@ -2260,14 +2556,18 @@ router.get(
       FROM stripe_payouts
       WHERE id = ${req.params.payoutId}
     `);
-    const payout = (payoutResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
-      arrival_date: string | null;
-    }>)[0];
+    const payout = (
+      payoutResult.rows as Array<{
+        id: string;
+        amount: string;
+        currency: string;
+        arrival_date: string | null;
+      }>
+    )[0];
     if (!payout) {
-      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      res
+        .status(404)
+        .json({ error: "not_found", message: "Stripe payout not found." });
       return;
     }
     const result = await db.execute(sql`
@@ -2295,15 +2595,17 @@ router.get(
       ORDER BY d.deposit_date ASC, d.id ASC
     `);
     res.json({
-      data: (result.rows as Array<{
-        bank_deposit_id: string;
-        deposit_date: string;
-        amount: string;
-        currency: string;
-        memo: string | null;
-        claimed: boolean;
-        ambiguous: boolean;
-      }>).map((row) => ({
+      data: (
+        result.rows as Array<{
+          bank_deposit_id: string;
+          deposit_date: string;
+          amount: string;
+          currency: string;
+          memo: string | null;
+          claimed: boolean;
+          ambiguous: boolean;
+        }>
+      ).map((row) => ({
         bankDepositId: row.bank_deposit_id,
         depositDate: row.deposit_date,
         amount: row.amount,
@@ -2321,19 +2623,24 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
     const payoutId = req.params.payoutId;
-    const depositId = typeof req.body?.bankDepositId === "string" ? req.body.bankDepositId : "";
+    const depositId =
+      typeof req.body?.bankDepositId === "string" ? req.body.bankDepositId : "";
     const payoutResult = await db.execute(sql`
       SELECT id, amount::text AS amount, currency
       FROM stripe_payouts
       WHERE id = ${payoutId}
     `);
-    const payout = (payoutResult.rows as Array<{
-      id: string;
-      amount: string | null;
-      currency: string | null;
-    }>)[0];
+    const payout = (
+      payoutResult.rows as Array<{
+        id: string;
+        amount: string | null;
+        currency: string | null;
+      }>
+    )[0];
     if (!payout) {
-      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      res
+        .status(404)
+        .json({ error: "not_found", message: "Stripe payout not found." });
       return;
     }
     const depositResult = await db.execute(sql`
@@ -2341,13 +2648,17 @@ router.post(
       FROM bank_deposits
       WHERE id = ${depositId}
     `);
-    const deposit = (depositResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
-    }>)[0];
+    const deposit = (
+      depositResult.rows as Array<{
+        id: string;
+        amount: string;
+        currency: string;
+      }>
+    )[0];
     if (!deposit) {
-      res.status(404).json({ error: "not_found", message: "Bank deposit not found." });
+      res
+        .status(404)
+        .json({ error: "not_found", message: "Bank deposit not found." });
       return;
     }
     const occupiedResult = await db.execute(sql`
@@ -2358,7 +2669,9 @@ router.post(
         SELECT 1 FROM bank_deposit_components WHERE bank_deposit_id = ${depositId}
       ) AS occupied
     `);
-    if ((occupiedResult.rows[0] as { occupied: boolean } | undefined)?.occupied) {
+    if (
+      (occupiedResult.rows[0] as { occupied: boolean } | undefined)?.occupied
+    ) {
       res.status(409).json({
         error: "deposit_not_free",
         message: "This deposit already has a payout or counted components.",
@@ -2386,7 +2699,9 @@ router.post(
       RETURNING id
     `);
     if (!updateResult.rows.length) {
-      res.status(404).json({ error: "not_found", message: "Stripe payout not found." });
+      res
+        .status(404)
+        .json({ error: "not_found", message: "Stripe payout not found." });
       return;
     }
     res.json({ payoutId, bankDepositId: depositId });
@@ -2407,7 +2722,10 @@ router.delete(
       RETURNING id
     `);
     if (!result.rows.length) {
-      res.status(404).json({ error: "not_found", message: "No payout is linked to this deposit." });
+      res.status(404).json({
+        error: "not_found",
+        message: "No payout is linked to this deposit.",
+      });
       return;
     }
     res.status(204).send();
@@ -2430,7 +2748,8 @@ router.post(
     if (!result.rows.length) {
       res.status(404).json({
         error: "not_found",
-        message: "Stripe payout not found or is not currently linked to a bank deposit.",
+        message:
+          "Stripe payout not found or is not currently linked to a bank deposit.",
       });
       return;
     }
