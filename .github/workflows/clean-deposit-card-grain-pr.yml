@@ -73,6 +73,22 @@ jobs:
               line[10:] if line.startswith('          ') else line
               for line in block.splitlines()
           ) + '\n'
+
+          gift_start = script.index('old_gift_map =')
+          gift_end = script.index('old_allocations =', gift_start)
+          structural_gift_patch = '''gift_anchor = '            const anchor = giftAnchor(gift);\\n'
+if gift_anchor not in rows:
+    raise SystemExit('gift anchor not found')
+rows = rows.replace(
+    gift_anchor,
+    gift_anchor
+    + '            const allocations = gift.allocations ?? [];\\n'
+    + '            const allocationPresentation = singleAllocationPresentation(gift);\\n',
+    1,
+)
+
+'''
+          script = script[:gift_start] + structural_gift_patch + script[gift_end:]
           Path('/tmp/apply-deposit-card-grain.sh').write_text(script)
           PY
           bash /tmp/apply-deposit-card-grain.sh
