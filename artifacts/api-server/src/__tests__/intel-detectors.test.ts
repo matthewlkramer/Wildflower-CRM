@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   extractGrantOpportunities,
+  extractLinkedInJobChanges,
   parseAutoResponderMove,
   parseEmailSignature,
 } from "../lib/intelDetectors";
@@ -284,5 +285,78 @@ describe("parseEmailSignature — phone heuristics", () => {
     );
     expect(sig?.phone).toBeTruthy();
     expect(sig?.phone?.replace(/\D/g, "")).toContain("6175550142");
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// LinkedIn job-change extraction
+// ──────────────────────────────────────────────────────────────────
+
+describe("extractLinkedInJobChanges", () => {
+  it("extracts name, title, and company from a digest line", () => {
+    const items = extractLinkedInJobChanges(
+      "Jane Doe started a new position as Director of Partnerships at Acme Foundation\nView profile",
+      null,
+      null,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].personName).toBe("Jane Doe");
+    expect(items[0].newTitle).toBe("Director of Partnerships");
+    expect(items[0].newCompany).toBe("Acme Foundation");
+  });
+
+  it('extracts the "is now" form with a comma-bearing title', () => {
+    const items = extractLinkedInJobChanges(
+      "Massie Ritsch is now Executive Director, Media Relations at The College Board\nView profile",
+      null,
+      null,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].personName).toBe("Massie Ritsch");
+    expect(items[0].newCompany).toBe("The College Board");
+  });
+
+  it("extracts a title-less position change across a wrapped line", () => {
+    const items = extractLinkedInJobChanges(
+      "John Q. Smith started a new\nposition at Beta Trust\nSee all updates",
+      null,
+      null,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0].newCompany).toBe("Beta Trust");
+    expect(items[0].newTitle).toBeNull();
+  });
+
+  // Regression: a LinkedIn digest containing long prose after "is now"
+  // with no company terminator ("Gartner is now predicting that half of
+  // all global organizations will soon require ...") sent the previous
+  // patterns into catastrophic regex backtracking, pegging the event
+  // loop and freezing the API server in dev AND production. The
+  // detector must stay fast on arbitrarily long almost-matching prose.
+  it("terminates quickly on long almost-matching prose (no hang)", () => {
+    const prose =
+      "Gartner is now predicting that half of all global organizations " +
+      "will soon require skills assessments to counter the atrophy of " +
+      "critical thinking across every industry and market segment ";
+    const body =
+      "You have 1 new invitation\n" +
+      prose.repeat(60) +
+      "\nMore news follows without any recognizable structure";
+    const t0 = Date.now();
+    const items = extractLinkedInJobChanges(body, null, "You have 1 new invitation");
+    const elapsed = Date.now() - t0;
+    expect(elapsed).toBeLessThan(2000);
+    expect(Array.isArray(items)).toBe(true);
+  });
+
+  it("caps pathological input length instead of scanning it all", () => {
+    const t0 = Date.now();
+    const items = extractLinkedInJobChanges(
+      ("A B is now " + "x".repeat(500) + " ").repeat(2000),
+      null,
+      null,
+    );
+    expect(Date.now() - t0).toBeLessThan(2000);
+    expect(Array.isArray(items)).toBe(true);
   });
 });

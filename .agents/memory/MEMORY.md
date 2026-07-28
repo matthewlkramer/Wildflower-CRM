@@ -62,6 +62,7 @@ code/docs and update or archive the stale memory.
 
 Use these only when the symptom matches:
 
+- [Regex backtracking froze the server](regex-event-loop-freeze.md) — sync detectors run on the event loop; ban `\s`-in-alternation quantifiers, cap+normalize input; debug via kill -USR1 + inspector pause.
 - [Replit DB deletion nukes dev AND prod](replit-db-deletion-recovery.md) — deleting the built-in DB kills both branches; restore prod from dump human-run; verify with count(*) not n_live_tup.
 - [Schema-rename reconciliation](lifecycle-rename-reconciliation.md) — clear a stuck post-merge RENAME via guarded manual pre-rename→push (never push-force); prove Publish safe by checking prod-only cols == rename sources.
 - [post-merge push abort](post-merge-push-abort.md) — interactive drizzle-kit push aborts (skipping ALL additive changes) on schema-dropped columns still present in live DB; retain them as @deprecated, don't approve the drop.

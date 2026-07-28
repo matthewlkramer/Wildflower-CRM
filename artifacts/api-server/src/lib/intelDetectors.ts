@@ -54,14 +54,36 @@ export interface LinkedInJobChange {
  * text. The text body LinkedIn ships alongside the HTML is fine to
  * use directly when present.
  */
+/**
+ * Detectors run inline in the sync scheduler, so they must be provably
+ * fast on adversarial input. A single almost-matching digest email once
+ * sent the old patterns into catastrophic regex backtracking, pegging
+ * the event loop and freezing the whole API server (dev and prod).
+ * Everything below is written to stay linear-time: whitespace runs are
+ * collapsed to single characters, scan length is capped, and every
+ * quantified group is a deterministic token with a bounded repeat.
+ */
+const MAX_SCAN_CHARS = 50_000;
+
 export function extractLinkedInJobChanges(
   bodyText: string | null,
   bodyHtml: string | null,
   subject: string | null,
 ): LinkedInJobChange[] {
-  const text = (bodyText && bodyText.trim().length > 0
+  const raw = (bodyText && bodyText.trim().length > 0
     ? bodyText
     : stripHtml(bodyHtml ?? "")) ?? "";
+  if (!raw) return [];
+
+  // Collapse horizontal whitespace runs to one space and newline runs to
+  // one newline, so every separator in the patterns below is exactly one
+  // character. This removes the `\s+`/word alternation ambiguity that
+  // caused the exponential backtracking, without losing cross-line
+  // matches in wrapped plain-text bodies.
+  const text = raw
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n+ ?/g, "\n")
+    .slice(0, MAX_SCAN_CHARS);
   if (!text) return [];
 
   const out: LinkedInJobChange[] = [];
@@ -78,17 +100,25 @@ export function extractLinkedInJobChanges(
   // Pattern C: "Jane Doe started a new position at Acme"
   // We require the name to look like a name (2–4 capitalized tokens, no
   // ALL CAPS marketing copy).
-  const namePat = "([A-Z][a-zA-Z'’.-]{1,}(?:\\s+[A-Z][a-zA-Z'’.-]{1,}){1,3})";
-  // Title can contain commas/hyphens/&; bound on " at " (greedy fallback
-  // would slurp the company name).
-  const titlePat = "((?:[A-Z][\\w.&,/'’-]*|\\s|of|the|and|for|to|&)+?)";
-  const companyPat = "([\\w][\\w &.,'’()/-]{1,80}?)(?=[\\s.!\\n,]*(?:$|congratulate|view|see|reply|sent\\sfrom|unsubscribe))";
+  //
+  // `ws` matches exactly ONE whitespace character — runs were collapsed
+  // above. Do not reintroduce `\s+` or an alternation containing `\s`
+  // inside a quantified group: that ambiguity is what previously caused
+  // catastrophic backtracking on long digest emails.
+  const ws = "[ \\n]";
+  const namePat = `([A-Z][a-zA-Z'’.-]+(?:${ws}[A-Z][a-zA-Z'’.-]+){1,3})`;
+  // Title = 1–10 word tokens separated by single spaces, bound on
+  // " at " (greedy fallback would slurp the company name). Tokens are
+  // deterministic (character classes exclude the separator), so a failed
+  // match backs off linearly.
+  const titlePat = `([\\w][\\w.&,/'’-]*(?:${ws}[\\w][\\w.&,/'’-]*){0,9}?)`;
+  const companyPat = `([\\w][\\w &.,'’()/-]{1,80}?)(?=[\\s.!,]*(?:$|congratulate|view|see|reply|sent${ws}from|unsubscribe))`;
 
   const patterns = [
-    new RegExp(`${namePat}\\s+started\\s+a\\s+new\\s+position\\s+as\\s+${titlePat}\\s+at\\s+${companyPat}`, "gim"),
-    new RegExp(`${namePat}\\s+is\\s+now\\s+${titlePat}\\s+at\\s+${companyPat}`, "gim"),
-    new RegExp(`${namePat}\\s+started\\s+a\\s+new\\s+position\\s+at\\s+${companyPat}`, "gim"),
-    new RegExp(`Congratulate\\s+${namePat}\\s+(?:on|for)\\s+(?:starting\\s+a\\s+new\\s+position|the\\s+new\\s+role)(?:\\s+as\\s+${titlePat})?\\s+at\\s+${companyPat}`, "gim"),
+    new RegExp(`${namePat}${ws}started${ws}a${ws}new${ws}position${ws}as${ws}${titlePat}${ws}at${ws}${companyPat}`, "gim"),
+    new RegExp(`${namePat}${ws}is${ws}now${ws}${titlePat}${ws}at${ws}${companyPat}`, "gim"),
+    new RegExp(`${namePat}${ws}started${ws}a${ws}new${ws}position${ws}at${ws}${companyPat}`, "gim"),
+    new RegExp(`Congratulate${ws}${namePat}${ws}(?:on|for)${ws}(?:starting${ws}a${ws}new${ws}position|the${ws}new${ws}role)(?:${ws}as${ws}${titlePat})?${ws}at${ws}${companyPat}`, "gim"),
   ];
 
   for (const re of patterns) {
