@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: agent/clean-deposit-card-grain
+          ref: agent/clean-deposit-card-grain-v2
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -125,4 +125,4 @@ rows = rows.replace(
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Clean up deposit card grain and accounting duplicates"
-          git push origin HEAD:agent/clean-deposit-card-grain
+          git push origin HEAD:agent/clean-deposit-card-grain-v2
