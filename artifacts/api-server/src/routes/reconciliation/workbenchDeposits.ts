@@ -1046,13 +1046,31 @@ router.get(
           LEFT JOIN households h ON h.id = g.household_id
           LEFT JOIN people p2 ON p2.id = g.individual_giver_person_id
           WHERE pa_u.gift_id IS NOT NULL AND (
-            pa_u.id IN (SELECT c2.payment_unit_id FROM bank_deposit_components c2 WHERE c2.bank_deposit_id = d.id)
-            OR (
-              pa_u.stripe_charge_id IN (
+            (
+              p.id IS NOT NULL
+              AND pa_u.stripe_charge_id IN (
                 SELECT ch2.id
                 FROM stripe_staged_charges ch2
                 WHERE ch2.stripe_payout_id = p.id
                   AND ch2.raw_charge->>'status' = 'succeeded'
+              )
+            )
+            OR (
+              (
+                p.id IS NULL
+                OR NOT EXISTS (
+                  SELECT 1
+                  FROM payment_units charge_gift_unit
+                  JOIN stripe_staged_charges charge_gift
+                    ON charge_gift.id = charge_gift_unit.stripe_charge_id
+                  WHERE charge_gift.stripe_payout_id = p.id
+                    AND charge_gift_unit.gift_id IS NOT NULL
+                )
+              )
+              AND pa_u.id IN (
+                SELECT c2.payment_unit_id
+                FROM bank_deposit_components c2
+                WHERE c2.bank_deposit_id = d.id
               )
             )
           )
