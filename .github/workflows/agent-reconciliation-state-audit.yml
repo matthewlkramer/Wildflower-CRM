@@ -118,6 +118,18 @@ jobs:
           rm -f .agent/patch-apply-error.txt
           git apply /tmp/reconciliation-state-audit.patch
 
+          python - <<'PY'
+          from pathlib import Path
+
+          route = Path('artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts')
+          text = route.read_text(encoding='utf-8')
+          old = '  type TransactionEntry,\n} from "./workbenchRowState";'
+          new = '  type TransactionEntry,\n  type WorkbenchRowState,\n} from "./workbenchRowState";'
+          if old not in text:
+              raise SystemExit('expected workbenchRowState import block not found')
+          route.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Format changed files
         run: |
           pnpm exec prettier --write \
