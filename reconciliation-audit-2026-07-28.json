@@ -1,0 +1,159 @@
+
+> @workspace/scripts@0.0.0 audit:reconciliation /home/runner/workspace/scripts
+> tsx ./src/audit-reconciliation.ts -- --json
+
+{
+  "generatedAt": "2026-07-28T19:33:53.067Z",
+  "readOnly": true,
+  "findings": [
+    {
+      "id": "paired_payout_live_charge_missing_gift",
+      "severity": "critical",
+      "summary": "A bank-paired Stripe payout still has a live, non-excluded charge without a CRM gift tie.",
+      "status": "finding",
+      "count": 4,
+      "sampleIds": [
+        "po_1K6oBzAhXr9x8yiRXlVh4RfA",
+        "po_1K7AjnAhXr9x8yiRYymoKL3e",
+        "po_1QKxMJAhXr9x8yiRjWatUCXc",
+        "po_1SUGMQAhXr9x8yiRr3NYpOZe"
+      ],
+      "note": "These rows must remain active; a payout↔bank pairing is not end-to-end gift reconciliation."
+    },
+    {
+      "id": "payment_unit_tie_metadata_without_gift",
+      "severity": "high",
+      "summary": "A payment unit has unit→gift tie metadata but no gift_id authority.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": []
+    },
+    {
+      "id": "payment_unit_allocation_wrong_gift",
+      "severity": "critical",
+      "summary": "A payment unit points to an allocation owned by a different gift.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": []
+    },
+    {
+      "id": "duplicate_qbo_payment_units",
+      "severity": "high",
+      "summary": "One staged QuickBooks row is the source of more than one canonical payment unit.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": []
+    },
+    {
+      "id": "component_qbo_provenance_disagrees_with_unit",
+      "severity": "high",
+      "summary": "A deposit component and its payment unit carry different QBO provenance pointers.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": []
+    },
+    {
+      "id": "component_amount_differs_from_unit_without_review",
+      "severity": "medium",
+      "summary": "A non-review deposit component amount differs from its payment unit gross amount.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": [],
+      "note": "A legitimate difference should carry an explicit split/adjustment explanation rather than remain implicit."
+    },
+    {
+      "id": "deposit_exclusion_with_open_money",
+      "severity": "high",
+      "summary": "A deposit-level exclusion coexists with an active component or Stripe charge.",
+      "status": "finding",
+      "count": 1,
+      "sampleIds": [
+        "bdep_02410a93fcbb64a4ea821209"
+      ],
+      "note": "Deposit classification should normally derive from component/transaction dispositions; mixed states need review."
+    },
+    {
+      "id": "live_stripe_charge_missing_payment_unit",
+      "severity": "high",
+      "summary": "A live, non-excluded Stripe charge has no canonical payment unit.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": [],
+      "note": "This usually indicates the best-effort bank-spine recompute has fallen behind source ingestion."
+    },
+    {
+      "id": "stripe_unit_source_fact_drift",
+      "severity": "medium",
+      "summary": "A Stripe payment unit's amount or lifecycle differs from its source charge.",
+      "status": "ok",
+      "count": 0,
+      "sampleIds": []
+    },
+    {
+      "id": "qbo_unit_source_fact_drift",
+      "severity": "medium",
+      "summary": "A QBO-derived payment unit's amount, date, or currency differs from its staged source row.",
+      "status": "finding",
+      "count": 21,
+      "sampleIds": [
+        "pu_6uK6Ppely6zLNpN66bVpr",
+        "pu_8P07oj_mekALTJJVH3BVw",
+        "pu_8r4tQubAh23RqksEG7OU-",
+        "pu_8t9TEpwP3r4J7Rmj6BRSV",
+        "pu_9reYKny4R5kcaNcVCZSLF",
+        "pu_DZ33N-KGmSYUBddXn0TtK",
+        "pu_E5ZSmY2RTuFShJ-sJrAWU",
+        "pu_PmmIGZKzT9EY5uVt4Ou8g",
+        "pu_RdLgow6ROBZKoWkT2uIEc",
+        "pu_U0RvAAcm9VQ9VZbo_6EO_"
+      ]
+    },
+    {
+      "id": "redundant_qbo_line_and_component_claim",
+      "severity": "info",
+      "summary": "The same staged QBO row appears as both deposit-line evidence and a component's unit provenance.",
+      "status": "finding",
+      "count": 2,
+      "sampleIds": [
+        "srcl_qld_-yHAPMRHpPMNHie8Qv1Fd",
+        "srcl_qld_OXWiT5kY6GImTPwwrygim"
+      ],
+      "note": "The UI now suppresses the duplicate card, but this count shows how much redundant provenance remains in the data model."
+    },
+    {
+      "id": "payment_applications_parity",
+      "severity": "info",
+      "summary": "Compare the retired payment_applications ledger with payment_units.gift_id.",
+      "status": "skipped",
+      "count": 0,
+      "sampleIds": [],
+      "note": "payment_applications is already absent."
+    },
+    {
+      "id": "legacy_unit_groups_remaining",
+      "severity": "info",
+      "summary": "Legacy unit-group rows remain after group semantics were retired.",
+      "status": "finding",
+      "count": 22,
+      "sampleIds": [
+        "ug_3SFY1jiRmQ6J_Af5Q5SAs",
+        "ug_a3eVgDBU2uwMpSoIlbA5z",
+        "ug_histgrp_rec2Yg2bd1cagK17V",
+        "ug_histgrp_rec8CEP37lXIXkeIE",
+        "ug_histgrp_recGK4rLK85kyhUCK",
+        "ug_histgrp_recHiJbzwCh9TXOiw",
+        "ug_histgrp_recJG0TYivBR4zaVq",
+        "ug_histgrp_recLvQ1QfqDncBpea",
+        "ug_histgrp_recPuB4akP0d4AZsN",
+        "ug_histgrp_recRY1v6YWvUXncOo"
+      ],
+      "note": "Verify every member is represented by canonical payment-unit ties before applying the gated retirement migration."
+    }
+  ],
+  "totals": {
+    "critical": 4,
+    "high": 1,
+    "medium": 21,
+    "info": 24
+  }
+}
