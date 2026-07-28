@@ -1,9 +1,6 @@
 name: Fix Stripe completion and recent changes
 
 on:
-  push:
-    branches:
-      - agent/fix-stripe-open-and-gift-duplicates
   pull_request:
     branches:
       - main
@@ -16,7 +13,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: fix-stripe-open-and-gift-duplicates
+  group: fix-stripe-open-and-gift-duplicates-pr
   cancel-in-progress: true
 
 jobs:
