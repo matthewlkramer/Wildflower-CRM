@@ -144,8 +144,9 @@ describe.skipIf(!HAS_DB)(
       const response = await fetch(
         `${baseUrl}/api/reconciliation/workbench-recent-changes`,
       );
-      expect(response.status).toBe(200);
-      const json = (await response.json()) as {
+      const body = await response.text();
+      expect(response.status, body).toBe(200);
+      const json = JSON.parse(body) as {
         items: Array<{
           id: string;
           actorName: string | null;
