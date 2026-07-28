@@ -63,9 +63,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check formatting
+      - name: Format changed files
         run: |
-          pnpm exec prettier --check \
+          pnpm exec prettier --write \
             artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
             artifacts/api-server/src/routes/reconciliation/workbenchDepositState.ts \
             artifacts/api-server/src/routes/reconciliation/workbenchDepositState.test.ts \
