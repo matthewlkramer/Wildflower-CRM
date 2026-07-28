@@ -1,4 +1,4 @@
-name: Trigger clean deposit card grain
+name: Validate clean deposit card grain
 
 on:
   pull_request:
@@ -12,18 +12,98 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: clean-deposit-card-grain-pr
+  cancel-in-progress: true
+
 jobs:
-  trigger:
+  patch-and-validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wildflower_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: reconciliation-test-only
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/clean-deposit-card-grain
           fetch-depth: 0
-      - name: Trigger branch validation
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
         run: |
+          npm install --global pnpm@10
+          pnpm install --frozen-lockfile
+
+      - name: Apply presentation and query changes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from textwrap import dedent
+
+          workflow = Path('.github/workflows/clean-deposit-card-grain.yml').read_text()
+          start = '      - name: Apply presentation and query changes\n        run: |\n'
+          end = '\n      - name: Format changed files'
+          if start not in workflow or end not in workflow:
+              raise SystemExit('source patch workflow markers not found')
+          script = workflow.split(start, 1)[1].split(end, 1)[0]
+          Path('/tmp/apply-deposit-card-grain.sh').write_text(dedent(script))
+          PY
+          bash /tmp/apply-deposit-card-grain.sh
+
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/presentation.ts \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/presentation.test.ts \
+            artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
+            artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Build schema and typecheck
+        run: |
+          pnpm --filter @workspace/db run push-force
+          pnpm run check:api
+          pnpm run check:web
+
+      - name: Run focused tests
+        run: |
+          pnpm --filter @workspace/wildflower-crm exec vitest run \
+            src/components/reconciliation-deposits/presentation.test.ts
+          pnpm --filter @workspace/api-server exec vitest run \
+            src/routes/reconciliation/workbenchDepositState.test.ts \
+            src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Commit validated implementation
+        run: |
+          rm .github/workflows/clean-deposit-card-grain.yml
+          rm .github/workflows/clean-deposit-card-grain-pr.yml
+          rmdir .github/workflows 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "Trigger deposit card grain validation"
+          git add -A
+          git commit -m "Clean up deposit card grain and accounting duplicates"
           git push origin HEAD:agent/clean-deposit-card-grain
