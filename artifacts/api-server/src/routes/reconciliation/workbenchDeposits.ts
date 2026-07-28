@@ -818,6 +818,10 @@ router.get(
             'unconfirmed', false, 'source', 'bank_spine',
             'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
+            'label', (
+              SELECT COALESCE(lsp.payer_name, lsp.qb_transaction_memo, lsp.line_description)
+              FROM staged_payments lsp WHERE lsp.id = u.source_staged_payment_id
+            ),
             'receivedDate', u.received_date::text,
             'sourceStagedPaymentManual', (
               u.source_staged_payment_id IS NOT NULL

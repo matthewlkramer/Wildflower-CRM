@@ -7,6 +7,7 @@ import type {
   WorkbenchDepositCharge,
   WorkbenchDepositCompositionComponentsItem,
   WorkbenchDepositLens,
+  DepositExclusionReason,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +32,29 @@ export type DepositActions = Omit<
   openSinglePaymentDeposit?: (bankDepositId: string, amount: string) => void;
   openDepositQbEvidenceSearch?: (deposit: WorkbenchDeposit) => void;
   openFlagAccountingError?: (deposit: WorkbenchDeposit) => void;
+  applyBankDepositExclusion?: (bankDepositId: string, reason: DepositExclusionReason) => void;
 };
+
+const BANK_EXCLUSION_MENU: Array<{ label: string; reason: DepositExclusionReason }> = [
+  { label: "Mark as non-WF money", reason: "non_wf" },
+  { label: "Mark as returned payment", reason: "returned_wire" },
+  { label: "Mark as expense refund", reason: "expense_refund" },
+  { label: "Mark as COBRA / insurance", reason: "insurance" },
+  { label: "Mark as membership fee", reason: "membership" },
+  { label: "Mark as service agreement revenue", reason: "earned_income" },
+  { label: "Mark as payroll / tax refund", reason: "tax_refund" },
+  { label: "Mark as loan repayment", reason: "loan_repayment" },
+  { label: "Mark as intercompany transfer", reason: "intercompany_transfer" },
+];
+
+function componentTitle(component: WorkbenchDepositCompositionComponentsItem): string {
+  if (component.label) return component.label;
+  return component.kind === "other" ? "Other non-Stripe payment" : component.kind.replaceAll("_", " ");
+}
+
+function componentKindLabel(kind: string): string {
+  return kind === "other" ? "other non-Stripe payment" : kind.replaceAll("_", " ");
+}
 
 export const DEPOSIT_GRID =
   "grid grid-cols-[26px_minmax(150px,1fr)_minmax(220px,1.35fr)_minmax(220px,1.35fr)_minmax(190px,1fr)] gap-3 px-4 items-start";
@@ -135,6 +158,7 @@ const NOOP_ACTIONS: DepositActions = {
   openSinglePaymentDeposit: () => undefined,
   openDepositQbEvidenceSearch: () => undefined,
   openFlagAccountingError: () => undefined,
+  applyBankDepositExclusion: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -167,36 +191,37 @@ function Composition({
     (composition.kind === "unresolved" ||
       ((composition.kind === "components" || composition.kind === "qbo_provisional") &&
         remainder > 0.005));
+  const remainderLinks = showRemainderActions ? (
+    <div className="mt-1.5 flex flex-wrap gap-2">
+      <button
+        type="button"
+        className="text-[10px] font-medium text-primary hover:underline"
+        onClick={() => actions.openSinglePaymentDeposit?.(deposit.anchorId, composition.unexplainedAmount)}
+      >
+        Single payment deposit…
+      </button>
+      <button
+        type="button"
+        className="text-[10px] font-medium text-primary hover:underline"
+        onClick={() => actions.openAddKnownPayment?.(deposit.anchorId, composition.unexplainedAmount)}
+      >
+        Add known payment…
+      </button>
+      <button
+        type="button"
+        className="text-[10px] font-medium text-amber-800 hover:underline dark:text-amber-200"
+        onClick={() => actions.openFlagRemainder?.(deposit.anchorId, composition.unexplainedAmount)}
+      >
+        Flag remainder for research
+      </button>
+    </div>
+  ) : null;
   const remainderActions = showRemainderActions ? (
     <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/20">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] text-amber-900 dark:text-amber-200">
-          {money(composition.unexplainedAmount)} unresolved remainder
-        </span>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            className="text-[10px] font-medium text-primary hover:underline"
-            onClick={() => actions.openSinglePaymentDeposit?.(deposit.anchorId, composition.unexplainedAmount)}
-          >
-            Single payment deposit…
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-medium text-primary hover:underline"
-            onClick={() => actions.openAddKnownPayment?.(deposit.anchorId, composition.unexplainedAmount)}
-          >
-            Add known payment…
-          </button>
-          <button
-            type="button"
-            className="text-[10px] font-medium text-amber-800 hover:underline dark:text-amber-200"
-            onClick={() => actions.openFlagRemainder?.(deposit.anchorId, composition.unexplainedAmount)}
-          >
-            Flag remainder for research
-          </button>
-        </div>
-      </div>
+      <span className="text-[11px] text-amber-900 dark:text-amber-200">
+        {money(composition.unexplainedAmount)} unresolved remainder
+      </span>
+      {remainderLinks}
     </div>
   ) : null;
   if (composition.kind === "stripe_unlinked") {
@@ -211,14 +236,12 @@ function Composition({
   }
   if (composition.kind === "unresolved") {
     return (
-      <div className="space-y-1.5">
-        <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-          <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Unresolved composition</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            {money(composition.unexplainedAmount)} of the deposit has no known source.
-          </p>
-        </div>
-        {remainderActions}
+      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">Unresolved composition</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          {money(composition.unexplainedAmount)} of the deposit has no known source.
+        </p>
+        {remainderLinks}
       </div>
     );
   }
@@ -297,7 +320,7 @@ function Composition({
           <div className="flex items-center justify-between">
           <span className="flex min-w-0 items-center gap-1.5 truncate">
             {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
-            <span className="font-medium">{component.label ?? component.kind.replace("_", " ")}</span>
+            <span className="font-medium">{componentTitle(component)}</span>
             {component.unconfirmed ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
             {component.manual && component.needsReview ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Research placeholder</Badge> : null}
             {component.manual && !component.needsReview ? <Badge variant="outline" className="shrink-0 text-[9px]">Manual</Badge> : null}
@@ -305,38 +328,34 @@ function Composition({
           </span>
           <span className="flex shrink-0 items-center gap-2">
             <span className="tabular-nums">{money(component.amount)}</span>
-            {actions.isFinanceOrAdmin && component.source !== "qbo_provisional" ? (
+            {actions.isFinanceOrAdmin ? (
               <CardActionsMenu items={[
-                component.exclusionReason
-                  ? { label: "Re-include", onSelect: () => actions.reInclude({ kind: "component", id: component.componentId, label: component.label ?? component.kind }) }
-                  : { label: "Exclude…", onSelect: () => actions.openExclude({ kind: "component", id: component.componentId, label: component.label ?? component.kind }) },
+                ...(component.unconfirmed && component.componentId
+                  ? [
+                      { label: "Confirm match", onSelect: () => onConfirmProvisional?.(component.componentId) },
+                      { label: "Dismiss match", onSelect: () => onDismissProvisional?.(component.componentId) },
+                    ]
+                  : []),
+                ...(component.source !== "qbo_provisional"
+                  ? [
+                      component.exclusionReason
+                        ? { label: "Re-include", onSelect: () => actions.reInclude({ kind: "component", id: component.componentId, label: componentTitle(component) }) }
+                        : { label: "Exclude…", onSelect: () => actions.openExclude({ kind: "component", id: component.componentId, label: componentTitle(component) }) },
+                    ]
+                  : []),
+                ...(!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && !component.stagedPaymentId
+                  ? [{ label: "Search QuickBooks…", onSelect: () => actions.openComponentQbSearch?.(component) }]
+                  : []),
+                ...(component.manual && (component.countedGiftIds?.length ?? 0) === 0
+                  ? [{ label: "Remove payment", onSelect: () => actions.removeManualComponent?.(component.componentId, componentTitle(component)) }]
+                  : []),
+                ...(!component.unconfirmed && component.source === "bank_spine" && !component.manual && component.stagedPaymentId && (component.countedGiftIds?.length ?? 0) === 0
+                  ? [{ label: "Unlink", onSelect: () => actions.removeManualComponent?.(component.componentId, componentTitle(component)) }]
+                  : []),
+                ...(component.sourceStagedPaymentManual && component.stagedPaymentId
+                  ? [{ label: "Clear QBO source", onSelect: () => actions.clearComponentQbSource?.(component.componentId) }]
+                  : []),
               ]} />
-            ) : null}
-            {component.unconfirmed && component.componentId && actions.isFinanceOrAdmin ? (
-              <>
-                <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => onConfirmProvisional?.(component.componentId)}>Confirm</button>
-                <button type="button" className="text-[10px] text-muted-foreground hover:underline" onClick={() => onDismissProvisional?.(component.componentId)}>Dismiss</button>
-              </>
-            ) : null}
-            {component.manual && (component.countedGiftIds?.length ?? 0) === 0 && actions.isFinanceOrAdmin ? (
-              <button type="button" className="text-[10px] text-destructive hover:underline" onClick={() => actions.removeManualComponent?.(component.componentId, component.label ?? component.kind)}>
-                Remove
-              </button>
-            ) : null}
-            {!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && !component.stagedPaymentId && actions.isFinanceOrAdmin ? (
-              <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openComponentQbSearch?.(component)}>
-                Search QuickBooks
-              </button>
-            ) : null}
-            {!component.unconfirmed && component.source === "bank_spine" && !component.manual && component.stagedPaymentId && (component.countedGiftIds?.length ?? 0) === 0 && actions.isFinanceOrAdmin ? (
-              <button type="button" className="text-[10px] text-destructive hover:underline" onClick={() => actions.removeManualComponent?.(component.componentId, component.label ?? component.kind)}>
-                Unlink
-              </button>
-            ) : null}
-            {component.sourceStagedPaymentManual && component.stagedPaymentId && actions.isFinanceOrAdmin ? (
-              <button type="button" className="text-[10px] text-muted-foreground hover:underline" onClick={() => actions.clearComponentQbSource?.(component.componentId)}>
-                Clear QBO source
-              </button>
             ) : null}
           </span>
           </div>
@@ -344,7 +363,7 @@ function Composition({
             {[
               composition.components.length === 1 && amountNumber(composition.unexplainedAmount) === 0 ? "Single payment" : null,
               component.receivedDate ? formatDateShort(component.receivedDate) : null,
-              component.kind.replaceAll("_", " "),
+              componentKindLabel(component.kind),
             ].filter(Boolean).join(" · ")}
           </div>
         </div>
@@ -359,7 +378,13 @@ function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepo
   return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.payerName ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
-function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord }) {
+function NodeQbCard({
+  record,
+  menuItems,
+}: {
+  record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord;
+  menuItems?: Array<{ label: string; onSelect: () => void; disabled?: boolean }>;
+}) {
   const registerRecord = "bankTransactionId" in record && record.bankTransactionId
     ? record
     : null;
@@ -369,7 +394,10 @@ function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | Workben
         <span className="truncate text-[10px] font-medium">
           {registerRecord?.payee ?? record.payerName ?? record.memo ?? record.lineDescription ?? record.stagedPaymentId}
         </span>
-        <span className="shrink-0 text-[10px] tabular-nums">{money(record.amount)}</span>
+        <span className="flex shrink-0 items-center gap-1">
+          <span className="text-[10px] tabular-nums">{money(record.amount)}</span>
+          {menuItems?.length ? <CardActionsMenu items={menuItems} /> : null}
+        </span>
       </div>
       <div className="mt-0.5 whitespace-normal break-words text-[9px] text-muted-foreground">
         {registerRecord
@@ -399,7 +427,15 @@ function NodeQbCard({ record }: { record: WorkbenchDepositNodeQbRecord | Workben
   );
 }
 
-function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: DepositActions }) {
+function Accounting({
+  deposit,
+  actions,
+  onDismissProvisional,
+}: {
+  deposit: WorkbenchDeposit;
+  actions: DepositActions;
+  onDismissProvisional?: (id: string) => void;
+}) {
   const { accountingChecks: checks, qbRecords: records } = deposit;
   const checksByPayment = new Map(checks.map((check) => [check.stagedPaymentId, check]));
   const items = [
@@ -411,7 +447,7 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
   const nodeGroups = [
     ...deposit.composition.components.map((component) => ({
       key: `component-${component.componentId}`,
-      label: component.label ?? component.kind.replace("_", " "),
+      label: componentTitle(component),
       records: component.qboRecords ?? [],
     })),
     ...deposit.charges.map((charge) => ({
@@ -440,8 +476,7 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
   const firstDisplay = firstRecord ?? checks[0];
   const firstCorrection = checks.find((check) => check.disposition === "correction_needed");
   const columnMenu = actions.isFinanceOrAdmin ? (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Accounting actions</span>
+    <div className="flex items-center justify-end">
       <CardActionsMenu items={[
         { label: "Search for accounting evidence…", onSelect: () => actions.openDepositQbEvidenceSearch?.(deposit) },
         { label: "Flag accounting error…", onSelect: () => actions.openFlagAccountingError?.(deposit), disabled: !records.length && !checks.length },
@@ -452,11 +487,28 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
       ]} />
     </div>
   ) : null;
+  const nodeMenuItems = (record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord): Array<{ label: string; onSelect: () => void }> => {
+    if (!actions.isFinanceOrAdmin) return [];
+    if ("bankTransactionId" in record && record.bankTransactionId) return [];
+    if (record.role === "component" && record.componentId) {
+      const componentId = record.componentId;
+      return [{ label: "Unlink", onSelect: () => actions.clearComponentQbSource?.(componentId) }];
+    }
+    if (record.role === "provisional" && record.componentId) {
+      const componentId = record.componentId;
+      return [{ label: "Unlink (dismiss proposed)", onSelect: () => onDismissProvisional?.(componentId) }];
+    }
+    if (record.role === "charge_tie" && record.linkedChargeId) {
+      const chargeId = record.linkedChargeId;
+      return [{ label: "Unlink", onSelect: () => actions.rejectChargeQbTie(chargeId) }];
+    }
+    return [];
+  };
   if (!nodeGroups.length && !unalignedItems.length) {
     return (
       <div className="space-y-1.5">
         {columnMenu}
-        <span className="text-xs text-muted-foreground">No accounting check</span>
+        <span className="text-xs text-muted-foreground">No accounting evidence linked</span>
       </div>
     );
   }
@@ -466,7 +518,7 @@ function Accounting({ deposit, actions }: { deposit: WorkbenchDeposit; actions: 
       {nodeGroups.map((group) => (
         <div key={group.key} className="space-y-1 rounded-md border border-sky-200/70 bg-sky-50/30 p-1.5 dark:border-sky-900/60 dark:bg-sky-950/20">
           <div className="truncate text-[10px] font-semibold text-sky-900 dark:text-sky-200">{group.label}</div>
-          {group.records.map((record) => <NodeQbCard key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`} record={record} />)}
+          {group.records.map((record) => <NodeQbCard key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`} record={record} menuItems={nodeMenuItems(record)} />)}
         </div>
       ))}
       {unalignedItems.map(({ record, check }) => {
@@ -555,6 +607,25 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     source: deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId,
     memo: deposit.bank.memo ?? null,
   };
+  const unlinkedCharges = deposit.charges.filter((charge) => !charge.linkedGiftId);
+  const unlinkedQbRecords = deposit.qbRecords.filter((record) => !record.bankTransactionId && !linkedStagedPaymentIds.has(record.stagedPaymentId));
+  const unlinkedComponents = deposit.composition.kind === "components"
+    ? deposit.composition.components.filter((component) => component.source === "bank_spine" && (component.countedGiftIds?.length ?? 0) === 0 && component.stagedPaymentId)
+    : [];
+  const hasGiftColumnCards = deposit.gifts.length > 0 || unlinkedCharges.length > 0 || unlinkedQbRecords.length > 0 || unlinkedComponents.length > 0;
+  const giftAnchor = (gift: WorkbenchDeposit["gifts"][number]): AnchorRef | null => {
+    const stagedId = gift.linkedStagedPaymentIds?.[0];
+    if (stagedId) {
+      const record = deposit.qbRecords.find((item) => item.stagedPaymentId === stagedId);
+      return { kind: "staged", id: stagedId, label: record?.payerName ?? record?.lineDescription ?? gift.name ?? stagedId };
+    }
+    const chargeId = gift.linkedChargeIds?.[0];
+    if (chargeId) {
+      const charge = deposit.charges.find((item) => item.chargeId === chargeId);
+      return { kind: "charge", id: chargeId, label: charge?.payerName ?? gift.name ?? chargeId };
+    }
+    return giftColumnAnchor;
+  };
   return (
     <section className="border-b last:border-b-0" data-testid={`deposit-row-${deposit.anchorId}`}>
       <div className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}>
@@ -567,9 +638,18 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
             </span>
             {actions.isFinanceOrAdmin ? (
               <CardActionsMenu items={[
-                deposit.bankExclusion
-                  ? { label: "Return to open queue", onSelect: () => actions.clearBankDepositExclusion?.(deposit.anchorId) }
-                  : { label: "Mark not fundraising…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
+                ...(deposit.bankExclusion
+                  ? [
+                      { label: "Return to open queue", onSelect: () => actions.clearBankDepositExclusion?.(deposit.anchorId) },
+                      { label: "Change exclusion reason…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
+                    ]
+                  : [
+                      ...BANK_EXCLUSION_MENU.map((item) => ({
+                        label: item.label,
+                        onSelect: () => actions.applyBankDepositExclusion?.(deposit.anchorId, item.reason),
+                      })),
+                      { label: "Mark as excluded — other…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
+                    ]),
                 ...(deposit.composition.payoutId
                   ? [{ label: "Unlink payout", onSelect: () => actions.openUnlinkPayoutDeposit?.(deposit.composition.payoutId ?? "") }]
                   : /stripe\s+transfer/i.test(deposit.bank.memo ?? "")
@@ -587,21 +667,54 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
         <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>
         <span onClick={(event) => event.stopPropagation()} className="space-y-1.5">
           {actions.isFinanceOrAdmin ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openSinglePaymentDeposit?.(deposit.anchorId, deposit.composition.unexplainedAmount ?? deposit.bank.amount ?? "")}>Search and link gift</button>
-              {giftColumnAnchor ? (
-                <>
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(giftColumnAnchor, bankPreview)}>Create gift</button>
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(giftColumnAnchor, bankPreview)}>Identify donor</button>
-                  {actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(giftColumnAnchor, bankPreview)}>Donorbox lookup</button> : null}
-                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(giftColumnAnchor, bankPreview)}>Coding form</button> : null}
-                </>
-              ) : null}
+            <div className="flex items-center justify-end">
+              <CardActionsMenu items={[
+                { label: "Search and link gift…", onSelect: () => actions.openSinglePaymentDeposit?.(deposit.anchorId, deposit.composition.unexplainedAmount ?? deposit.bank.amount ?? "") },
+                ...(giftColumnAnchor
+                  ? [
+                      { label: "Create gift…", onSelect: () => actions.openCreateGift(giftColumnAnchor, bankPreview) },
+                      { label: "Identify donor…", onSelect: () => actions.openIdentify(giftColumnAnchor, bankPreview) },
+                      ...(actions.openDonorboxSearch ? [{ label: "Donorbox lookup…", onSelect: () => actions.openDonorboxSearch?.(giftColumnAnchor, bankPreview) }] : []),
+                      ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Coding form…", onSelect: () => actions.openCodingFormLookup?.(giftColumnAnchor, bankPreview) }] : []),
+                    ]
+                  : []),
+                ...(deposit.gifts.length > 1 ? [{ label: "Merge gifts…", onSelect: () => actions.openMergeGifts(deposit.gifts.map((item) => item.giftId)) }] : []),
+              ]} />
             </div>
           ) : null}
-          {deposit.gifts.length ? deposit.gifts.map((gift) => (
+          {deposit.gifts.map((gift) => {
+            const anchor = giftAnchor(gift);
+            return (
             <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">
-              <p className="truncate text-xs font-semibold">{gift.name ?? gift.giftId}</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="min-w-0 truncate text-xs font-semibold">{gift.name ?? gift.giftId}</p>
+                {actions.isFinanceOrAdmin ? (
+                  <CardActionsMenu items={[
+                    ...((gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0
+                      ? [{
+                          label: "Unlink",
+                          onSelect: () => {
+                            const options = [
+                              ...(gift.linkedChargeIds ?? []).map((id) => {
+                                const charge = deposit.charges.find((item) => item.chargeId === id);
+                                return { anchor: { kind: "charge" as const, id, label: charge?.payerName ?? id }, source: `Stripe charge · ${charge?.payerName ?? id}`, amount: money(charge?.amount), date: charge?.chargeDate ?? null };
+                              }),
+                              ...(gift.linkedStagedPaymentIds ?? []).map((id) => {
+                                const record = deposit.qbRecords.find((item) => item.stagedPaymentId === id);
+                                return { anchor: { kind: "staged" as const, id, label: record?.lineDescription ?? id }, source: `QuickBooks · ${record?.lineDescription ?? id}`, amount: money(record?.amount), date: record?.dateReceived ?? null };
+                              }),
+                            ];
+                            if (options.length > 1) actions.openUnlinkChooser(gift.name ?? gift.giftId, options);
+                            else if (options[0]) actions.openRevert(options[0].anchor, `Unlink “${gift.name ?? gift.giftId}” from ${options[0].source}.`);
+                          },
+                        }]
+                      : []),
+                    ...(anchor && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, bankPreview) }] : []),
+                    ...(anchor && actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, bankPreview) }] : []),
+                    ...(deposit.gifts.length > 1 ? [{ label: "Merge gifts…", onSelect: () => actions.openMergeGifts(deposit.gifts.map((item) => item.giftId)) }] : []),
+                  ]} />
+                ) : null}
+              </div>
               <p className="truncate text-[11px] text-muted-foreground">
                 {gift.donorKind ? `${gift.donorKind} · ` : ""}{gift.donorName ?? "Donor not identified"}
               </p>
@@ -619,94 +732,75 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                   ))}
                 </div>
               ) : null}
-              <div className="mt-1 flex flex-wrap gap-1">
-                {(gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0 ? (
-                  <button
-                    type="button"
-                    className="text-[10px] text-destructive hover:underline"
-                    onClick={() => {
-                      const options = [
-                        ...(gift.linkedChargeIds ?? []).map((id) => {
-                          const charge = deposit.charges.find((item) => item.chargeId === id);
-                          return { anchor: { kind: "charge" as const, id, label: charge?.payerName ?? id }, source: `Stripe charge · ${charge?.payerName ?? id}`, amount: money(charge?.amount), date: charge?.chargeDate ?? null };
-                        }),
-                        ...(gift.linkedStagedPaymentIds ?? []).map((id) => {
-                          const record = deposit.qbRecords.find((item) => item.stagedPaymentId === id);
-                          return { anchor: { kind: "staged" as const, id, label: record?.lineDescription ?? id }, source: `QuickBooks · ${record?.lineDescription ?? id}`, amount: money(record?.amount), date: record?.dateReceived ?? null };
-                        }),
-                      ];
-                      if (options.length > 1) actions.openUnlinkChooser(gift.name ?? gift.giftId, options);
-                      else if (options[0]) actions.openRevert(options[0].anchor, `Unlink “${gift.name ?? gift.giftId}” from ${options[0].source}.`);
-                    }}
-                  >
-                    Unlink
-                  </button>
-                ) : null}
-                {deposit.gifts.length > 1 ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openMergeGifts(deposit.gifts.map((item) => item.giftId))}>Merge gifts</button> : null}
-              </div>
             </div>
-          )) : <span className="text-xs text-muted-foreground">No CRM gifts linked</span>}
-          {deposit.charges.filter((charge) => !charge.linkedGiftId).map((charge) => {
+            );
+          })}
+          {unlinkedCharges.map((charge) => {
             const anchor: AnchorRef = { kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId };
             return (
               <div key={`unlinked-charge-${charge.chargeId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
-                <p className="truncate text-[11px] font-medium">{charge.payerName ?? charge.chargeId}</p>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, chargePreview(charge))}>Create gift</button>
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(anchor, chargePreview(charge))}>Identify donor</button>
-                  {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, chargePreview(charge))}>Donorbox lookup</button> : null}
-                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, chargePreview(charge))}>Coding form</button> : null}
-                  {actions.isFinanceOrAdmin && deposit.composition.payoutId && actions.openChargeQbSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openChargeQbSearch?.(charge)}>Search QuickBooks</button> : null}
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 truncate text-[11px] font-medium">{charge.payerName ?? charge.chargeId}</p>
+                  <CardActionsMenu items={[
+                    { label: "Search and link gift…", onSelect: () => actions.openLinkGift(anchor) },
+                    { label: "Create gift…", onSelect: () => actions.openCreateGift(anchor, chargePreview(charge)) },
+                    { label: "Identify donor…", onSelect: () => actions.openIdentify(anchor, chargePreview(charge)) },
+                    ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, chargePreview(charge)) }] : []),
+                    ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, chargePreview(charge)) }] : []),
+                    ...(actions.isFinanceOrAdmin && deposit.composition.payoutId && actions.openChargeQbSearch ? [{ label: "Search QuickBooks…", onSelect: () => actions.openChargeQbSearch?.(charge) }] : []),
+                  ]} />
                 </div>
               </div>
             );
           })}
-          {deposit.qbRecords.filter((record) => !record.bankTransactionId && !linkedStagedPaymentIds.has(record.stagedPaymentId)).map((record) => {
+          {unlinkedQbRecords.map((record) => {
             const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.reference ?? record.stagedPaymentId };
             return (
               <div key={`unlinked-qb-${record.stagedPaymentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
-                <p className="truncate text-[11px] font-medium">{anchor.label}</p>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
-                  <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, qbPreview(record))}>Create gift</button>
-                  {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, qbPreview(record))}>Donorbox lookup</button> : null}
-                  {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, qbPreview(record))}>Coding form</button> : null}
+                <div className="flex items-start justify-between gap-2">
+                  <p className="min-w-0 truncate text-[11px] font-medium">{anchor.label}</p>
+                  <CardActionsMenu items={[
+                    { label: "Search and link gift…", onSelect: () => actions.openLinkGift(anchor) },
+                    { label: "Create gift…", onSelect: () => actions.openCreateGift(anchor, qbPreview(record)) },
+                    ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, qbPreview(record)) }] : []),
+                    ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, qbPreview(record)) }] : []),
+                  ]} />
                 </div>
               </div>
             );
           })}
-          {deposit.composition.kind === "components" ? deposit.composition.components
-            .filter((component) => component.source === "bank_spine" && (component.countedGiftIds?.length ?? 0) === 0 && component.stagedPaymentId)
-            .map((component) => {
+          {unlinkedComponents.map((component) => {
               const anchor: AnchorRef = {
                 kind: "staged",
                 id: component.stagedPaymentId ?? "",
-                label: component.label ?? component.kind,
+                label: componentTitle(component),
               };
               const preview: EvidencePreview = {
                 amount: money(component.amount),
                 date: deposit.date ? formatDateShort(deposit.date) : "—",
-                method: component.kind.replaceAll("_", " "),
-                source: component.label ?? component.kind,
+                method: componentKindLabel(component.kind),
+                source: componentTitle(component),
                 memo: null,
               };
               return (
                 <div key={`unlinked-component-${component.componentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
-                  <p className="truncate text-[11px] font-medium">{component.label ?? component.kind}</p>
-                  <p className="text-[11px] tabular-nums text-muted-foreground">{money(component.amount)}</p>
-                  <div className="mt-1 flex flex-wrap gap-2">
-                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openLinkGift(anchor)}>Search and link gift</button>
-                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCreateGift(anchor, preview)}>Create gift</button>
-                    <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openIdentify(anchor, preview)}>Identify donor</button>
-                    {actions.isFinanceOrAdmin && actions.openDonorboxSearch ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openDonorboxSearch?.(anchor, preview)}>Donorbox lookup</button> : null}
-                    {actions.canUseCodingForm && actions.openCodingFormLookup ? <button type="button" className="text-[10px] text-primary hover:underline" onClick={() => actions.openCodingFormLookup?.(anchor, preview)}>Coding form</button> : null}
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 truncate text-[11px] font-medium">{componentTitle(component)}</p>
+                    <CardActionsMenu items={[
+                      { label: "Search and link gift…", onSelect: () => actions.openLinkGift(anchor) },
+                      { label: "Create gift…", onSelect: () => actions.openCreateGift(anchor, preview) },
+                      { label: "Identify donor…", onSelect: () => actions.openIdentify(anchor, preview) },
+                      ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, preview) }] : []),
+                      ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, preview) }] : []),
+                    ]} />
                   </div>
+                  <p className="text-[11px] tabular-nums text-muted-foreground">{money(component.amount)}</p>
                 </div>
               );
-            }) : null}
+            })}
+          {!hasGiftColumnCards ? <span className="text-xs text-muted-foreground">No CRM gifts linked</span> : null}
         </span>
-        <span><Accounting deposit={deposit} actions={actions} /></span>
+        <span onClick={(event) => event.stopPropagation()}><Accounting deposit={deposit} actions={actions} onDismissProvisional={onDismissProvisional} /></span>
       </div>
     </section>
   );

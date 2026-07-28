@@ -594,6 +594,17 @@ export default function ReconciliationDepositsPage() {
     clearBankDepositExclusion: (depositId) => {
       void clearBankDepositExclusion.mutateAsync({ bankDepositId: depositId }).then(invalidate);
     },
+    applyBankDepositExclusion: (depositId, reason) => {
+      void setBankDepositExclusion
+        .mutateAsync({ bankDepositId: depositId, data: { reason, note: null } })
+        .then(() => {
+          toast({ title: "Deposit excluded", description: `Marked as ${reason.replaceAll("_", " ")}.` });
+          invalidate();
+        })
+        .catch((error) => {
+          toast({ title: "Couldn't exclude deposit", description: error instanceof Error ? error.message : "Refresh and try again.", variant: "destructive" });
+        });
+    },
     openAddKnownPayment: (depositId, remainder) => {
       setKnownPaymentFor({ depositId, remainder });
       setKnownPaymentMode("search");
