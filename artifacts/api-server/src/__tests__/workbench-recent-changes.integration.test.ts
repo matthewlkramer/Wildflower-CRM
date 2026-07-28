@@ -21,6 +21,11 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
+}));
+
 const RUN = `wbrecent_${Date.now()}`;
 const OTHER_USER_ID = `${RUN}_other_user`;
 
