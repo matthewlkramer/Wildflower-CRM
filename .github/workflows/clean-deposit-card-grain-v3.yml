@@ -59,7 +59,9 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Apply deposit presentation patch
-        run: python .agent/apply-deposit-card-grain.py
+        run: |
+          python .agent/apply-deposit-card-grain.py
+          python .agent/fix-deposit-card-types.py
 
       - name: Format changed files
         run: |
