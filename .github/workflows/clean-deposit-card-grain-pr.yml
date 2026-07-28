@@ -62,15 +62,18 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          from textwrap import dedent
 
           workflow = Path('.github/workflows/clean-deposit-card-grain.yml').read_text()
           start = '      - name: Apply presentation and query changes\n        run: |\n'
           end = '\n      - name: Format changed files'
           if start not in workflow or end not in workflow:
               raise SystemExit('source patch workflow markers not found')
-          script = workflow.split(start, 1)[1].split(end, 1)[0]
-          Path('/tmp/apply-deposit-card-grain.sh').write_text(dedent(script))
+          block = workflow.split(start, 1)[1].split(end, 1)[0]
+          script = '\n'.join(
+              line[10:] if line.startswith('          ') else line
+              for line in block.splitlines()
+          ) + '\n'
+          Path('/tmp/apply-deposit-card-grain.sh').write_text(script)
           PY
           bash /tmp/apply-deposit-card-grain.sh
 
