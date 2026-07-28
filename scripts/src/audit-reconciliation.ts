@@ -140,6 +140,7 @@ function printHuman(report: AuditReport): void {
 }
 
 function shouldFail(report: AuditReport): boolean {
+  if (report.findings.some((finding) => finding.status === "error")) return true;
   if (failOn === "none") return false;
   const ranking: Record<Severity, number> = {
     info: 0,
