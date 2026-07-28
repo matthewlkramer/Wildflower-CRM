@@ -655,6 +655,82 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     );
   });
 
+  it("prefers charge-grain gifts when a Stripe payout also carries a legacy component gift", async () => {
+    const deposit = await seedDeposit("Stripe charge gift authority", "20.00");
+    const payout = await seedPayout("20.00", deposit);
+    const chargeGiftIds: string[] = [];
+
+    for (let index = 0; index < 4; index += 1) {
+      const charge = await seedCharge(payout, { grossAmount: "5.00" });
+      const giftId = nextId(`charge_gift_${index}`);
+      const unitId = nextId(`charge_unit_${index}`);
+      await db.insert(schema.giftsAndPayments).values({
+        id: giftId,
+        name: `Charge gift ${index + 1}`,
+        amount: "5.00",
+        dateReceived: "2099-12-31",
+        organizationId: ORG_ID,
+      });
+      giftIds.push(giftId);
+      chargeGiftIds.push(giftId);
+      await db.insert(schema.paymentUnits).values({
+        id: unitId,
+        kind: "stripe_charge",
+        stripeChargeId: charge,
+        grossAmount: "5.00",
+        feeAmount: "0.00",
+        netAmount: "5.00",
+        receivedDate: "2099-12-31",
+        giftId,
+        giftMatchMethod: "human",
+      });
+      unitIds.push(unitId);
+    }
+
+    const legacyGiftId = nextId("legacy_component_gift");
+    const legacyUnitId = nextId("legacy_component_unit");
+    const legacyComponentId = nextId("legacy_component");
+    await db.insert(schema.giftsAndPayments).values({
+      id: legacyGiftId,
+      name: "Legacy payout-level gift",
+      amount: "20.00",
+      dateReceived: "2099-12-31",
+      organizationId: ORG_ID,
+    });
+    giftIds.push(legacyGiftId);
+    await db.insert(schema.paymentUnits).values({
+      id: legacyUnitId,
+      kind: "other",
+      grossAmount: "20.00",
+      netAmount: "20.00",
+      receivedDate: "2099-12-31",
+      giftId: legacyGiftId,
+      giftMatchMethod: "human",
+    });
+    unitIds.push(legacyUnitId);
+    await db.insert(schema.bankDepositComponents).values({
+      id: legacyComponentId,
+      bankDepositId: deposit,
+      paymentUnitId: legacyUnitId,
+      amount: "20.00",
+      source: "manual",
+    });
+    componentIds.push(legacyComponentId);
+
+    const result = await listDeposits(
+      "completed",
+      "Stripe charge gift authority",
+    );
+    const row = result.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.charges).toHaveLength(4);
+    expect(row?.gifts.map((item: any) => item.giftId).sort()).toEqual(
+      [...chargeGiftIds].sort(),
+    );
+    expect(
+      row?.gifts.some((item: any) => item.giftId === legacyGiftId),
+    ).toBe(false);
+  });
+
   it("surfaces correction_needed accounting checks for component units", async () => {
     const deposit = await seedDeposit("QBO correction deposit", "50.00");
     await seedUnit(deposit, "50.00", true);

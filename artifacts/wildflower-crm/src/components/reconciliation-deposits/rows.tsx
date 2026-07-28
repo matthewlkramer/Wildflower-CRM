@@ -14,6 +14,13 @@ import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { ClusterActions, AnchorRef } from "@/components/reconciliation-clusters/rows";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
+import {
+  accountingRecordIdentity,
+  dedupeAccountingGroups,
+  preferStagedAccountingRecords,
+  singleAllocationPresentation,
+  type DepositAccountingRecord,
+} from "./presentation";
 
 export type DepositActions = Omit<
   ClusterActions,
@@ -248,68 +255,161 @@ function Composition({
   if (composition.kind === "stripe_payout") {
     const refundTotal = Number(composition.refundTotal ?? 0);
     return (
-      <div className="space-y-1.5">
-        <div className="rounded-md border border-emerald-200 bg-emerald-50/50 px-2.5 py-2 dark:border-emerald-900 dark:bg-emerald-950/30">
-          <p className="text-xs font-semibold">Stripe payout · {money(composition.netTotal)} net</p>
-          <p className="text-[11px] text-muted-foreground">
-            {composition.payoutDate ? formatDateShort(composition.payoutDate) : "Undated"} · {composition.payoutId} · {composition.chargeCount ?? deposit.charges.length} charge{(composition.chargeCount ?? deposit.charges.length) === 1 ? "" : "s"}
-          </p>
-          <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
-            Gross {money(composition.grossTotal)} − fees {money(composition.feeTotal)} − refunds {money(composition.refundTotal)} + adjustments {money(composition.adjustmentTotal)} = {money(composition.netTotal)} = bank {money(deposit.bank.amount)}
-          </p>
-          <div className="mt-2 flex items-center justify-between gap-2">
-            {composition.payoutAmbiguous ? <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">guessed match</span> : <span />}
-            {actions.isFinanceOrAdmin && composition.payoutId ? (
-              <CardActionsMenu items={[
-                ...(composition.payoutAmbiguous
-                  ? [{ label: "Confirm match", onSelect: () => actions.openConfirmPayoutBankMatch?.(composition.payoutId ?? "") }]
-                  : []),
-                { label: "Unlink deposit", onSelect: () => actions.openUnlinkPayoutDeposit?.(composition.payoutId ?? "") },
-                { label: "Link to a different deposit…", onSelect: () => actions.openLinkPayoutDeposit?.(composition.payoutId ?? "") },
-                { label: "Resolve payout settlement", onSelect: () => actions.openSettlementSearch({ payoutId: composition.payoutId ?? "", amount: deposit.bank.amount, date: deposit.date ?? null }) },
-              ]} />
-            ) : null}
-          </div>
+      <div className="rounded-md border border-emerald-200 bg-emerald-50/50 px-2.5 py-2 dark:border-emerald-900 dark:bg-emerald-950/30">
+        <p className="text-xs font-semibold">
+          Stripe payout · {money(composition.netTotal)} net
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {composition.payoutDate
+            ? formatDateShort(composition.payoutDate)
+            : "Undated"} · {composition.payoutId} · {composition.chargeCount ?? deposit.charges.length} charge{(composition.chargeCount ?? deposit.charges.length) === 1 ? "" : "s"}
+        </p>
+        <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+          Gross {money(composition.grossTotal)} − fees {money(composition.feeTotal)} − refunds {money(composition.refundTotal)} + adjustments {money(composition.adjustmentTotal)} = {money(composition.netTotal)} = bank {money(deposit.bank.amount)}
+        </p>
+        <div className="mt-2 space-y-1">
+          {deposit.charges.map((charge) => {
+            const refundedAmount = Number(charge.amountRefunded ?? 0);
+            const laterRefunded = charge.refunded || refundedAmount > 0;
+            const partialLaterRefund =
+              laterRefunded &&
+              refundedAmount > 0 &&
+              refundedAmount < Number(charge.amount);
+            return (
+              <div
+                key={charge.chargeId}
+                className="flex items-center justify-between rounded border bg-background/80 px-2 py-1 text-[11px]"
+              >
+                <span className="truncate">
+                  {charge.payerName ?? charge.chargeId}
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  <span className="tabular-nums">{money(charge.amount)}</span>
+                  {laterRefunded ? (
+                    <Badge
+                      variant="outline"
+                      className="border-rose-300 text-[9px] text-rose-700 dark:border-rose-800 dark:text-rose-300"
+                    >
+                      Later refunded
+                      {partialLaterRefund
+                        ? ` · ${money(charge.amountRefunded)}`
+                        : ""}
+                    </Badge>
+                  ) : null}
+                  {charge.exclusionReason ? (
+                    <Badge variant="destructive" className="text-[9px]">
+                      Excluded
+                    </Badge>
+                  ) : null}
+                  {actions.isFinanceOrAdmin ? (
+                    <CardActionsMenu
+                      items={[
+                        {
+                          label: "Exclude",
+                          onSelect: () =>
+                            actions.openExclude({
+                              kind: "charge",
+                              id: charge.chargeId,
+                              label: charge.payerName ?? charge.chargeId,
+                            }),
+                        },
+                        {
+                          label: "Re-include",
+                          onSelect: () =>
+                            actions.reInclude({
+                              kind: "charge",
+                              id: charge.chargeId,
+                              label: charge.payerName ?? charge.chargeId,
+                            }),
+                        },
+                        ...(charge.refundKind
+                          ? [
+                              {
+                                label: "Confirm refund",
+                                onSelect: () =>
+                                  actions.openConfirmRefund(
+                                    charge.chargeId,
+                                    charge.refundKind === "chargeback"
+                                      ? "chargeback"
+                                      : "refund",
+                                    charge.payerName ?? charge.chargeId,
+                                  ),
+                              },
+                              {
+                                label: "Dismiss refund",
+                                onSelect: () =>
+                                  actions.openDismissRefund(
+                                    charge.chargeId,
+                                    charge.payerName ?? charge.chargeId,
+                                  ),
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
+                  ) : null}
+                </span>
+              </div>
+            );
+          })}
+          {refundTotal > 0 ? (
+            <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50/50 px-2 py-1 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
+              <span className="truncate">Refunds settled in payout</span>
+              <span className="tabular-nums">
+                −{money(composition.refundTotal)}
+              </span>
+            </div>
+          ) : null}
         </div>
-        {deposit.charges.map((charge) => {
-          const refundedAmount = Number(charge.amountRefunded ?? 0);
-          const laterRefunded = charge.refunded || refundedAmount > 0;
-          const partialLaterRefund = laterRefunded && refundedAmount > 0 && refundedAmount < Number(charge.amount);
-          return (
-          <div key={charge.chargeId} className="flex items-center justify-between rounded border bg-card px-2 py-1 text-[11px]">
-            <span className="truncate">{charge.payerName ?? charge.chargeId}</span>
-            <span className="flex shrink-0 items-center gap-1">
-              <span className="tabular-nums">{money(charge.amount)}</span>
-              {laterRefunded ? (
-                <Badge variant="outline" className="border-rose-300 text-[9px] text-rose-700 dark:border-rose-800 dark:text-rose-300">
-                  Later refunded{partialLaterRefund ? ` · ${money(charge.amountRefunded)}` : ""}
-                </Badge>
-              ) : null}
-              {charge.exclusionReason ? (
-                <Badge variant="destructive" className="text-[9px]">Excluded</Badge>
-              ) : null}
-              {actions.isFinanceOrAdmin ? (
-                <CardActionsMenu items={[
-                  { label: "Exclude", onSelect: () => actions.openExclude({ kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId }) },
-                  { label: "Re-include", onSelect: () => actions.reInclude({ kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId }) },
-                  ...(charge.refundKind
-                    ? [
-                        { label: "Confirm refund", onSelect: () => actions.openConfirmRefund(charge.chargeId, charge.refundKind === "chargeback" ? "chargeback" : "refund", charge.payerName ?? charge.chargeId) },
-                        { label: "Dismiss refund", onSelect: () => actions.openDismissRefund(charge.chargeId, charge.payerName ?? charge.chargeId) },
-                      ]
-                    : []),
-                ]} />
-              ) : null}
+        <div className="mt-2 flex items-center justify-between gap-2">
+          {composition.payoutAmbiguous ? (
+            <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              guessed match
             </span>
-          </div>
-          );
-        })}
-        {refundTotal > 0 ? (
-          <div className="flex items-center justify-between rounded border border-rose-200 bg-rose-50/50 px-2 py-1 text-[11px] text-rose-800 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-300">
-            <span className="truncate">Refunds settled in payout</span>
-            <span className="tabular-nums">−{money(composition.refundTotal)}</span>
-          </div>
-        ) : null}
+          ) : (
+            <span />
+          )}
+          {actions.isFinanceOrAdmin && composition.payoutId ? (
+            <CardActionsMenu
+              items={[
+                ...(composition.payoutAmbiguous
+                  ? [
+                      {
+                        label: "Confirm match",
+                        onSelect: () =>
+                          actions.openConfirmPayoutBankMatch?.(
+                            composition.payoutId ?? "",
+                          ),
+                      },
+                    ]
+                  : []),
+                {
+                  label: "Unlink deposit",
+                  onSelect: () =>
+                    actions.openUnlinkPayoutDeposit?.(
+                      composition.payoutId ?? "",
+                    ),
+                },
+                {
+                  label: "Link to a different deposit…",
+                  onSelect: () =>
+                    actions.openLinkPayoutDeposit?.(
+                      composition.payoutId ?? "",
+                    ),
+                },
+                {
+                  label: "Resolve payout settlement",
+                  onSelect: () =>
+                    actions.openSettlementSearch({
+                      payoutId: composition.payoutId ?? "",
+                      amount: deposit.bank.amount,
+                      date: deposit.date ?? null,
+                    }),
+                },
+              ]}
+            />
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -374,7 +474,21 @@ function Composition({
   );
 }
 
-function accountingLabel(record: WorkbenchDepositAccountingCheck | WorkbenchDepositQbRecord): string {
+function asQbDetailRecord(
+  record: DepositAccountingRecord,
+): Parameters<ClusterActions["openQbDetail"]>[0] {
+  const role =
+    record.role === "component" || record.role === "provisional"
+      ? "anchor"
+      : record.role;
+  return { ...record, role } as Parameters<ClusterActions["openQbDetail"]>[0];
+}
+
+function accountingLabel(
+  record:
+    | DepositAccountingRecord
+    | WorkbenchDepositAccountingCheck,
+): string {
   return record.qbTransactionMemo ?? ("memo" in record ? record.memo : null) ?? record.payerName ?? record.lineDescription ?? record.stagedPaymentId;
 }
 
@@ -437,50 +551,64 @@ function Accounting({
   onDismissProvisional?: (id: string) => void;
 }) {
   const { accountingChecks: checks, qbRecords: records } = deposit;
-  const checksByPayment = new Map(checks.map((check) => [check.stagedPaymentId, check]));
+  const visibleRecords = preferStagedAccountingRecords(records);
+  const checksByPayment = new Map(
+    checks.map((check) => [check.stagedPaymentId, check]),
+  );
   const items = [
-    ...records.map((record) => ({ record, check: checksByPayment.get(record.stagedPaymentId) })),
+    ...visibleRecords.map((record) => ({
+      record,
+      check: checksByPayment.get(record.stagedPaymentId),
+    })),
     ...checks
-      .filter((check) => !records.some((record) => record.stagedPaymentId === check.stagedPaymentId))
+      .filter(
+        (check) =>
+          !visibleRecords.some(
+            (record) => record.stagedPaymentId === check.stagedPaymentId,
+          ),
+      )
       .map((check) => ({ record: undefined, check })),
   ];
-  const nodeGroups = [
-    ...deposit.composition.components.map((component) => ({
-      key: `component-${component.componentId}`,
-      label: componentTitle(component),
-      records: component.qboRecords ?? [],
-    })),
+  const nodeGroups = dedupeAccountingGroups([
     ...deposit.charges.map((charge) => ({
       key: `charge-${charge.chargeId}`,
       label: charge.payerName ?? charge.chargeId,
       records: charge.qboRecords ?? [],
     })),
+    ...deposit.composition.components.map((component) => ({
+      key: `component-${component.componentId}`,
+      label: componentTitle(component),
+      records: component.qboRecords ?? [],
+    })),
+    {
+      key: "deposit",
+      label: "Deposit accounting",
+      records: visibleRecords.filter((record) => record.role === "deposit"),
+    },
     ...deposit.gifts.map((gift) => ({
       key: `gift-${gift.giftId}`,
       label: gift.name ?? gift.giftId,
       records: gift.qboRecords ?? [],
     })),
-    {
-      key: "deposit",
-      label: "Deposit accounting",
-      records: records.filter((record) => record.role === "deposit"),
-    },
-  ].filter((group) => group.records.length > 0);
-  const nodeRecordIds = new Set(nodeGroups.flatMap((group) => group.records.map((record) => `${record.role}:${record.stagedPaymentId}:${record.linkedChargeId ?? ""}`)));
-  const unalignedItems = items.filter(({ record }) => {
-    if (!record) return true;
-    const linkedChargeId = "linkedChargeId" in record ? record.linkedChargeId ?? "" : "";
-    return !nodeRecordIds.has(`${record.role}:${record.stagedPaymentId}:${linkedChargeId}`);
-  });
-  const firstRecord = records[0];
+  ]);
+  const nodeRecordIds = new Set(
+    nodeGroups.flatMap((group) =>
+      group.records.map(accountingRecordIdentity),
+    ),
+  );
+  const unalignedItems = items.filter(
+    ({ record }) =>
+      !record || !nodeRecordIds.has(accountingRecordIdentity(record)),
+  );
+  const firstRecord = visibleRecords[0];
   const firstDisplay = firstRecord ?? checks[0];
   const firstCorrection = checks.find((check) => check.disposition === "correction_needed");
   const columnMenu = actions.isFinanceOrAdmin ? (
     <div className="flex items-center justify-end">
       <CardActionsMenu items={[
         { label: "Search for accounting evidence…", onSelect: () => actions.openDepositQbEvidenceSearch?.(deposit) },
-        { label: "Flag accounting error…", onSelect: () => actions.openFlagAccountingError?.(deposit), disabled: !records.length && !checks.length },
-        { label: "QB detail", onSelect: () => { if (firstRecord) actions.openQbDetail(firstRecord, checksByPayment.get(firstRecord.stagedPaymentId) ? "matched" : "missing"); }, disabled: !firstRecord },
+        { label: "Flag accounting error…", onSelect: () => actions.openFlagAccountingError?.(deposit), disabled: !visibleRecords.length && !checks.length },
+        { label: "QB detail", onSelect: () => { if (firstRecord) actions.openQbDetail(asQbDetailRecord(firstRecord), checksByPayment.get(firstRecord.stagedPaymentId) ? "matched" : "missing"); }, disabled: !firstRecord },
         { label: "Exclude", onSelect: () => { if (firstDisplay) actions.openExclude({ kind: "staged", id: firstDisplay.stagedPaymentId, label: accountingLabel(firstDisplay) }); }, disabled: !firstDisplay },
         { label: "Mark corrected", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "corrected"); }, disabled: !firstCorrection },
         { label: "Accept historical…", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "accepted_historical"); }, disabled: !firstCorrection },
@@ -534,7 +662,7 @@ function Accounting({
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-1">
-            {record?.unconfirmed ? <Badge variant="outline" className="border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+            {record && "unconfirmed" in record && record.unconfirmed ? <Badge variant="outline" className="border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
             {display.exclusionReason ? <Badge variant="secondary" className="text-[9px]">{display.exclusionReason.replaceAll("_", " ")}</Badge> : null}
             {check ? (
               <Badge variant={checkTone(check.disposition)} className="text-[10px]">
@@ -543,7 +671,12 @@ function Accounting({
             ) : null}
             {actions.isFinanceOrAdmin ? (
               <CardActionsMenu items={[
-                { label: "QB detail", onSelect: () => actions.openQbDetail(record ?? (display as WorkbenchDepositQbRecord), check ? "matched" : "missing") },
+                { label: "QB detail", onSelect: () => actions.openQbDetail(
+                    record
+                      ? asQbDetailRecord(record)
+                      : (display as WorkbenchDepositQbRecord),
+                    check ? "matched" : "missing",
+                  ) },
                 { label: "Exclude", onSelect: () => actions.openExclude(anchor) },
                 ...(check && check.disposition === "correction_needed"
                   ? [
@@ -690,6 +823,8 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
           ) : null}
           {deposit.gifts.map((gift) => {
             const anchor = giftAnchor(gift);
+            const allocations = gift.allocations ?? [];
+            const allocationPresentation = singleAllocationPresentation(gift);
             return (
             <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">
               <div className="flex items-start justify-between gap-2">
@@ -725,15 +860,32 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                 {gift.donorKind ? `${gift.donorKind} · ` : ""}{gift.donorName ?? "Donor not identified"}
               </p>
               <p className="text-[11px] tabular-nums">{money(gift.amount)}{gift.dateReceived ? ` · ${formatDateShort(gift.dateReceived)}` : ""}</p>
-              {(gift.allocations?.length ?? 0) > 0 ? (
+              {allocationPresentation.collapse ? (
+                allocationPresentation.summary ? (
+                  <p className="mt-1 whitespace-normal break-words text-[10px] text-muted-foreground">
+                    {allocationPresentation.summary}
+                  </p>
+                ) : null
+              ) : allocations.length > 0 ? (
                 <div className="mt-1 space-y-1">
-                  {gift.allocations?.map((allocation) => (
-                    <div key={allocation.id} className="rounded border bg-muted/30 px-2 py-1">
+                  {allocations.map((allocation) => (
+                    <div
+                      key={allocation.id}
+                      className="rounded border bg-muted/30 px-2 py-1"
+                    >
                       <div className="flex items-center justify-between gap-2 text-[10px]">
-                        <span className="truncate">{allocation.usage ?? "No usage coded"}</span>
-                        <span className="shrink-0 tabular-nums">{money(allocation.amount)}</span>
+                        <span className="truncate">
+                          {allocation.usage ?? "No usage coded"}
+                        </span>
+                        <span className="shrink-0 tabular-nums">
+                          {money(allocation.amount)}
+                        </span>
                       </div>
-                      {allocation.purpose ? <div className="whitespace-normal break-words text-[9px] text-muted-foreground">{allocation.purpose}</div> : null}
+                      {allocation.purpose ? (
+                        <div className="whitespace-normal break-words text-[9px] text-muted-foreground">
+                          {allocation.purpose}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
