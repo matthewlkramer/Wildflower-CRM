@@ -893,6 +893,9 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     // (the Stripe charge itself, and QB rows whose whole Stripe trace is such
     // charges).
     "refunded_charge",
+    // Not Wildflower's money at all (misdirected deposits, funds held for
+    // others) — deposit-level manual ruling.
+    "non_wf",
   ],
 );
 

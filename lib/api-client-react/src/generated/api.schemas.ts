@@ -2687,6 +2687,7 @@ export const StagedPaymentExclusionReason = {
   loan_proceeds: 'loan_proceeds',
   note_payable: 'note_payable',
   miscoded_withdrawal: 'miscoded_withdrawal',
+  non_wf: 'non_wf',
   failed_charge: 'failed_charge',
   refunded_charge: 'refunded_charge',
   loan: 'loan',
@@ -6189,6 +6190,7 @@ export const DepositExclusionReason = {
   expensify: 'expensify',
   returned_wire: 'returned_wire',
   miscoded_withdrawal: 'miscoded_withdrawal',
+  non_wf: 'non_wf',
   other: 'other',
 } as const;
 

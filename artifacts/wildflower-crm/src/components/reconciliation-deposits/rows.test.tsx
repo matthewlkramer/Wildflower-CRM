@@ -119,12 +119,14 @@ describe("deposit workbench rows", () => {
     expect(DEPOSIT_LENSES.map((lens) => lens.id)).toContain("accounting_corrections");
   });
 
-  it("shows the finance-only mark action for an unexcluded deposit", () => {
+  it("shows the finance-only exclusion reason list for an unexcluded deposit", () => {
     render(makeDeposit(), { isFinanceOrAdmin: true });
     const trigger = container.querySelector('button[aria-label="Card actions"]');
     expect(trigger).not.toBeNull();
     act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
-    expect(document.body.textContent).toContain("Mark not fundraising…");
+    expect(document.body.textContent).toContain("Mark as non-WF money");
+    expect(document.body.textContent).toContain("Mark as membership fee");
+    expect(document.body.textContent).toContain("Mark as excluded — other…");
   });
 
   it("shows return-to-open-queue for a direct bank exclusion", () => {

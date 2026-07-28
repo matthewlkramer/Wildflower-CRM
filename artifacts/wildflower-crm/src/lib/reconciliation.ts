@@ -761,6 +761,7 @@ export const EXCLUSION_REASON_LABELS: Record<
   miscoded_withdrawal: "Miscoded withdrawal",
   returned_wire: "Returned wire (non-gift)",
   other: "Other (not a gift)",
+  non_wf: "Non-WF money (not Wildflower's)",
   processor_payout: "Processor payout (reconciled to Stripe)",
   failed_charge: "Failed charge (never settled)",
   refunded_charge: "Refunded (never booked)",

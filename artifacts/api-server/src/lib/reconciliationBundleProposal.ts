@@ -91,6 +91,7 @@ export type StagedPaymentExclusionReason =
   | "loan_proceeds"
   | "note_payable"
   | "miscoded_withdrawal"
+  | "non_wf"
   | "failed_charge"
   | "refunded_charge"
   | "loan"
