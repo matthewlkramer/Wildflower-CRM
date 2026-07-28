@@ -528,12 +528,15 @@ describe("classifyStagedPayment", () => {
     ).toBe(false);
   });
 
-  // ─── entity attribution (no longer excluded as fiscally_sponsored) ────────
-  // Fiscally sponsored money is now ATTRIBUTED to its entity via detectEntity
-  // and kept in the review queue, instead of being auto-excluded.
-  it("attributes a fiscally sponsored project to its entity by QuickBooks Class (not excluded)", () => {
+  // ─── fiscally sponsored entity → non_wf (owner ruling) ────────────────────
+  // Money attributed to a fiscally sponsored entity is the sponsored project's
+  // money, not Wildflower's: excluded as non_wf, entity attribution kept.
+  it("excludes a fiscally sponsored project as non_wf by QuickBooks Class", () => {
     const input: ClassifierInput = { ...base, lineClasses: ["Embracing Equity"] };
-    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(classifyStagedPayment(input)).toEqual({
+      excluded: true,
+      reason: "non_wf",
+    });
     expect(detectEntity(input)).toBe("embracing_equity");
   });
 
@@ -542,7 +545,10 @@ describe("classifyStagedPayment", () => {
       ...base,
       lineClasses: ["  EMBRACING EQUITY : Cohort 3  "],
     };
-    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(classifyStagedPayment(input)).toEqual({
+      excluded: true,
+      reason: "non_wf",
+    });
     expect(detectEntity(input)).toBe("embracing_equity");
   });
 
@@ -580,17 +586,31 @@ describe("classifyStagedPayment", () => {
     ).toBe("embracing_equity");
   });
 
-  it("attributes (does not exclude) a fiscally sponsored project EVEN when it carries a donation line", () => {
-    // A donation coded to the other project is still the other project's money,
-    // but it now stays in the review queue attributed to that entity.
+  it("excludes a fiscally sponsored project as non_wf EVEN when it carries a donation line", () => {
+    // A donation coded to the sponsored project is a gift to THAT project, not
+    // to Wildflower — identity rule, so the donation-first guard does not save it.
     const input: ClassifierInput = {
       ...base,
       lineClasses: ["Embracing Equity"],
       lineItemNames: ["Donation - Individual Unrestricted"],
       lineAccountNames: ["4000 Unrestricted Donations"],
     };
-    expect(classifyStagedPayment(input).excluded).toBe(false);
+    expect(classifyStagedPayment(input)).toEqual({
+      excluded: true,
+      reason: "non_wf",
+    });
     expect(detectEntity(input)).toBe("embracing_equity");
+  });
+
+  it("does NOT exclude non-fiscally-sponsored entity money (attribution only)", () => {
+    // Black Wildflowers Fund / Observation Support Techs are Wildflower
+    // entities, not sponsored projects — attributed, kept in the queue.
+    const bwf: ClassifierInput = { ...base, payerName: "Black Wildflowers Fund" };
+    expect(classifyStagedPayment(bwf).excluded).toBe(false);
+    expect(detectEntity(bwf)).toBe("black_wildflowers_fund");
+    const ost: ClassifierInput = { ...base, lineClasses: ["Observant Education"] };
+    expect(classifyStagedPayment(ost).excluded).toBe(false);
+    expect(detectEntity(ost)).toBe("observation_support_tech");
   });
 
   it("detects each non-sunlight entity marker in declaration order", () => {

@@ -285,12 +285,32 @@ export const SEED_RULES: EngineRule[] = [
   // counts_toward_goal=false. The migration disables/deletes the persisted
   // seed_government_reimbursement handling rule.
   //
-  // NOTE: the former `seed_fiscally_sponsored` exclude rule (priority 50) was
-  // likewise removed — fiscally sponsored money is no longer auto-excluded. It is
-  // attributed to its Wildflower entity (entity_id) via `detectEntity` and kept
-  // in the review queue, surfaced via the "Fiscally-sponsored without
-  // corresponding gift" worklist. Priority 50 is intentionally left a gap. The
-  // migration disables/deletes the persisted seed_fiscally_sponsored rule too.
+  // NOTE: the former `seed_fiscally_sponsored` exclude rule (priority 50,
+  // reason fiscally_sponsored) was removed for a while — fiscally sponsored
+  // money flowed into the queue with only entity attribution. Per owner ruling
+  // it is excluded again, now as `non_wf` (it is the sponsored project's money,
+  // not Wildflower's): `seed_fiscally_sponsored_non_wf` below re-occupies
+  // priority 50. Entity attribution (detectEntity → entity_id) still happens
+  // alongside. Lockstep: FISCALLY_SPONSORED_ENTITY_IDS / ENTITY_MARKERS in
+  // quickbooksExclusionRules.ts and the migration seed SQL.
+  {
+    id: "seed_fiscally_sponsored_non_wf",
+    enabled: true,
+    priority: 50,
+    action: "exclude",
+    exclusionReason: "non_wf",
+    donationGuard: N,
+    matchLogic: "any",
+    conditions: [
+      { field: "any_text", mode: "contains", value: "embracing equity" },
+      { field: "any_text", mode: "contains", value: "tierra indígena" },
+      { field: "any_text", mode: "contains", value: "tierra indigena" },
+      { field: "any_text", mode: "contains", value: "rising tide" },
+    ],
+    targetOrganizationId: null,
+    targetIntendedUsage: null,
+    targetFundableProjectId: null,
+  },
   {
     id: "seed_insurance",
     enabled: true,
