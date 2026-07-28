@@ -62,21 +62,91 @@ jobs:
         run: |
           ROWS=artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
           PAGE=artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
-
-          git diff --ignore-all-space origin/main -- "$ROWS" > /tmp/rows-semantic.patch
-          test -s /tmp/rows-semantic.patch
           git checkout origin/main -- "$ROWS" "$PAGE"
-          git apply --3way /tmp/rows-semantic.patch
 
           python - <<'PY'
           from pathlib import Path
-          path = Path('artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx')
-          text = path.read_text()
+
+          rows_path = Path('artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx')
+          rows = rows_path.read_text()
+
+          qb_preview_start = rows.index('function qbPreview(')
+          deposit_row_start = rows.index('export function DepositRow', qb_preview_start)
+          rows = rows[:qb_preview_start] + rows[deposit_row_start:]
+
+          segment_start = rows.index('  const linkedStagedPaymentIds =')
+          segment_end = rows.index('  const giftAnchor =', segment_start)
+          replacement = '''  const giftColumnAnchor: AnchorRef | null = (() => {
+            const charge = deposit.charges.find((item) => !item.linkedGiftId);
+            if (charge) {
+              return {
+                kind: "charge",
+                id: charge.chargeId,
+                label: charge.payerName ?? charge.chargeId,
+              };
+            }
+            const component =
+              deposit.composition.kind === "components"
+                ? deposit.composition.components.find(
+                    (item) =>
+                      (item.countedGiftIds?.length ?? 0) === 0 &&
+                      Boolean(item.stagedPaymentId),
+                  )
+                : undefined;
+            if (component?.stagedPaymentId) {
+              return {
+                kind: "staged",
+                id: component.stagedPaymentId,
+                label: component.label ?? component.kind,
+              };
+            }
+            return null;
+          })();
+          const bankPreview: EvidencePreview = {
+            amount: money(deposit.bank.amount),
+            date: deposit.date ? formatDateShort(deposit.date) : "—",
+            method: "Bank deposit",
+            source: deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId,
+            memo: deposit.bank.memo ?? null,
+          };
+          const unlinkedCharges = deposit.charges.filter(
+            (charge) => !charge.linkedGiftId,
+          );
+          const unlinkedComponents =
+            deposit.composition.kind === "components"
+              ? deposit.composition.components.filter(
+                  (component) =>
+                    component.source === "bank_spine" &&
+                    (component.countedGiftIds?.length ?? 0) === 0 &&
+                    component.stagedPaymentId,
+                )
+              : [];
+          const hasGiftColumnCards =
+            deposit.gifts.length > 0 ||
+            unlinkedCharges.length > 0 ||
+            unlinkedComponents.length > 0;
+          '''
+          rows = rows[:segment_start] + replacement + rows[segment_end:]
+
+          qb_cards_start = rows.find('          {unlinkedQbRecords.map((record) => {')
+          if qb_cards_start < 0:
+              raise SystemExit('unlinked QBO gift-card block not found')
+          components_start = rows.find(
+              '          {unlinkedComponents.map((component) => {',
+              qb_cards_start,
+          )
+          if components_start < 0:
+              raise SystemExit('unlinked component block not found')
+          rows = rows[:qb_cards_start] + rows[components_start:]
+          rows_path.write_text(rows)
+
+          page_path = Path('artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx')
+          page = page_path.read_text()
           old = 'No reconciliation actions recorded yet.'
           new = 'No reversible reconciliation actions recorded yet.'
-          if old not in text:
+          if old not in page:
               raise SystemExit('recent changes empty-state text not found')
-          path.write_text(text.replace(old, new, 1))
+          page_path.write_text(page.replace(old, new, 1))
           PY
 
       - name: Build schema and typecheck
