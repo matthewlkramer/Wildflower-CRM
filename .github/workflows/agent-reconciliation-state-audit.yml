@@ -1,9 +1,6 @@
 name: Agent reconciliation state patch
 
 on:
-  push:
-    branches:
-      - agent/reconciliation-state-audit
   pull_request:
     branches:
       - main
@@ -17,7 +14,7 @@ permissions:
 
 concurrency:
   group: agent-reconciliation-state-audit
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply-and-validate:
