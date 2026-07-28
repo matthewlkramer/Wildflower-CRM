@@ -1,0 +1,1 @@
+error: corrupt patch at .agent/reconciliation-state-audit.patch:24
