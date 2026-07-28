@@ -40,6 +40,8 @@ jobs:
     env:
       CI: "true"
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: test-only-not-used
 
     steps:
       - name: Check out branch
