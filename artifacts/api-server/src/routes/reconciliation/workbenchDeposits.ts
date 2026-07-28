@@ -517,14 +517,14 @@ function stateForDeposit(
   }));
 
   const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
-      qbRecordId: String(c.stagedPaymentId),
+    qbRecordId: String(c.stagedPaymentId),
     state:
       c.disposition === "consistent" || c.disposition === "corrected"
         ? "matched_complete"
         : c.disposition === "accepted_historical"
           ? "excluded"
           : "matched_conflict",
-      isTransactionEvidence: false,
+    isTransactionEvidence: false,
   }));
 
   const compositionPresent = Boolean(
@@ -1248,50 +1248,50 @@ router.get(
       );
       return [
         {
-        id: `bank_deposit:${r.id}`,
-        kind: "bank_deposit" as const,
-        anchorId: r.id,
-        status: state.information.state,
-        date: r.deposit_date,
-        title: r.memo || r.reference || r.account,
-        lenses,
-        bank: {
-          amount: r.amount,
-          currency: r.currency,
-          account: r.account,
-          location: r.location,
-          reference: r.reference,
-          memo: r.memo,
-          payee: r.payee,
-          refNo: r.ref_no,
-          txnType: r.txn_type,
-        },
-        composition: {
-          kind: r.payout_id
-            ? "stripe_payout"
-            : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
-              ? "stripe_unlinked"
-              : r.components.length
-                ? "components"
-                : r.provisional_components.length
-                  ? "qbo_provisional"
-                  : "unresolved",
-          payoutId: r.payout_id,
-          payoutDate: r.payout_date,
-          grossTotal: r.payout_gross,
-          feeTotal: r.payout_fee,
-          refundTotal: r.payout_refund_total,
-          adjustmentTotal: r.payout_adjustment,
-          netTotal: r.payout_net,
-          chargeCount: r.payout_charge_count,
-          payoutAmbiguous: r.payout_ambiguous,
-          explainedAmount: r.payout_id
-            ? r.amount
+          id: `bank_deposit:${r.id}`,
+          kind: "bank_deposit" as const,
+          anchorId: r.id,
+          status: state.information.state,
+          date: r.deposit_date,
+          title: r.memo || r.reference || r.account,
+          lenses,
+          bank: {
+            amount: r.amount,
+            currency: r.currency,
+            account: r.account,
+            location: r.location,
+            reference: r.reference,
+            memo: r.memo,
+            payee: r.payee,
+            refNo: r.ref_no,
+            txnType: r.txn_type,
+          },
+          composition: {
+            kind: r.payout_id
+              ? "stripe_payout"
+              : s.f_ambiguous && /stripe\s+transfer/i.test(r.memo ?? "")
+                ? "stripe_unlinked"
+                : r.components.length
+                  ? "components"
+                  : r.provisional_components.length
+                    ? "qbo_provisional"
+                    : "unresolved",
+            payoutId: r.payout_id,
+            payoutDate: r.payout_date,
+            grossTotal: r.payout_gross,
+            feeTotal: r.payout_fee,
+            refundTotal: r.payout_refund_total,
+            adjustmentTotal: r.payout_adjustment,
+            netTotal: r.payout_net,
+            chargeCount: r.payout_charge_count,
+            payoutAmbiguous: r.payout_ambiguous,
+            explainedAmount: r.payout_id
+              ? r.amount
               : [...r.components, ...r.provisional_components]
                   .reduce((sum, c) => sum + amount(c.amount), 0)
                   .toFixed(2),
-          unexplainedAmount: r.payout_id
-            ? "0.00"
+            unexplainedAmount: r.payout_id
+              ? "0.00"
               : Math.max(
                   0,
                   amount(r.amount) -
@@ -1300,21 +1300,21 @@ router.get(
                       0,
                     ),
                 ).toFixed(2),
-          components: [...r.components, ...r.provisional_components],
-          units: r.units,
-        },
-        gifts,
-        charges: r.charges,
-        qbRecords: r.qb_records,
-        accountingChecks: r.accounting_checks,
-        bankExclusion: r.bank_exclusion_reason
-          ? { reason: r.bank_exclusion_reason, note: r.bank_exclusion_note }
-          : null,
-        notFundraisingReason: r.not_fundraising_reason,
-        coverage: {
-          evidenceRecords: [],
-          donorPurpose: {
-            crmLinkage: {
+            components: [...r.components, ...r.provisional_components],
+            units: r.units,
+          },
+          gifts,
+          charges: r.charges,
+          qbRecords: r.qb_records,
+          accountingChecks: r.accounting_checks,
+          bankExclusion: r.bank_exclusion_reason
+            ? { reason: r.bank_exclusion_reason, note: r.bank_exclusion_note }
+            : null,
+          notFundraisingReason: r.not_fundraising_reason,
+          coverage: {
+            evidenceRecords: [],
+            donorPurpose: {
+              crmLinkage: {
                 grain: state.transactions.length ? "unit" : "none",
                 complete: state.linkage.transactionToCrm.state === "complete",
                 coveredIds: coveredTransactions.map(
@@ -1323,40 +1323,40 @@ router.get(
                 uncoveredIds: uncoveredTransactions.map(
                   (transaction) => transaction.transactionId,
                 ),
-              expectedAmount: r.amount,
+                expectedAmount: r.amount,
                 representedAmount: gifts
                   .reduce((sum, g) => sum + amount(g.amount), 0)
                   .toFixed(2),
-              representationNote: null,
-            },
-            crmRecordCompleteness: buildCrmRecordCompleteness(
-              gifts.map((g) => ({
-                giftId: g.giftId,
-                opportunityId: g.opportunityId,
-                name: g.name,
-                donorName: g.donorName,
-                donorKind: g.donorKind,
-                donorId: g.donorId,
-                amount: g.amount,
-                dateReceived: g.dateReceived,
-                quickbooksTie: null,
-                donorbox: g.donorbox,
-                grantLetter: g.grantLetter,
-                codingForm: g.codingForm,
-                recordComplete: g.recordComplete,
+                representationNote: null,
+              },
+              crmRecordCompleteness: buildCrmRecordCompleteness(
+                gifts.map((g) => ({
+                  giftId: g.giftId,
+                  opportunityId: g.opportunityId,
+                  name: g.name,
+                  donorName: g.donorName,
+                  donorKind: g.donorKind,
+                  donorId: g.donorId,
+                  amount: g.amount,
+                  dateReceived: g.dateReceived,
+                  quickbooksTie: null,
+                  donorbox: g.donorbox,
+                  grantLetter: g.grantLetter,
+                  codingForm: g.codingForm,
+                  recordComplete: g.recordComplete,
                   satisfiedBy: g.recordComplete
                     ? "donor_and_allocations"
                     : null,
-                crmReason: g.recordComplete ? null : "missing_donor",
-                linkedChargeIds: g.linkedChargeIds,
-                linkedStagedPaymentIds: g.linkedStagedPaymentIds,
-              })),
-            ),
+                  crmReason: g.recordComplete ? null : "missing_donor",
+                  linkedChargeIds: g.linkedChargeIds,
+                  linkedStagedPaymentIds: g.linkedStagedPaymentIds,
+                })),
+              ),
               complete:
                 state.information.crmComplete &&
                 state.linkage.transactionToCrm.state === "complete",
-          },
-          paymentTransaction: {
+            },
+            paymentTransaction: {
               grain: state.linkage.accountingToTransaction.grain,
               complete:
                 state.linkage.accountingToTransaction.state === "complete",
@@ -1369,11 +1369,11 @@ router.get(
                   : state.transactions.map(
                       (transaction) => transaction.transactionId,
                     ),
-            expectedAmount: r.amount,
-            representedAmount: r.amount,
-            representationNote: null,
-          },
-          accountingEvidence: {
+              expectedAmount: r.amount,
+              representedAmount: r.amount,
+              representationNote: null,
+            },
+            accountingEvidence: {
               grain:
                 r.accounting_checks.length || r.qb_records.length
                   ? "bundle"
@@ -1382,14 +1382,14 @@ router.get(
               coveredIds: r.accounting_checks.map((c) =>
                 String(c.stagedPaymentId),
               ),
-            uncoveredIds: [],
-            expectedAmount: r.amount,
-            representedAmount: r.amount,
-            representationNote: null,
+              uncoveredIds: [],
+              expectedAmount: r.amount,
+              representedAmount: r.amount,
+              representationNote: null,
+            },
+            complete: rowCompleteFromState(state),
+            state,
           },
-          complete: rowCompleteFromState(state),
-          state,
-        },
         },
       ];
     });
@@ -1520,13 +1520,13 @@ router.patch(
       `);
       const component = (
         componentResult.rows as Array<{
-        id: string;
-        source: string;
-        needs_review: boolean;
-        payment_unit_id: string;
-        unit_id: string;
-        kind: string;
-        source_staged_payment_id: string | null;
+          id: string;
+          source: string;
+          needs_review: boolean;
+          payment_unit_id: string;
+          unit_id: string;
+          kind: string;
+          source_staged_payment_id: string | null;
         }>
       )[0];
       if (!component) return { kind: "not_found" as const };
@@ -1576,11 +1576,11 @@ router.patch(
       `);
       const target = (
         targetResult.rows as Array<{
-        id: string;
-        exclusion_reason: string | null;
-        claimed_by_unit: boolean;
-        linked_in_source_links: boolean;
-        counted_to_gift: boolean;
+          id: string;
+          exclusion_reason: string | null;
+          claimed_by_unit: boolean;
+          linked_in_source_links: boolean;
+          counted_to_gift: boolean;
         }>
       )[0];
       if (
@@ -1783,10 +1783,10 @@ router.get(
     `);
     const deposit = (
       depositResult.rows as Array<{
-      amount: string;
-      component_total: string;
-      provisional_total: string;
-      payout_amount: string | null;
+        amount: string;
+        component_total: string;
+        provisional_total: string;
+        payout_amount: string | null;
       }>
     )[0];
     if (!deposit) {
@@ -1843,12 +1843,12 @@ router.get(
     res.json({
       data: (
         result.rows as Array<{
-        id: string;
-        kind: "check" | "direct_ach" | "wire" | "other";
-        amount: string;
-        currency: string;
-        received_date: string | null;
-        source_label: string;
+          id: string;
+          kind: "check" | "direct_ach" | "wire" | "other";
+          amount: string;
+          currency: string;
+          received_date: string | null;
+          source_label: string;
         }>
       ).map((row) => ({
         id: row.id,
@@ -1903,12 +1903,12 @@ router.post(
       `);
       const deposit = (
         depositResult.rows as Array<{
-        amount: string;
-        currency: string;
-        deposit_date: string;
-        payout_amount: string | null;
-        component_total: string;
-        provisional_total: string;
+          amount: string;
+          currency: string;
+          deposit_date: string;
+          payout_amount: string | null;
+          component_total: string;
+          provisional_total: string;
         }>
       )[0];
       if (!deposit) return { kind: "not_found" as const };
@@ -1941,10 +1941,10 @@ router.post(
         `);
         const unit = (
           unitResult.rows as Array<{
-          id: string;
-          kind: "check" | "direct_ach" | "wire" | "other";
-          stripe_charge_id: string | null;
-          amount: string | null;
+            id: string;
+            kind: "check" | "direct_ach" | "wire" | "other";
+            stripe_charge_id: string | null;
+            amount: string | null;
           }>
         )[0];
         if (
@@ -2307,12 +2307,12 @@ router.delete(
       `);
       const component = (
         componentResult.rows as Array<{
-        id: string;
-        source: string;
-        payment_unit_id: string;
-        unit_id: string;
-        minted: boolean;
-        has_counted_application: boolean;
+          id: string;
+          source: string;
+          payment_unit_id: string;
+          unit_id: string;
+          minted: boolean;
+          has_counted_application: boolean;
         }>
       )[0];
       if (!component) return { kind: "not_found" as const };
@@ -2489,10 +2489,10 @@ router.get(
     `);
     const deposit = (
       depositResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
-      deposit_date: string;
+        id: string;
+        amount: string;
+        currency: string;
+        deposit_date: string;
       }>
     )[0];
     if (!deposit) {
@@ -2526,13 +2526,13 @@ router.get(
     res.json({
       data: (
         result.rows as Array<{
-        payout_id: string;
-        arrival_date: string;
-        amount: string;
-        currency: string;
-        current_bank_deposit_id: string | null;
-        current_deposit_date: string | null;
-        ambiguous: boolean;
+          payout_id: string;
+          arrival_date: string;
+          amount: string;
+          currency: string;
+          current_bank_deposit_id: string | null;
+          current_deposit_date: string | null;
+          ambiguous: boolean;
         }>
       ).map((row) => ({
         payoutId: row.payout_id,
@@ -2558,10 +2558,10 @@ router.get(
     `);
     const payout = (
       payoutResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
-      arrival_date: string | null;
+        id: string;
+        amount: string;
+        currency: string;
+        arrival_date: string | null;
       }>
     )[0];
     if (!payout) {
@@ -2597,13 +2597,13 @@ router.get(
     res.json({
       data: (
         result.rows as Array<{
-        bank_deposit_id: string;
-        deposit_date: string;
-        amount: string;
-        currency: string;
-        memo: string | null;
-        claimed: boolean;
-        ambiguous: boolean;
+          bank_deposit_id: string;
+          deposit_date: string;
+          amount: string;
+          currency: string;
+          memo: string | null;
+          claimed: boolean;
+          ambiguous: boolean;
         }>
       ).map((row) => ({
         bankDepositId: row.bank_deposit_id,
@@ -2632,9 +2632,9 @@ router.post(
     `);
     const payout = (
       payoutResult.rows as Array<{
-      id: string;
-      amount: string | null;
-      currency: string | null;
+        id: string;
+        amount: string | null;
+        currency: string | null;
       }>
     )[0];
     if (!payout) {
@@ -2650,9 +2650,9 @@ router.post(
     `);
     const deposit = (
       depositResult.rows as Array<{
-      id: string;
-      amount: string;
-      currency: string;
+        id: string;
+        amount: string;
+        currency: string;
       }>
     )[0];
     if (!deposit) {

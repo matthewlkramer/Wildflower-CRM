@@ -347,9 +347,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const first = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
       {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "membership", note: "initial review" }),
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "membership", note: "initial review" }),
       },
     );
     expect(first.status).toBe(200);
@@ -361,8 +361,8 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const second = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
       {
-      method: "POST",
-      headers: { "content-type": "application/json" },
+        method: "POST",
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({
           reason: "intercompany_transfer",
           note: "updated review",
@@ -399,9 +399,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const invalid = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
       {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "failed_charge" }),
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "failed_charge" }),
       },
     );
     expect(invalid.status).toBe(400);
@@ -410,9 +410,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const forbidden = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
       {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ reason: "other" }),
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "other" }),
       },
     );
     expect(forbidden.status).toBe(403);
@@ -951,9 +951,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const created = await postJson(
       `/api/reconciliation/deposits/${deposit}/components`,
       {
-      mode: "create",
-      kind: "other",
-      amount: "75000.00",
+        mode: "create",
+        kind: "other",
+        amount: "75000.00",
       },
     );
     expect(created.status).toBe(201);
@@ -974,8 +974,8 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const linked = await postJson(
       `/api/reconciliation/deposits/${deposit}/components`,
       {
-      mode: "gift",
-      giftId,
+        mode: "gift",
+        giftId,
       },
     );
     expect(linked.status).toBe(201);
@@ -1011,12 +1011,12 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(candidates.status).toBe(200);
     expect(candidates.json.data).toEqual(
       expect.arrayContaining([
-      expect.objectContaining({
-        payoutId,
-        currentBankDepositId: currentDeposit,
-        currentDepositDate: "2099-12-31",
-        ambiguous: true,
-      }),
+        expect.objectContaining({
+          payoutId,
+          currentBankDepositId: currentDeposit,
+          currentDepositDate: "2099-12-31",
+          ambiguous: true,
+        }),
       ]),
     );
 
@@ -1027,10 +1027,10 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(depositCandidates.json.data).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-      bankDepositId: targetDeposit,
-      depositDate: "2099-12-31",
-      claimed: false,
-      ambiguous: false,
+          bankDepositId: targetDeposit,
+          depositDate: "2099-12-31",
+          claimed: false,
+          ambiguous: false,
         }),
       ]),
     );
@@ -1038,9 +1038,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const validLinkResponse = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${payoutId}/bank-deposit`,
       {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankDepositId: targetDeposit }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankDepositId: targetDeposit }),
       },
     );
     expect(validLinkResponse.status).toBe(200);
@@ -1091,9 +1091,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const occupiedLink = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${candidate}/bank-deposit`,
       {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankDepositId: occupied }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankDepositId: occupied }),
       },
     );
     expect(occupiedLink.status).toBe(409);
@@ -1104,9 +1104,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const componentLink = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${componentPayout}/bank-deposit`,
       {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankDepositId: componentDeposit }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankDepositId: componentDeposit }),
       },
     );
     expect(componentLink.status).toBe(409);
@@ -1116,9 +1116,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const mismatchLink = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${mismatchPayout}/bank-deposit`,
       {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ bankDepositId: mismatchDeposit }),
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankDepositId: mismatchDeposit }),
       },
     );
     expect(mismatchLink.status).toBe(400);
@@ -1134,7 +1134,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const response = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${payoutId}/confirm-bank-match`,
       {
-      method: "POST",
+        method: "POST",
       },
     );
     expect(response.status).toBe(200);
@@ -1154,7 +1154,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const untied = await fetch(
       `${baseUrl}/api/reconciliation/payouts/${untiedPayout}/confirm-bank-match`,
       {
-      method: "POST",
+        method: "POST",
       },
     );
     expect(untied.status).toBe(404);
@@ -1162,7 +1162,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const missing = await fetch(
       `${baseUrl}/api/reconciliation/payouts/missing-payout/confirm-bank-match`,
       {
-      method: "POST",
+        method: "POST",
       },
     );
     expect(missing.status).toBe(404);
