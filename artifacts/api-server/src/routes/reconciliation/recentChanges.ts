@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { auditLog, users } from "@workspace/db/schema";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { type ReconUndoKind } from "../../lib/reconciliationAudit";
@@ -47,33 +47,31 @@ router.get(
   "/reconciliation/workbench-recent-changes",
   asyncHandler(async (req, res) => {
     const user = getAppUser(req);
-    if (!user) {
+    if (!user?.id) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
 
-    // Pull a wider window before filtering because non-reversible audit events
-    // may be interleaved with the reversible action from the same UI flow.
+    // Keep the proven reconciliation-domain query shape, then apply the
+    // reviewer/undo filters in memory. A wider window prevents intermediate
+    // non-reversible events from displacing useful undo entries.
     const rows = await db
       .select({
         id: auditLog.id,
         at: auditLog.createdAt,
+        actorUserId: auditLog.actorUserId,
         actorName: actorNameExpr.as("actor_name"),
         summary: auditLog.summary,
         metadata: auditLog.metadata,
       })
       .from(auditLog)
       .leftJoin(users, eq(users.id, auditLog.actorUserId))
-      .where(
-        and(
-          eq(auditLog.actorUserId, user.id),
-          sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`,
-        ),
-      )
+      .where(sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`)
       .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-      .limit(100);
+      .limit(500);
 
     const items = rows
+      .filter((row) => row.actorUserId === user.id)
       .map((row) => ({
         id: row.id,
         at: row.at,
