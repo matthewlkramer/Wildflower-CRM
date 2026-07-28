@@ -1,4 +1,4 @@
-name: Agent reconciliation state patch
+name: Reconciliation state validation
 
 on:
   pull_request:
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  apply-and-validate:
+  validate:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -63,78 +63,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Normalize and apply reviewed patch
+      - name: Check formatting
         run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          source = Path('.agent/reconciliation-state-audit.patch')
-          target = Path('/tmp/reconciliation-state-audit.patch')
-          lines = source.read_text(encoding='utf-8').splitlines(keepends=True)
-          header = re.compile(
-              r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*?)(\r?\n)?$'
-          )
-          output: list[str] = []
-          i = 0
-          while i < len(lines):
-              match = header.match(lines[i])
-              if not match:
-                  output.append(lines[i])
-                  i += 1
-                  continue
-              j = i + 1
-              while j < len(lines):
-                  if lines[j].startswith('@@ ') or lines[j].startswith('diff --git '):
-                      break
-                  j += 1
-              hunk = lines[i + 1:j]
-              old_count = sum(1 for line in hunk if line.startswith((' ', '-')))
-              new_count = sum(1 for line in hunk if line.startswith((' ', '+')))
-              newline = match.group(6) or '\n'
-              output.append(
-                  f'@@ -{match.group(1)},{old_count} +{match.group(3)},{new_count} @@'
-                  f'{match.group(5)}{newline}'
-              )
-              output.extend(hunk)
-              i = j
-          target.write_text(''.join(output), encoding='utf-8')
-          PY
-
-          set +e
-          APPLY_OUTPUT="$(git apply --check /tmp/reconciliation-state-audit.patch 2>&1)"
-          APPLY_STATUS=$?
-          set -e
-          if [ "$APPLY_STATUS" -ne 0 ]; then
-            printf '%s\n' "$APPLY_OUTPUT" > .agent/patch-apply-error.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .agent/patch-apply-error.txt
-            if ! git diff --cached --quiet; then
-              git commit -m "Record reconciliation patch apply failure"
-              git push origin HEAD:agent/reconciliation-state-audit
-            fi
-            printf '%s\n' "$APPLY_OUTPUT"
-            exit "$APPLY_STATUS"
-          fi
-          rm -f .agent/patch-apply-error.txt
-          git apply /tmp/reconciliation-state-audit.patch
-
-          python - <<'PY'
-          from pathlib import Path
-
-          route = Path('artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts')
-          text = route.read_text(encoding='utf-8')
-          old = '  type TransactionEntry,\n} from "./workbenchRowState";'
-          new = '  type TransactionEntry,\n  type WorkbenchRowState,\n} from "./workbenchRowState";'
-          if old not in text:
-              raise SystemExit('expected workbenchRowState import block not found')
-          route.write_text(text.replace(old, new, 1), encoding='utf-8')
-          PY
-
-      - name: Format changed files
-        run: |
-          pnpm exec prettier --write \
+          pnpm exec prettier --check \
             artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
             artifacts/api-server/src/routes/reconciliation/workbenchDepositState.ts \
             artifacts/api-server/src/routes/reconciliation/workbenchDepositState.test.ts \
@@ -147,30 +78,8 @@ jobs:
 
       - name: Typecheck API and scripts
         run: |
-          set +e
-          API_OUTPUT="$(pnpm run check:api 2>&1)"
-          API_STATUS=$?
-          SCRIPTS_OUTPUT="$(pnpm --filter @workspace/scripts run typecheck 2>&1)"
-          SCRIPTS_STATUS=$?
-          set -e
-          if [ "$API_STATUS" -ne 0 ] || [ "$SCRIPTS_STATUS" -ne 0 ]; then
-            {
-              printf '%s\n' '=== API TYPECHECK ==='
-              printf '%s\n' "$API_OUTPUT"
-              printf '%s\n' '=== SCRIPTS TYPECHECK ==='
-              printf '%s\n' "$SCRIPTS_OUTPUT"
-            } > .agent/typecheck-error.txt
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .agent/typecheck-error.txt
-            if ! git diff --cached --quiet; then
-              git commit -m "Record reconciliation typecheck failure"
-              git push origin HEAD:agent/reconciliation-state-audit
-            fi
-            cat .agent/typecheck-error.txt
-            exit 1
-          fi
-          rm -f .agent/typecheck-error.txt
+          pnpm run check:api
+          pnpm --filter @workspace/scripts run typecheck
 
       - name: Run focused reconciliation tests
         run: |
@@ -181,6 +90,7 @@ jobs:
           TEST_STATUS=$?
           set -e
           if [ "$TEST_STATUS" -ne 0 ]; then
+            mkdir -p .agent
             printf '%s\n' "$TEST_OUTPUT" > .agent/test-error.txt
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -192,19 +102,14 @@ jobs:
             cat .agent/test-error.txt
             exit "$TEST_STATUS"
           fi
-          rm -f .agent/test-error.txt
 
-      - name: Commit validated implementation
+      - name: Remove temporary validation scaffolding
         run: |
-          rm -f .agent/reconciliation-state-audit.patch
-          rm -f .agent/patch-apply-error.txt
-          rm -f .agent/typecheck-error.txt
-          rm -f .agent/test-error.txt
+          rm -rf .agent
           rm -f .github/workflows/agent-reconciliation-state-audit.yml
-          rmdir .agent 2>/dev/null || true
           rmdir .github/workflows 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Fix reconciliation completion state and add audit"
+          git commit -m "Finalize validated reconciliation state changes"
           git push origin HEAD:agent/reconciliation-state-audit
