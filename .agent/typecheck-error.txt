@@ -1,0 +1,18 @@
+=== API TYPECHECK ===
+
+> workspace@0.0.0 check:api /home/runner/work/Wildflower-CRM/Wildflower-CRM
+> pnpm --filter @workspace/api-server run typecheck
+
+
+> @workspace/api-server@0.0.0 typecheck /home/runner/work/Wildflower-CRM/Wildflower-CRM/artifacts/api-server
+> flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../../tsconfig.json && tsc -p tsconfig.json --noEmit'
+
+src/routes/reconciliation/workbenchDeposits.ts(566,10): error TS2304: Cannot find name 'WorkbenchRowState'.
+/home/runner/work/Wildflower-CRM/Wildflower-CRM/artifacts/api-server:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/api-server@0.0.0 typecheck: `flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../../tsconfig.json && tsc -p tsconfig.json --noEmit'`
+Exit status 2
+ ELIFECYCLE  Command failed with exit code 2.
+=== SCRIPTS TYPECHECK ===
+
+> @workspace/scripts@0.0.0 typecheck /home/runner/work/Wildflower-CRM/Wildflower-CRM/scripts
+> flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../tsconfig.json && tsc -p tsconfig.json --noEmit'
