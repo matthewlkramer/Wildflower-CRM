@@ -2134,22 +2134,18 @@ router.post(
       return;
     }
     if (result.kind === "invalid_amount") {
-      res
-        .status(400)
-        .json({
-          error: "invalid_amount",
-          message: "Amount must be greater than zero.",
-        });
+      res.status(400).json({
+        error: "invalid_amount",
+        message: "Amount must be greater than zero.",
+      });
       return;
     }
     if (result.kind === "unit_unavailable") {
-      res
-        .status(409)
-        .json({
-          error: "payment_unit_unavailable",
-          message:
-            "That payment unit is already claimed or is not a direct payment.",
-        });
+      res.status(409).json({
+        error: "payment_unit_unavailable",
+        message:
+          "That payment unit is already claimed or is not a direct payment.",
+      });
       return;
     }
     if (result.kind === "gift_not_found") {
@@ -2157,33 +2153,27 @@ router.post(
       return;
     }
     if (result.kind === "deposit_units_ambiguous") {
-      res
-        .status(409)
-        .json({
-          error: "deposit_units_ambiguous",
-          message:
-            "This deposit has several gift-less payments — pass the exact payment amount to pick which one pays this gift.",
-        });
+      res.status(409).json({
+        error: "deposit_units_ambiguous",
+        message:
+          "This deposit has several gift-less payments — pass the exact payment amount to pick which one pays this gift.",
+      });
       return;
     }
     if (result.kind === "gift_units_ambiguous") {
-      res
-        .status(409)
-        .json({
-          error: "gift_units_ambiguous",
-          message:
-            "That gift has several unclaimed payment units — use Add known payment to pick the exact one.",
-        });
+      res.status(409).json({
+        error: "gift_units_ambiguous",
+        message:
+          "That gift has several unclaimed payment units — use Add known payment to pick the exact one.",
+      });
       return;
     }
     if (result.kind === "amount_exceeds_remainder") {
-      res
-        .status(409)
-        .json({
-          error: "amount_exceeds_remainder",
-          message:
-            "The component amount exceeds this deposit's unexplained remainder.",
-        });
+      res.status(409).json({
+        error: "amount_exceeds_remainder",
+        message:
+          "The component amount exceeds this deposit's unexplained remainder.",
+      });
       return;
     }
     res.status(201).json({
@@ -2360,13 +2350,11 @@ router.delete(
       return;
     }
     if (result.kind === "not_removable") {
-      res
-        .status(409)
-        .json({
-          error: "component_not_removable",
-          message:
-            "Only manual or QBO-inferred components without a counted gift can be removed.",
-        });
+      res.status(409).json({
+        error: "component_not_removable",
+        message:
+          "Only manual or QBO-inferred components without a counted gift can be removed.",
+      });
       return;
     }
     res.status(204).send();
@@ -2459,12 +2447,10 @@ router.post(
     `);
     const row = (result.rows as Array<{ id: string; confirmed: boolean }>)[0];
     if (!row) {
-      res
-        .status(404)
-        .json({
-          error: "not_found",
-          message: "Provisional QBO component not found.",
-        });
+      res.status(404).json({
+        error: "not_found",
+        message: "Provisional QBO component not found.",
+      });
       return;
     }
     res.json(row);
@@ -2482,12 +2468,10 @@ router.delete(
       RETURNING id
     `);
     if (!result.rows.length) {
-      res
-        .status(404)
-        .json({
-          error: "not_found",
-          message: "Provisional QBO component not found.",
-        });
+      res.status(404).json({
+        error: "not_found",
+        message: "Provisional QBO component not found.",
+      });
       return;
     }
     res.status(204).send();
@@ -2738,12 +2722,10 @@ router.delete(
       RETURNING id
     `);
     if (!result.rows.length) {
-      res
-        .status(404)
-        .json({
-          error: "not_found",
-          message: "No payout is linked to this deposit.",
-        });
+      res.status(404).json({
+        error: "not_found",
+        message: "No payout is linked to this deposit.",
+      });
       return;
     }
     res.status(204).send();
