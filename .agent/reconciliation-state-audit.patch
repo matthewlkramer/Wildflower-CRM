@@ -1,0 +1,550 @@
+diff --git a/artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts b/artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts
+index eabc29b..0000000 100644
+--- a/artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts
++++ b/artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts
+@@ -35,13 +35,13 @@ import {
+   SetQboAccountingCheckDispositionBody,
+ } from "@workspace/api-zod";
+ import {
+-  informationStateOf,
++  QB_DOCUMENTATION_COMPLETE_SQL,
+   lensFlagsFromState,
+   rowCompleteFromState,
+-  type WorkbenchRowState,
+-  type CrmCardState,
+-  type TransactionCardState,
++  type CrmCardEntry,
++  type QbCardEntry,
++  type TransactionEntry,
+ } from "./workbenchRowState";
++import { deriveDepositWorkbenchState } from "./workbenchDepositState";
+ import { buildCrmRecordCompleteness } from "./workbenchClusters";
+ 
+ const router: IRouter = Router();
+@@ -59,8 +59,7 @@ const LENSES = [
+ type Lens = (typeof LENSES)[number];
+ 
+ const LENS_PREDICATE: Record<Lens, string> = {
+-  all_open:
+-    "(NOT f_not_fundraising AND (f_unresolved OR f_ambiguous OR f_needs_gift OR f_correction) AND NOT f_completed)",
++  all_open: "(NOT f_completed AND NOT f_not_fundraising)",
+   unresolved_composition: "f_unresolved",
+   ambiguous_pairing: "f_ambiguous",
+   needs_gift: "f_needs_gift",
+@@ -81,6 +80,25 @@ type SlimRow = {
+   f_not_fundraising: boolean;
+ };
+ 
++type DepositCharge = Record<string, unknown> & {
++  chargeId: string;
++  amount: string | null;
++  linkedGiftId: string | null;
++  paymentUnitId: string | null;
++  paymentUnitLifecycle: string | null;
++  refunded: boolean;
++  disputed: boolean;
++  amountRefunded: string | null;
++  refundPropagationStatus: string | null;
++  exclusionReason: string | null;
++  status: string | null;
++  qboRecords?: NodeQbRecord[];
++};
++
+ type DepositRow = {
+   id: string;
+   deposit_date: string;
+@@ -151,7 +169,7 @@ type DepositRow = {
+     linkedStagedPaymentIds: string[];
+     qboRecords?: NodeQbRecord[];
+   }>;
+-  charges: Array<Record<string, unknown> & { chargeId?: string; qboRecords?: NodeQbRecord[] }>;
++  charges: DepositCharge[];
+   qb_records: Array<Record<string, unknown>>;
+   accounting_checks: Array<Record<string, unknown>>;
+ };
+@@ -338,104 +356,128 @@ function notFundraisingMemo(memo: string | null): boolean {
+   return /\b(loan|interest|interest\s+credit|loan\s+fund)\b/i.test(memo);
+ }
+ 
++function chargeIsFullyReversed(charge: DepositCharge): boolean {
++  const gross = amount(charge.amount);
++  const refunded = amount(charge.amountRefunded);
++  return charge.disputed === true
++    || charge.paymentUnitLifecycle === "refunded"
++    || (charge.refunded === true && gross > 0 && refunded >= gross - 0.005);
++}
++
+ function stateForDeposit(
+   row: SlimRow,
+-  units: DepositRow["units"],
++  deposit: DepositRow,
+   gifts: DepositRow["gifts"],
+-  checks: DepositRow["accounting_checks"],
+-  qbRecords: DepositRow["qb_records"],
+-): WorkbenchRowState {
+-  const hasPayout = Boolean((row as SlimRow & { payout_id?: string | null }).payout_id);
+-  const hasUnits = units.length > 0;
+-  const countedUnits = new Set(units.filter((u) => u.countedGiftIds.length > 0).map((u) => u.paymentUnitId));
+-  const allUnitsBooked = hasUnits && countedUnits.size === units.length;
+-  const crmCompleteness = buildCrmRecordCompleteness(
+-    gifts.map((g) => ({
+-      giftId: g.giftId,
+-      opportunityId: g.opportunityId,
+-      name: g.name,
+-      donorName: g.donorName,
+-      donorKind: g.donorKind,
+-      donorId: g.donorId,
+-      amount: g.amount,
+-      dateReceived: g.dateReceived,
+-      quickbooksTie: null,
+-      donorbox: g.donorbox,
+-      grantLetter: g.grantLetter,
+-      codingForm: g.codingForm,
+-      recordComplete: g.recordComplete,
+-      satisfiedBy: g.recordComplete ? "donor_and_allocations" : null,
+-      crmReason: g.recordComplete ? null : "missing_donor",
+-      linkedChargeIds: g.linkedChargeIds,
+-      linkedStagedPaymentIds: g.linkedStagedPaymentIds,
+-    })),
+-  );
+-  const crmComplete = crmCompleteness.complete;
+-  const correction = checks.some((c) => c.disposition === "correction_needed");
+-  const complete = row.f_completed;
+-  const transactions: WorkbenchRowState["transactions"] = units.map((u) => ({
+-    transactionId: u.paymentUnitId,
+-    livePayment: u.lifecycle !== "refunded" && u.lifecycle !== "disputed",
+-    refundStatus: u.lifecycle === "refunded" || u.lifecycle === "partially_refunded" ? "anticipated" : "none",
+-    state: (u.countedGiftIds.length > 0 ? "matched" : "unmatched") as TransactionCardState,
+-  }));
+-  const crmCards: WorkbenchRowState["crmCards"] = gifts.map((g) => ({
++ ) {
++  const componentByUnit = new Map(
++    deposit.components
++      .filter((component) => component.paymentUnitId)
++      .map((component) => [component.paymentUnitId as string, component]),
++  );
++
++  const transactions: Array<{
++    entry: TransactionEntry;
++    linkedToCrm: boolean;
++  }> = deposit.payout_id
++    ? deposit.charges.map((charge) => {
++        const excluded = Boolean(charge.exclusionReason);
++        const fullyReversed = chargeIsFullyReversed(charge);
++        const linkedToCrm = Boolean(charge.linkedGiftId);
++        const refundProposed = charge.refundPropagationStatus === "proposed";
++        const state: TransactionEntry["state"] = excluded
++          ? "excluded"
++          : fullyReversed
++            ? "refunded"
++            : refundProposed
++              ? "refund_anticipated"
++              : linkedToCrm
++                ? "matched"
++                : "unmatched";
++        const refundStatus: TransactionEntry["refundStatus"] = refundProposed
++          ? "anticipated"
++          : fullyReversed || amount(charge.amountRefunded) > 0
++            ? "refunded"
++            : "none";
++        return {
++          linkedToCrm,
++          entry: {
++            transactionId: charge.paymentUnitId ?? charge.chargeId,
++            livePayment: !excluded && !fullyReversed,
++            refundStatus,
++            state,
++          },
++        };
++      })
++    : deposit.units.map((unit) => {
++        const component = componentByUnit.get(unit.paymentUnitId);
++        const excluded = Boolean(component?.exclusionReason);
++        const fullyReversed = unit.lifecycle === "refunded" || unit.lifecycle === "disputed";
++        const linkedToCrm = unit.countedGiftIds.length > 0;
++        const state: TransactionEntry["state"] = excluded
++          ? "excluded"
++          : fullyReversed
++            ? "refunded"
++            : linkedToCrm
++              ? "matched"
++              : "unmatched";
++        return {
++          linkedToCrm,
++          entry: {
++            transactionId: unit.paymentUnitId,
++            livePayment: !excluded && !fullyReversed,
++            refundStatus: unit.lifecycle === "refunded" || unit.lifecycle === "partially_refunded"
++              ? "refunded"
++              : "none",
++            state,
++          },
++        };
++      });
++
++  const crmCards: CrmCardEntry[] = gifts.map((g) => ({
+     giftId: g.giftId,
+     recordComplete: g.recordComplete,
+-    state: (g.linkedStagedPaymentIds.length || g.linkedChargeIds.length
++    state: g.linkedStagedPaymentIds.length || g.linkedChargeIds.length
+       ? g.recordComplete ? "matched_complete" : "matched_incomplete"
+-      : g.recordComplete ? "unmatched_complete" : "unmatched_incomplete") as CrmCardState,
++      : g.recordComplete ? "unmatched_complete" : "unmatched_incomplete",
+     satisfiedBy: g.recordComplete ? "donor_allocations_and_supporting_documents" : null,
+   }));
+-  const state: WorkbenchRowState = {
+-    linkage: {
+-      state: complete || allUnitsBooked ? "complete" : hasUnits ? "partial" : "missing",
+-      accountingToTransaction: {
+-        state: hasPayout || checks.length > 0 || qbRecords.length > 0 ? "complete" : hasUnits ? "partial" : "missing",
+-        grain: hasPayout ? "bundle" : hasUnits ? "unit" : "none",
+-        relationshipCount: hasPayout ? 1 : checks.length,
+-      },
+-      transactionToCrm: {
+-        state: allUnitsBooked ? "complete" : hasUnits && countedUnits.size > 0 ? "partial" : "missing",
+-        grain: hasUnits ? "unit" : "none",
+-        relationshipCount: countedUnits.size,
+-      },
+-      accountingToCrm: {
+-        state: allUnitsBooked && crmComplete ? "complete" : hasUnits ? "partial" : "missing",
+-        grain: hasUnits ? "unit" : "none",
+-        relationshipCount: gifts.length,
+-      },
+-    },
+-    information: {
+-      state: informationStateOf({
+-        crmComplete,
+-        qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
+-        qbDocumented: complete,
+-        attentionRequired: correction,
+-      }),
+-      crmComplete,
+-      qbComplete: complete,
+-      qbEvidenceComplete: hasPayout || checks.length > 0 || qbRecords.length > 0 || hasUnits,
+-    },
+-    flags: {
+-      excluded: row.f_not_fundraising,
+-      conflict: row.f_ambiguous,
+-      attentionRequired: correction || row.f_refund,
+-    },
+-    settlementLinkState: hasPayout ? "confirmed" : undefined,
+-    qbCards: checks.map((c) => ({
++
++  const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
+       qbRecordId: String(c.stagedPaymentId),
+       state: c.disposition === "consistent" || c.disposition === "corrected"
+         ? "matched_complete"
+         : c.disposition === "accepted_historical" ? "excluded" : "matched_conflict",
+       isTransactionEvidence: false,
+-    })),
+-    transactions,
+-    crmCards,
+-  };
+-  return state;
++    }));
++
++  const compositionPresent = Boolean(
++    deposit.payout_id
++      || deposit.components.length
++      || deposit.provisional_components.length,
++  );
++  const compositionComplete = compositionPresent
++    && !row.f_unresolved
++    && !row.f_ambiguous;
++  const accountingCorrection = deposit.accounting_checks.some(
++    (check) => check.disposition === "correction_needed",
++  );
++
++  return deriveDepositWorkbenchState({
++    composition: {
++      present: compositionPresent,
++      complete: compositionComplete,
++      grain: deposit.payout_id
++        ? "bundle"
++        : deposit.components.length > 0
++          ? "unit"
++          : "none",
++      relationshipCount: deposit.payout_id ? 1 : deposit.components.length,
++    },
++    transactions,
++    crmCards,
++    qbCards,
++    accountingEvidencePresent:
++      deposit.qb_records.length > 0 || deposit.accounting_checks.length > 0,
++    accountingCorrection,
++    excluded: row.f_not_fundraising,
++    conflict: row.f_ambiguous,
++    attentionRequired: row.f_refund,
++    settlementLinkState: deposit.payout_id ? "confirmed" : undefined,
++  });
+ }
+ 
+ function depositLenses(
+@@ -445,13 +487,13 @@ function depositLenses(
+ ): Lens[] {
+   const out: Lens[] = [];
+   const canonical = lensFlagsFromState(state);
+-  if (!canonical.completed && !flags.f_not_fundraising && (flags.f_unresolved || flags.f_ambiguous || flags.f_needs_gift || flags.f_correction)) out.push("all_open");
++  if (!canonical.completed && !flags.f_not_fundraising) out.push("all_open");
+   if (flags.f_unresolved) out.push("unresolved_composition");
+   if (flags.f_ambiguous) out.push("ambiguous_pairing");
+   if (flags.f_needs_gift) out.push("needs_gift");
+   if (flags.f_correction) out.push("accounting_corrections");
+   if (canonical.refunds || flags.f_refund) out.push("refunds");
+-  if (canonical.completed || flags.f_completed) out.push("completed");
++  if (canonical.completed) out.push("completed");
+   if (flags.f_not_fundraising) out.push("not_fundraising");
+   return out;
+ }
+@@ -462,11 +504,18 @@ function buildUniverse(q: string | null) {
+       (f_needs_gift AND NOT f_not_fundraising) AS f_needs_gift,
+       (f_correction AND NOT f_not_fundraising) AS f_correction,
+       f_refund,
+-      f_completed,
++      (
++        ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}
++        AND NOT f_unresolved
++        AND NOT f_ambiguous
++        AND NOT f_needs_gift
++        AND NOT f_correction
++        AND NOT f_refund
++        AND NOT f_not_fundraising
++      ) AS f_completed,
+       f_not_fundraising
+     FROM (
+       SELECT
+@@ -474,9 +523,13 @@ function buildUniverse(q: string | null) {
+         d.id,
+         d.deposit_date AS anchor_date,
+         (
+-          p.id IS NULL AND (
+-            count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
+-          )
++          (
++            p.id IS NULL AND (
++              count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
++            )
++          ) OR (
++            p.id IS NOT NULL AND p.net_total IS NOT NULL
++            AND abs(p.net_total - d.amount) >= 0.005
++          )
+         ) AS f_unresolved,
+         (
+           COALESCE(p.ambiguous_bank_match, false) OR
+@@ -523,33 +576,6 @@ function buildUniverse(q: string | null) {
+           AND rc.raw_charge->>'status' = 'succeeded'
+           AND rc.refund_propagation_status = 'proposed'
+       ) AS f_refund,
+-      (
+-        p.id IS NOT NULL AND NOT COALESCE(p.ambiguous_bank_match, false)
+-      ) OR (
+-        count(c.id) > 0
+-        AND abs(COALESCE(sum(c.amount), 0) - d.amount) < 0.005
+-        AND NOT COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
+-        AND NOT COALESCE(bool_or(NOT EXISTS (
+-          SELECT 1 FROM payment_units pu
+-          WHERE pu.id = c.payment_unit_id
+-            AND pu.gift_id IS NOT NULL
+-        )), false)
+-        AND NOT EXISTS (
+-          SELECT 1
+-          FROM qbo_accounting_checks qc
+-          JOIN payment_units qu ON qu.source_staged_payment_id = qc.staged_payment_id
+-          JOIN bank_deposit_components qbc ON qbc.payment_unit_id = qu.id
+-          WHERE qbc.bank_deposit_id = d.id AND qc.disposition = 'correction_needed'
+-        )
+-        AND NOT EXISTS (
+-          SELECT 1
+-          FROM qbo_accounting_checks pqc
+-          JOIN source_links pqs_cc ON pqs_cc.link_type = 'payout_qb_settlement'
+-            AND pqs_cc.qb_staged_payment_id = pqc.staged_payment_id
+-          JOIN stripe_payouts psp_payout ON psp_payout.id = pqs_cc.stripe_payout_id
+-          WHERE psp_payout.bank_deposit_id = d.id AND pqc.disposition = 'correction_needed'
+-        )
+-      ) AS f_completed,
+       (
+         EXISTS (
+           SELECT 1 FROM bank_deposit_exclusions bde WHERE bde.bank_deposit_id = d.id
+@@ -934,9 +960,17 @@ router.get(
+             'amount', ch.gross_amount::text, 'feeAmount', ch.fee_amount::text,
+             'netAmount', ch.net_amount::text, 'chargeDate', ch.date_received::text,
+             'linkedGiftId', (SELECT pu.gift_id FROM payment_units pu
+               WHERE pu.stripe_charge_id = ch.id AND pu.gift_id IS NOT NULL
+               LIMIT 1),
+-            'refunded', ch.refunded, 'amountRefunded', ch.amount_refunded::text,
++            'paymentUnitId', (SELECT pu.id FROM payment_units pu
++              WHERE pu.stripe_charge_id = ch.id LIMIT 1),
++            'paymentUnitLifecycle', (SELECT pu.lifecycle::text FROM payment_units pu
++              WHERE pu.stripe_charge_id = ch.id LIMIT 1),
++            'refunded', ch.refunded, 'disputed', ch.disputed,
++            'amountRefunded', ch.amount_refunded::text,
+             'refundPropagationStatus', ch.refund_propagation_status,
+             'refundPropagationKind', ch.refund_propagation_kind,
+             'refundProposedAmount', ch.refund_proposed_amount::text,
+@@ -1085,13 +1119,7 @@ router.get(
+           viewer,
+         ),
+       }));
+-      const state = stateForDeposit(
+-        { ...s, payout_id: r.payout_id } as SlimRow & { payout_id: string | null },
+-        r.units,
+-        gifts,
+-        r.accounting_checks,
+-        r.qb_records,
+-      );
++      const state = stateForDeposit(s, r, gifts);
+       const lenses = depositLenses(s, state, s);
++      const liveTransactions = state.transactions.filter((transaction) => transaction.livePayment && transaction.state !== "excluded");
++      const coveredTransactions = liveTransactions.filter((transaction) => transaction.state === "matched" || transaction.state === "refund_anticipated");
++      const uncoveredTransactions = liveTransactions.filter((transaction) => transaction.state !== "matched" && transaction.state !== "refund_anticipated");
+       return [{
+         id: `bank_deposit:${r.id}`,
+         kind: "bank_deposit" as const,
+@@ -1151,14 +1179,14 @@ router.get(
+         coverage: {
+           evidenceRecords: [],
+           donorPurpose: {
+             crmLinkage: {
+-              grain: r.units.length ? "unit" : "none",
+-              complete: r.units.length > 0 && r.units.every((u) => u.countedGiftIds.length > 0),
+-              coveredIds: r.units.filter((u) => u.countedGiftIds.length > 0).map((u) => u.paymentUnitId),
+-              uncoveredIds: r.units.filter((u) => u.countedGiftIds.length === 0).map((u) => u.paymentUnitId),
++              grain: state.transactions.length ? "unit" : "none",
++              complete: state.linkage.transactionToCrm.state === "complete",
++              coveredIds: coveredTransactions.map((transaction) => transaction.transactionId),
++              uncoveredIds: uncoveredTransactions.map((transaction) => transaction.transactionId),
+               expectedAmount: r.amount,
+               representedAmount: gifts.reduce((sum, g) => sum + amount(g.amount), 0).toFixed(2),
+               representationNote: null,
+@@ -1185,18 +1213,18 @@ router.get(
+             ),
+-            complete: gifts.every((g) => g.recordComplete) && r.units.length > 0 && r.units.every((u) => u.countedGiftIds.length > 0),
++            complete: state.information.crmComplete && state.linkage.transactionToCrm.state === "complete",
+           },
+           paymentTransaction: {
+-            grain: r.payout_id || r.units.length ? "unit" : "none",
+-            complete: Boolean(r.payout_id || r.units.length),
+-            coveredIds: r.payout_id ? r.charges.map((c) => String(c.chargeId)) : r.units.map((u) => u.paymentUnitId),
+-            uncoveredIds: [],
++            grain: state.linkage.accountingToTransaction.grain,
++            complete: state.linkage.accountingToTransaction.state === "complete",
++            coveredIds: state.transactions.map((transaction) => transaction.transactionId),
++            uncoveredIds: state.linkage.accountingToTransaction.state === "complete" ? [] : state.transactions.map((transaction) => transaction.transactionId),
+             expectedAmount: r.amount,
+             representedAmount: r.amount,
+             representationNote: null,
+           },
+           accountingEvidence: {
+-            grain: r.payout_id || r.accounting_checks.length ? "bundle" : "none",
+-            complete: Boolean(r.payout_id || r.accounting_checks.length),
++            grain: r.accounting_checks.length || r.qb_records.length ? "bundle" : "none",
++            complete: state.information.qbEvidenceComplete,
+             coveredIds: r.accounting_checks.map((c) => String(c.stagedPaymentId)),
+             uncoveredIds: [],
+             expectedAmount: r.amount,
+diff --git a/artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts b/artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+index b16a7c0..0000000 100644
+--- a/artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
++++ b/artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+@@ -356,22 +356,25 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
+-  it("anchors rows on deposits and resolves a payout at rung one", async () => {
++  it("anchors rows on deposits without treating a payout pairing as end-to-end completion", async () => {
+     const depositId = await seedDeposit("Stripe payout");
+     const payoutId = nextId("payout");
+     await db.insert(schema.stripePayouts).values({
+       id: payoutId,
+       stripeAccountId: ACCOUNT_ID,
+       amount: "100.00",
+       netTotal: "100.00",
+       arrivalDate: "2099-12-31",
+       bankDepositId: depositId,
+     });
+     payoutIds.push(payoutId);
+     const completed = await listDeposits("completed");
+-    const row = completed.data.find((item: any) => item.anchorId === depositId);
+-    expect(row?.composition.kind).toBe("stripe_payout");
+-    expect(row?.lenses).toContain("completed");
++    expect(completed.data.some((item: any) => item.anchorId === depositId)).toBe(false);
+     const open = await listDeposits("all_open");
+-    expect(open.data.some((item: any) => item.anchorId === depositId)).toBe(false);
++    const row = open.data.find((item: any) => item.anchorId === depositId);
++    expect(row?.composition.kind).toBe("stripe_payout");
++    expect(row?.lenses).toContain("all_open");
++    expect(row?.coverage.state.linkage.state).toBe("partial");
++    expect(row?.coverage.complete).toBe(false);
+   });
+@@ -425,13 +428,18 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
+     const needsGift = await listDeposits("needs_gift", "Later refunded Stripe charge");
+     expect(needsGift.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+ 
+     const completed = await listDeposits("completed", "Later refunded Stripe charge");
+-    const row = completed.data.find((item: any) => item.anchorId === deposit);
++    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(false);
++
++    const open = await listDeposits("all_open", "Later refunded Stripe charge");
++    const row = open.data.find((item: any) => item.anchorId === deposit);
+     expect(row?.charges[0]).toMatchObject({
+       refunded: true,
+       amountRefunded: "100.00",
+       amount: "100.00",
+     });
++    expect(row?.coverage.state.transactions[0]).toMatchObject({ state: "refunded", livePayment: false });
++    expect(row?.coverage.state.linkage.state).toBe("partial");
+   });
+@@ -441,13 +449,53 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
+     await seedCharge(payout, {
+       grossAmount: "100.00",
+       refunded: true,
+       amountRefunded: "100.00",
+     });
+     await seedCharge(payout, { grossAmount: "100.00" });
+ 
+     const needsGift = await listDeposits("needs_gift", "Bundled later refund and active charge");
+     expect(needsGift.data.some((item: any) => item.anchorId === deposit)).toBe(true);
++    const completed = await listDeposits("completed", "Bundled later refund and active charge");
++    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(false);
++    const open = await listDeposits("all_open", "Bundled later refund and active charge");
++    const row = open.data.find((item: any) => item.anchorId === deposit);
++    expect(row?.coverage.state.linkage.state).toBe("partial");
++    expect(row?.coverage.state.transactions).toEqual(expect.arrayContaining([
++      expect.objectContaining({ state: "refunded", livePayment: false }),
++      expect.objectContaining({ state: "unmatched", livePayment: true }),
++    ]));
++  });
++
++  it("reports a fully gift-linked payout as link-complete but not audit-ready", async () => {
++    const deposit = await seedDeposit("Fully gift-linked Stripe payout", "100.00");
++    const payout = await seedPayout("100.00", deposit);
++    const charge = await seedCharge(payout, { grossAmount: "100.00" });
++    const giftId = nextId("linked_gift");
++    const unitId = nextId("linked_charge_unit");
++    await db.insert(schema.giftsAndPayments).values({
++      id: giftId,
++      name: "Fully linked test gift",
++      amount: "100.00",
++      dateReceived: "2099-12-31",
++      organizationId: ORG_ID,
++    });
++    giftIds.push(giftId);
++    await db.insert(schema.paymentUnits).values({
++      id: unitId,
++      kind: "stripe_charge",
++      stripeChargeId: charge,
++      grossAmount: "100.00",
++      feeAmount: "0.00",
++      netAmount: "100.00",
++      receivedDate: "2099-12-31",
++      giftId,
++      giftMatchMethod: "human",
++    });
++    unitIds.push(unitId);
++
++    const completed = await listDeposits("completed", "Fully gift-linked Stripe payout");
++    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(false);
++
++    const open = await listDeposits("all_open", "Fully gift-linked Stripe payout");
++    const row = open.data.find((item: any) => item.anchorId === deposit);
++    expect(row?.coverage.state.linkage.state).toBe("complete");
++    expect(row?.coverage.state.information.qbComplete).toBe(false);
++    expect(row?.coverage.complete).toBe(false);
+   });
