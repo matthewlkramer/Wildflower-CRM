@@ -171,16 +171,33 @@ jobs:
           rm -f .agent/typecheck-error.txt
 
       - name: Run focused reconciliation tests
-        run: >-
-          pnpm --filter @workspace/api-server exec vitest run
-          src/routes/reconciliation/workbenchDepositState.test.ts
-          src/__tests__/workbench-deposits.integration.test.ts
+        run: |
+          set +e
+          TEST_OUTPUT="$(pnpm --filter @workspace/api-server exec vitest run \
+            src/routes/reconciliation/workbenchDepositState.test.ts \
+            src/__tests__/workbench-deposits.integration.test.ts 2>&1)"
+          TEST_STATUS=$?
+          set -e
+          if [ "$TEST_STATUS" -ne 0 ]; then
+            printf '%s\n' "$TEST_OUTPUT" > .agent/test-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .agent/test-error.txt
+            if ! git diff --cached --quiet; then
+              git commit -m "Record reconciliation test failure"
+              git push origin HEAD:agent/reconciliation-state-audit
+            fi
+            cat .agent/test-error.txt
+            exit "$TEST_STATUS"
+          fi
+          rm -f .agent/test-error.txt
 
       - name: Commit validated implementation
         run: |
           rm -f .agent/reconciliation-state-audit.patch
           rm -f .agent/patch-apply-error.txt
           rm -f .agent/typecheck-error.txt
+          rm -f .agent/test-error.txt
           rm -f .github/workflows/agent-reconciliation-state-audit.yml
           rmdir .agent 2>/dev/null || true
           rmdir .github/workflows 2>/dev/null || true
