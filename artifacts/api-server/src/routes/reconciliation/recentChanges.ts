@@ -52,52 +52,40 @@ router.get(
       return;
     }
 
-    try {
-      // Keep the proven reconciliation-domain query shape, then apply the
-      // reviewer/undo filters in memory. A wider window prevents intermediate
-      // non-reversible events from displacing useful undo entries.
-      const rows = await db
-        .select({
-          id: auditLog.id,
-          at: auditLog.createdAt,
-          actorUserId: auditLog.actorUserId,
-          actorName: actorNameExpr.as("actor_name"),
-          summary: auditLog.summary,
-          metadata: auditLog.metadata,
-        })
-        .from(auditLog)
-        .leftJoin(users, eq(users.id, auditLog.actorUserId))
-        .where(sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`)
-        .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-        .limit(500);
+    // Keep the proven reconciliation-domain query shape, then apply the
+    // reviewer/undo filters in memory. A wider window prevents intermediate
+    // non-reversible events from displacing useful undo entries.
+    const rows = await db
+      .select({
+        id: auditLog.id,
+        at: auditLog.createdAt,
+        actorUserId: auditLog.actorUserId,
+        actorName: actorNameExpr.as("actor_name"),
+        summary: auditLog.summary,
+        metadata: auditLog.metadata,
+      })
+      .from(auditLog)
+      .leftJoin(users, eq(users.id, auditLog.actorUserId))
+      .where(sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`)
+      .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+      .limit(500);
 
-      const items = rows
-        .filter((row) => row.actorUserId === user.id)
-        .map((row) => ({
-          id: row.id,
-          at: row.at,
-          actorName: row.actorName,
-          summary: row.summary ?? "",
-          undo: undoOf(row.metadata),
-        }))
-        .filter(
-          (item): item is typeof item & {
-            undo: NonNullable<typeof item.undo>;
-          } => item.undo !== null,
-        )
-        .slice(0, 20);
+    const items = rows
+      .filter((row) => row.actorUserId === user.id)
+      .map((row) => ({
+        id: row.id,
+        at: row.at,
+        actorName: row.actorName,
+        summary: row.summary ?? "",
+        undo: undoOf(row.metadata),
+      }))
+      .filter(
+        (item): item is typeof item & { undo: NonNullable<typeof item.undo> } =>
+          item.undo !== null,
+      )
+      .slice(0, 20);
 
-      res.json({ items });
-    } catch (error) {
-      if (process.env.CI === "true") {
-        res.status(500).json({
-          error: "internal_error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return;
-      }
-      throw error;
-    }
+    res.json({ items });
   }),
 );
 
