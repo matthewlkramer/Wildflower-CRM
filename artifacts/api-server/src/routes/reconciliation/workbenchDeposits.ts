@@ -1703,6 +1703,57 @@ router.post(
           SELECT id FROM gifts_and_payments WHERE id = ${body.giftId}
         `);
         if (!giftResult.rows.length) return { kind: "gift_not_found" as const };
+
+        // A deposit recorded as a gift-less single payment ("Record without a
+        // gift") already carries the whole-amount unit+component — linking a
+        // gift then means pointing THAT unit at the gift, not composing a
+        // second component (the remainder is already zero).
+        const adoptableResult = await tx.execute(sql`
+          SELECT u.id, c.id AS component_id, c.amount::text AS component_amount,
+                 c.needs_review
+          FROM bank_deposit_components c
+          JOIN payment_units u ON u.id = c.payment_unit_id
+          WHERE c.bank_deposit_id = ${params.bankDepositId}
+            AND u.gift_id IS NULL
+            AND u.stripe_charge_id IS NULL
+            AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
+          ORDER BY u.id
+          FOR UPDATE OF u
+        `);
+        const adoptable = adoptableResult.rows as Array<{
+          id: string;
+          component_id: string;
+          component_amount: string;
+          needs_review: boolean;
+        }>;
+        const adoptMatches =
+          amount == null
+            ? adoptable
+            : adoptable.filter(
+                (a) => Math.abs(Number(a.component_amount) - amount) <= 0.005,
+              );
+        if (adoptMatches.length === 1) {
+          const adopted = adoptMatches[0];
+          await tx.execute(sql`
+            UPDATE payment_units
+            SET gift_id = ${body.giftId},
+                gift_match_method = 'human',
+                gift_confirmed_by_user_id = ${user?.id ?? null},
+                gift_confirmed_at = now()
+            WHERE id = ${adopted.id}
+          `);
+          return {
+            kind: "ok" as const,
+            id: adopted.component_id,
+            paymentUnitId: adopted.id,
+            amount: Number(adopted.component_amount).toFixed(2),
+            needsReview: adopted.needs_review,
+          };
+        }
+        if (adoptMatches.length > 1) {
+          return { kind: "deposit_units_ambiguous" as const };
+        }
+
         const candidatesResult = await tx.execute(sql`
           SELECT u.id, COALESCE(u.gross_amount, u.net_amount)::text AS amount
           FROM payment_units u
@@ -1822,6 +1873,10 @@ router.post(
     }
     if (result.kind === "gift_not_found") {
       notFound(res, "gift");
+      return;
+    }
+    if (result.kind === "deposit_units_ambiguous") {
+      res.status(409).json({ error: "deposit_units_ambiguous", message: "This deposit has several gift-less payments — pass the exact payment amount to pick which one pays this gift." });
       return;
     }
     if (result.kind === "gift_units_ambiguous") {

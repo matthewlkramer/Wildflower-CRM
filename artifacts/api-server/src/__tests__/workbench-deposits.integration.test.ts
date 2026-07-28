@@ -36,6 +36,7 @@ const stagedIds: string[] = [];
 const bankTransactionIds: string[] = [];
 const depositQboComponentIds: string[] = [];
 const accountingCheckIds: string[] = [];
+const giftIds: string[] = [];
 let db: (typeof import("@workspace/db"))["db"];
 let schema: typeof import("@workspace/db");
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -218,6 +219,15 @@ async function requestJson(method: string, path: string) {
   return { status: response.status, json: response.status === 204 ? null : await response.json() };
 }
 
+async function postJson(path: string, body: unknown) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, json: await response.json() };
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   schema = await import("@workspace/db");
@@ -246,6 +256,9 @@ afterAll(async () => {
   }
   if (unitIds.length) {
     await db.delete(schema.paymentUnits).where(inArrayFn(schema.paymentUnits.id, unitIds));
+  }
+  if (giftIds.length) {
+    await db.delete(schema.giftsAndPayments).where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   }
   if (accountingCheckIds.length) {
     await db.delete(schema.qboAccountingChecks).where(inArrayFn(schema.qboAccountingChecks.id, accountingCheckIds));
@@ -608,6 +621,53 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(confirmed.json).toMatchObject({ id: componentId, confirmed: true });
     const dismissed = await requestJson("DELETE", `/api/reconciliation/deposit-qbo-components/${componentId}`);
     expect(dismissed.status).toBe(204);
+  });
+
+  it("links a gift to the existing gift-less single-payment unit instead of adding a second component", async () => {
+    const deposit = await seedDeposit("Gift-less single payment deposit", "75000.00");
+
+    // Step 1: "Record without a gift" — whole-amount unit + component.
+    const created = await postJson(`/api/reconciliation/deposits/${deposit}/components`, {
+      mode: "create",
+      kind: "other",
+      amount: "75000.00",
+    });
+    expect(created.status).toBe(201);
+    componentIds.push(created.json.id);
+    unitIds.push(created.json.paymentUnitId);
+
+    // Step 2: link a CRM gift — must adopt the existing unit, not fail on the
+    // zero remainder or compose a second component.
+    const giftId = nextId("gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      amount: "75000.00",
+      organizationId: ORG_ID,
+      details: "Gift-less single payment link test.",
+    });
+    giftIds.push(giftId);
+
+    const linked = await postJson(`/api/reconciliation/deposits/${deposit}/components`, {
+      mode: "gift",
+      giftId,
+    });
+    expect(linked.status).toBe(201);
+    expect(linked.json.id).toBe(created.json.id);
+    expect(linked.json.paymentUnitId).toBe(created.json.paymentUnitId);
+    expect(linked.json.amount).toBe("75000.00");
+
+    const unit = await db
+      .select({ giftId: schema.paymentUnits.giftId, method: schema.paymentUnits.giftMatchMethod })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, created.json.paymentUnitId))
+      .then((r) => r[0]);
+    expect(unit).toMatchObject({ giftId, method: "human" });
+
+    const components = await db
+      .select({ id: schema.bankDepositComponents.id })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.bankDepositId, deposit));
+    expect(components).toHaveLength(1);
   });
 
   it("lists candidate payouts, repoints an ambiguous tie, and unlinks it", async () => {
