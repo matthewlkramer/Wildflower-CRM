@@ -42,7 +42,6 @@ import {
   SetQboAccountingCheckDispositionBody,
 } from "@workspace/api-zod";
 import {
-  QB_DOCUMENTATION_COMPLETE_SQL,
   lensFlagsFromState,
   rowCompleteFromState,
   type CrmCardEntry,
@@ -578,13 +577,13 @@ function depositLenses(
 ): Lens[] {
   const out: Lens[] = [];
   const canonical = lensFlagsFromState(state);
-  if (!canonical.completed && !flags.f_not_fundraising) out.push("all_open");
+  if (!flags.f_completed && !flags.f_not_fundraising) out.push("all_open");
   if (flags.f_unresolved) out.push("unresolved_composition");
   if (flags.f_ambiguous) out.push("ambiguous_pairing");
   if (flags.f_needs_gift) out.push("needs_gift");
   if (flags.f_correction) out.push("accounting_corrections");
   if (canonical.refunds || flags.f_refund) out.push("refunds");
-  if (canonical.completed) out.push("completed");
+  if (flags.f_completed) out.push("completed");
   if (flags.f_not_fundraising) out.push("not_fundraising");
   return out;
 }
@@ -601,8 +600,7 @@ function buildUniverse(q: string | null) {
       (f_correction AND NOT f_not_fundraising) AS f_correction,
       f_refund,
       (
-        ${sql.raw(QB_DOCUMENTATION_COMPLETE_SQL)}
-        AND NOT f_unresolved
+        NOT f_unresolved
         AND NOT f_ambiguous
         AND NOT f_needs_gift
         AND NOT f_correction

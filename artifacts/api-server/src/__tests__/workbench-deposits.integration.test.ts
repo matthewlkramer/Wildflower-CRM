@@ -439,7 +439,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(afterApplications).toEqual(beforeApplications);
   });
 
-  it("anchors rows on deposits without treating a payout pairing as end-to-end completion", async () => {
+  it("keeps a paired payout open when a live charge still needs a gift", async () => {
     const depositId = await seedDeposit("Stripe payout");
     const payoutId = nextId("payout");
     await db.insert(schema.stripePayouts).values({
@@ -451,14 +451,17 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       bankDepositId: depositId,
     });
     payoutIds.push(payoutId);
-    const completed = await listDeposits("completed");
+    await seedCharge(payoutId, { grossAmount: "100.00" });
+
+    const completed = await listDeposits("completed", "Stripe payout");
     expect(
       completed.data.some((item: any) => item.anchorId === depositId),
     ).toBe(false);
-    const open = await listDeposits("all_open");
+    const open = await listDeposits("all_open", "Stripe payout");
     const row = open.data.find((item: any) => item.anchorId === depositId);
     expect(row?.composition.kind).toBe("stripe_payout");
     expect(row?.lenses).toContain("all_open");
+    expect(row?.lenses).toContain("needs_gift");
     expect(row?.coverage.state.linkage.state).toBe("partial");
     expect(row?.coverage.complete).toBe(false);
   });
@@ -543,12 +546,13 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       "completed",
       "Later refunded Stripe charge",
     );
-    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(
-      false,
-    );
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.lenses).toContain("completed");
 
     const open = await listDeposits("all_open", "Later refunded Stripe charge");
-    const row = open.data.find((item: any) => item.anchorId === deposit);
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(
+      false,
+    );
     expect(row?.charges[0]).toMatchObject({
       refunded: true,
       amountRefunded: "100.00",
@@ -636,18 +640,19 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       "completed",
       "Fully gift-linked Stripe payout",
     );
-    expect(completed.data.some((item: any) => item.anchorId === deposit)).toBe(
-      false,
-    );
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.lenses).toContain("completed");
+    expect(row?.coverage.state.linkage.state).toBe("complete");
+    expect(row?.coverage.state.information.qbComplete).toBe(false);
+    expect(row?.coverage.complete).toBe(false);
 
     const open = await listDeposits(
       "all_open",
       "Fully gift-linked Stripe payout",
     );
-    const row = open.data.find((item: any) => item.anchorId === deposit);
-    expect(row?.coverage.state.linkage.state).toBe("complete");
-    expect(row?.coverage.state.information.qbComplete).toBe(false);
-    expect(row?.coverage.complete).toBe(false);
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(
+      false,
+    );
   });
 
   it("surfaces correction_needed accounting checks for component units", async () => {
