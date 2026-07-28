@@ -136,8 +136,30 @@ jobs:
 
       - name: Typecheck API and scripts
         run: |
-          pnpm run check:api
-          pnpm --filter @workspace/scripts run typecheck
+          set +e
+          API_OUTPUT="$(pnpm run check:api 2>&1)"
+          API_STATUS=$?
+          SCRIPTS_OUTPUT="$(pnpm --filter @workspace/scripts run typecheck 2>&1)"
+          SCRIPTS_STATUS=$?
+          set -e
+          if [ "$API_STATUS" -ne 0 ] || [ "$SCRIPTS_STATUS" -ne 0 ]; then
+            {
+              printf '%s\n' '=== API TYPECHECK ==='
+              printf '%s\n' "$API_OUTPUT"
+              printf '%s\n' '=== SCRIPTS TYPECHECK ==='
+              printf '%s\n' "$SCRIPTS_OUTPUT"
+            } > .agent/typecheck-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .agent/typecheck-error.txt
+            if ! git diff --cached --quiet; then
+              git commit -m "Record reconciliation typecheck failure"
+              git push origin HEAD:agent/reconciliation-state-audit
+            fi
+            cat .agent/typecheck-error.txt
+            exit 1
+          fi
+          rm -f .agent/typecheck-error.txt
 
       - name: Run focused reconciliation tests
         run: >-
@@ -149,6 +171,7 @@ jobs:
         run: |
           rm -f .agent/reconciliation-state-audit.patch
           rm -f .agent/patch-apply-error.txt
+          rm -f .agent/typecheck-error.txt
           rm -f .github/workflows/agent-reconciliation-state-audit.yml
           rmdir .agent 2>/dev/null || true
           rmdir .github/workflows 2>/dev/null || true
