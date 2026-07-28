@@ -75,7 +75,7 @@ jobs:
             patch="/tmp/reconciliation-semantic-${index}.patch"
             git diff -w --no-color origin/main HEAD -- "$file" > "$patch"
             git checkout origin/main -- "$file"
-            git apply --whitespace=nowarn "$patch"
+            git apply --3way --whitespace=nowarn "$patch"
             index=$((index + 1))
           done
           git diff --check
