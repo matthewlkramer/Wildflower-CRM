@@ -608,10 +608,16 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     memo: deposit.bank.memo ?? null,
   };
   const unlinkedCharges = deposit.charges.filter((charge) => !charge.linkedGiftId);
-  const unlinkedQbRecords = deposit.qbRecords.filter((record) => !record.bankTransactionId && !linkedStagedPaymentIds.has(record.stagedPaymentId));
   const unlinkedComponents = deposit.composition.kind === "components"
     ? deposit.composition.components.filter((component) => component.source === "bank_spine" && (component.countedGiftIds?.length ?? 0) === 0 && component.stagedPaymentId)
     : [];
+  const componentStagedPaymentIds = new Set(
+    deposit.composition.components.map((component) => component.stagedPaymentId).filter(Boolean),
+  );
+  const unlinkedQbRecords = deposit.qbRecords.filter((record) =>
+    !record.bankTransactionId
+    && !linkedStagedPaymentIds.has(record.stagedPaymentId)
+    && !componentStagedPaymentIds.has(record.stagedPaymentId));
   const hasGiftColumnCards = deposit.gifts.length > 0 || unlinkedCharges.length > 0 || unlinkedQbRecords.length > 0 || unlinkedComponents.length > 0;
   const giftAnchor = (gift: WorkbenchDeposit["gifts"][number]): AnchorRef | null => {
     const stagedId = gift.linkedStagedPaymentIds?.[0];

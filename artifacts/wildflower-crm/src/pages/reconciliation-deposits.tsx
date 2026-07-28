@@ -362,13 +362,19 @@ export default function ReconciliationDepositsPage() {
   const handleSinglePaymentPick = async (gift: GiftOrPayment) => {
     if (!singlePaymentFor) return;
     try {
-      await addBankComponent.mutateAsync({
+      const created = await addBankComponent.mutateAsync({
         bankDepositId: singlePaymentFor.depositId,
         data: { mode: "gift", giftId: gift.id },
       });
       setSinglePaymentFor(null);
       invalidate();
-      toast({ title: "Deposit linked to gift", description: `This deposit is now recorded as a single payment for “${gift.name ?? gift.id}”.` });
+      const coversWholeDeposit =
+        Math.abs(Number(created.amount) - Number(singlePaymentFor.amount)) <= 0.005;
+      toast(
+        coversWholeDeposit
+          ? { title: "Deposit linked to gift", description: `This deposit is now recorded as a single payment for “${gift.name ?? gift.id}”.` }
+          : { title: "Payment linked to gift", description: `Recorded a ${formatCurrency(created.amount)} payment for “${gift.name ?? gift.id}” — the rest of the deposit is still unresolved.` },
+      );
     } catch (err) {
       toast({ title: "Couldn't link deposit to gift", description: apiErrorMessage(err) ?? errMessage(err), variant: "destructive" });
     }

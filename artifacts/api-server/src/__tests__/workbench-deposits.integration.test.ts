@@ -548,6 +548,65 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     });
   });
 
+  it("suppresses the provisional QBO card when a component already composes the same staged payment", async () => {
+    const deposit = await seedDeposit("Redundant provisional deposit", "1000.00");
+    const stagedPaymentId = nextId("redundant_staged");
+    const unitId = nextId("redundant_unit");
+    const componentId = nextId("redundant_component");
+    const linkId = nextId("redundant_link");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedPaymentId,
+      realmId: RUN,
+      qbEntityType: "deposit",
+      qbEntityId: nextId("redundant_qb"),
+      qbDepositId: nextId("redundant_deposit"),
+      dateReceived: "2099-12-31",
+      amount: "1000.00",
+      payerName: "Redundant Payer",
+    });
+    stagedIds.push(stagedPaymentId);
+    await db.insert(schema.paymentUnits).values({
+      id: unitId,
+      kind: "other",
+      grossAmount: "1000.00",
+      netAmount: "1000.00",
+      receivedDate: "2099-12-31",
+      sourceStagedPaymentId: stagedPaymentId,
+    });
+    unitIds.push(unitId);
+    await db.insert(schema.bankDepositComponents).values({
+      id: componentId,
+      bankDepositId: deposit,
+      paymentUnitId: unitId,
+      amount: "1000.00",
+      source: "manual",
+    });
+    componentIds.push(componentId);
+    await db.insert(schema.sourceLinks).values({
+      id: linkId,
+      linkType: "qbo_line_deposit",
+      bankDepositId: deposit,
+      qbStagedPaymentId: stagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "deposit_header_exact",
+    });
+    depositQboComponentIds.push(linkId);
+
+    const result = await listDeposits("all_open", "Redundant provisional");
+    const row = result.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.composition.kind).toBe("components");
+    expect(row?.composition.components).toHaveLength(1);
+    expect(row?.composition.components[0]).toMatchObject({
+      source: "bank_spine",
+      stagedPaymentId,
+      amount: "1000.00",
+    });
+    expect(row?.composition.unexplainedAmount).toBe("0.00");
+    const qbForStaged = row?.qbRecords.filter((r: any) => r.stagedPaymentId === stagedPaymentId);
+    expect(qbForStaged).toHaveLength(1);
+  });
+
   it("carries excluded Stripe transfer deposits into not fundraising without open-work lenses", async () => {
     const deposit = await seedDeposit("STRIPE   TRANSFER earned income", "125.00");
     await seedDepositQboComponent(deposit, "125.00", {

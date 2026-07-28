@@ -859,6 +859,16 @@ router.get(
           JOIN staged_payments sp ON sp.id = dqc.qb_staged_payment_id
           WHERE dqc.link_type = 'qbo_line_deposit'
             AND dqc.bank_deposit_id = d.id
+            -- A staged payment already composed onto this deposit (a component's
+            -- unit sources it) is real composition; its QBO deposit-line link is
+            -- redundant evidence, not a second payment.
+            AND NOT EXISTS (
+              SELECT 1
+              FROM bank_deposit_components pc
+              JOIN payment_units pcu ON pcu.id = pc.payment_unit_id
+              WHERE pc.bank_deposit_id = d.id
+                AND pcu.source_staged_payment_id = sp.id
+            )
         ), '[]'::jsonb) AS provisional_components,
         COALESCE((
           SELECT jsonb_agg(jsonb_build_object(
@@ -1528,6 +1538,13 @@ router.get(
                JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
                WHERE dqc.link_type = 'qbo_line_deposit'
                  AND dqc.bank_deposit_id = d.id
+                 AND NOT EXISTS (
+                   SELECT 1
+                   FROM bank_deposit_components pc
+                   JOIN payment_units pcu ON pcu.id = pc.payment_unit_id
+                   WHERE pc.bank_deposit_id = d.id
+                     AND pcu.source_staged_payment_id = dq_sp.id
+                 )
              ), 0)::text AS provisional_total,
              p.amount::text AS payout_amount
       FROM bank_deposits d
@@ -1634,6 +1651,13 @@ router.post(
                  JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
                  WHERE dqc.link_type = 'qbo_line_deposit'
                    AND dqc.bank_deposit_id = d.id
+                   AND NOT EXISTS (
+                     SELECT 1
+                     FROM bank_deposit_components pc
+                     JOIN payment_units pcu ON pcu.id = pc.payment_unit_id
+                     WHERE pc.bank_deposit_id = d.id
+                       AND pcu.source_staged_payment_id = dq_sp.id
+                   )
                ), 0)::text AS provisional_total
         FROM bank_deposits d
         LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
