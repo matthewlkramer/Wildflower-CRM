@@ -80,14 +80,18 @@ jobs:
           pnpm run check:api
           pnpm run check:web
 
-      - name: Run focused tests
+      - name: Run presentation and deposit tests
         run: |
           pnpm --filter @workspace/wildflower-crm exec vitest run \
             src/components/reconciliation-deposits/presentation.test.ts
           pnpm --filter @workspace/api-server exec vitest run \
             src/routes/reconciliation/workbenchDepositState.test.ts \
-            src/__tests__/workbench-deposits.integration.test.ts \
-            src/__tests__/workbench-recent-changes.integration.test.ts
+            src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Run recent changes test in isolated process
+        run: >-
+          pnpm --filter @workspace/api-server exec vitest run
+          src/__tests__/workbench-recent-changes.integration.test.ts
 
       - name: Commit validated implementation
         run: |
