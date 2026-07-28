@@ -113,9 +113,7 @@ export function deriveDepositWorkbenchState(
       },
       accountingToCrm: {
         state: accountingToCrmState,
-        grain: input.transactions.length > 0
-          ? input.composition.grain
-          : "none",
+        grain: input.transactions.length > 0 ? input.composition.grain : "none",
         relationshipCount: linkedLive.length,
       },
     },
