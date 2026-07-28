@@ -72,10 +72,10 @@ jobs:
           )
           index=0
           for file in "${files[@]}"; do
-            patch="/tmp/reconciliation-semantic-${index}.patch"
-            git diff -w --no-color origin/main HEAD -- "$file" > "$patch"
+            patch_file="/tmp/reconciliation-semantic-${index}.patch"
+            git diff -w --no-color origin/main HEAD -- "$file" > "$patch_file"
             git checkout origin/main -- "$file"
-            git apply --3way --whitespace=nowarn "$patch"
+            patch --batch --forward --ignore-whitespace -p1 < "$patch_file"
             index=$((index + 1))
           done
           git diff --check
