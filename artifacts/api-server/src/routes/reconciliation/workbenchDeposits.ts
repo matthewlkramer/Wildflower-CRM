@@ -642,11 +642,14 @@ function buildUniverse(q: string | null) {
                 AND ppu.gift_id IS NOT NULL
             )
         )
-        OR COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
-        SELECT 1 FROM payment_units pu
-        WHERE pu.id = c.payment_unit_id
-          AND pu.gift_id IS NOT NULL
-      )), false)
+        OR (
+          p.id IS NULL
+          AND COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
+            SELECT 1 FROM payment_units pu
+            WHERE pu.id = c.payment_unit_id
+              AND pu.gift_id IS NOT NULL
+          )), false)
+        )
       ) AS f_needs_gift,
       EXISTS (
         SELECT 1
