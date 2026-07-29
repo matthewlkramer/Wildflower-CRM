@@ -59,7 +59,9 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Apply implementation
-        run: python .agent/apply-workbench-usability.py
+        run: |
+          python .agent/fix-apply-anchor.py
+          python .agent/apply-workbench-usability.py
 
       - name: Format touched source
         run: |
