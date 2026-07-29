@@ -73,35 +73,33 @@ beforeAll(async () => {
     },
   ]);
 
-  await db.insert(schema.stagedPayments).values([
-    {
-      id: ids.grossPayment,
-      realmId: `${RUN}_realm`,
-      qbEntityType: "Deposit",
-      qbEntityId: ids.grossPayment,
-      amount: "150.00",
-      dateReceived: "2099-12-20",
-      fundingSource: "stripe",
-    },
-    {
-      id: ids.netPayment,
-      realmId: `${RUN}_realm`,
-      qbEntityType: "Deposit",
-      qbEntityId: ids.netPayment,
-      amount: "47.00",
-      dateReceived: "2099-12-21",
-      fundingSource: "stripe",
-    },
-    {
-      id: ids.unmatchedPayment,
-      realmId: `${RUN}_realm`,
-      qbEntityType: "Deposit",
-      qbEntityId: ids.unmatchedPayment,
-      amount: "95.00",
-      dateReceived: "2099-12-22",
-      fundingSource: "stripe",
-    },
-  ]);
+  await db.insert(schema.stagedPayments).values({
+    id: ids.grossPayment,
+    realmId: `${RUN}_realm`,
+    qbEntityType: "deposit",
+    qbEntityId: ids.grossPayment,
+    amount: "150.00",
+    dateReceived: "2099-12-20",
+    fundingSource: "stripe",
+  });
+  await db.insert(schema.stagedPayments).values({
+    id: ids.netPayment,
+    realmId: `${RUN}_realm`,
+    qbEntityType: "deposit",
+    qbEntityId: ids.netPayment,
+    amount: "47.00",
+    dateReceived: "2099-12-21",
+    fundingSource: "stripe",
+  });
+  await db.insert(schema.stagedPayments).values({
+    id: ids.unmatchedPayment,
+    realmId: `${RUN}_realm`,
+    qbEntityType: "deposit",
+    qbEntityId: ids.unmatchedPayment,
+    amount: "95.00",
+    dateReceived: "2099-12-22",
+    fundingSource: "stripe",
+  });
 
   await db.insert(schema.sourceLinks).values([
     {
