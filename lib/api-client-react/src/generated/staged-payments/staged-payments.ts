@@ -30,6 +30,7 @@ import type {
   GiftCandidateList,
   ListStagedPaymentGiftWindowParams,
   ListStagedPaymentsParams,
+  MintGiftOverridesBody,
   MultiMatchStagedPaymentsBody,
   MultiMatchStagedPaymentsResponse,
   NotFoundResponse,
@@ -448,14 +449,16 @@ export const getCreateGiftFromStagedPaymentUrl = (id: string,) => {
   return `/api/staged-payments/${id}/create-gift`
 }
 
-export const createGiftFromStagedPayment = async (id: string, options?: RequestInit): Promise<StagedGiftResponse> => {
+export const createGiftFromStagedPayment = async (id: string,
+    mintGiftOverridesBody?: MintGiftOverridesBody, options?: RequestInit): Promise<StagedGiftResponse> => {
   
   return customFetch<StagedGiftResponse>(getCreateGiftFromStagedPaymentUrl(id),
   {      
     ...options,
-    method: 'POST'
-    
-    
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      mintGiftOverridesBody,)
   }
 );}
   
@@ -463,8 +466,8 @@ export const createGiftFromStagedPayment = async (id: string, options?: RequestI
 
 
 export const getCreateGiftFromStagedPaymentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext> => {
 
 const mutationKey = ['createGiftFromStagedPayment'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -476,10 +479,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, {id: string;data: BodyType<MintGiftOverridesBody>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  createGiftFromStagedPayment(id,requestOptions)
+          return  createGiftFromStagedPayment(id,data,requestOptions)
         }
 
 
@@ -490,18 +493,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CreateGiftFromStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof createGiftFromStagedPayment>>>
-    
+    export type CreateGiftFromStagedPaymentMutationBody = BodyType<MintGiftOverridesBody>
     export type CreateGiftFromStagedPaymentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
     /**
  * @summary Mint a new gifts_and_payments row from a pending staged payment (donor XOR).
  */
 export const useCreateGiftFromStagedPayment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createGiftFromStagedPayment>>,
         TError,
-        {id: string},
+        {id: string;data: BodyType<MintGiftOverridesBody>},
         TContext
       > => {
       return useMutation(getCreateGiftFromStagedPaymentMutationOptions(options));

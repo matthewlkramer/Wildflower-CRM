@@ -2825,6 +2825,7 @@ paths:
       tags: [stripe-staged-charges]
       summary: Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/MintGiftOverridesBody" } } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/StagedGiftResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -3137,6 +3138,7 @@ paths:
       tags: [staged-payments]
       summary: Mint a new gifts_and_payments row from a pending staged payment (donor XOR).
       parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody: { required: false, content: { application/json: { schema: { $ref: "#/components/schemas/MintGiftOverridesBody" } } } }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/StagedGiftResponse" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
@@ -10433,6 +10435,23 @@ components:
         individualGiverPersonId: { type: string, nullable: true }
         householdId:             { type: string, nullable: true }
         paymentIntermediaryId:   { type: string, nullable: true }
+    MintGiftOverridesBody:
+      type: object
+      description: |
+        Optional human overrides for the evidence-mint create-gift endpoints
+        (/staged-payments/{id}/create-gift and /stripe-staged-charges/{id}/create-gift).
+        Every field is optional: an OMITTED field keeps today's evidence-derived
+        default (payer/date from the evidence row; entity + goal-counting from the
+        QuickBooks attribution where present). A PRESENT field overrides that
+        default on the minted gift header and its seeded starter allocation. The
+        gift AMOUNT is never overridable here — the mint books the evidence amount
+        (Stripe GROSS / QB amount) and the counted ledger row; adjust the gift on
+        its detail page afterward if the entered amount should differ.
+      properties:
+        name:         { type: string, nullable: true, description: "Override the derived gift name/description. Null/omitted keeps the evidence-derived name." }
+        dateReceived: { type: string, format: date, nullable: true, description: "Override the gift's date received (also drives the seeded allocation's fiscal year). Omitted keeps the evidence date." }
+        entityId:     { type: string, nullable: true, description: "Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path)." }
+        countsTowardGoal: { type: boolean, nullable: true, description: "Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money)." }
     StagedGiftResponse:
       type: object
       required: [gift, stagedPaymentId]

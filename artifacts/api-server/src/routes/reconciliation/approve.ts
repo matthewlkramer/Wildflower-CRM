@@ -92,8 +92,10 @@ interface MintOpts {
  * selected Stripe charge supplies the precise GROSS and stays matchedGiftId-linked
  * (revert un-sources the amount, never deletes the human mint). The gift is the
  * single source of truth; its FINAL amount is the Stripe GROSS when a charge is
- * selected, else the QB staged amount. HEADER-only (no allocations; a fundraiser
- * apportions afterward). Not idempotent — re-approving a reconciled row is a 409.
+ * selected, else the QB staged amount. Allocations are seeded in the same tx by
+ * mintGiftInTx (opportunity outcomes copy + scale the pledge allocations, else a
+ * default full-amount line is seeded; assertGiftHasAllocations backstops). Not
+ * idempotent — re-approving a reconciled row is a 409.
  *
  *   - create_gift: donor is the human-chosen BODY donor; no opportunity.
  *   - create_gift_from_opportunity: a one-time PAYMENT against an existing

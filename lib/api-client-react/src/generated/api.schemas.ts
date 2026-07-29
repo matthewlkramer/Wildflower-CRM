@@ -7277,6 +7277,29 @@ export interface ResolveStagedPaymentBody {
   paymentIntermediaryId?: string | null;
 }
 
+/**
+ * Optional human overrides for the evidence-mint create-gift endpoints
+(/staged-payments/{id}/create-gift and /stripe-staged-charges/{id}/create-gift).
+Every field is optional: an OMITTED field keeps today's evidence-derived
+default (payer/date from the evidence row; entity + goal-counting from the
+QuickBooks attribution where present). A PRESENT field overrides that
+default on the minted gift header and its seeded starter allocation. The
+gift AMOUNT is never overridable here — the mint books the evidence amount
+(Stripe GROSS / QB amount) and the counted ledger row; adjust the gift on
+its detail page afterward if the entered amount should differ.
+
+ */
+export interface MintGiftOverridesBody {
+  /** Override the derived gift name/description. Null/omitted keeps the evidence-derived name. */
+  name?: string | null;
+  /** Override the gift's date received (also drives the seeded allocation's fiscal year). Omitted keeps the evidence date. */
+  dateReceived?: string | null;
+  /** Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path). */
+  entityId?: string | null;
+  /** Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money). */
+  countsTowardGoal?: boolean | null;
+}
+
 export interface StagedGiftResponse {
   gift: GiftOrPayment;
   stagedPaymentId: string;

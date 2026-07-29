@@ -26,6 +26,7 @@ import {
   SetStagedPaymentEntityBody,
   SetStagedPaymentFundingSourceBody,
   SetStagedPaymentCodingBody,
+  CreateGiftFromStagedPaymentBody,
 } from "@workspace/api-zod";
 import { buildGiftValuesFromStaged } from "../../lib/quickbooksGift";
 import { applyPaymentApplication } from "../../lib/paymentApplications";
@@ -142,6 +143,22 @@ router.post(
       return;
     }
     const id = paramId(req);
+    // Optional human overrides (workbench create-gift dialog). Omitted field =
+    // evidence-derived default; present field overrides header + seeded
+    // allocation. The AMOUNT is never overridable — the mint books the evidence
+    // amount and its counted ledger row.
+    const parsedOverrides = CreateGiftFromStagedPaymentBody.safeParse(
+      req.body ?? {},
+    );
+    if (!parsedOverrides.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsedOverrides.error.flatten(),
+      });
+      return;
+    }
+    const overrides = parsedOverrides.data;
     const existing = await db
       .select({
         ...getTableColumns(stagedPayments),
@@ -194,6 +211,8 @@ router.post(
           lockedIssues = issues;
           throw new Error(INVARIANT);
         }
+        const overrideName = overrides.name?.trim();
+        const giftDateReceived = overrides.dateReceived ?? locked.dateReceived;
         await tx.insert(giftsAndPayments).values({
           ...buildGiftValuesFromStaged(
             giftId,
@@ -211,19 +230,29 @@ router.post(
             },
             user.id,
           ),
+          // Human overrides layer over the evidence-derived builder values
+          // (null/empty name keeps the derived one).
+          ...(overrideName ? { name: overrideName } : {}),
+          dateReceived: giftDateReceived,
           // Provenance is the counted ledger row (created_the_gift = true,
           // booked below); the transitional final-amount columns are retired
           // (Task #757) and never written.
         });
         // Every gift needs at least one allocation (the sole home of money
         // scope). Seed a default full-amount line carrying the staged row's
-        // attributed entity + goal-counting signal (mirrors the auto-create rule).
+        // attributed entity + goal-counting signal (mirrors the auto-create
+        // rule), each overridable by the human body field when present
+        // (entityId: explicit null clears; omitted keeps the QB attribution).
         await seedInitialGiftAllocation(tx, {
           giftId,
           amount: locked.amount,
-          dateReceived: locked.dateReceived,
-          entityId: locked.entityId,
-          countsTowardGoal: !isGovernmentReimbursement(locked),
+          dateReceived: giftDateReceived,
+          entityId:
+            overrides.entityId !== undefined
+              ? overrides.entityId
+              : locked.entityId,
+          countsTowardGoal:
+            overrides.countsTowardGoal ?? !isGovernmentReimbursement(locked),
         });
         await assertGiftHasAllocations(tx, giftId);
         await tx

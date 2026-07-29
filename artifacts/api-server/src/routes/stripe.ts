@@ -50,6 +50,7 @@ import {
   ResolveStagedPaymentBody,
   ExcludeStagedPaymentBody,
   LinkStripeChargeToGiftBody,
+  CreateGiftFromStripeStagedChargeBody,
 } from "@workspace/api-zod";
 import { linkChargeToGiftInTx } from "../lib/reconciliationBundleCommit";
 import {
@@ -820,6 +821,22 @@ router.post(
       return;
     }
     const id = paramId(req);
+    // Optional human overrides (workbench create-gift dialog). Omitted field =
+    // evidence-derived default; present field overrides header + seeded
+    // allocation. The AMOUNT is never overridable — the mint credits the GROSS
+    // charge amount and books its counted ledger row.
+    const parsedOverrides = CreateGiftFromStripeStagedChargeBody.safeParse(
+      req.body ?? {},
+    );
+    if (!parsedOverrides.success) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Request validation failed",
+        details: parsedOverrides.error.flatten(),
+      });
+      return;
+    }
+    const overrides = parsedOverrides.data;
     const existing = await db
       .select()
       .from(stripeStagedCharges)
@@ -887,8 +904,10 @@ router.post(
           lockedIssues = issues;
           throw new Error(INVARIANT);
         }
-        await tx.insert(giftsAndPayments).values(
-          buildGiftValuesFromStripeCharge(
+        const overrideName = overrides.name?.trim();
+        const giftDateReceived = overrides.dateReceived ?? locked.dateReceived;
+        await tx.insert(giftsAndPayments).values({
+          ...buildGiftValuesFromStripeCharge(
             giftId,
             {
               chargeId: locked.id,
@@ -904,13 +923,25 @@ router.post(
             },
             user.id,
           ),
-        );
+          // Human overrides layer over the evidence-derived builder values
+          // (null/empty name keeps the derived one).
+          ...(overrideName ? { name: overrideName } : {}),
+          dateReceived: giftDateReceived,
+        });
         // Every gift needs at least one allocation (the sole home of money
-        // scope). Seed a default full-amount line; fundraiser refines scope later.
+        // scope). Seed a default full-amount line; fundraiser refines scope
+        // later. Entity/goal-counting have no Stripe-side default — they apply
+        // only when the human supplies them.
         await seedInitialGiftAllocation(tx, {
           giftId,
           amount: locked.grossAmount,
-          dateReceived: locked.dateReceived,
+          dateReceived: giftDateReceived,
+          ...(overrides.entityId !== undefined
+            ? { entityId: overrides.entityId }
+            : {}),
+          ...(overrides.countsTowardGoal != null
+            ? { countsTowardGoal: overrides.countsTowardGoal }
+            : {}),
         });
         await assertGiftHasAllocations(tx, giftId);
         await tx

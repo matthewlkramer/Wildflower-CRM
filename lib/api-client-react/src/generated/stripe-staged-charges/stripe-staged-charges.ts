@@ -24,6 +24,7 @@ import type {
   ExcludeStagedPaymentBody,
   ListStripePayoutReconciliationsParams,
   ListStripeStagedChargesParams,
+  MintGiftOverridesBody,
   NotFoundResponse,
   ResolveStagedPaymentBody,
   StagedGiftResponse,
@@ -342,14 +343,16 @@ export const getCreateGiftFromStripeStagedChargeUrl = (id: string,) => {
   return `/api/stripe-staged-charges/${id}/create-gift`
 }
 
-export const createGiftFromStripeStagedCharge = async (id: string, options?: RequestInit): Promise<StagedGiftResponse> => {
+export const createGiftFromStripeStagedCharge = async (id: string,
+    mintGiftOverridesBody?: MintGiftOverridesBody, options?: RequestInit): Promise<StagedGiftResponse> => {
   
   return customFetch<StagedGiftResponse>(getCreateGiftFromStripeStagedChargeUrl(id),
   {      
     ...options,
-    method: 'POST'
-    
-    
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      mintGiftOverridesBody,)
   }
 );}
   
@@ -357,8 +360,8 @@ export const createGiftFromStripeStagedCharge = async (id: string, options?: Req
 
 
 export const getCreateGiftFromStripeStagedChargeMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext> => {
 
 const mutationKey = ['createGiftFromStripeStagedCharge'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -370,10 +373,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, {id: string;data: BodyType<MintGiftOverridesBody>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  createGiftFromStripeStagedCharge(id,requestOptions)
+          return  createGiftFromStripeStagedCharge(id,data,requestOptions)
         }
 
 
@@ -384,18 +387,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CreateGiftFromStripeStagedChargeMutationResult = NonNullable<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>>
-    
+    export type CreateGiftFromStripeStagedChargeMutationBody = BodyType<MintGiftOverridesBody>
     export type CreateGiftFromStripeStagedChargeMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
     /**
  * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
  */
 export const useCreateGiftFromStripeStagedCharge = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
         TError,
-        {id: string},
+        {id: string;data: BodyType<MintGiftOverridesBody>},
         TContext
       > => {
       return useMutation(getCreateGiftFromStripeStagedChargeMutationOptions(options));
