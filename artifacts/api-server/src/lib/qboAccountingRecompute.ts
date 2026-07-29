@@ -15,7 +15,7 @@ import { sql } from "drizzle-orm";
  * detected; only an amount matching neither gross nor net is a correction.
  *
  * Pairing FACT is the `payout_qb_settlement` source_link. This pass first FILLS
- * it for unpaired lumps with an unambiguous exact-amount payout in the
+ * it for unpaired lumps with an unambiguous gross-or-net amount match in the
  * [arrival, +5d] bank window (fill-only, never re-points), then compares every
  * paired lump.
  *
@@ -45,7 +45,10 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
       SELECT l.id AS staged_id, p.id AS payout_id
       FROM lumps l
       JOIN stripe_payouts p
-        ON (p.amount = l.amount OR p.gross_total = l.amount)
+        ON (
+          COALESCE(p.net_total, p.amount) = l.amount
+          OR p.gross_total = l.amount
+        )
        AND p.status = 'paid'
        AND l.date_received >= p.arrival_date
        AND l.date_received <= p.arrival_date + INTERVAL '5 days'
@@ -85,7 +88,7 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
         jsonb_build_object(
           'kind', 'stripe_payout_lump',
           'payout_id', p.id,
-          'net_amount', p.amount,
+          'net_amount', COALESCE(p.net_total, p.amount),
           'gross_amount', p.gross_total,
           'arrival_date', p.arrival_date,
           'bank_deposit_id', p.bank_deposit_id
@@ -96,19 +99,25 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
           'account', l.qb_deposit_to_account_name
         ) AS actual,
         CASE
-          WHEN abs(l.amount - p.amount) <= 0.01 THEN 'net'
-          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN 'gross'
+          WHEN abs(l.amount - COALESCE(p.net_total, p.amount)) <= 0.01 THEN 'net'
+          WHEN p.gross_total IS NOT NULL
+            AND abs(l.amount - p.gross_total) <= 0.01 THEN 'gross'
           ELSE 'unmatched'
         END AS booking_basis,
         CASE
-          WHEN abs(l.amount - p.amount) <= 0.01 THEN 'consistent'
-          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN 'consistent'
+          WHEN abs(l.amount - COALESCE(p.net_total, p.amount)) <= 0.01
+            THEN 'consistent'
+          WHEN p.gross_total IS NOT NULL
+            AND abs(l.amount - p.gross_total) <= 0.01
+            THEN 'consistent'
           ELSE 'correction_needed'
         END::qbo_accounting_disposition AS disposition,
         CASE
-          WHEN abs(l.amount - p.amount) <= 0.01 THEN NULL
-          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN NULL
-          ELSE 'QBO posts ' || l.amount || ', but payout net is ' || p.amount ||
+          WHEN abs(l.amount - COALESCE(p.net_total, p.amount)) <= 0.01 THEN NULL
+          WHEN p.gross_total IS NOT NULL
+            AND abs(l.amount - p.gross_total) <= 0.01 THEN NULL
+          ELSE 'QBO posts ' || l.amount || ', but payout net is ' ||
+               COALESCE(p.net_total, p.amount) ||
                CASE WHEN p.gross_total IS NULL THEN ''
                     ELSE ' and payout gross is ' || p.gross_total END
         END AS note
