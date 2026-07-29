@@ -98,7 +98,10 @@ describe("deposit presentation helpers", () => {
 
   it("does not add a blocker for non-correction accounting states", () => {
     expect(
-      accountingCorrectionPresentation({ disposition: "consistent", note: null }),
+      accountingCorrectionPresentation({
+        disposition: "consistent",
+        note: null,
+      }),
     ).toBeNull();
   });
 

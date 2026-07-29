@@ -75,12 +75,17 @@ export type AccountingCorrectionPresentation = {
  * its explanation visible on the nested card instead of silently hiding it.
  */
 export function accountingCorrectionPresentation(
-  check: Pick<WorkbenchDepositAccountingCheck, "disposition" | "note"> | null | undefined,
+  check:
+    | Pick<WorkbenchDepositAccountingCheck, "disposition" | "note">
+    | null
+    | undefined,
 ): AccountingCorrectionPresentation {
   if (check?.disposition !== "correction_needed") return null;
   return {
     label: "Correction needed",
-    note: check.note?.trim() || "This QuickBooks record is on the accounting corrections worklist.",
+    note:
+      check.note?.trim() ||
+      "This QuickBooks record is on the accounting corrections worklist.",
   };
 }
 
