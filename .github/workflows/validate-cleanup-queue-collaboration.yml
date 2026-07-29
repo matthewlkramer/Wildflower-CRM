@@ -50,10 +50,11 @@ jobs:
       - name: Apply implementation and regenerate API clients
         run: |
           python .agent/apply-cleanup-queue-collaboration.py
+          python .agent/add-cleanup-test-clerk-mocks.py
           pnpm --filter @workspace/api-spec run codegen
       - name: Format touched source
         run: |
-          pnpm exec prettier --write lib/db/src/schema/cleanupQueue.ts artifacts/api-server/src/routes/cleanupQueue.ts artifacts/api-server/src/__tests__/flag-for-research.integration.test.ts artifacts/wildflower-crm/src/pages/cleanup-queue.tsx
+          pnpm exec prettier --write lib/db/src/schema/cleanupQueue.ts artifacts/api-server/src/routes/cleanupQueue.ts artifacts/api-server/src/__tests__/flag-for-research.integration.test.ts artifacts/api-server/src/__tests__/flagged-for-research-derivation.integration.test.ts artifacts/wildflower-crm/src/pages/cleanup-queue.tsx
       - name: Build schema and validate contract
         run: |
           pnpm --filter @workspace/db run push-force
