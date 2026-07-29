@@ -174,6 +174,19 @@ paths:
         "200": { description: "Already flagged — returns the existing item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
         "201": { description: "Created a new cleanup item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /cleanup-queue/{id}:
+    patch:
+      operationId: updateCleanupItem
+      tags: [cleanup-queue]
+      summary: Update the cleanup item's shared working note. Any signed-in team member may edit it.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateCleanupItemBody" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /cleanup-queue/{id}/resolve:
     post:
       operationId: resolveCleanupItem
@@ -10149,14 +10162,16 @@ components:
       enum: [open, resolved, dismissed]
     CleanupItem:
       type: object
-      required: [id, targetType, targetId, reasonCode, note, status, flaggedAt, createdAt, updatedAt]
+      required: [id, targetType, targetId, reasonCode, note, flaggedByUserId, flaggedByUserName, status, flaggedAt, createdAt, updatedAt]
       properties:
         id:               { type: string }
         targetType:       { type: string, description: "Kind of record this item targets (e.g. 'pledge', 'opportunity', 'organization', 'person', 'gift')." }
         targetId:         { type: string, description: "Id of the targeted record." }
         targetName:       { type: string, nullable: true, description: "Resolved display name of the target record (when known)." }
         reasonCode:       { type: string, description: "Machine-readable category of the flag." }
-        note:             { type: string, description: "Human-readable description of what to fix." }
+        note:             { type: string, description: "Shared working text describing the issue and team updates." }
+        flaggedByUserId:  { type: string, nullable: true, description: "User who originally flagged the item; null for system-seeded historical rows." }
+        flaggedByUserName: { type: string, nullable: true, description: "Display name of the user who originally flagged the item; null for system-seeded historical rows." }
         status:           { $ref: "#/components/schemas/CleanupQueueStatus" }
         flaggedAt:        { type: string, description: "ISO timestamp the record was flagged for cleanup." }
         resolvedAt:       { type: string, nullable: true, description: "ISO timestamp the item was resolved or dismissed." }
@@ -10179,6 +10194,11 @@ components:
         targetType: { type: string, enum: [opportunity, pledge, organization, person, gift, staged_payment, stripe_payout], description: "Kind of record being flagged." }
         targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
         note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
+    UpdateCleanupItemBody:
+      type: object
+      required: [note]
+      properties:
+        note: { type: string, minLength: 1, maxLength: 20000, description: "Replacement shared working text for this cleanup item." }
     CodingFormRowStatus:
       type: string
       enum: [pending, applied, skipped]

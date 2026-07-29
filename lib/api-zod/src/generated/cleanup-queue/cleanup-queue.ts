@@ -31,7 +31,9 @@ export const ListCleanupQueueResponse = zod.object({
   "targetId": zod.string().describe('Id of the targeted record.'),
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
-  "note": zod.string().describe('Human-readable description of what to fix.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
   "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
   "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
@@ -66,7 +68,42 @@ export const FlagForResearchResponse = zod.object({
   "targetId": zod.string().describe('Id of the targeted record.'),
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
-  "note": zod.string().describe('Human-readable description of what to fix.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
+  "status": zod.enum(['open', 'resolved', 'dismissed']),
+  "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
+  "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
+  "resolvedByUserId": zod.string().nullish(),
+  "resolvedByUserName": zod.string().nullish().describe('Display name of the user who resolved\/dismissed the item.'),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+/**
+ * @summary Update the cleanup item's shared working note. Any signed-in team member may edit it.
+ */
+export const UpdateCleanupItemParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const updateCleanupItemBodyNoteMax = 20000;
+
+
+
+export const UpdateCleanupItemBody = zod.object({
+  "note": zod.string().min(1).max(updateCleanupItemBodyNoteMax).describe('Replacement shared working text for this cleanup item.')
+})
+
+export const UpdateCleanupItemResponse = zod.object({
+  "id": zod.string(),
+  "targetType": zod.string().describe('Kind of record this item targets (e.g. \'pledge\', \'opportunity\', \'organization\', \'person\', \'gift\').'),
+  "targetId": zod.string().describe('Id of the targeted record.'),
+  "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
+  "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
   "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
   "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
@@ -89,7 +126,9 @@ export const ResolveCleanupItemResponse = zod.object({
   "targetId": zod.string().describe('Id of the targeted record.'),
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
-  "note": zod.string().describe('Human-readable description of what to fix.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
   "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
   "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
@@ -112,7 +151,9 @@ export const DismissCleanupItemResponse = zod.object({
   "targetId": zod.string().describe('Id of the targeted record.'),
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
-  "note": zod.string().describe('Human-readable description of what to fix.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
   "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
   "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),

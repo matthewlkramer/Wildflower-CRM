@@ -36,8 +36,12 @@ export const cleanupQueue = pgTable(
     // Part of the idempotency key so the same record can later be flagged for a
     // different reason without colliding.
     reasonCode: text("reason_code").notNull(),
-    // Human-readable description of what to fix.
+    // Human-readable shared working text. Team members may edit this note to
+    // exchange updates about the cleanup item.
     note: text("note").notNull(),
+    // User who first created the flag. Historical migration-seeded rows remain
+    // null and are presented as System.
+    flaggedByUserId: text("flagged_by_user_id"),
     status: cleanupQueueStatusEnum("status").notNull().default("open"),
     flaggedAt: timestamp("flagged_at").defaultNow().notNull(),
     // Set when the item leaves the 'open' state (resolved or dismissed).

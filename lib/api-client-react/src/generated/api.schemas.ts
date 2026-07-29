@@ -6800,8 +6800,12 @@ export interface CleanupItem {
   targetName?: string | null;
   /** Machine-readable category of the flag. */
   reasonCode: string;
-  /** Human-readable description of what to fix. */
+  /** Shared working text describing the issue and team updates. */
   note: string;
+  /** User who originally flagged the item; null for system-seeded historical rows. */
+  flaggedByUserId: string | null;
+  /** Display name of the user who originally flagged the item; null for system-seeded historical rows. */
+  flaggedByUserName: string | null;
   status: CleanupQueueStatus;
   /** ISO timestamp the record was flagged for cleanup. */
   flaggedAt: string;
@@ -6849,6 +6853,15 @@ export interface FlagForResearchBody {
   /**
    * What needs research / follow-up on this record.
    * @minLength 1
+   */
+  note: string;
+}
+
+export interface UpdateCleanupItemBody {
+  /**
+   * Replacement shared working text for this cleanup item.
+   * @minLength 1
+   * @maxLength 20000
    */
   note: string;
 }
