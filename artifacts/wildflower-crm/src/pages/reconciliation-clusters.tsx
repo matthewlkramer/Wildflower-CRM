@@ -879,6 +879,57 @@ export default function ReconciliationClustersPage() {
       return next;
     });
 
+  const renderRecentChanges = (testIdSuffix = "") => (
+    <>
+      <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
+        Recent changes
+      </h2>
+      {recentLoading ? (
+        <p className="text-[11px] text-muted-foreground">Loading…</p>
+      ) : !recentData?.items.length ? (
+        <p className="text-[11px] text-muted-foreground">
+          No reconciliation actions recorded yet.
+        </p>
+      ) : (
+        <ul className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
+          {recentData.items.map((c) => (
+            <li
+              key={c.id}
+              className="text-[11px] leading-snug"
+              data-testid={`recent-change-${c.id}${testIdSuffix}`}
+            >
+              <p className="text-foreground">{c.summary}</p>
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <span className="text-muted-foreground truncate">
+                  {c.actorName ?? "System"} · {formatWhen(c.at)}
+                </span>
+                {c.undo ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-[10px] shrink-0"
+                    disabled={busy}
+                    onClick={() => void handleUndo(c)}
+                    data-testid={`button-undo-${c.id}${testIdSuffix}`}
+                  >
+                    Undo
+                  </Button>
+                ) : (
+                  <span
+                    className="text-[10px] text-muted-foreground/50 shrink-0 cursor-not-allowed"
+                    title="No one-click undo — this kind of action can't be safely reversed in a single step."
+                  >
+                    No undo
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -896,6 +947,31 @@ export default function ReconciliationClustersPage() {
 
       <div className="flex gap-4 items-start">
         <main className="flex-1 min-w-0 space-y-3">
+          <div
+            className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:hidden"
+            data-testid="cluster-lens-strip-mobile"
+          >
+            {LENSES.map((l) => (
+              <Button
+                key={l.id}
+                variant={l.id === lens ? "default" : "outline"}
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setLens(l.id);
+                  setPage(1);
+                }}
+                data-testid={`button-lens-mobile-${l.id}`}
+              >
+                {l.label}
+                {counts?.[l.id] != null ? (
+                  <span className="ml-1.5 text-xs tabular-nums">
+                    {counts[l.id].toLocaleString()}
+                  </span>
+                ) : null}
+              </Button>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -932,17 +1008,19 @@ export default function ReconciliationClustersPage() {
                 : "Nothing in this lens right now."}
             </p>
           ) : (
-            <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
-              <GridHeader />
-              {clusters.map((c) => (
-                <ClusterRow
-                  key={c.id}
-                  cluster={c}
-                  expanded={expanded.has(c.id)}
-                  onToggle={() => toggleExpanded(c.id)}
-                  actions={actions}
-                />
-              ))}
+            <div className="rounded-lg border bg-card shadow-sm overflow-x-auto">
+              <div className="min-w-[880px]">
+                <GridHeader />
+                {clusters.map((c) => (
+                  <ClusterRow
+                    key={c.id}
+                    cluster={c}
+                    expanded={expanded.has(c.id)}
+                    onToggle={() => toggleExpanded(c.id)}
+                    actions={actions}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
@@ -971,6 +1049,12 @@ export default function ReconciliationClustersPage() {
               </Button>
             </div>
           ) : null}
+          <div
+            className="rounded-lg border bg-card p-3 lg:hidden"
+            data-testid="recent-changes-mobile"
+          >
+            {renderRecentChanges("-mobile")}
+          </div>
         </main>
 
         {/* Right rail: lenses */}
@@ -1017,52 +1101,7 @@ export default function ReconciliationClustersPage() {
             className="rounded-lg border bg-card p-3"
             data-testid="recent-changes-rail"
           >
-            <h2 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">
-              Recent changes
-            </h2>
-            {recentLoading ? (
-              <p className="text-[11px] text-muted-foreground">Loading…</p>
-            ) : !recentData?.items.length ? (
-              <p className="text-[11px] text-muted-foreground">
-                No reconciliation actions recorded yet.
-              </p>
-            ) : (
-              <ul className="space-y-2 max-h-80 overflow-y-auto pr-0.5">
-                {recentData.items.map((c) => (
-                  <li
-                    key={c.id}
-                    className="text-[11px] leading-snug"
-                    data-testid={`recent-change-${c.id}`}
-                  >
-                    <p className="text-foreground">{c.summary}</p>
-                    <div className="flex items-center justify-between gap-2 mt-0.5">
-                      <span className="text-muted-foreground truncate">
-                        {c.actorName ?? "System"} · {formatWhen(c.at)}
-                      </span>
-                      {c.undo ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-5 px-1.5 text-[10px] shrink-0"
-                          disabled={busy}
-                          onClick={() => void handleUndo(c)}
-                          data-testid={`button-undo-${c.id}`}
-                        >
-                          Undo
-                        </Button>
-                      ) : (
-                        <span
-                          className="text-[10px] text-muted-foreground/50 shrink-0 cursor-not-allowed"
-                          title="No one-click undo — this kind of action can't be safely reversed in a single step."
-                        >
-                          No undo
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {renderRecentChanges()}
           </div>
           <div className="rounded-lg border bg-card p-3 text-[11px] text-muted-foreground leading-relaxed">
             <AlertCircle className="w-3 h-3 inline mr-1" />
@@ -1071,28 +1110,6 @@ export default function ReconciliationClustersPage() {
             queue workbench for bulk work.
           </div>
         </aside>
-      </div>
-
-      {/* Small-screen lens strip (rail hides below lg) */}
-      <div className="flex flex-wrap gap-1.5 lg:hidden">
-        {LENSES.map((l) => (
-          <Button
-            key={l.id}
-            variant={l.id === lens ? "default" : "outline"}
-            size="sm"
-            onClick={() => {
-              setLens(l.id);
-              setPage(1);
-            }}
-          >
-            {l.label}
-            {counts?.[l.id] != null ? (
-              <span className="ml-1.5 text-xs tabular-nums">
-                {counts[l.id].toLocaleString()}
-              </span>
-            ) : null}
-          </Button>
-        ))}
       </div>
 
       {/* ── Action dialogs ── */}

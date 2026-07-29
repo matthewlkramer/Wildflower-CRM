@@ -1158,6 +1158,54 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
+  const renderRecentChanges = (testIdSuffix = "") => (
+    <>
+      <h2 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        Recent changes
+      </h2>
+      {recentLoading ? (
+        <p className="text-[11px] text-muted-foreground">Loading…</p>
+      ) : !recentData?.items.length ? (
+        <p className="text-[11px] text-muted-foreground">
+          No reconciliation actions recorded yet.
+        </p>
+      ) : (
+        <ul className="max-h-80 space-y-2 overflow-y-auto pr-0.5">
+          {recentData.items.map((change) => (
+            <li
+              key={change.id}
+              className="text-[11px] leading-snug"
+              data-testid={`deposit-recent-change-${change.id}${testIdSuffix}`}
+            >
+              <p>{change.summary}</p>
+              <div className="mt-0.5 flex items-center justify-between gap-2">
+                <span className="truncate text-muted-foreground">
+                  {change.actorName ?? "System"} · {formatWhen(change.at)}
+                </span>
+                {change.undo ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 shrink-0 px-1.5 text-[10px]"
+                    disabled={busy}
+                    onClick={() => void handleUndo(change)}
+                    data-testid={`deposit-button-undo-${change.id}${testIdSuffix}`}
+                  >
+                    Undo
+                  </Button>
+                ) : (
+                  <span className="shrink-0 text-[10px] text-muted-foreground/50">
+                    No undo
+                  </span>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+
   return (
     <div className="space-y-4">
       <div>
@@ -1174,6 +1222,29 @@ export default function ReconciliationDepositsPage() {
       </div>
       <div className="flex items-start gap-4">
         <main className="min-w-0 flex-1 space-y-3">
+          <div
+            className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 lg:hidden"
+            data-testid="deposit-lens-strip-mobile"
+          >
+            {DEPOSIT_LENSES.map((item) => (
+              <Button
+                key={item.id}
+                variant={lens === item.id ? "default" : "outline"}
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setLens(item.id);
+                  setPage(1);
+                }}
+                data-testid={`button-deposit-lens-mobile-${item.id}`}
+              >
+                {item.label}
+                <span className="ml-1.5 text-xs tabular-nums">
+                  {data?.lensCounts[item.id] ?? "—"}
+                </span>
+              </Button>
+            ))}
+          </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative w-full max-w-sm">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1209,21 +1280,23 @@ export default function ReconciliationDepositsPage() {
                 : "Nothing in this lens right now."}
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
-              <DepositGridHeader />
-              {deposits.map((deposit) => (
-                <DepositRow
-                  key={deposit.id}
-                  deposit={deposit}
-                  actions={actions}
-                  onConfirmProvisional={(id) =>
-                    void confirmDepositQbo.mutateAsync({ id }).then(invalidate)
-                  }
-                  onDismissProvisional={(id) =>
-                    void dismissDepositQbo.mutateAsync({ id }).then(invalidate)
-                  }
-                />
-              ))}
+            <div className="overflow-x-auto rounded-lg border bg-card shadow-sm">
+              <div className="min-w-[880px]">
+                <DepositGridHeader />
+                {deposits.map((deposit) => (
+                  <DepositRow
+                    key={deposit.id}
+                    deposit={deposit}
+                    actions={actions}
+                    onConfirmProvisional={(id) =>
+                      void confirmDepositQbo.mutateAsync({ id }).then(invalidate)
+                    }
+                    onDismissProvisional={(id) =>
+                      void dismissDepositQbo.mutateAsync({ id }).then(invalidate)
+                    }
+                  />
+                ))}
+              </div>
             </div>
           )}
           {totalPages > 1 ? (
@@ -1251,6 +1324,12 @@ export default function ReconciliationDepositsPage() {
               </Button>
             </div>
           ) : null}
+          <div
+            className="rounded-lg border bg-card p-3 lg:hidden"
+            data-testid="deposit-recent-changes-mobile"
+          >
+            {renderRecentChanges("-mobile")}
+          </div>
         </main>
         <aside className="sticky top-4 hidden w-60 shrink-0 space-y-3 lg:block">
           <div className="rounded-lg border bg-card p-3">
@@ -1281,49 +1360,7 @@ export default function ReconciliationDepositsPage() {
             className="rounded-lg border bg-card p-3"
             data-testid="deposit-recent-changes-rail"
           >
-            <h2 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Recent changes
-            </h2>
-            {recentLoading ? (
-              <p className="text-[11px] text-muted-foreground">Loading…</p>
-            ) : !recentData?.items.length ? (
-              <p className="text-[11px] text-muted-foreground">
-                No reconciliation actions recorded yet.
-              </p>
-            ) : (
-              <ul className="max-h-80 space-y-2 overflow-y-auto pr-0.5">
-                {recentData.items.map((change) => (
-                  <li
-                    key={change.id}
-                    className="text-[11px] leading-snug"
-                    data-testid={`deposit-recent-change-${change.id}`}
-                  >
-                    <p>{change.summary}</p>
-                    <div className="mt-0.5 flex items-center justify-between gap-2">
-                      <span className="truncate text-muted-foreground">
-                        {change.actorName ?? "System"} · {formatWhen(change.at)}
-                      </span>
-                      {change.undo ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-5 shrink-0 px-1.5 text-[10px]"
-                          disabled={busy}
-                          onClick={() => void handleUndo(change)}
-                          data-testid={`deposit-button-undo-${change.id}`}
-                        >
-                          Undo
-                        </Button>
-                      ) : (
-                        <span className="shrink-0 text-[10px] text-muted-foreground/50">
-                          No undo
-                        </span>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+            {renderRecentChanges()}
           </div>
         </aside>
       </div>
