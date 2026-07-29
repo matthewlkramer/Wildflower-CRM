@@ -66,7 +66,6 @@ recent = replace_once(
     '''    const items = rows.map((row) => ({''',
     "recent in-memory user filter",
 )
-# Close the now-direct map rather than a chained map expression.
 recent = replace_once(
     recent,
     '''        undo: undoOf(row.metadata),
@@ -405,8 +404,6 @@ page = replace_once(
 save(page_path, page)
 
 
-# Add focused integration coverage for claimed-unit retargeting and scoped
-# accounting unlink. Insert before the final describe closure.
 test_path = "artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts"
 test = load(test_path)
 addition = r'''
@@ -492,7 +489,7 @@ addition = r'''
       qbStagedPaymentId: stagedPaymentId,
       lifecycle: "confirmed",
       provenance: "human",
-      matchBasis: "test",
+      matchBasis: "settled_pairing",
     });
     depositQboComponentIds.push(sourceLinkId);
     await db.insert(schema.paymentUnits).values({
