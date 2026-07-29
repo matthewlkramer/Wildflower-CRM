@@ -1,0 +1,960 @@
+diff a/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx b/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx	(rejected hunks)
+@@ -416,59 +487,146 @@ function Composition({
+   return (
+     <div className="space-y-1.5">
+       {composition.components.map((component) => (
+-        <div key={component.componentId} className={`rounded-md border px-2.5 py-1.5 text-[11px] ${component.unconfirmed ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30" : "bg-card"}`}>
++        <div
++          key={component.componentId}
++          className={`rounded-md border px-2.5 py-1.5 text-[11px] ${component.unconfirmed ? "border-amber-300 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/30" : "bg-card"}`}
++        >
+           <div className="flex items-center justify-between">
+             <span className="flex min-w-0 items-center gap-1.5 truncate">
+-            {component.needsReview || component.ambiguousDepositMatch ? <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" /> : null}
++              {component.needsReview || component.ambiguousDepositMatch ? (
++                <CircleAlert className="h-3 w-3 shrink-0 text-amber-600" />
++              ) : null}
+               <span className="font-medium">{componentTitle(component)}</span>
+-            {component.unconfirmed ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+-            {component.manual && component.needsReview ? <Badge variant="outline" className="shrink-0 border-amber-400 text-[9px] text-amber-700">Research placeholder</Badge> : null}
+-            {component.manual && !component.needsReview ? <Badge variant="outline" className="shrink-0 text-[9px]">Manual</Badge> : null}
+-            {component.exclusionReason ? <Badge variant="destructive" className="shrink-0 text-[9px]">Excluded</Badge> : null}
++              {component.unconfirmed ? (
++                <Badge
++                  variant="outline"
++                  className="shrink-0 border-amber-400 text-[9px] text-amber-700"
++                >
++                  Unconfirmed
++                </Badge>
++              ) : null}
++              {component.manual && component.needsReview ? (
++                <Badge
++                  variant="outline"
++                  className="shrink-0 border-amber-400 text-[9px] text-amber-700"
++                >
++                  Research placeholder
++                </Badge>
++              ) : null}
++              {component.manual && !component.needsReview ? (
++                <Badge variant="outline" className="shrink-0 text-[9px]">
++                  Manual
++                </Badge>
++              ) : null}
++              {component.exclusionReason ? (
++                <Badge variant="destructive" className="shrink-0 text-[9px]">
++                  Excluded
++                </Badge>
++              ) : null}
+             </span>
+             <span className="flex shrink-0 items-center gap-2">
+               <span className="tabular-nums">{money(component.amount)}</span>
+               {actions.isFinanceOrAdmin ? (
+-              <CardActionsMenu items={[
++                <CardActionsMenu
++                  items={[
+                     ...(component.unconfirmed && component.componentId
+                       ? [
+-                      { label: "Confirm match", onSelect: () => onConfirmProvisional?.(component.componentId) },
+-                      { label: "Dismiss match", onSelect: () => onDismissProvisional?.(component.componentId) },
++                          {
++                            label: "Confirm match",
++                            onSelect: () =>
++                              onConfirmProvisional?.(component.componentId),
++                          },
++                          {
++                            label: "Dismiss match",
++                            onSelect: () =>
++                              onDismissProvisional?.(component.componentId),
++                          },
+                         ]
+                       : []),
+                     ...(component.source !== "qbo_provisional"
+                       ? [
+                           component.exclusionReason
+-                        ? { label: "Re-include", onSelect: () => actions.reInclude({ kind: "component", id: component.componentId, label: componentTitle(component) }) }
+-                        : { label: "Exclude…", onSelect: () => actions.openExclude({ kind: "component", id: component.componentId, label: componentTitle(component) }) },
++                            ? {
++                                label: "Re-include",
++                                onSelect: () =>
++                                  actions.reInclude({
++                                    kind: "component",
++                                    id: component.componentId,
++                                    label: componentTitle(component),
++                                  }),
++                              }
++                            : {
++                                label: "Exclude…",
++                                onSelect: () =>
++                                  actions.openExclude({
++                                    kind: "component",
++                                    id: component.componentId,
++                                    label: componentTitle(component),
++                                  }),
++                              },
+                         ]
+                       : []),
+-                ...(!component.unconfirmed && component.kind !== "stripe_charge" && component.source !== "qbo_provisional" && !component.stagedPaymentId
+-                  ? [{ label: "Search QuickBooks…", onSelect: () => actions.openComponentQbSearch?.(component) }]
+-                  : []),
+-                ...(component.manual && (component.countedGiftIds?.length ?? 0) === 0
+-                  ? [{ label: "Remove payment", onSelect: () => actions.removeManualComponent?.(component.componentId, componentTitle(component)) }]
++                    ...(!component.unconfirmed &&
++                    component.kind !== "stripe_charge" &&
++                    component.source !== "qbo_provisional" &&
++                    !component.stagedPaymentId
++                      ? [
++                          {
++                            label: "Search QuickBooks…",
++                            onSelect: () =>
++                              actions.openComponentQbSearch?.(component),
++                          },
++                        ]
+                       : []),
+-                ...(!component.unconfirmed && component.source === "bank_spine" && !component.manual && component.stagedPaymentId && (component.countedGiftIds?.length ?? 0) === 0
+-                  ? [{ label: "Unlink", onSelect: () => actions.removeManualComponent?.(component.componentId, componentTitle(component)) }]
++                    ...(!component.unconfirmed &&
++                    component.source !== "qbo_provisional"
++                      ? [
++                          {
++                            label: "Unlink payment",
++                            onSelect: () =>
++                              actions.removeManualComponent?.(
++                                component.componentId,
++                                componentTitle(component),
++                              ),
++                          },
++                        ]
+                       : []),
+-                ...(component.sourceStagedPaymentManual && component.stagedPaymentId
+-                  ? [{ label: "Clear QBO source", onSelect: () => actions.clearComponentQbSource?.(component.componentId) }]
++                    ...(component.sourceStagedPaymentManual &&
++                    component.stagedPaymentId
++                      ? [
++                          {
++                            label: "Clear QBO source",
++                            onSelect: () =>
++                              actions.clearComponentQbSource?.(
++                                component.componentId,
++                              ),
++                          },
++                        ]
+                       : []),
+-              ]} />
++                  ]}
++                />
+               ) : null}
+             </span>
+           </div>
+           <div className="mt-0.5 text-[10px] text-muted-foreground">
+             {[
+-              composition.components.length === 1 && amountNumber(composition.unexplainedAmount) === 0 ? "Single payment" : null,
+-              component.receivedDate ? formatDateShort(component.receivedDate) : null,
++              composition.components.length === 1 &&
++              amountNumber(composition.unexplainedAmount) === 0
++                ? "Single payment"
++                : null,
++              component.receivedDate
++                ? formatDateShort(component.receivedDate)
++                : "Undated",
+               componentKindLabel(component.kind),
+-            ].filter(Boolean).join(" · ")}
++            ]
++              .filter(Boolean)
++              .join(" · ")}
+           </div>
+         </div>
+       ))}
+-      {!composition.components.length ? <span className="text-xs text-muted-foreground">No components</span> : null}
++      {!composition.components.length ? (
++        <span className="text-xs text-muted-foreground">No components</span>
++      ) : null}
+       {remainderActions}
+     </div>
+   );
+@@ -602,89 +781,242 @@ function Accounting({
+   );
+   const firstRecord = visibleRecords[0];
+   const firstDisplay = firstRecord ?? checks[0];
+-  const firstCorrection = checks.find((check) => check.disposition === "correction_needed");
++  const firstCorrection = checks.find(
++    (check) => check.disposition === "correction_needed",
++  );
+   const columnMenu = actions.isFinanceOrAdmin ? (
+-    <div className="flex items-center justify-end">
+-      <CardActionsMenu items={[
+-        { label: "Search for accounting evidence…", onSelect: () => actions.openDepositQbEvidenceSearch?.(deposit) },
+-        { label: "Flag accounting error…", onSelect: () => actions.openFlagAccountingError?.(deposit), disabled: !visibleRecords.length && !checks.length },
+-        { label: "QB detail", onSelect: () => { if (firstRecord) actions.openQbDetail(asQbDetailRecord(firstRecord), checksByPayment.get(firstRecord.stagedPaymentId) ? "matched" : "missing"); }, disabled: !firstRecord },
+-        { label: "Exclude", onSelect: () => { if (firstDisplay) actions.openExclude({ kind: "staged", id: firstDisplay.stagedPaymentId, label: accountingLabel(firstDisplay) }); }, disabled: !firstDisplay },
+-        { label: "Mark corrected", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "corrected"); }, disabled: !firstCorrection },
+-        { label: "Accept historical…", onSelect: () => { if (firstCorrection) actions.openAccountingDisposition?.(firstCorrection.id, "accepted_historical"); }, disabled: !firstCorrection },
+-      ]} />
++    <div className="absolute right-0 top-0 z-10">
++      <CardActionsMenu
++        items={[
++          {
++            label: "Search for accounting evidence…",
++            onSelect: () => actions.openDepositQbEvidenceSearch?.(deposit),
++          },
++          {
++            label: "Flag accounting error…",
++            onSelect: () => actions.openFlagAccountingError?.(deposit),
++            disabled: !visibleRecords.length && !checks.length,
++          },
++          {
++            label: "QB detail",
++            onSelect: () => {
++              if (firstRecord)
++                actions.openQbDetail(
++                  asQbDetailRecord(firstRecord),
++                  checksByPayment.get(firstRecord.stagedPaymentId)
++                    ? "matched"
++                    : "missing",
++                );
++            },
++            disabled: !firstRecord,
++          },
++          {
++            label: "Exclude",
++            onSelect: () => {
++              if (firstDisplay)
++                actions.openExclude({
++                  kind: "staged",
++                  id: firstDisplay.stagedPaymentId,
++                  label: accountingLabel(firstDisplay),
++                });
++            },
++            disabled: !firstDisplay,
++          },
++          {
++            label: "Mark corrected",
++            onSelect: () => {
++              if (firstCorrection)
++                actions.openAccountingDisposition?.(
++                  firstCorrection.id,
++                  "corrected",
++                );
++            },
++            disabled: !firstCorrection,
++          },
++          {
++            label: "Accept historical…",
++            onSelect: () => {
++              if (firstCorrection)
++                actions.openAccountingDisposition?.(
++                  firstCorrection.id,
++                  "accepted_historical",
++                );
++            },
++            disabled: !firstCorrection,
++          },
++        ]}
++      />
+     </div>
+   ) : null;
+-  const nodeMenuItems = (record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord): Array<{ label: string; onSelect: () => void }> => {
++  const nodeMenuItems = (
++    record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord,
++  ): Array<{ label: string; onSelect: () => void }> => {
+     if (!actions.isFinanceOrAdmin) return [];
+-    if ("bankTransactionId" in record && record.bankTransactionId) return [];
+     if (record.role === "component" && record.componentId) {
+       const componentId = record.componentId;
+-      return [{ label: "Unlink", onSelect: () => actions.clearComponentQbSource?.(componentId) }];
++      return [
++        {
++          label: "Unlink",
++          onSelect: () => actions.clearComponentQbSource?.(componentId),
++        },
++      ];
+     }
+     if (record.role === "provisional" && record.componentId) {
+       const componentId = record.componentId;
+-      return [{ label: "Unlink (dismiss proposed)", onSelect: () => onDismissProvisional?.(componentId) }];
++      return [
++        {
++          label: "Unlink (dismiss proposed)",
++          onSelect: () => onDismissProvisional?.(componentId),
++        },
++      ];
+     }
+     if (record.role === "charge_tie" && record.linkedChargeId) {
+       const chargeId = record.linkedChargeId;
+-      return [{ label: "Unlink", onSelect: () => actions.rejectChargeQbTie(chargeId) }];
++      return [
++        {
++          label: "Unlink",
++          onSelect: () => actions.rejectChargeQbTie(chargeId),
++        },
++      ];
+     }
+-    return [];
++    return [
++      {
++        label: "Unlink",
++        onSelect: () =>
++          actions.unlinkAccountingRecord?.(deposit.anchorId, record),
++      },
++    ];
+   };
+   if (!nodeGroups.length && !unalignedItems.length) {
+     return (
+-      <div className="space-y-1.5">
++      <div className="relative min-w-0 pr-7">
+         {columnMenu}
+-        <span className="text-xs text-muted-foreground">No accounting evidence linked</span>
++        <span className="text-xs text-muted-foreground">
++          No accounting evidence linked
++        </span>
+       </div>
+     );
+   }
+   return (
+-    <div className="space-y-1.5">
++    <div className="relative min-w-0 space-y-1.5 pr-7">
+       {columnMenu}
+       {nodeGroups.map((group) => (
+-        <div key={group.key} className="space-y-1 rounded-md border border-sky-200/70 bg-sky-50/30 p-1.5 dark:border-sky-900/60 dark:bg-sky-950/20">
+-          <div className="truncate text-[10px] font-semibold text-sky-900 dark:text-sky-200">{group.label}</div>
+-          {group.records.map((record) => <NodeQbCard key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`} record={record} menuItems={nodeMenuItems(record)} />)}
++        <div
++          key={group.key}
++          className="space-y-1 rounded-md border border-sky-200/70 bg-sky-50/30 p-1.5 dark:border-sky-900/60 dark:bg-sky-950/20"
++        >
++          <div className="truncate text-[10px] font-semibold text-sky-900 dark:text-sky-200">
++            {group.label}
++          </div>
++          {group.records.map((record) => (
++            <NodeQbCard
++              key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`}
++              record={record}
++              menuItems={nodeMenuItems(record)}
++            />
++          ))}
+         </div>
+       ))}
+       {unalignedItems.map(({ record, check }) => {
+         const display = record ?? check;
+         if (!display) return null;
+-        const anchor: AnchorRef = { kind: "staged", id: display.stagedPaymentId, label: accountingLabel(display) };
++        const anchor: AnchorRef = {
++          kind: "staged",
++          id: display.stagedPaymentId,
++          label: accountingLabel(display),
++        };
+         return (
+-        <div key={display.stagedPaymentId} className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5">
++          <div
++            key={display.stagedPaymentId}
++            className="flex items-center justify-between gap-2 rounded-md border bg-card px-2.5 py-1.5"
++          >
+             <span className="min-w-0">
+-            <span className="block truncate text-[11px]">{accountingLabel(display)}</span>
++              <span className="block truncate text-[11px]">
++                {accountingLabel(display)}
++              </span>
+               <span className="block truncate text-[10px] text-muted-foreground">
+-              {display.dateReceived ?? "Undated"} · {money(display.amount)} · {display.qbLocation ?? display.revenueLocation ?? "No location"} · {display.payerName ?? display.entityId ?? display.qbPayerType ?? "No entity"}
++                {display.dateReceived ?? "Undated"} · {money(display.amount)} ·{" "}
++                {display.qbLocation ?? display.revenueLocation ?? "No location"}{" "}
++                ·{" "}
++                {display.payerName ??
++                  display.entityId ??
++                  display.qbPayerType ??
++                  "No entity"}
+               </span>
+             </span>
+             <span className="flex shrink-0 items-center gap-1">
+-            {record && "unconfirmed" in record && record.unconfirmed ? <Badge variant="outline" className="border-amber-400 text-[9px] text-amber-700">Unconfirmed</Badge> : null}
+-            {display.exclusionReason ? <Badge variant="secondary" className="text-[9px]">{display.exclusionReason.replaceAll("_", " ")}</Badge> : null}
++              {record && "unconfirmed" in record && record.unconfirmed ? (
++                <Badge
++                  variant="outline"
++                  className="border-amber-400 text-[9px] text-amber-700"
++                >
++                  Unconfirmed
++                </Badge>
++              ) : null}
++              {display.exclusionReason ? (
++                <Badge variant="secondary" className="text-[9px]">
++                  {display.exclusionReason.replaceAll("_", " ")}
++                </Badge>
++              ) : null}
+               {check ? (
+-              <Badge variant={checkTone(check.disposition)} className="text-[10px]">
++                <Badge
++                  variant={checkTone(check.disposition)}
++                  className="text-[10px]"
++                >
+                   {check.disposition.replace("_", " ")}
+                 </Badge>
+               ) : null}
+               {actions.isFinanceOrAdmin ? (
+-              <CardActionsMenu items={[
+-                { label: "QB detail", onSelect: () => actions.openQbDetail(
++                <CardActionsMenu
++                  items={[
++                    {
++                      label: "QB detail",
++                      onSelect: () =>
++                        actions.openQbDetail(
+                           record
+                             ? asQbDetailRecord(record)
+                             : (display as WorkbenchDepositQbRecord),
+                           check ? "matched" : "missing",
+-                  ) },
+-                { label: "Exclude", onSelect: () => actions.openExclude(anchor) },
++                        ),
++                    },
++                    ...(record
++                      ? [
++                          {
++                            label: "Unlink",
++                            onSelect: () =>
++                              actions.unlinkAccountingRecord?.(
++                                deposit.anchorId,
++                                record,
++                              ),
++                          },
++                        ]
++                      : []),
++                    {
++                      label: "Exclude",
++                      onSelect: () => actions.openExclude(anchor),
++                    },
+                     ...(check && check.disposition === "correction_needed"
+                       ? [
+-                      { label: "Mark corrected", onSelect: () => actions.openAccountingDisposition?.(check.id, "corrected") },
+-                      { label: "Accept historical…", onSelect: () => actions.openAccountingDisposition?.(check.id, "accepted_historical") },
++                          {
++                            label: "Mark corrected",
++                            onSelect: () =>
++                              actions.openAccountingDisposition?.(
++                                check.id,
++                                "corrected",
++                              ),
++                          },
++                          {
++                            label: "Accept historical…",
++                            onSelect: () =>
++                              actions.openAccountingDisposition?.(
++                                check.id,
++                                "accepted_historical",
++                              ),
++                          },
+                         ]
+                       : []),
+-              ]} />
++                  ]}
++                />
+               ) : null}
+             </span>
+           </div>
+@@ -704,13 +1038,17 @@ function chargePreview(charge: WorkbenchDeposit["charges"][number]): EvidencePre
+   };
+ }
+ 
+-export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisional, onDismissProvisional }: DepositRowProps) {
++export function DepositRow({
++  deposit,
++  actions: suppliedActions,
++  onConfirmProvisional,
++  onDismissProvisional,
++}: DepositRowProps) {
+   const actions = suppliedActions ?? NOOP_ACTIONS;
+   const isNotFundraising = deposit.lenses.includes("not_fundraising");
+-  const bankSourceDetails = [
+-    deposit.bank.payee,
+-    deposit.bank.refNo,
+-  ].filter(Boolean).join(" · ");
++  const bankSourceDetails = [deposit.bank.payee, deposit.bank.refNo]
++    .filter(Boolean)
++    .join(" · ");
+   const giftColumnAnchor: AnchorRef | null = (() => {
+     const charge = deposit.charges.find((item) => !item.linkedGiftId);
+     if (charge) {
+@@ -760,73 +1098,212 @@ const hasGiftColumnCards =
+     deposit.gifts.length > 0 ||
+     unlinkedCharges.length > 0 ||
+     unlinkedComponents.length > 0;
+-  const giftAnchor = (gift: WorkbenchDeposit["gifts"][number]): AnchorRef | null => {
++  const alignGiftsToStripeCharges =
++    deposit.composition.kind === "stripe_payout";
++  const giftAnchor = (
++    gift: WorkbenchDeposit["gifts"][number],
++  ): AnchorRef | null => {
+     const stagedId = gift.linkedStagedPaymentIds?.[0];
+     if (stagedId) {
+-      const record = deposit.qbRecords.find((item) => item.stagedPaymentId === stagedId);
+-      return { kind: "staged", id: stagedId, label: record?.payerName ?? record?.lineDescription ?? gift.name ?? stagedId };
++      const record = deposit.qbRecords.find(
++        (item) => item.stagedPaymentId === stagedId,
++      );
++      return {
++        kind: "staged",
++        id: stagedId,
++        label:
++          record?.payerName ?? record?.lineDescription ?? gift.name ?? stagedId,
++      };
+     }
+     const chargeId = gift.linkedChargeIds?.[0];
+     if (chargeId) {
+       const charge = deposit.charges.find((item) => item.chargeId === chargeId);
+-      return { kind: "charge", id: chargeId, label: charge?.payerName ?? gift.name ?? chargeId };
++      return {
++        kind: "charge",
++        id: chargeId,
++        label: charge?.payerName ?? gift.name ?? chargeId,
++      };
+     }
+     return giftColumnAnchor;
+   };
+   return (
+-    <section className="border-b last:border-b-0" data-testid={`deposit-row-${deposit.anchorId}`}>
+-      <div className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}>
++    <section
++      className="border-b last:border-b-0"
++      data-testid={`deposit-row-${deposit.anchorId}`}
++    >
++      <div
++        className={`${DEPOSIT_GRID} w-full py-3 text-left transition-colors hover:bg-muted/30`}
++      >
+         <span />
+         <span className="min-w-0">
+           <span className="flex items-center justify-between gap-1.5 text-sm font-semibold tabular-nums">
+             <span className="flex min-w-0 items-center gap-1.5 truncate">
+               {money(deposit.bank.amount)}
+-              {isNotFundraising ? <Badge variant="outline" className="text-[9px]">Not fundraising{deposit.notFundraisingReason ? ` · ${deposit.notFundraisingReason.replaceAll("_", " ")}` : ""}</Badge> : null}
++              {isNotFundraising ? (
++                <Badge variant="outline" className="text-[9px]">
++                  Not fundraising
++                  {deposit.notFundraisingReason
++                    ? ` · ${deposit.notFundraisingReason.replaceAll("_", " ")}`
++                    : ""}
++                </Badge>
++              ) : null}
+             </span>
+             {actions.isFinanceOrAdmin ? (
+-              <CardActionsMenu items={[
++              <CardActionsMenu
++                items={[
+                   ...(deposit.bankExclusion
+                     ? [
+-                      { label: "Return to open queue", onSelect: () => actions.clearBankDepositExclusion?.(deposit.anchorId) },
+-                      { label: "Change exclusion reason…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
++                        {
++                          label: "Return to open queue",
++                          onSelect: () =>
++                            actions.clearBankDepositExclusion?.(
++                              deposit.anchorId,
++                            ),
++                        },
++                        {
++                          label: "Change exclusion reason…",
++                          onSelect: () =>
++                            actions.openBankDepositExclusion?.(
++                              deposit.anchorId,
++                              deposit.bankExclusion ?? null,
++                            ),
++                        },
+                       ]
+                     : [
+                         ...BANK_EXCLUSION_MENU.map((item) => ({
+                           label: item.label,
+-                        onSelect: () => actions.applyBankDepositExclusion?.(deposit.anchorId, item.reason),
++                          onSelect: () =>
++                            actions.applyBankDepositExclusion?.(
++                              deposit.anchorId,
++                              item.reason,
++                            ),
+                         })),
+-                      { label: "Mark as excluded — other…", onSelect: () => actions.openBankDepositExclusion?.(deposit.anchorId, deposit.bankExclusion ?? null) },
++                        {
++                          label: "Mark as excluded — other…",
++                          onSelect: () =>
++                            actions.openBankDepositExclusion?.(
++                              deposit.anchorId,
++                              deposit.bankExclusion ?? null,
++                            ),
++                        },
+                       ]),
+                   ...(deposit.composition.payoutId
+-                  ? [{ label: "Unlink payout", onSelect: () => actions.openUnlinkPayoutDeposit?.(deposit.composition.payoutId ?? "") }]
++                    ? [
++                        {
++                          label: "Unlink payout",
++                          onSelect: () =>
++                            actions.openUnlinkPayoutDeposit?.(
++                              deposit.composition.payoutId ?? "",
++                            ),
++                        },
++                      ]
+                     : /stripe\s+transfer/i.test(deposit.bank.memo ?? "")
+-                    ? [{ label: "Link a payout…", onSelect: () => actions.openLinkDepositPayout?.(deposit.anchorId) }]
++                      ? [
++                          {
++                            label: "Link a payout…",
++                            onSelect: () =>
++                              actions.openLinkDepositPayout?.(deposit.anchorId),
++                          },
++                        ]
+                       : []),
+-              ]} />
++                ]}
++              />
+             ) : null}
+           </span>
+           <span className="mt-1 block text-[11px] text-muted-foreground">
+-            {deposit.date ? formatDateShort(deposit.date) : "Undated"} · {deposit.bank.account ?? "Wells Fargo"}
++            {deposit.date ? formatDateShort(deposit.date) : "Undated"} ·{" "}
++            {deposit.bank.account ?? "Wells Fargo"}
++          </span>
++          <span className="mt-1 block whitespace-normal break-words text-[11px] text-muted-foreground">
++            {deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}
+           </span>
+-          <span className="mt-1 block whitespace-normal break-words text-[11px] text-muted-foreground">{deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId}</span>
+-          {bankSourceDetails ? <span className="block whitespace-normal break-words text-[11px] text-muted-foreground">{bankSourceDetails}</span> : null}
++          {bankSourceDetails ? (
++            <span className="block whitespace-normal break-words text-[11px] text-muted-foreground">
++              {bankSourceDetails}
+             </span>
+-        <span onClick={(event) => event.stopPropagation()}><Composition deposit={deposit} actions={actions} onConfirmProvisional={onConfirmProvisional} onDismissProvisional={onDismissProvisional} /></span>
+-        <span onClick={(event) => event.stopPropagation()} className="space-y-1.5">
++          ) : null}
++        </span>
++        <span onClick={(event) => event.stopPropagation()}>
++          <Composition
++            deposit={deposit}
++            actions={actions}
++            onConfirmProvisional={onConfirmProvisional}
++            onDismissProvisional={onDismissProvisional}
++          />
++        </span>
++        <span
++          onClick={(event) => event.stopPropagation()}
++          className={`relative min-w-0 space-y-1.5 pr-7 ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
++        >
+           {actions.isFinanceOrAdmin ? (
+-            <div className="flex items-center justify-end">
+-              <CardActionsMenu items={[
+-                { label: "Search and link gift…", onSelect: () => actions.openSinglePaymentDeposit?.(deposit.anchorId, deposit.composition.unexplainedAmount ?? deposit.bank.amount ?? "") },
++            <div className="absolute right-0 top-0 z-10">
++              <CardActionsMenu
++                items={[
++                  {
++                    label: "Search and link gift…",
++                    onSelect: () =>
++                      actions.openSinglePaymentDeposit?.(
++                        deposit.anchorId,
++                        deposit.composition.unexplainedAmount ??
++                          deposit.bank.amount ??
++                          "",
++                      ),
++                  },
+                   ...(giftColumnAnchor
+                     ? [
+-                      { label: "Create gift…", onSelect: () => actions.openCreateGift(giftColumnAnchor, bankPreview) },
+-                      { label: "Identify donor…", onSelect: () => actions.openIdentify(giftColumnAnchor, bankPreview) },
+-                      ...(actions.openDonorboxSearch ? [{ label: "Donorbox lookup…", onSelect: () => actions.openDonorboxSearch?.(giftColumnAnchor, bankPreview) }] : []),
+-                      ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Coding form…", onSelect: () => actions.openCodingFormLookup?.(giftColumnAnchor, bankPreview) }] : []),
++                        {
++                          label: "Create gift…",
++                          onSelect: () =>
++                            actions.openCreateGift(
++                              giftColumnAnchor,
++                              bankPreview,
++                            ),
++                        },
++                        {
++                          label: "Identify donor…",
++                          onSelect: () =>
++                            actions.openIdentify(giftColumnAnchor, bankPreview),
++                        },
++                        ...(actions.openDonorboxSearch
++                          ? [
++                              {
++                                label: "Donorbox lookup…",
++                                onSelect: () =>
++                                  actions.openDonorboxSearch?.(
++                                    giftColumnAnchor,
++                                    bankPreview,
++                                  ),
++                              },
++                            ]
++                          : []),
++                        ...(actions.canUseCodingForm &&
++                        actions.openCodingFormLookup
++                          ? [
++                              {
++                                label: "Coding form…",
++                                onSelect: () =>
++                                  actions.openCodingFormLookup?.(
++                                    giftColumnAnchor,
++                                    bankPreview,
++                                  ),
++                              },
++                            ]
++                          : []),
++                      ]
++                    : []),
++                  ...(deposit.gifts.length > 1
++                    ? [
++                        {
++                          label: "Merge gifts…",
++                          onSelect: () =>
++                            actions.openMergeGifts(
++                              deposit.gifts.map((item) => item.giftId),
++                            ),
++                        },
+                       ]
+                     : []),
+-                ...(deposit.gifts.length > 1 ? [{ label: "Merge gifts…", onSelect: () => actions.openMergeGifts(deposit.gifts.map((item) => item.giftId)) }] : []),
+-              ]} />
++                ]}
++              />
+             </div>
+           ) : null}
+           {deposit.gifts.map((gift) => {
+@@ -834,40 +1311,126 @@ const hasGiftColumnCards =
+             const allocations = gift.allocations ?? [];
+             const allocationPresentation = singleAllocationPresentation(gift);
+             return (
+-            <div key={gift.giftId} className="rounded-md border bg-card px-2.5 py-1.5">
++              <div
++                key={gift.giftId}
++                className="rounded-md border bg-card px-2.5 py-1.5"
++              >
+                 <div className="flex items-start justify-between gap-2">
+-                <p className="min-w-0 truncate text-xs font-semibold">{gift.name ?? gift.giftId}</p>
++                  <p className="min-w-0 truncate text-xs font-semibold">
++                    {gift.name ?? gift.giftId}
++                  </p>
+                   {actions.isFinanceOrAdmin ? (
+-                  <CardActionsMenu items={[
+-                    ...((gift.linkedChargeIds?.length ?? 0) + (gift.linkedStagedPaymentIds?.length ?? 0) > 0
+-                      ? [{
++                    <CardActionsMenu
++                      items={[
++                        ...((gift.linkedChargeIds?.length ?? 0) +
++                          (gift.linkedStagedPaymentIds?.length ?? 0) >
++                        0
++                          ? [
++                              {
+                                 label: "Unlink",
+                                 onSelect: () => {
+                                   const options = [
+-                              ...(gift.linkedChargeIds ?? []).map((id) => {
+-                                const charge = deposit.charges.find((item) => item.chargeId === id);
+-                                return { anchor: { kind: "charge" as const, id, label: charge?.payerName ?? id }, source: `Stripe charge · ${charge?.payerName ?? id}`, amount: money(charge?.amount), date: charge?.chargeDate ?? null };
+-                              }),
+-                              ...(gift.linkedStagedPaymentIds ?? []).map((id) => {
+-                                const record = deposit.qbRecords.find((item) => item.stagedPaymentId === id);
+-                                return { anchor: { kind: "staged" as const, id, label: record?.lineDescription ?? id }, source: `QuickBooks · ${record?.lineDescription ?? id}`, amount: money(record?.amount), date: record?.dateReceived ?? null };
+-                              }),
++                                    ...(gift.linkedChargeIds ?? []).map(
++                                      (id) => {
++                                        const charge = deposit.charges.find(
++                                          (item) => item.chargeId === id,
++                                        );
++                                        return {
++                                          anchor: {
++                                            kind: "charge" as const,
++                                            id,
++                                            label: charge?.payerName ?? id,
++                                          },
++                                          source: `Stripe charge · ${charge?.payerName ?? id}`,
++                                          amount: money(charge?.amount),
++                                          date: charge?.chargeDate ?? null,
++                                        };
++                                      },
++                                    ),
++                                    ...(gift.linkedStagedPaymentIds ?? []).map(
++                                      (id) => {
++                                        const record = deposit.qbRecords.find(
++                                          (item) => item.stagedPaymentId === id,
++                                        );
++                                        return {
++                                          anchor: {
++                                            kind: "staged" as const,
++                                            id,
++                                            label:
++                                              record?.lineDescription ?? id,
++                                          },
++                                          source: `QuickBooks · ${record?.lineDescription ?? id}`,
++                                          amount: money(record?.amount),
++                                          date: record?.dateReceived ?? null,
++                                        };
++                                      },
++                                    ),
+                                   ];
+-                            if (options.length > 1) actions.openUnlinkChooser(gift.name ?? gift.giftId, options);
+-                            else if (options[0]) actions.openRevert(options[0].anchor, `Unlink “${gift.name ?? gift.giftId}” from ${options[0].source}.`);
++                                  if (options.length > 1)
++                                    actions.openUnlinkChooser(
++                                      gift.name ?? gift.giftId,
++                                      options,
++                                    );
++                                  else if (options[0])
++                                    actions.openRevert(
++                                      options[0].anchor,
++                                      `Unlink “${gift.name ?? gift.giftId}” from ${options[0].source}.`,
++                                    );
+                                 },
+-                        }]
++                              },
++                            ]
++                          : []),
++                        ...(anchor && actions.openDonorboxSearch
++                          ? [
++                              {
++                                label: "Find Donorbox match…",
++                                onSelect: () =>
++                                  actions.openDonorboxSearch?.(
++                                    anchor,
++                                    bankPreview,
++                                  ),
++                              },
++                            ]
++                          : []),
++                        ...(anchor &&
++                        actions.canUseCodingForm &&
++                        actions.openCodingFormLookup
++                          ? [
++                              {
++                                label: "Find coding form match…",
++                                onSelect: () =>
++                                  actions.openCodingFormLookup?.(
++                                    anchor,
++                                    bankPreview,
++                                  ),
++                              },
++                            ]
++                          : []),
++                        ...(deposit.gifts.length > 1
++                          ? [
++                              {
++                                label: "Merge gifts…",
++                                onSelect: () =>
++                                  actions.openMergeGifts(
++                                    deposit.gifts.map((item) => item.giftId),
++                                  ),
++                              },
++                            ]
+                           : []),
+-                    ...(anchor && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, bankPreview) }] : []),
+-                    ...(anchor && actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, bankPreview) }] : []),
+-                    ...(deposit.gifts.length > 1 ? [{ label: "Merge gifts…", onSelect: () => actions.openMergeGifts(deposit.gifts.map((item) => item.giftId)) }] : []),
+-                  ]} />
++                      ]}
++                    />
+                   ) : null}
+                 </div>
+                 <p className="truncate text-[11px] text-muted-foreground">
+-                {gift.donorKind ? `${gift.donorKind} · ` : ""}{gift.donorName ?? "Donor not identified"}
++                  {gift.donorKind ? `${gift.donorKind} · ` : ""}
++                  {gift.donorName ?? "Donor not identified"}
++                </p>
++                <p className="text-[11px] tabular-nums">
++                  {gift.dateReceived
++                    ? formatDateShort(gift.dateReceived)
++                    : "Undated"}{" "}
++                  · {money(gift.amount)}
+                 </p>
+-              <p className="text-[11px] tabular-nums">{money(gift.amount)}{gift.dateReceived ? ` · ${formatDateShort(gift.dateReceived)}` : ""}</p>
+                 {allocationPresentation.collapse ? (
+                   allocationPresentation.summary ? (
+                     <p className="mt-1 whitespace-normal break-words text-[10px] text-muted-foreground">
+@@ -886,7 +1449,10 @@ const hasGiftColumnCards =
+                             {allocation.usage ?? "No usage coded"}
+                           </span>
+                           <span className="shrink-0 tabular-nums">
+-                          {money(allocation.amount)}
++                            {gift.dateReceived
++                              ? formatDateShort(gift.dateReceived)
++                              : "Undated"}{" "}
++                            · {money(allocation.amount)}
+                           </span>
+                         </div>
+                         {allocation.purpose ? (
+@@ -933,24 +1560,69 @@ const hasGiftColumnCards =
+               memo: null,
+             };
+             return (
+-                <div key={`unlinked-component-${component.componentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
++              <div
++                key={`unlinked-component-${component.componentId}`}
++                className="rounded-md border border-dashed bg-card px-2.5 py-1.5"
++              >
+                 <div className="flex items-start justify-between gap-2">
+-                    <p className="min-w-0 truncate text-[11px] font-medium">{componentTitle(component)}</p>
+-                    <CardActionsMenu items={[
+-                      { label: "Search and link gift…", onSelect: () => actions.openLinkGift(anchor) },
+-                      { label: "Create gift…", onSelect: () => actions.openCreateGift(anchor, preview) },
+-                      { label: "Identify donor…", onSelect: () => actions.openIdentify(anchor, preview) },
+-                      ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, preview) }] : []),
+-                      ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, preview) }] : []),
+-                    ]} />
++                  <p className="min-w-0 truncate text-[11px] font-medium">
++                    {componentTitle(component)}
++                  </p>
++                  <CardActionsMenu
++                    items={[
++                      {
++                        label: "Search and link gift…",
++                        onSelect: () => actions.openLinkGift(anchor),
++                      },
++                      {
++                        label: "Create gift…",
++                        onSelect: () => actions.openCreateGift(anchor, preview),
++                      },
++                      {
++                        label: "Identify donor…",
++                        onSelect: () => actions.openIdentify(anchor, preview),
++                      },
++                      ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
++                        ? [
++                            {
++                              label: "Find Donorbox match…",
++                              onSelect: () =>
++                                actions.openDonorboxSearch?.(anchor, preview),
++                            },
++                          ]
++                        : []),
++                      ...(actions.canUseCodingForm &&
++                      actions.openCodingFormLookup
++                        ? [
++                            {
++                              label: "Find coding form match…",
++                              onSelect: () =>
++                                actions.openCodingFormLookup?.(anchor, preview),
++                            },
++                          ]
++                        : []),
++                    ]}
++                  />
+                 </div>
+-                  <p className="text-[11px] tabular-nums text-muted-foreground">{money(component.amount)}</p>
++                <p className="text-[11px] tabular-nums text-muted-foreground">
++                  {money(component.amount)}
++                </p>
+               </div>
+             );
+           })}
+-          {!hasGiftColumnCards ? <span className="text-xs text-muted-foreground">No CRM gifts linked</span> : null}
++          {!hasGiftColumnCards ? (
++            <span className="text-xs text-muted-foreground">
++              No CRM gifts linked
++            </span>
++          ) : null}
++        </span>
++        <span onClick={(event) => event.stopPropagation()}>
++          <Accounting
++            deposit={deposit}
++            actions={actions}
++            onDismissProvisional={onDismissProvisional}
++          />
+         </span>
+-        <span onClick={(event) => event.stopPropagation()}><Accounting deposit={deposit} actions={actions} onDismissProvisional={onDismissProvisional} /></span>
+       </div>
+     </section>
+   );
