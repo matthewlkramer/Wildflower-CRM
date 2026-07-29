@@ -58,41 +58,23 @@ jobs:
           npm install --global pnpm@10
           pnpm install --frozen-lockfile
 
-      - name: Apply safety and coverage refinements
-        run: python .agent/refine-workbench-usability.py
-
-      - name: Capture normalization reject
+      - name: Restore validated frontend and apply refinements
         run: |
-          set +e
-          ROWS=artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
-          PAGE=artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
-          git diff --ignore-all-space origin/main -- "$ROWS" > /tmp/rows-semantic.patch
-          git diff --ignore-all-space origin/main -- "$PAGE" > /tmp/page-semantic.patch
-          git checkout origin/main -- "$ROWS" "$PAGE"
-          git apply --reject --whitespace=nowarn /tmp/rows-semantic.patch
-          ROWS_STATUS=$?
-          git apply --reject --whitespace=nowarn /tmp/page-semantic.patch
-          PAGE_STATUS=$?
-          set -e
-          if [ "$ROWS_STATUS" -ne 0 ] || [ "$PAGE_STATUS" -ne 0 ]; then
-            mkdir -p .agent/normalization-rejects
-            find artifacts/wildflower-crm/src -name '*.rej' -exec cp --parents {} .agent/normalization-rejects/ \;
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add .agent/normalization-rejects
-            git commit -m "Record workbench normalization reject"
-            git push origin HEAD:agent/workbench-alignment-search-undo
-            exit 1
-          fi
+          git checkout 5a7956042858d0ace99dba78a0d0c215036abaf4 -- \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          python .agent/refine-workbench-usability.py
 
-      - name: Format backend and tests
+      - name: Format touched source
         run: |
           pnpm exec prettier --write \
             artifacts/api-server/src/routes/reconciliation/recentChanges.ts \
             artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
             artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts \
             artifacts/api-server/src/__tests__/workbench-recent-changes.integration.test.ts \
-            artifacts/wildflower-crm/src/components/reconciliation-deposits/presentation.test.ts
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/presentation.test.ts \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
 
       - name: Build schema and typecheck
         run: |
@@ -110,7 +92,7 @@ jobs:
           pnpm --filter @workspace/api-server exec vitest run \
             src/__tests__/workbench-recent-changes.integration.test.ts
 
-      - name: Commit normalized implementation
+      - name: Commit refined implementation
         run: |
           rm -rf .agent
           rm -f .github/workflows/refine-workbench-usability.yml
