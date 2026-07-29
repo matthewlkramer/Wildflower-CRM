@@ -1810,6 +1810,39 @@ router.get(
     );
     const targetAmount = query.amount ? Number(query.amount) : remainder;
     const search = query.q?.trim() || null;
+    const rawFilterAmount =
+      typeof req.query.filterAmount === "string"
+        ? req.query.filterAmount.trim()
+        : "";
+    const filterAmount = rawFilterAmount ? Number(rawFilterAmount) : null;
+    if (
+      filterAmount !== null &&
+      (!Number.isFinite(filterAmount) || filterAmount < 0)
+    ) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Amount filter must be a non-negative number.",
+      });
+      return;
+    }
+    const filterDate =
+      typeof req.query.filterDate === "string" && req.query.filterDate.trim()
+        ? req.query.filterDate.trim()
+        : null;
+    if (filterDate) {
+      const parsed = new Date(`${filterDate}T00:00:00Z`);
+      if (
+        !/^\d{4}-\d{2}-\d{2}$/.test(filterDate) ||
+        Number.isNaN(parsed.getTime()) ||
+        parsed.toISOString().slice(0, 10) !== filterDate
+      ) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "Date filter must be a valid YYYY-MM-DD date.",
+        });
+        return;
+      }
+    }
     const result = await db.execute(sql`
       SELECT
         u.id,
@@ -1849,6 +1882,11 @@ router.get(
       WHERE u.kind IN ('check', 'direct_ach', 'wire', 'other')
         AND u.stripe_charge_id IS NULL
         AND COALESCE(u.gross_amount, u.net_amount) IS NOT NULL
+        AND (
+          ${filterAmount}::numeric IS NULL
+          OR abs(COALESCE(u.gross_amount, u.net_amount) - ${filterAmount}::numeric) < 0.005
+        )
+        AND (${filterDate}::date IS NULL OR u.received_date = ${filterDate}::date)
         AND (
           ${search}::text IS NULL
           OR u.id ILIKE '%' || ${search} || '%'

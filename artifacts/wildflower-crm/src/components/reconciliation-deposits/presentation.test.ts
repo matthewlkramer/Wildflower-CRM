@@ -8,6 +8,7 @@ import {
   accountingCorrectionPresentation,
   accountingRecordIdentity,
   dedupeAccountingGroups,
+  needsGiftPlaceholderPresentation,
   preferStagedAccountingRecords,
   singleAllocationPresentation,
 } from "./presentation";
@@ -103,6 +104,15 @@ describe("deposit presentation helpers", () => {
         note: null,
       }),
     ).toBeNull();
+  });
+
+  it("distinguishes an unlinked payment from a CRM gift", () => {
+    expect(
+      needsGiftPlaceholderPresentation("Chia Ling Rodeski", "payment"),
+    ).toEqual({
+      title: "Needs CRM gift",
+      subtitle: "Payment from Chia Ling Rodeski",
+    });
   });
 
   it("collapses a single same-amount allocation into inline coding", () => {

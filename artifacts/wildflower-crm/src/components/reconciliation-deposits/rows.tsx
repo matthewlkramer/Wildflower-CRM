@@ -26,6 +26,7 @@ import {
   accountingCorrectionPresentation,
   accountingRecordIdentity,
   dedupeAccountingGroups,
+  needsGiftPlaceholderPresentation,
   preferStagedAccountingRecords,
   singleAllocationPresentation,
   type DepositAccountingRecord,
@@ -1483,6 +1484,10 @@ export function DepositRow({
             );
           })}
           {unlinkedCharges.map((charge) => {
+            const placeholder = needsGiftPlaceholderPresentation(
+              charge.payerName,
+              charge.chargeId,
+            );
             const anchor: AnchorRef = {
               kind: "charge",
               id: charge.chargeId,
@@ -1491,12 +1496,17 @@ export function DepositRow({
             return (
               <div
                 key={`unlinked-charge-${charge.chargeId}`}
-                className="rounded-md border border-dashed bg-card px-2.5 py-1.5"
+                className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2.5 py-1.5 dark:border-amber-800 dark:bg-amber-950/30"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 truncate text-[11px] font-medium">
-                    {charge.payerName ?? charge.chargeId}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                      {placeholder.title}
+                    </p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      {placeholder.subtitle}
+                    </p>
+                  </div>
                   <CardActionsMenu
                     items={[
                       {
@@ -1562,6 +1572,10 @@ export function DepositRow({
             );
           })}
           {unlinkedComponents.map((component) => {
+            const placeholder = needsGiftPlaceholderPresentation(
+              component.label,
+              componentTitle(component),
+            );
             const anchor: AnchorRef = {
               kind: "staged",
               id: component.stagedPaymentId ?? "",
@@ -1577,12 +1591,17 @@ export function DepositRow({
             return (
               <div
                 key={`unlinked-component-${component.componentId}`}
-                className="rounded-md border border-dashed bg-card px-2.5 py-1.5"
+                className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2.5 py-1.5 dark:border-amber-800 dark:bg-amber-950/30"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 truncate text-[11px] font-medium">
-                    {componentTitle(component)}
-                  </p>
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-200">
+                      {placeholder.title}
+                    </p>
+                    <p className="truncate text-[10px] text-muted-foreground">
+                      {placeholder.subtitle}
+                    </p>
+                  </div>
                   <CardActionsMenu
                     items={[
                       {
@@ -1620,7 +1639,10 @@ export function DepositRow({
                   />
                 </div>
                 <p className="text-[11px] tabular-nums text-muted-foreground">
-                  {money(component.amount)}
+                  {component.receivedDate
+                    ? formatDateShort(component.receivedDate)
+                    : "Undated"}{" "}
+                  · {money(component.amount)}
                 </p>
               </div>
             );

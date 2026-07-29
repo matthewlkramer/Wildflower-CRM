@@ -1429,4 +1429,55 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     });
     expect(preservedUnit?.sourceStagedPaymentId).toBe(stagedPaymentId);
   });
+
+  it("filters known-payment candidates by exact amount and date", async () => {
+    const depositId = await seedDeposit("Candidate filter target", "9999.00");
+    const matchingId = nextId("filter_matching_unit");
+    const wrongAmountId = nextId("filter_wrong_amount_unit");
+    const wrongDateId = nextId("filter_wrong_date_unit");
+
+    await db.insert(schema.paymentUnits).values([
+      {
+        id: matchingId,
+        kind: "check",
+        grossAmount: "9876.54",
+        netAmount: "9876.54",
+        receivedDate: "2098-04-03",
+      },
+      {
+        id: wrongAmountId,
+        kind: "check",
+        grossAmount: "9876.55",
+        netAmount: "9876.55",
+        receivedDate: "2098-04-03",
+      },
+      {
+        id: wrongDateId,
+        kind: "check",
+        grossAmount: "9876.54",
+        netAmount: "9876.54",
+        receivedDate: "2098-04-04",
+      },
+    ]);
+    unitIds.push(matchingId, wrongAmountId, wrongDateId);
+
+    const filtered = await getJson(
+      `/api/reconciliation/deposits/${depositId}/candidate-payment-units?filterAmount=9876.54&filterDate=2098-04-03&limit=100`,
+    );
+    expect(filtered.status).toBe(200);
+    const ids = filtered.json.data.map((item: { id: string }) => item.id);
+    expect(ids).toContain(matchingId);
+    expect(ids).not.toContain(wrongAmountId);
+    expect(ids).not.toContain(wrongDateId);
+
+    const badAmount = await getJson(
+      `/api/reconciliation/deposits/${depositId}/candidate-payment-units?filterAmount=not-money`,
+    );
+    expect(badAmount.status).toBe(400);
+
+    const badDate = await getJson(
+      `/api/reconciliation/deposits/${depositId}/candidate-payment-units?filterDate=2098-99-99`,
+    );
+    expect(badDate.status).toBe(400);
+  });
 });
