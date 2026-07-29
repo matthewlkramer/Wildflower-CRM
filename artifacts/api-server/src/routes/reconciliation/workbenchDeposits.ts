@@ -1838,6 +1838,7 @@ router.get(
         ) AS source_label,
         claim.id AS claimed_component_id,
         claim.bank_deposit_id AS claimed_bank_deposit_id,
+        claim.component_amount AS claimed_component_amount,
         claim.deposit_date,
         claim.deposit_amount,
         claim.deposit_memo
@@ -1847,6 +1848,7 @@ router.get(
         SELECT
           c.id,
           c.bank_deposit_id,
+          c.amount::text AS component_amount,
           d2.deposit_date::text AS deposit_date,
           d2.amount::text AS deposit_amount,
           d2.memo AS deposit_memo
@@ -1882,6 +1884,7 @@ router.get(
           source_label: string;
           claimed_component_id: string | null;
           claimed_bank_deposit_id: string | null;
+          claimed_component_amount: string | null;
           deposit_date: string | null;
           deposit_amount: string | null;
           deposit_memo: string | null;
@@ -1896,6 +1899,7 @@ router.get(
         claimed: row.claimed_component_id != null,
         claimedComponentId: row.claimed_component_id,
         claimedBankDepositId: row.claimed_bank_deposit_id,
+        claimedComponentAmount: row.claimed_component_amount,
         claimedDepositDate: row.deposit_date,
         claimedDepositAmount: row.deposit_amount,
         claimedDepositMemo: row.deposit_memo,
@@ -2001,7 +2005,7 @@ router.post(
           return { kind: "unit_unavailable" as const };
         }
         const claimed = await tx.execute(sql`
-          SELECT id, bank_deposit_id
+          SELECT id, bank_deposit_id, amount::text AS amount
           FROM bank_deposit_components
           WHERE payment_unit_id = ${body.paymentUnitId}
           ORDER BY id
@@ -2009,7 +2013,11 @@ router.post(
           FOR UPDATE
         `);
         const existingClaim = (
-          claimed.rows as Array<{ id: string; bank_deposit_id: string }>
+          claimed.rows as Array<{
+            id: string;
+            bank_deposit_id: string;
+            amount: string;
+          }>
         )[0];
         if (existingClaim?.bank_deposit_id === params.bankDepositId) {
           return {
@@ -2027,7 +2035,9 @@ router.post(
         }
         paymentUnitId = unit.id;
         componentAmount =
-          body.amount == null ? Number(unit.amount ?? 0) : Number(body.amount);
+          body.amount == null
+            ? Number(existingClaim?.amount ?? unit.amount ?? 0)
+            : Number(body.amount);
         if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
           return { kind: "invalid_amount" as const };
         }
@@ -2474,62 +2484,110 @@ router.delete(
 );
 
 router.delete(
-  "/reconciliation/accounting-evidence/:stagedPaymentId",
+  "/reconciliation/deposits/:bankDepositId/accounting-evidence/:stagedPaymentId",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
+    const bankDepositId = String(req.params.bankDepositId ?? "");
     const stagedPaymentId = String(req.params.stagedPaymentId ?? "");
-    if (!stagedPaymentId) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "A staged payment id is required.",
-        });
+    const role = typeof req.query.role === "string" ? req.query.role : "";
+    const linkedChargeId =
+      typeof req.query.linkedChargeId === "string"
+        ? req.query.linkedChargeId
+        : null;
+    const bankTransactionId =
+      typeof req.query.bankTransactionId === "string"
+        ? req.query.bankTransactionId
+        : null;
+    if (!bankDepositId || !stagedPaymentId) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "A bank deposit id and accounting record id are required.",
+      });
       return;
     }
+
     const result = await db.transaction(async (tx) => {
-      const sourceResult = await tx.execute(sql`
-        SELECT id, link_type
-        FROM source_links
-        WHERE qb_staged_payment_id = ${stagedPaymentId}
-          AND link_type IN ('payout_qb_settlement', 'qbo_line_deposit')
-        FOR UPDATE
-      `);
-      const unitResult = await tx.execute(sql`
-        SELECT id
-        FROM payment_units
-        WHERE source_staged_payment_id = ${stagedPaymentId}
-        FOR UPDATE
-      `);
-      if (!sourceResult.rows.length && !unitResult.rows.length) {
-        return { kind: "not_found" as const };
+      if (bankTransactionId) {
+        const deleted = await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'qbo_register_deposit'
+            AND bank_deposit_id = ${bankDepositId}
+            AND bank_transaction_id = ${bankTransactionId}
+          RETURNING id
+        `);
+        return deleted.rows.length
+          ? { kind: "ok" as const, label: bankTransactionId }
+          : { kind: "not_found" as const };
       }
-      await tx.execute(sql`
-        DELETE FROM source_links
-        WHERE qb_staged_payment_id = ${stagedPaymentId}
-          AND link_type IN ('payout_qb_settlement', 'qbo_line_deposit')
-      `);
-      await tx.execute(sql`
-        UPDATE payment_units
-        SET source_staged_payment_id = NULL
-        WHERE source_staged_payment_id = ${stagedPaymentId}
-      `);
-      await tx.execute(sql`
-        DELETE FROM qbo_accounting_checks
-        WHERE staged_payment_id = ${stagedPaymentId}
-      `);
-      return { kind: "ok" as const };
+
+      if (role === "fee" && linkedChargeId) {
+        const deleted = await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'charge_fee_row'
+            AND qb_staged_payment_id = ${stagedPaymentId}
+            AND stripe_charge_id = ${linkedChargeId}
+          RETURNING id
+        `);
+        return deleted.rows.length
+          ? { kind: "ok" as const, label: stagedPaymentId }
+          : { kind: "not_found" as const };
+      }
+
+      if (role === "deposit") {
+        const qboLine = await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'qbo_line_deposit'
+            AND bank_deposit_id = ${bankDepositId}
+            AND qb_staged_payment_id = ${stagedPaymentId}
+          RETURNING id
+        `);
+        const payoutSettlement = await tx.execute(sql`
+          DELETE FROM source_links sl
+          USING stripe_payouts payout
+          WHERE sl.link_type = 'payout_qb_settlement'
+            AND sl.stripe_payout_id = payout.id
+            AND payout.bank_deposit_id = ${bankDepositId}
+            AND sl.qb_staged_payment_id = ${stagedPaymentId}
+          RETURNING sl.id
+        `);
+        if (!qboLine.rows.length && !payoutSettlement.rows.length) {
+          return { kind: "not_found" as const };
+        }
+        await tx.execute(sql`
+          DELETE FROM qbo_accounting_checks check_row
+          WHERE check_row.staged_payment_id = ${stagedPaymentId}
+            AND NOT EXISTS (
+              SELECT 1
+              FROM source_links remaining
+              WHERE remaining.link_type = 'payout_qb_settlement'
+                AND remaining.qb_staged_payment_id = ${stagedPaymentId}
+            )
+        `);
+        return { kind: "ok" as const, label: stagedPaymentId };
+      }
+
+      return { kind: "unsupported" as const };
     });
+
     if (result.kind === "not_found") {
       notFound(res, "accounting evidence link");
+      return;
+    }
+    if (result.kind === "unsupported") {
+      res.status(409).json({
+        error: "unsupported_accounting_unlink",
+        message:
+          "This accounting relationship must be unlinked from its source card.",
+      });
       return;
     }
     await reconAudit(req, {
       action: "delete",
       entityType: "staged_payment",
-      entityId: stagedPaymentId,
-      summary: `Unlinked QuickBooks evidence ${stagedPaymentId}`,
+      entityId: result.label,
+      summary: `Unlinked QuickBooks evidence ${result.label} from deposit ${bankDepositId}`,
       undo: null,
+      extra: { bankDepositId, role },
     });
     res.status(204).send();
   }),

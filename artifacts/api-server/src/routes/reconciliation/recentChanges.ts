@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { auditLog, users } from "@workspace/db/schema";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
 import { getAppUser } from "../../lib/appRequest";
 import { type ReconUndoKind } from "../../lib/reconciliationAudit";
@@ -59,19 +59,22 @@ router.get(
       .select({
         id: auditLog.id,
         at: auditLog.createdAt,
-        actorUserId: auditLog.actorUserId,
         actorName: actorNameExpr.as("actor_name"),
         summary: auditLog.summary,
         metadata: auditLog.metadata,
       })
       .from(auditLog)
       .leftJoin(users, eq(users.id, auditLog.actorUserId))
-      .where(sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`)
+      .where(
+        and(
+          eq(auditLog.actorUserId, user.id),
+          sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`,
+        ),
+      )
       .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-      .limit(500);
+      .limit(100);
 
     const items = rows
-      .filter((row) => row.actorUserId === user.id)
       .map((row) => ({
         id: row.id,
         at: row.at,
