@@ -9,6 +9,29 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary Finance/admin only. Convert one payout-level CRM gift into one gross gift per live Stripe charge and link each charge to its gift. The selected gift must match the payout gross or its fee-explained net, every live charge must have the same payer, and the gift must have exactly one allocation whose designation can be copied without guessing.
+ */
+export const SplitGiftAcrossStripeChargesParams = zod.object({
+  "bankDepositId": zod.coerce.string()
+})
+
+
+
+
+export const SplitGiftAcrossStripeChargesBody = zod.object({
+  "giftId": zod.string().min(1)
+})
+
+export const SplitGiftAcrossStripeChargesResponse = zod.object({
+  "giftIds": zod.array(zod.string()),
+  "chargeIds": zod.array(zod.string()),
+  "grossAmount": zod.string(),
+  "netAmount": zod.string(),
+  "feeAmount": zod.string(),
+  "giftName": zod.string().nullish()
+})
+
+/**
  * The unified reconciler's work queue. Each card is anchored on a QB
 staged_payments row (a QB record is required for every complete match) and
 carries the QB facts plus a compact auto-proposed best guess for the donor /

@@ -33,6 +33,7 @@ import {
   useExcludeStripeStagedCharge,
   useGetCurrentUser,
   useLinkStripeChargeToGift,
+  useSplitGiftAcrossStripeCharges,
   useRejectChargeQbTie,
   useRevertChargeQbTie,
   useReconcileStagedPayment,
@@ -110,6 +111,12 @@ import {
   CreateStandaloneGiftDialog,
   LinkEvidenceSearchDialog,
 } from "@/components/reconciliation-deposits/gift-column-dialogs";
+import {
+  buildGiftPlacementPlan,
+  GiftPlacementDialog,
+  type GiftPlacementPlan,
+  type GiftPlacementTarget,
+} from "@/components/reconciliation-deposits/gift-placement";
 import type {
   AnchorRef,
   CreateGiftPrefill,
@@ -217,6 +224,7 @@ export default function ReconciliationDepositsPage() {
   const revertStaged = useRevertStagedPayment();
   const revertCharge = useRevertStripeStagedCharge();
   const linkCharge = useLinkStripeChargeToGift();
+  const splitGiftAcrossCharges = useSplitGiftAcrossStripeCharges();
   const resolveCharge = useResolveStripeStagedCharge();
   const createChargeGift = useCreateGiftFromStripeStagedCharge();
   const linkDonorbox = useLinkDonorboxDonationToGift();
@@ -248,6 +256,14 @@ export default function ReconciliationDepositsPage() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const [linkGiftFor, setLinkGiftFor] = useState<AnchorRef | null>(null);
+  const [columnGiftFor, setColumnGiftFor] = useState<WorkbenchDeposit | null>(
+    null,
+  );
+  const [giftPlacementFor, setGiftPlacementFor] = useState<{
+    deposit: WorkbenchDeposit;
+    gift: GiftOrPayment;
+    plan: GiftPlacementPlan;
+  } | null>(null);
   const [donorboxFor, setDonorboxFor] = useState<{
     anchor: AnchorRef;
     preview: EvidencePreview;
@@ -460,6 +476,7 @@ export default function ReconciliationDepositsPage() {
     revertStaged.isPending ||
     revertCharge.isPending ||
     linkCharge.isPending ||
+    splitGiftAcrossCharges.isPending ||
     resolveCharge.isPending ||
     createChargeGift.isPending ||
     linkDonorbox.isPending ||
@@ -997,6 +1014,95 @@ export default function ReconciliationDepositsPage() {
     await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
     return true;
   };
+  const handleColumnGiftPick = async (gift: GiftOrPayment) => {
+    const deposit = columnGiftFor;
+    if (!deposit) return;
+    const plan = buildGiftPlacementPlan(deposit, gift);
+    if (plan.targets.length === 0) {
+      toast({
+        title: "No available payment",
+        description:
+          "Every payment on this row is already linked or unavailable.",
+      });
+      setColumnGiftFor(null);
+      return;
+    }
+    if (plan.directTarget) {
+      try {
+        await linkAnchorToGift(plan.directTarget.anchor, gift.id);
+        setColumnGiftFor(null);
+        invalidate();
+        toast({
+          title: "Gift linked",
+          description: `The ${formatCurrency(plan.directTarget.amount ?? "0")} payment now pays “${gift.name ?? gift.id}”.`,
+        });
+      } catch (err) {
+        toast({
+          title: "Couldn't link gift",
+          description: apiErrorMessage(err) ?? errMessage(err),
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    setColumnGiftFor(null);
+    setGiftPlacementFor({ deposit, gift, plan });
+  };
+
+  const handlePlaceGift = async (target: GiftPlacementTarget) => {
+    const placement = giftPlacementFor;
+    if (!placement) return;
+    if (target.currentGiftId === placement.gift.id) {
+      setGiftPlacementFor(null);
+      toast({
+        title: "Already linked",
+        description: "That payment already pays this gift.",
+      });
+      return;
+    }
+    try {
+      await linkAnchorToGift(target.anchor, placement.gift.id);
+      setGiftPlacementFor(null);
+      invalidate();
+      toast({
+        title: "Gift linked",
+        description: `${target.label} now pays “${placement.gift.name ?? placement.gift.id}”.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't link gift",
+        description: apiErrorMessage(err) ?? errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+    }
+  };
+
+  const handleSplitGiftAcrossCharges = async () => {
+    const placement = giftPlacementFor;
+    const split = placement?.plan.split;
+    if (!placement || !split) return;
+    try {
+      const result = await splitGiftAcrossCharges.mutateAsync({
+        bankDepositId: split.bankDepositId,
+        data: { giftId: placement.gift.id },
+      });
+      setGiftPlacementFor(null);
+      invalidate();
+      toast({
+        title: "Gift split and linked",
+        description: `Created ${result.giftIds.length} per-payment gifts totaling ${formatCurrency(result.grossAmount)} gross.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't split gift",
+        description: apiErrorMessage(err) ?? errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+    }
+  };
+
   const handleLinkEvidenceGift = async (gift: GiftOrPayment) => {
     const target = linkEvidenceFor;
     if (!target) return;
@@ -1279,6 +1385,7 @@ export default function ReconciliationDepositsPage() {
     openCreateGift: (anchor, preview, prefill) =>
       setCreateFor({ anchor, preview, prefill: prefill ?? null }),
     openLinkEvidence: (anchor, mode) => setLinkEvidenceFor({ anchor, mode }),
+    openColumnGiftSearch: setColumnGiftFor,
     openIdentify: (anchor, preview) =>
       setIdentifyFor({
         anchor,
@@ -1930,6 +2037,27 @@ export default function ReconciliationDepositsPage() {
             ? `Pick the CRM donation record that ${linkGiftFor.label} pays.`
             : undefined
         }
+      />
+      <GiftSearchDialog
+        open={columnGiftFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setColumnGiftFor(null);
+        }}
+        onPick={(gift) => void handleColumnGiftPick(gift)}
+        busy={busy}
+        title="Search and link gift"
+        description="Pick the CRM gift first. If this row contains several open payments, the next step will ask which payment it belongs to."
+      />
+      <GiftPlacementDialog
+        open={giftPlacementFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setGiftPlacementFor(null);
+        }}
+        gift={giftPlacementFor?.gift ?? null}
+        plan={giftPlacementFor?.plan ?? null}
+        busy={busy}
+        onLink={(target) => void handlePlaceGift(target)}
+        onSplit={() => void handleSplitGiftAcrossCharges()}
       />
       <GiftSearchDialog
         open={singlePaymentFor != null}
