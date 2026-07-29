@@ -8,31 +8,27 @@ import { sql } from "drizzle-orm";
  * this pass compares that expectation against the actual QBO records and writes
  * one `qbo_accounting_checks` row per checked QBO row.
  *
- * v1 scope — Stripe payout lumps, the highest-risk posting (net lump amounts,
- * known bookkeeping errors): for each QBO deposit row claiming Stripe money,
- * pair it to the payout it books and compare the posted amount against the
- * payout's net. The pairing FACT is the `payout_qb_settlement` source_link
- * (successor of staged_payments.settled_stripe_payout_id, 0168): this pass
- * first FILLS it for unpaired lumps with an unambiguous exact-amount payout in
- * the [arrival, +5d] bank window (fill-only, never re-points), then compares
- * every paired lump.
+ * v1 scope — Stripe payout lumps. Wildflower has historically booked these
+ * inconsistently: sometimes at payout NET and sometimes at charge GROSS, with
+ * fees handled elsewhere. Until fee-line documentation is modeled, either
+ * amount is accepted as complete. `booking_basis` records which convention was
+ * detected; only an amount matching neither gross nor net is a correction.
  *
- *   expected = { kind, payout_id, net_amount, arrival_date, bank_deposit_id }
- *   actual   = { amount, date_received, account }
- *   disposition: consistent | correction_needed (machine states)
+ * Pairing FACT is the `payout_qb_settlement` source_link. This pass first FILLS
+ * it for unpaired lumps with an unambiguous exact-amount payout in the
+ * [arrival, +5d] bank window (fill-only, never re-points), then compares every
+ * paired lump.
  *
  * Idempotent + human-safe: rows a human resolved (any row with
  * resolved_by_user_id, and `accepted_historical`) are never touched; machine
  * rows are refreshed in place as pairings/facts change. A row that was
- * `correction_needed` and now compares clean flips to `corrected` (the fix
- * happened in QBO; the sidecar records that it was fixed, not that it was
- * always fine).
+ * `correction_needed` and now compares clean flips to `corrected`.
  */
 export async function recomputeQboAccountingChecks(): Promise<void> {
-  // 1. Fill the pairing fact for unpaired lumps with an unambiguous
-  //    exact-amount payout in the bank window. Fill-only: an existing pairing
-  //    (human-confirmed 0168 backfill or an earlier pass) is never re-pointed,
-  //    and a payout already claimed by another lump is never re-used.
+  // 1. Fill pairing facts for unpaired lumps. A QBO row may match either the
+  // payout net or gross amount; both conventions are legitimate historical
+  // booking patterns. Require a unique candidate and never re-point an existing
+  // relationship.
   await db.execute(sql`
     WITH lumps AS (
       SELECT sp.id, sp.amount, sp.date_received
@@ -49,7 +45,7 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
       SELECT l.id AS staged_id, p.id AS payout_id
       FROM lumps l
       JOIN stripe_payouts p
-        ON p.amount = l.amount
+        ON (p.amount = l.amount OR p.gross_total = l.amount)
        AND p.status = 'paid'
        AND l.date_received >= p.arrival_date
        AND l.date_received <= p.arrival_date + INTERVAL '5 days'
@@ -63,7 +59,6 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
       GROUP BY staged_id
       HAVING count(DISTINCT payout_id) = 1
     ),
-    -- One payout must not pair to two lumps within this pass either.
     payout_1to1 AS (
       SELECT payout_id, min(staged_id) AS staged_id
       FROM exact_1to1
@@ -81,7 +76,8 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 2. Compare every paired lump.
+  // 2. Compare every paired lump. Net wins when gross and net happen to be
+  // equal; otherwise the basis is whichever amount matches within one cent.
   await db.execute(sql`
     WITH checks AS (
       SELECT
@@ -90,6 +86,7 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
           'kind', 'stripe_payout_lump',
           'payout_id', p.id,
           'net_amount', p.amount,
+          'gross_amount', p.gross_total,
           'arrival_date', p.arrival_date,
           'bank_deposit_id', p.bank_deposit_id
         ) AS expected,
@@ -99,12 +96,21 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
           'account', l.qb_deposit_to_account_name
         ) AS actual,
         CASE
+          WHEN abs(l.amount - p.amount) <= 0.01 THEN 'net'
+          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN 'gross'
+          ELSE 'unmatched'
+        END AS booking_basis,
+        CASE
           WHEN abs(l.amount - p.amount) <= 0.01 THEN 'consistent'
+          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN 'consistent'
           ELSE 'correction_needed'
         END::qbo_accounting_disposition AS disposition,
         CASE
           WHEN abs(l.amount - p.amount) <= 0.01 THEN NULL
-          ELSE 'QBO posts ' || l.amount || ' but the payout net is ' || p.amount
+          WHEN p.gross_total IS NOT NULL AND abs(l.amount - p.gross_total) <= 0.01 THEN NULL
+          ELSE 'QBO posts ' || l.amount || ', but payout net is ' || p.amount ||
+               CASE WHEN p.gross_total IS NULL THEN ''
+                    ELSE ' and payout gross is ' || p.gross_total END
         END AS note
       FROM staged_payments l
       JOIN source_links sl
@@ -113,17 +119,16 @@ export async function recomputeQboAccountingChecks(): Promise<void> {
       JOIN stripe_payouts p ON p.id = sl.stripe_payout_id
     )
     INSERT INTO qbo_accounting_checks (
-      id, staged_payment_id, expected, actual, disposition, note, computed_at
+      id, staged_payment_id, expected, actual, disposition, booking_basis,
+      note, computed_at
     )
     SELECT 'qac_' || c.staged_id, c.staged_id, c.expected, c.actual,
-           c.disposition, c.note, now()
+           c.disposition, c.booking_basis, c.note, now()
     FROM checks c
     ON CONFLICT (staged_payment_id) DO UPDATE SET
       expected = excluded.expected,
       actual = excluded.actual,
-      -- A clean re-compare on a row that needed (or received) a fix records
-      -- 'corrected' — the sidecar remembers it was fixed, not that it was
-      -- always fine.
+      booking_basis = excluded.booking_basis,
       disposition = CASE
         WHEN excluded.disposition = 'consistent'
          AND qbo_accounting_checks.disposition IN ('correction_needed', 'corrected')
