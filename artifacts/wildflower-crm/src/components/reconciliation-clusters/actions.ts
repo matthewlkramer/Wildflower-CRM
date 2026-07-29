@@ -12,7 +12,18 @@ import type { EvidencePickOption, EvidencePreview, UnlinkOption } from "./dialog
 export type AnchorRef =
   | { kind: "charge"; id: string; label: string }
   | { kind: "staged"; id: string; label: string }
-  | { kind: "component"; id: string; label: string };
+  | {
+      kind: "component";
+      id: string;
+      label: string;
+      /**
+       * Set when the component anchors a gift-link action (manual gift-less
+       * payment): the deposit to run the adopt-unit gift link against, and the
+       * component amount used to pick the right unit on multi-payment deposits.
+       */
+      bankDepositId?: string;
+      amount?: string;
+    };
 
 /**
  * Editable-field prefill for the standalone-create-gift dialog, pulled from the

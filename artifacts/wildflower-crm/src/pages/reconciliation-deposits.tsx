@@ -621,6 +621,22 @@ export default function ReconciliationDepositsPage() {
       await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
     } else if (anchor.kind === "staged") {
       await reconcileStaged.mutateAsync({ id: anchor.id, data: { giftId } });
+    } else {
+      // Manual gift-less payment: the adopt-unit path points the component's
+      // existing payment unit at the gift (amount picks the right unit).
+      if (!anchor.bankDepositId) {
+        throw new Error(
+          "This payment can't be linked from here — reload and try again.",
+        );
+      }
+      await addBankComponent.mutateAsync({
+        bankDepositId: anchor.bankDepositId,
+        data: {
+          mode: "gift",
+          giftId,
+          ...(anchor.amount ? { amount: anchor.amount } : {}),
+        },
+      });
     }
   };
 
@@ -798,6 +814,19 @@ export default function ReconciliationDepositsPage() {
   const handleDonor = async (type: DonorType, id: string) => {
     const target = identifyFor;
     if (!target) return;
+    // Identify-donor only exists for charge/staged evidence; component anchors
+    // are gated off in the UI — guard structurally so a leak can't call the
+    // staged endpoint with a componentId.
+    if (target.anchor.kind !== "charge" && target.anchor.kind !== "staged") {
+      toast({
+        title: "Not available for this payment",
+        description:
+          "This manual payment has no QuickBooks record to identify a donor on.",
+        variant: "destructive",
+      });
+      setIdentifyFor(null);
+      return;
+    }
     const body = donorBody(type, id);
     if (target.anchor.kind === "charge") {
       await resolveCharge.mutateAsync({ id: target.anchor.id, data: body });
@@ -814,6 +843,18 @@ export default function ReconciliationDepositsPage() {
   ) => {
     const target = createFor;
     if (!target) return;
+    // Gifts mint only from QB/Stripe evidence; component anchors are gated off
+    // in the UI — guard structurally so a leak can't mint via a componentId.
+    if (target.anchor.kind !== "charge" && target.anchor.kind !== "staged") {
+      toast({
+        title: "Not available for this payment",
+        description:
+          "This manual payment has no QuickBooks record to mint a gift from — link an existing gift instead.",
+        variant: "destructive",
+      });
+      setCreateFor(null);
+      return;
+    }
     try {
       const body = donorBody(type, id);
       if (target.anchor.kind === "charge") {
@@ -911,6 +952,8 @@ export default function ReconciliationDepositsPage() {
           id: target.anchor.id,
           data: { giftId: gift.id },
         });
+      } else if (target.anchor.kind === "component") {
+        await linkAnchorToGift(target.anchor, gift.id);
       } else {
         const done = await approveStagedAgainst(
           target.anchor.id,

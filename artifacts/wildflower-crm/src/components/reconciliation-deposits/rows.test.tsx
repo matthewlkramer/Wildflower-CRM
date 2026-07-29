@@ -216,4 +216,50 @@ describe("deposit workbench rows", () => {
       "Stripe money can only be linked to an existing gift",
     );
   });
+
+  it("enables gift linking — and labels the QB-blocked paths — for a manual gift-less payment", () => {
+    // "Record without a gift" leaves a manual bank_spine component whose unit
+    // has no gift and no QB staged source. Linking an existing gift must stay
+    // available (adopt-unit path); mint/pledge paths are blocked with the
+    // accurate reason, NOT the misleading "resolve composition" one.
+    render(
+      makeDeposit({
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [{
+            componentId: "component_manual",
+            paymentUnitId: "unit_manual",
+            amount: "100.00",
+            kind: "other",
+            needsReview: false,
+            ambiguousDepositMatch: false,
+            countedGiftIds: [],
+            source: "bank_spine",
+            stagedPaymentId: null,
+            label: null,
+          }],
+          units: [],
+        },
+      }),
+      { isFinanceOrAdmin: true },
+    );
+    const menu = openMenuContaining("Create standalone gift…");
+    expect(menu).not.toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Search and link gift…")?.getAttribute("data-disabled"),
+    ).toBeNull();
+    for (const label of ["Create standalone gift…", "Record as payment on pledge…"]) {
+      const item = menuItem(menu as HTMLElement, label);
+      expect(item?.getAttribute("data-disabled"), label).not.toBeNull();
+      expect(item?.textContent, label).toContain(
+        "No QuickBooks record backs this manual payment yet",
+      );
+    }
+    expect(menu?.textContent).not.toContain(
+      "No unlinked payment evidence — resolve the deposit's composition first.",
+    );
+  });
 });

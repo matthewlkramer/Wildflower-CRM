@@ -333,13 +333,16 @@ export function LinkEvidenceSearchDialog({
     },
   });
 
-  // Stripe money can only pay an existing gift today — there's no QB record to
-  // book an approve-with-outcome against. Rows stay visible but disabled
-  // (label-not-hide) so the user sees WHY the path is blocked.
+  // Stripe money and manual bank payments can only pay an existing gift today
+  // — there's no QB record to book an approve-with-outcome against. Rows stay
+  // visible but disabled (label-not-hide) so the user sees WHY the path is
+  // blocked.
   const oppBlockedReason =
     anchorKind === "charge"
       ? "No QuickBooks record backs this charge yet — Stripe money can only be linked to an existing gift."
-      : null;
+      : anchorKind === "component"
+        ? "No QuickBooks record backs this manual payment yet — it can only be linked to an existing gift. Attach its QB record first to book against an opportunity or pledge."
+        : null;
 
   const giftRows = gifts.data?.data ?? [];
   const oppRows = opps.data?.data ?? [];

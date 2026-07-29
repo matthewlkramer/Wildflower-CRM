@@ -182,6 +182,8 @@ const NO_GIFT_ANCHOR_REASON =
   "No unlinked payment evidence — resolve the deposit's composition first.";
 const CHARGE_PLEDGE_BLOCKED_REASON =
   "No QuickBooks record backs this charge yet — Stripe money can only be linked to an existing gift.";
+const MANUAL_COMPONENT_QB_REASON =
+  "No QuickBooks record backs this manual payment yet — link an existing gift, or attach its QB record first (Search QuickBooks… on the payment).";
 
 export interface DepositRowProps {
   deposit: WorkbenchDeposit;
@@ -1128,6 +1130,35 @@ export function DepositRow({
         },
       };
     }
+    // Manual gift-less payment ("Record without a gift" / add-known-payment):
+    // no QB evidence to mint from, but the adopt-unit path can still link an
+    // existing gift to this payment.
+    const manualComponent =
+      deposit.composition.kind === "components"
+        ? deposit.composition.components.find(
+            (item) =>
+              item.source === "bank_spine" &&
+              (item.countedGiftIds?.length ?? 0) === 0 &&
+              !item.stagedPaymentId &&
+              Boolean(item.paymentUnitId) &&
+              !item.exclusionReason,
+          )
+        : undefined;
+    if (manualComponent) {
+      return {
+        anchor: {
+          kind: "component",
+          id: manualComponent.componentId,
+          label: componentTitle(manualComponent),
+          bankDepositId: deposit.anchorId,
+          amount: manualComponent.amount,
+        },
+        prefill: {
+          name: null,
+          dateReceived: manualComponent.receivedDate?.slice(0, 10) ?? null,
+        },
+      };
+    }
     return null;
   })();
   const giftColumnAnchor = giftColumnTarget?.anchor ?? null;
@@ -1147,7 +1178,9 @@ export function DepositRow({
           (component) =>
             component.source === "bank_spine" &&
             (component.countedGiftIds?.length ?? 0) === 0 &&
-            component.stagedPaymentId,
+            (component.stagedPaymentId ||
+              (Boolean(component.paymentUnitId) &&
+                !component.exclusionReason)),
         )
       : [];
   const hasGiftColumnCards =
@@ -1180,7 +1213,9 @@ export function DepositRow({
         label: charge?.payerName ?? gift.name ?? chargeId,
       };
     }
-    return giftColumnAnchor;
+    // A manual gift-less component anchor belongs to a DIFFERENT payment on
+    // the deposit — never borrow it for an already-linked gift's lookups.
+    return giftColumnAnchor?.kind === "component" ? null : giftColumnAnchor;
   };
   return (
     <section
@@ -1309,48 +1344,75 @@ export function DepositRow({
                   {
                     label: "Create standalone gift…",
                     onSelect: () => {
-                      if (giftColumnTarget)
+                      if (
+                        giftColumnTarget &&
+                        giftColumnTarget.anchor.kind !== "component"
+                      )
                         actions.openCreateGift(
                           giftColumnTarget.anchor,
                           bankPreview,
                           giftColumnTarget.prefill,
                         );
                     },
-                    disabled: !giftColumnAnchor,
+                    disabled:
+                      !giftColumnAnchor ||
+                      giftColumnAnchor.kind === "component",
                     disabledReason: !giftColumnAnchor
                       ? NO_GIFT_ANCHOR_REASON
-                      : undefined,
+                      : giftColumnAnchor.kind === "component"
+                        ? MANUAL_COMPONENT_QB_REASON
+                        : undefined,
                   },
                   {
                     label: "Record as payment on pledge…",
                     onSelect: () => {
-                      if (giftColumnAnchor && giftColumnAnchor.kind !== "charge")
+                      if (giftColumnAnchor?.kind === "staged")
                         actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
                     },
                     disabled:
-                      !giftColumnAnchor || giftColumnAnchor.kind === "charge",
+                      !giftColumnAnchor || giftColumnAnchor.kind !== "staged",
                     disabledReason: !giftColumnAnchor
                       ? NO_GIFT_ANCHOR_REASON
                       : giftColumnAnchor.kind === "charge"
                         ? CHARGE_PLEDGE_BLOCKED_REASON
-                        : undefined,
+                        : giftColumnAnchor.kind === "component"
+                          ? MANUAL_COMPONENT_QB_REASON
+                          : undefined,
                   },
                   ...(giftColumnAnchor
                     ? [
                         {
                           label: "Identify donor…",
-                          onSelect: () =>
-                            actions.openIdentify(giftColumnAnchor, bankPreview),
+                          onSelect: () => {
+                            if (giftColumnAnchor.kind !== "component")
+                              actions.openIdentify(
+                                giftColumnAnchor,
+                                bankPreview,
+                              );
+                          },
+                          disabled: giftColumnAnchor.kind === "component",
+                          disabledReason:
+                            giftColumnAnchor.kind === "component"
+                              ? MANUAL_COMPONENT_QB_REASON
+                              : undefined,
                         },
                         ...(actions.openDonorboxSearch
                           ? [
                               {
                                 label: "Donorbox lookup…",
-                                onSelect: () =>
-                                  actions.openDonorboxSearch?.(
-                                    giftColumnAnchor,
-                                    bankPreview,
-                                  ),
+                                onSelect: () => {
+                                  if (giftColumnAnchor.kind !== "component")
+                                    actions.openDonorboxSearch?.(
+                                      giftColumnAnchor,
+                                      bankPreview,
+                                    );
+                                },
+                                disabled:
+                                  giftColumnAnchor.kind === "component",
+                                disabledReason:
+                                  giftColumnAnchor.kind === "component"
+                                    ? MANUAL_COMPONENT_QB_REASON
+                                    : undefined,
                               },
                             ]
                           : []),
@@ -1359,11 +1421,19 @@ export function DepositRow({
                           ? [
                               {
                                 label: "Coding form…",
-                                onSelect: () =>
-                                  actions.openCodingFormLookup?.(
-                                    giftColumnAnchor,
-                                    bankPreview,
-                                  ),
+                                onSelect: () => {
+                                  if (giftColumnAnchor.kind !== "component")
+                                    actions.openCodingFormLookup?.(
+                                      giftColumnAnchor,
+                                      bankPreview,
+                                    );
+                                },
+                                disabled:
+                                  giftColumnAnchor.kind === "component",
+                                disabledReason:
+                                  giftColumnAnchor.kind === "component"
+                                    ? MANUAL_COMPONENT_QB_REASON
+                                    : undefined,
                               },
                             ]
                           : []),
@@ -1646,11 +1716,20 @@ export function DepositRow({
               component.label,
               componentTitle(component),
             );
-            const anchor: AnchorRef = {
-              kind: "staged",
-              id: component.stagedPaymentId ?? "",
-              label: componentTitle(component),
-            };
+            const anchor: AnchorRef = component.stagedPaymentId
+              ? {
+                  kind: "staged",
+                  id: component.stagedPaymentId,
+                  label: componentTitle(component),
+                }
+              : {
+                  kind: "component",
+                  id: component.componentId,
+                  label: componentTitle(component),
+                  bankDepositId: deposit.anchorId,
+                  amount: component.amount,
+                };
+            const manualNoQb = anchor.kind === "component";
             const preview: EvidencePreview = {
               amount: money(component.amount),
               date: deposit.date ? formatDateShort(deposit.date) : "—",
@@ -1680,23 +1759,45 @@ export function DepositRow({
                       },
                       {
                         label: "Create standalone gift…",
-                        onSelect: () =>
-                          actions.openCreateGift(anchor, preview, {
-                            name: null,
-                            dateReceived:
-                              component.receivedDate?.slice(0, 10) ?? null,
-                          }),
+                        onSelect: () => {
+                          if (!manualNoQb)
+                            actions.openCreateGift(anchor, preview, {
+                              name: null,
+                              dateReceived:
+                                component.receivedDate?.slice(0, 10) ?? null,
+                            });
+                        },
+                        disabled: manualNoQb,
+                        disabledReason: manualNoQb
+                          ? MANUAL_COMPONENT_QB_REASON
+                          : undefined,
                       },
                       {
                         label: "Identify donor…",
-                        onSelect: () => actions.openIdentify(anchor, preview),
+                        onSelect: () => {
+                          if (!manualNoQb)
+                            actions.openIdentify(anchor, preview);
+                        },
+                        disabled: manualNoQb,
+                        disabledReason: manualNoQb
+                          ? MANUAL_COMPONENT_QB_REASON
+                          : undefined,
                       },
                       ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
                         ? [
                             {
                               label: "Find Donorbox match…",
-                              onSelect: () =>
-                                actions.openDonorboxSearch?.(anchor, preview),
+                              onSelect: () => {
+                                if (!manualNoQb)
+                                  actions.openDonorboxSearch?.(
+                                    anchor,
+                                    preview,
+                                  );
+                              },
+                              disabled: manualNoQb,
+                              disabledReason: manualNoQb
+                                ? MANUAL_COMPONENT_QB_REASON
+                                : undefined,
                             },
                           ]
                         : []),
@@ -1705,8 +1806,17 @@ export function DepositRow({
                         ? [
                             {
                               label: "Find coding form match…",
-                              onSelect: () =>
-                                actions.openCodingFormLookup?.(anchor, preview),
+                              onSelect: () => {
+                                if (!manualNoQb)
+                                  actions.openCodingFormLookup?.(
+                                    anchor,
+                                    preview,
+                                  );
+                              },
+                              disabled: manualNoQb,
+                              disabledReason: manualNoQb
+                                ? MANUAL_COMPONENT_QB_REASON
+                                : undefined,
                             },
                           ]
                         : []),
