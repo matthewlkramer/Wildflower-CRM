@@ -187,7 +187,11 @@ router.get(
       filters.push(eq(appFeedback.category, category));
     }
     if (query.search) {
-      const term = `%${query.search.replaceAll("%", "\%").replaceAll("_", "\_")}%`;
+      const escapedSearch = query.search.replace(
+        /[\\%_]/g,
+        (character) => `\\${character}`,
+      );
+      const term = `%${escapedSearch}%`;
       filters.push(sql`(
         ${appFeedback.message} ILIKE ${term} ESCAPE '\'
         OR ${appFeedback.pagePath} ILIKE ${term} ESCAPE '\'

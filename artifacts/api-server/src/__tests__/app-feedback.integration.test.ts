@@ -35,7 +35,7 @@ let schema: typeof import("@workspace/db");
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
 let baseUrl = "";
-let feedbackId: string | null = null;
+const feedbackIds: string[] = [];
 
 async function jsonRequest(path: string, init?: RequestInit) {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -81,10 +81,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  if (feedbackId) {
-    await db
-      .delete(schema.appFeedback)
-      .where(eqFn(schema.appFeedback.id, feedbackId));
+  for (const id of feedbackIds) {
+    await db.delete(schema.appFeedback).where(eqFn(schema.appFeedback.id, id));
   }
   await db.delete(schema.users).where(eqFn(schema.users.id, REPORTER_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, ADMIN_ID));
@@ -98,7 +96,7 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
       method: "POST",
       body: JSON.stringify({
         category: "bug",
-        message: "The completed lens still shows this row.",
+        message: "The completed lens is 100% wrong for this row.",
         pageUrl: "https://crm.example/reconciliation/deposits?lens=all_open",
         pagePath: "/reconciliation/deposits?lens=all_open",
         pageTitle: "Reconciliation",
@@ -112,12 +110,28 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
       }),
     });
     expect(created.status).toBe(201);
-    feedbackId = created.json.id;
+    const feedbackId = created.json.id as string;
+    feedbackIds.push(feedbackId);
     expect(created.json).toMatchObject({
       status: "open",
       reporter: { id: REPORTER_ID, name: "Feedback Reporter" },
       screenshotStatus: "captured",
     });
+
+    const unrelated = await jsonRequest("/api/feedback", {
+      method: "POST",
+      body: JSON.stringify({
+        category: "question",
+        message: "How should this unrelated queue work?",
+        pageUrl: "https://crm.example/dashboard",
+        pagePath: "/dashboard",
+        pageTitle: "Dashboard",
+        context: {},
+        screenshotStatus: "skipped",
+      }),
+    });
+    expect(unrelated.status).toBe(201);
+    feedbackIds.push(unrelated.json.id as string);
 
     const forbidden = await jsonRequest("/api/admin/feedback?status=open");
     expect(forbidden.status).toBe(403);
@@ -136,6 +150,14 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
         }),
       ]),
     );
+
+    const literalWildcard = await jsonRequest(
+      `/api/admin/feedback?status=open&search=${encodeURIComponent("%")}`,
+    );
+    expect(literalWildcard.status).toBe(200);
+    expect(
+      literalWildcard.json.data.map((item: { id: string }) => item.id),
+    ).toEqual([feedbackId]);
 
     const updated = await jsonRequest(`/api/admin/feedback/${feedbackId}`, {
       method: "PATCH",
