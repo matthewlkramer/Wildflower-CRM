@@ -9,8 +9,9 @@ import {
 } from "vitest";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
-import { clearPaymentApplicationsForRealm ,
-  unitIdForAnchor,
+import {
+  clearPaymentApplicationsForRealm,
+  seedQbApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -135,30 +136,36 @@ async function seedGift(id: string, amount: string): Promise<string> {
   return id;
 }
 
+// Seed a counted QB unit tie (the successor of the retired ledger row).
+// confirmedAt stays null so a "system" seed is genuinely unconfirmed.
 async function seedLedgerRow(opts: {
-  id: string;
   paymentId: string;
   giftId: string;
   amountApplied: string;
   matchMethod: "system" | "system_confirmed" | "human";
 }): Promise<string> {
-  await db.insert(schema.paymentApplications).values({
-    id: opts.id,
-    paymentUnitId: await unitIdForAnchor("quickbooks", opts.paymentId),
+  await seedQbApplication({
+    stagedPaymentId: opts.paymentId,
     giftId: opts.giftId,
     amountApplied: opts.amountApplied,
-    evidenceSource: "quickbooks",
     matchMethod: opts.matchMethod,
-    createdTheGift: false,
+    confirmedAt: null,
   });
-  return opts.id;
+  return opts.paymentId;
 }
 
-async function readPaymentApplication(id: string) {
+// Read the unit tie facts for a staged payment — the surface the confirm
+// routes actually stamp (payment_units.gift_match_method / confirmed by/at).
+async function readUnitTie(paymentId: string) {
+  const { paymentUnits } = await import("@workspace/db");
   const [row] = await db
-    .select()
-    .from(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.id, id));
+    .select({
+      matchMethod: paymentUnits.giftMatchMethod,
+      confirmedByUserId: paymentUnits.giftConfirmedByUserId,
+      confirmedAt: paymentUnits.giftConfirmedAt,
+    })
+    .from(paymentUnits)
+    .where(eqFn(paymentUnits.sourceStagedPaymentId, paymentId));
   return row;
 }
 
@@ -286,16 +293,14 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk confirm-matches (integration)", () => 
     // a counted 'system' ledger row (⇒ derives match_proposed).
     const sysStaged = await seedStaged("promote_sys");
     const sysPa = await seedLedgerRow({
-      id: `${RUN}_pa_sys`,
       paymentId: sysStaged,
       giftId,
       amountApplied: "100.00",
       matchMethod: "system",
     });
-    // Control: a human-method ledger row on a separate payment must NOT change.
+    // Control: a human-method tie on a separate payment must NOT change.
     const humanStaged = await seedStaged("promote_human");
     const humanPa = await seedLedgerRow({
-      id: `${RUN}_pa_human`,
       paymentId: humanStaged,
       giftId,
       amountApplied: "0.01",
@@ -307,12 +312,12 @@ describe.skipIf(!HAS_DB)("QuickBooks bulk confirm-matches (integration)", () => 
     });
     expect(res.status).toBe(200);
 
-    const sysRow = await readPaymentApplication(sysPa);
+    const sysRow = await readUnitTie(sysPa);
     expect(sysRow.matchMethod).toBe("system_confirmed");
     expect(sysRow.confirmedByUserId).toBe(TEST_USER_ID);
     expect(sysRow.confirmedAt).not.toBeNull();
 
-    const humanRow = await readPaymentApplication(humanPa);
+    const humanRow = await readUnitTie(humanPa);
     expect(humanRow.matchMethod).toBe("human");
     expect(humanRow.confirmedByUserId).toBeNull();
     expect(humanRow.confirmedAt).toBeNull();

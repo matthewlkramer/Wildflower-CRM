@@ -7,8 +7,9 @@ import {
   it,
   vi,
 } from "vitest";
-import { clearPaymentApplicationsForRealm ,
-  unitIdForAnchor,
+import {
+  clearPaymentApplicationsForRealm,
+  seedQbApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -188,11 +189,19 @@ async function allocationsFor(giftId: string) {
     .where(eqFn(schema.giftAllocations.giftId, giftId));
 }
 
+// The counted unit→gift ties for a gift (successor of the retired ledger
+// read). `amountApplied` maps to the unit's own gross_amount — the dollar
+// fact the merge must preserve when re-pointing loser units.
 async function ledgerFor(giftId: string) {
+  const { paymentUnits } = await import("@workspace/db");
   return db
-    .select()
-    .from(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.giftId, giftId));
+    .select({
+      giftId: paymentUnits.giftId,
+      amountApplied: paymentUnits.grossAmount,
+      createdTheGift: paymentUnits.createdTheGift,
+    })
+    .from(paymentUnits)
+    .where(eqFn(paymentUnits.giftId, giftId));
 }
 
 beforeAll(async () => {
@@ -417,12 +426,10 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
       amount: "100.00",
       organizationId: ORG_ID,
     });
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", sp),
+    await seedQbApplication({
+      stagedPaymentId: sp,
       giftId: b,
       amountApplied: "100.00",
-      evidenceSource: "quickbooks",
     });
 
     const res = await api("/api/gifts-and-payments/merge", {
@@ -464,22 +471,16 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
         organizationId: ORG_ID,
       },
     ]);
-    await db.insert(schema.paymentApplications).values([
-      {
-        id: nextId("pa"),
-        paymentUnitId: await unitIdForAnchor("quickbooks", sp1),
-        giftId: a,
-        amountApplied: "100.00",
-        evidenceSource: "quickbooks",
-      },
-      {
-        id: nextId("pa"),
-        paymentUnitId: await unitIdForAnchor("quickbooks", sp2),
-        giftId: b,
-        amountApplied: "60.00",
-        evidenceSource: "quickbooks",
-      },
-    ]);
+    await seedQbApplication({
+      stagedPaymentId: sp1,
+      giftId: a,
+      amountApplied: "100.00",
+    });
+    await seedQbApplication({
+      stagedPaymentId: sp2,
+      giftId: b,
+      amountApplied: "60.00",
+    });
 
     const res = await api("/api/gifts-and-payments/merge", {
       primaryId: a,
@@ -825,13 +826,11 @@ describe.skipIf(!HAS_DB)(
         amount: "100.00",
         organizationId: ORG_ID,
       });
-      // The QB link lives in the counted ledger (the sole gift-link source).
-      await db.insert(schema.paymentApplications).values({
-        id: nextId("pa"),
-        paymentUnitId: await unitIdForAnchor("quickbooks", spId),
+      // The QB link lives in the counted unit tie (the sole gift-link source).
+      await seedQbApplication({
+        stagedPaymentId: spId,
         giftId,
         amountApplied: "100.00",
-        evidenceSource: "quickbooks",
       });
 
       const res = await api(
@@ -860,12 +859,10 @@ describe.skipIf(!HAS_DB)(
         amount: "100.00",
         organizationId: ORG_ID,
       });
-      await db.insert(schema.paymentApplications).values({
-        id: nextId("pa"),
-        paymentUnitId: await unitIdForAnchor("quickbooks", spId),
+      await seedQbApplication({
+        stagedPaymentId: spId,
         giftId,
         amountApplied: "100.00",
-        evidenceSource: "quickbooks",
       });
 
       const res = await api(

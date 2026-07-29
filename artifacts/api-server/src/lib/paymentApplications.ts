@@ -777,9 +777,9 @@ export function donorboxLedgerExistsForGift(
  * narrower ledger question "does a donorbox counted PA exist" for per-source
  * precedence (gift QB-tie, gifts-missing-qb exemptions) — do not merge them.
  *
- * Returns a raw SQL string (not a bound `sql` fragment) because its consumer,
- * the workbench-clusters query, composes plain-SQL strings. Pass a
- * pre-qualified gift-id expression (e.g. "g.id").
+ * Returns a raw SQL string (not a bound `sql` fragment) because its consumers
+ * (the gift-list filters in routes/giftsAndPayments.ts) compose plain-SQL
+ * strings via sql.raw. Pass a pre-qualified gift-id expression (e.g. "g.id").
  */
 export function donorboxBackedExistsSql(giftRef: string): string {
   return `EXISTS (

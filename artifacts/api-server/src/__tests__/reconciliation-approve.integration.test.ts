@@ -15,11 +15,11 @@ import {
   qbSoleGiftIdForPayment,
   qbMintedGiftIdForPayment,
   qbPaymentIdForGift,
+  seedQbApplication,
   seedStripeApplication,
   stripeCountedRowForCharge,
   stripeGiftIdForCharge,
   stripeMintedGiftIdForCharge,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -199,17 +199,13 @@ async function seedStaged(
   const ledgerGiftId =
     opts.linkedGiftId ?? opts.mintedGiftId ?? opts.groupLinkedGiftId;
   if (ledgerGiftId != null) {
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: ledgerGiftId,
       amountApplied: amount,
-      evidenceSource: "quickbooks",
-      linkRole: "counted",
-      lifecycle: "confirmed",
       matchMethod: opts.autoApplied ? "system" : "human",
       createdTheGift: opts.mintedGiftId != null,
-      ...(opts.autoApplied ? {} : { confirmedAt: new Date() }),
+      confirmedAt: opts.autoApplied ? null : new Date(),
     });
   }
   return id;
@@ -644,15 +640,12 @@ describe.skipIf(!HAS_DB)(
           autoApplied: true,
         })
         .where(eqFn(schema.stagedPayments.id, paymentId));
-      await db.insert(schema.paymentApplications).values({
-        id: nextId("pa"),
-        paymentUnitId: await unitIdForAnchor("quickbooks", paymentId),
+      await seedQbApplication({
+        stagedPaymentId: paymentId,
         giftId: giftA,
         amountApplied: amount,
-        evidenceSource: "quickbooks",
         matchMethod: "system",
-        linkRole: "counted",
-        lifecycle: "confirmed",
+        confirmedAt: null,
       });
       return paymentId;
     }
@@ -703,22 +696,9 @@ describe.skipIf(!HAS_DB)(
       const after = await readStaged(paymentId);
       expect(after.status).toBe("match_confirmed");
 
-      // The cash-application ledger moved with it: the old COUNTED row to gift A
-      // is gone; exactly one counted row ties this payment's money to gift B.
-      const paRows = await db
-        .select()
-        .from(schema.paymentApplications)
-        .innerJoin(
-          schema.paymentUnits,
-          eqFn(
-            schema.paymentApplications.paymentUnitId,
-            schema.paymentUnits.id,
-          ),
-        )
-        .where(eqFn(schema.paymentUnits.sourceStagedPaymentId, paymentId));
-      const counted = paRows
-        .map((r) => r.payment_applications)
-        .filter((r) => r.linkRole === "counted");
+      // The counted tie moved with it: the old tie to gift A is gone; exactly
+      // one counted unit ties this payment's money to gift B.
+      const counted = await qbCountedRowsForPayment(paymentId);
       expect(counted).toHaveLength(1);
       expect(counted[0].giftId).toBe(giftB);
 
@@ -1046,16 +1026,12 @@ describe.skipIf(!HAS_DB)("Reconciliation approve — auto-proposed (`match_propo
     // Proposed (NOT confirmed) settlement link + a pending charge on its payout.
     const payoutId = await seedPayout(stagedId);
     const chargeId = await seedCharge({ payoutId, grossAmount: "100.00" });
-    // The split's counted cash-application ledger row books the money.
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", stagedId),
+    // The split's counted unit→gift tie books the money.
+    await seedQbApplication({
+      stagedPaymentId: stagedId,
       giftId: splitGift,
       amountApplied: "100.00",
-      evidenceSource: "quickbooks",
       matchMethod: "human",
-      linkRole: "counted",
-      lifecycle: "confirmed",
     });
 
     const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {

@@ -1,6 +1,3 @@
-import { stagedPayments } from "@workspace/db/schema";
-import { eq, or, sql, type SQL } from "drizzle-orm";
-
 /**
  * Shared "counts as a Stripe settlement lump" eligibility test.
  *
@@ -11,15 +8,12 @@ import { eq, or, sql, type SQL } from "drizzle-orm";
  * name ("Misc Customer"). A donor-NAME payment row matches neither signal and
  * stays ineligible — that is a single donation and belongs at the charge grain.
  *
- * The workbench lump-candidate reads (routes/reconciliation/workbenchClusters.ts)
- * and the Resolve manual-pick gate (routes/reconciliation/bundleProposals.ts)
- * MUST both use this ONE predicate so a lump the system surfaces is always
- * one a human can pair.
- *
- * The TS predicate and the SQL predicate below are the SAME rule in two
- * dialects — keep them in lockstep. Note the asymmetry: "stripe" is tested
- * against the full haystack, "misc" against payerName ONLY (a memo mentioning
- * "miscellaneous" must not qualify a donor payment).
+ * Sole consumer today: the Resolve manual-pick gate
+ * (routes/reconciliation/bundleProposals.ts). Any future lump-candidate read
+ * MUST reuse this ONE predicate so a lump the system surfaces is always one a
+ * human can pair. Note the asymmetry: "stripe" is tested against the full
+ * haystack, "misc" against payerName ONLY (a memo mentioning "miscellaneous"
+ * must not qualify a donor payment).
  */
 
 /** The staged-payment fields the lump test reads. */
@@ -32,7 +26,7 @@ export interface SettlementLumpFields {
   qbDepositToAccountName: string | null;
 }
 
-/** TS-side lump eligibility (mirror of {@link settlementLumpWhere}). */
+/** TS-side lump eligibility. */
 export function isSettlementLump(row: SettlementLumpFields): boolean {
   // A deposit-typed row IS the lump by construction: a direct deposit LINE or
   // a WHOLE-deposit header record (deposit_header — staged when every line of
@@ -53,21 +47,4 @@ export function isSettlementLump(row: SettlementLumpFields): boolean {
     .toLowerCase();
   if (hay.includes("stripe")) return true;
   return (row.payerName ?? "").toLowerCase().includes("misc");
-}
-
-/** SQL-side lump eligibility over `staged_payments` (mirror of
- * {@link isSettlementLump}). */
-export function settlementLumpWhere(): SQL {
-  return or(
-    eq(stagedPayments.qbEntityType, "deposit"),
-    eq(stagedPayments.qbEntityType, "deposit_header"),
-    sql`lower(
-      coalesce(${stagedPayments.payerName}, '') || ' ' ||
-      coalesce(${stagedPayments.lineDescription}, '') || ' ' ||
-      coalesce(${stagedPayments.qbTransactionMemo}, '') || ' ' ||
-      coalesce(${stagedPayments.rawReference}, '') || ' ' ||
-      coalesce(${stagedPayments.qbDepositToAccountName}, '')
-    ) like '%stripe%'`,
-    sql`lower(coalesce(${stagedPayments.payerName}, '')) like '%misc%'`,
-  )!;
 }

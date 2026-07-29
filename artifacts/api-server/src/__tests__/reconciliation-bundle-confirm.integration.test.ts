@@ -8,7 +8,11 @@ import {
   vi,
 } from "vitest";
 import { chargeStatusSql } from "../lib/derivedStatus";
-import { stripeMintedGiftIdForCharge } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  clearPaymentUnitsForChargeIds,
+  stripeMintedGiftIdForCharge,
+} from "./paymentApplicationsTestUtil";
 import { getTableColumns } from "drizzle-orm";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -211,14 +215,11 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
 
-  // `payment_applications` (Plane-2 ledger booked by the per-charge mint) FKs the
-  // gift ON DELETE RESTRICT, so clear it before the gifts. (The settled payout
-  // pairing needs no explicit cleanup: `settled_stripe_payout_id` is SET NULL
-  // on the stripePayouts delete below.)
-  if (createdGiftIds.length)
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.giftId, createdGiftIds));
+  // The unit→gift ties booked by the per-charge mint RESTRICT the gift
+  // delete, so detach them before the gifts. (The settled payout pairing
+  // needs no explicit cleanup: `settled_stripe_payout_id` is SET NULL on the
+  // stripePayouts delete below.)
+  await clearPaymentApplicationsForGiftIds(createdGiftIds);
   if (createdGiftIds.length)
     await db
       .delete(schema.giftAllocations)
@@ -231,6 +232,8 @@ afterAll(async () => {
     await db
       .delete(schema.reconciliationBundleDrafts)
       .where(inArrayFn(schema.reconciliationBundleDrafts.id, draftIds));
+  // Units minted for the charges RESTRICT their anchor — delete them first.
+  await clearPaymentUnitsForChargeIds(chargeIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)

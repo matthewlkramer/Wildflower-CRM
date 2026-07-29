@@ -1,6 +1,6 @@
 import {
   clearPaymentApplicationsForStagedIds,
-  unitIdForAnchor,
+  seedQbApplication,
 } from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
@@ -136,13 +136,10 @@ beforeAll(async () => {
     dateReceived: "2099-11-15",
     payerName: PAYER,
   });
-  await db.insert(schema.paymentApplications).values({
-    id: `${STAGED_MATCHED_ID}_pa`,
-    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_MATCHED_ID),
+  await seedQbApplication({
+    stagedPaymentId: STAGED_MATCHED_ID,
     giftId: GIFT_MATCHED_ID,
     amountApplied: "250.00",
-    evidenceSource: "quickbooks",
-    createdTheGift: false,
   });
   await db.insert(schema.stagedPayments).values({
     id: STAGED_CREATED_ID,
@@ -154,12 +151,10 @@ beforeAll(async () => {
     dateReceived: "2099-11-15",
     payerName: PAYER,
   });
-  await db.insert(schema.paymentApplications).values({
-    id: `${STAGED_CREATED_ID}_pa`,
-    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_CREATED_ID),
+  await seedQbApplication({
+    stagedPaymentId: STAGED_CREATED_ID,
     giftId: GIFT_CREATED_ID,
     amountApplied: "250.00",
-    evidenceSource: "quickbooks",
     createdTheGift: true,
   });
   await db.insert(schema.stagedPayments).values({

@@ -274,9 +274,9 @@ describe.skipIf(!HAS_DB)("finance-role gating (integration)", () => {
     }
   }, 120_000);
 
-  it("exposes viewerCanManageAccounting on workbench-clusters per role", async () => {
+  it("exposes viewerCanManageAccounting on workbench-deposits per role", async () => {
     state.user = { id: MEMBER_ID, role: "team_member" };
-    const asMember = await get("/api/reconciliation/workbench-clusters?limit=1");
+    const asMember = await get("/api/reconciliation/workbench-deposits?limit=1");
     expect(asMember.status).toBe(200);
     expect(
       (asMember.json as { viewerCanManageAccounting: boolean })
@@ -285,7 +285,7 @@ describe.skipIf(!HAS_DB)("finance-role gating (integration)", () => {
 
     state.user = { id: FINANCE_ID, role: "finance" };
     const asFinance = await get(
-      "/api/reconciliation/workbench-clusters?limit=1",
+      "/api/reconciliation/workbench-deposits?limit=1",
     );
     expect(asFinance.status).toBe(200);
     expect(
@@ -294,7 +294,7 @@ describe.skipIf(!HAS_DB)("finance-role gating (integration)", () => {
     ).toBe(true);
 
     state.user = { id: ADMIN_ID, role: "admin" };
-    const asAdmin = await get("/api/reconciliation/workbench-clusters?limit=1");
+    const asAdmin = await get("/api/reconciliation/workbench-deposits?limit=1");
     expect(asAdmin.status).toBe(200);
     expect(
       (asAdmin.json as { viewerCanManageAccounting: boolean })

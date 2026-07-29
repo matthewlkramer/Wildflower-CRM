@@ -10,8 +10,9 @@ import {
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
+  qbCountedRowsForPayment,
+  seedQbApplication,
   seedStripeApplication,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import { chargeStatusSql, stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -173,9 +174,9 @@ async function seedQbStaged(amount: string): Promise<string> {
 }
 
 /**
- * The authoritative gift link: a counted QB `payment_applications` ledger row
- * (the deprecated staged link columns are no longer written). Pass
- * `createdTheGift` to model a mint-owned row.
+ * The authoritative gift link: the counted unit→gift tie (the deprecated
+ * staged link columns are no longer written). Pass `createdTheGift` to model
+ * a mint-owned row.
  */
 async function seedPaymentApplication(
   stagedPaymentId: string,
@@ -183,13 +184,12 @@ async function seedPaymentApplication(
   amount: string,
   opts: { createdTheGift?: boolean } = {},
 ): Promise<void> {
-  await db.insert(schema.paymentApplications).values({
-    id: `${stagedPaymentId}_pa`,
-    paymentUnitId: await unitIdForAnchor("quickbooks", stagedPaymentId),
+  await seedQbApplication({
+    stagedPaymentId,
     giftId,
     amountApplied: amount,
-    evidenceSource: "quickbooks",
     matchMethod: "system",
+    confirmedAt: null,
     createdTheGift: opts.createdTheGift ?? false,
   });
 }
@@ -213,27 +213,10 @@ async function readCharge(id: string) {
   return row;
 }
 
+// The counted unit→gift ties for a staged payment (successor of the retired
+// per-row ledger read).
 async function readPaymentApplications(stagedPaymentId: string) {
-  return db
-    .select({
-      id: schema.paymentApplications.id,
-      giftId: schema.paymentApplications.giftId,
-      amountApplied: schema.paymentApplications.amountApplied,
-      createdTheGift: schema.paymentApplications.createdTheGift,
-      evidenceSource: schema.paymentApplications.evidenceSource,
-      paymentUnitId: schema.paymentApplications.paymentUnitId,
-      linkRole: schema.paymentApplications.linkRole,
-      lifecycle: schema.paymentApplications.lifecycle,
-    })
-    .from(schema.paymentApplications)
-    .innerJoin(
-      schema.paymentUnits,
-      eqFn(
-        schema.paymentApplications.paymentUnitId,
-        schema.paymentUnits.id,
-      ),
-    )
-    .where(eqFn(schema.paymentUnits.sourceStagedPaymentId, stagedPaymentId));
+  return qbCountedRowsForPayment(stagedPaymentId);
 }
 
 beforeAll(async () => {

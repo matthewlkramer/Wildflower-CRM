@@ -40,8 +40,17 @@ Why a pointer, and why on the unit side:
 2. **Dual-derivation:** `payment_applications` stays the write authority;
    the bank-spine recompute (step 6) keeps the pointer converged with the
    counted ledger after every sync.
+   **Status (2026-07-29):** superseded in practice — no production code path
+   inserts, updates, or deletes `payment_applications` rows anymore (verified
+   by grep across the api-server; only test utilities touch the table, for
+   legacy-row cleanup). The pointer is already the de-facto write authority;
+   the ledger persists read-only pending the step-4 parity check and drop.
 3. **Read cutover:** flip every ledger reader (gift totals, tie status,
    book-once guards) onto the pointer + corroboration links.
+   **Progress (2026-07-29):** the integration-test fixture layer is cutover —
+   test seeds mint `payment_units` and set the pointer (no raw counted-ledger
+   inserts), and test readers assert against the pointer, so the suite no
+   longer depends on `payment_applications` rows existing at 0195.
 4. **0195 (gated):** drop `payment_applications` — only after cutover +
    parity verification, by explicit human decision.
 

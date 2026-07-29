@@ -133,7 +133,8 @@ collide with the real import once it's loaded into a DB). Symptom: `duplicate ke
 violates unique constraint "coding_form_rows_source_row_unique"` mid-seed.
 
 **Rule:** seed rows under the per-run unique id (the suite's `RUN` constant), never a
-production namespace. Fixed in `workbench-clusters.integration.test.ts` (2026-07).
+production namespace. (First hit in the since-deleted workbench-clusters suite, 2026-07;
+the rule applies to any suite seeding `coding_form_rows`.)
 
 **Cleanup** (wbcluster-prefixed leftovers; `settlement_links` ids use `sl_wbcluster_…`,
 so match `'%wbcluster_%'` there, and it must be deleted FIRST — a CHECK forbids the

@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { clearPaymentUnitsForChargeIds ,
-  unitIdForAnchor,
+import {
+  clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForStagedIds,
+  seedQbApplication,
+  seedStripeApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -202,12 +205,9 @@ beforeAll(async () => {
     dateReceived: "2099-05-06",
     payerName: `GiftRevert payer ${RUN}`,
   });
-  await db.insert(schema.paymentApplications).values({
-    id: PA_QB,
+  await seedQbApplication({
+    stagedPaymentId: SP_QB,
     giftId: GIFT_QB,
-    paymentUnitId: await unitIdForAnchor("quickbooks", SP_QB),
-    evidenceSource: "quickbooks",
-    linkRole: "counted",
     amountApplied: "600.00",
   });
 
@@ -218,12 +218,9 @@ beforeAll(async () => {
     stripeAccountId: RUN,
     grossAmount: "150.00",
   });
-  await db.insert(schema.paymentApplications).values({
-    id: PA_STRIPE,
+  await seedStripeApplication({
+    stripeChargeId: CHARGE_STRIPE,
     giftId: GIFT_STRIPE,
-    paymentUnitId: await unitIdForAnchor("stripe", CHARGE_STRIPE),
-    evidenceSource: "stripe",
-    linkRole: "counted",
     amountApplied: "150.00",
   });
 
@@ -240,9 +237,7 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  await db
-    .delete(schema.paymentApplications)
-    .where(inArrayFn(schema.paymentApplications.id, [PA_QB, PA_STRIPE]));
+  await clearPaymentUnitsForStagedIds([SP_QB]);
   await db
     .delete(schema.stagedPayments)
     .where(eqFn(schema.stagedPayments.id, SP_QB));
@@ -387,10 +382,12 @@ describe.skipIf(!HAS_DB)("gift revert-to-opportunity", () => {
       .from(schema.giftsAndPayments)
       .where(eqFn(schema.giftsAndPayments.id, GIFT_STRIPE));
     expect(gift.archivedAt).toBeNull();
-    const [pa] = await db
-      .select()
-      .from(schema.paymentApplications)
-      .where(eqFn(schema.paymentApplications.id, PA_STRIPE));
-    expect(pa).toBeTruthy();
+    // The counted unit→gift tie is untouched.
+    const { paymentUnits } = await import("@workspace/db");
+    const [unit] = await db
+      .select({ giftId: paymentUnits.giftId })
+      .from(paymentUnits)
+      .where(eqFn(paymentUnits.stripeChargeId, CHARGE_STRIPE));
+    expect(unit?.giftId).toBe(GIFT_STRIPE);
   });
 });

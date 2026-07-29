@@ -1,4 +1,9 @@
-import { unitIdForAnchor } from "./paymentApplicationsTestUtil";
+import {
+  clearPaymentApplicationsForGiftIds,
+  clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForStagedIds,
+  seedStripeApplication,
+} from "./paymentApplicationsTestUtil";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -123,6 +128,7 @@ let schema: {
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
+  sourceLinks: Db["sourceLinks"];
   stripeStagedCharges: Db["stripeStagedCharges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -166,23 +172,21 @@ async function postJson(path: string, body: unknown): Promise<number> {
   return res.status;
 }
 
-// Corroborating ledger rows the /apply flow writes, anchored to the QB deposit.
-// Phase-5 read-flip: /apply writes ONLY these rows (link_role='corroborating').
+// Corroborating claims the /apply flow writes, anchored to the QB deposit's
+// unit: one unit_gift_corroboration source_link per (unit, gift) — the sole
+// home for evidence↔gift corroboration (docs/adr-unit-gift-pointer.md).
 async function corrLedgerCount(): Promise<number> {
   const rows = await db
-    .select({ id: schema.paymentApplications.id })
-    .from(schema.paymentApplications)
+    .select({ id: schema.sourceLinks.id })
+    .from(schema.sourceLinks)
     .innerJoin(
       schema.paymentUnits,
-      eqFn(
-        schema.paymentApplications.paymentUnitId,
-        schema.paymentUnits.id,
-      ),
+      eqFn(schema.sourceLinks.paymentUnitId, schema.paymentUnits.id),
     )
     .where(
       andFn(
         eqFn(schema.paymentUnits.sourceStagedPaymentId, STAGED_E),
-        eqFn(schema.paymentApplications.linkRole, "corroborating"),
+        eqFn(schema.sourceLinks.linkType, "unit_gift_corroboration"),
       ),
     );
   return rows.length;
@@ -200,6 +204,7 @@ beforeAll(async () => {
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
+    sourceLinks: dbMod.sourceLinks,
     stripeStagedCharges: dbMod.stripeStagedCharges,
   };
   eqFn = drizzle.eq;
@@ -316,12 +321,9 @@ beforeAll(async () => {
     grossAmount: "300.00",
     dateReceived: COUNTED_DATE,
   });
-  await db.insert(schema.paymentApplications).values({
-    id: `${RUN}_pa_c1`,
+  await seedStripeApplication({
+    stripeChargeId: CH_C,
     giftId: GIFT_C1,
-    paymentUnitId: await unitIdForAnchor("stripe", CH_C),
-    evidenceSource: "stripe",
-    linkRole: "counted",
     amountApplied: "300.00",
   });
 
@@ -350,27 +352,30 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  // The /apply flow writes a corroborating payment_applications row per link
-  // (Phase-5 read-flip); clear them before the staged-payment (payment_id FK)
-  // and gift (gift_id RESTRICT) deletes below.
-  await db
-    .delete(schema.paymentApplications)
-    .where(
-      inArrayFn(schema.paymentApplications.giftId, [
-        GIFT_M1,
-        GIFT_M2,
-        GIFT_A1,
-        GIFT_A2,
-        GIFT_T1,
-        GIFT_T2,
-        GIFT_N1,
-        GIFT_N2,
-        GIFT_C1,
-        GIFT_C2,
-        GIFT_S1,
-        GIFT_S2,
-      ]),
-    );
+  // Detach the counted unit→gift ties, then drop the units minted for this
+  // suite's anchors (unit deletion also removes their corroboration
+  // source_links) before deleting the RESTRICT/SET-NULL parents below.
+  await clearPaymentApplicationsForGiftIds([
+    GIFT_M1,
+    GIFT_M2,
+    GIFT_A1,
+    GIFT_A2,
+    GIFT_T1,
+    GIFT_T2,
+    GIFT_N1,
+    GIFT_N2,
+    GIFT_C1,
+    GIFT_C2,
+    GIFT_S1,
+    GIFT_S2,
+  ]);
+  await clearPaymentUnitsForChargeIds([CH_C]);
+  await clearPaymentUnitsForStagedIds([
+    STAGED_E,
+    STAGED_TIE,
+    STAGED_NOTIE,
+    STAGED_SINGLE,
+  ]);
   await db
     .delete(schema.stripeStagedCharges)
     .where(eqFn(schema.stripeStagedCharges.id, CH_C));
@@ -488,18 +493,23 @@ describe.skipIf(!HAS_DB)("financial-corrections queue", () => {
 
   it("corroborating links stay out of the settled read model (link_role='counted' guard)", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
-    // Precondition: the prior apply dual-wrote a single corroborating ledger row
-    // for GIFT_A1 (link_role='corroborating', amount NULL) and NO counted row.
-    const pa = await db
-      .select({
-        role: schema.paymentApplications.linkRole,
-        amt: schema.paymentApplications.amountApplied,
-      })
-      .from(schema.paymentApplications)
-      .where(eqFn(schema.paymentApplications.giftId, GIFT_A1));
-    expect(pa).toHaveLength(1);
-    expect(pa[0].role).toBe("corroborating");
-    expect(pa[0].amt).toBeNull();
+    // Precondition: the prior apply wrote a single corroborating claim for
+    // GIFT_A1 (a unit_gift_corroboration source_link) and NO counted unit tie.
+    const claims = await db
+      .select({ linkType: schema.sourceLinks.linkType })
+      .from(schema.sourceLinks)
+      .where(
+        andFn(
+          eqFn(schema.sourceLinks.giftId, GIFT_A1),
+          eqFn(schema.sourceLinks.linkType, "unit_gift_corroboration"),
+        ),
+      );
+    expect(claims).toHaveLength(1);
+    const counted = await db
+      .select({ id: schema.paymentUnits.id })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.giftId, GIFT_A1));
+    expect(counted).toHaveLength(0);
 
     // A corroborating-only gift has NO linked counted payment, so the settled
     // read model must report "nothing landed yet" — derived settled amount NULL

@@ -2,8 +2,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import {
   clearPaymentApplicationsForChargeIds,
   clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForStagedIds,
+  seedQbApplication,
   seedStripeApplication,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -57,7 +58,6 @@ const GIFT_ID = `${RUN}_gift`;
 const GIFT_QB_ID = `${RUN}_gift_qb`;
 const STAGED_ID = `${RUN}_staged`; // the QB payment that owns GIFT_QB_ID
 const STAGED_ANCHOR_ID = `${RUN}_staged_anchor`; // a separate QB search anchor
-const PAYAPP_ID = `${RUN}_payapp`;
 // A gift already owned by ANOTHER Stripe charge (matched).
 const GIFT_CH_ID = `${RUN}_gift_ch`;
 const CHARGE_B_ID = `${RUN}_ch_b`;
@@ -178,12 +178,10 @@ beforeAll(async () => {
       payerName: `Zztest QB Payer ${RUN}`,
     });
   }
-  await db.insert(schema.paymentApplications).values({
-    id: PAYAPP_ID,
-    paymentUnitId: await unitIdForAnchor("quickbooks", STAGED_ID),
+  await seedQbApplication({
+    stagedPaymentId: STAGED_ID,
     giftId: GIFT_QB_ID,
     amountApplied: "100.00",
-    evidenceSource: "quickbooks" as never,
   });
 
   // A gift in the same window already owned by ANOTHER Stripe charge (matched).
@@ -224,11 +222,8 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   // payment_applications FKs (gift + staged payment) are ON DELETE RESTRICT, so
-  // the ledger row must go before its anchors. Stripe-evidence rows must also
-  // go before their anchor charge (SET NULL trips the stripe-evidence CHECK).
-  await db
-    .delete(schema.paymentApplications)
-    .where(eqFn(schema.paymentApplications.id, PAYAPP_ID));
+  // the unit ties must go before their anchors. Stripe-evidence units must
+  // also go before their anchor charge (units RESTRICT the charge delete).
   await clearPaymentApplicationsForChargeIds([CHARGE_ID, CHARGE_B_ID]);
   await clearPaymentUnitsForChargeIds([CHARGE_ID, CHARGE_B_ID]);
   for (const id of [CHARGE_ID, CHARGE_B_ID]) {
@@ -236,6 +231,9 @@ afterAll(async () => {
       .delete(schema.stripeStagedCharges)
       .where(eqFn(schema.stripeStagedCharges.id, id));
   }
+  // Delete the staged rows' units outright — the staged FK is SET NULL, so
+  // deleting the payment would strand orphan units still holding gift ties.
+  await clearPaymentUnitsForStagedIds([STAGED_ID, STAGED_ANCHOR_ID]);
   for (const id of [STAGED_ID, STAGED_ANCHOR_ID]) {
     await db
       .delete(schema.stagedPayments)

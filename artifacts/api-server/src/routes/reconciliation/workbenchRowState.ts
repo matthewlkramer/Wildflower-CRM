@@ -229,3 +229,77 @@ export function lensFlagsFromState(s: WorkbenchRowState): {
     attention_required: s.flags.attentionRequired,
   };
 }
+
+// ── CRM record completeness (crmRecordCompleteness sub-dimension) ───────────
+
+export type CrmRecordReason =
+  | "missing_donor"
+  | "missing_restriction_fields"
+  | "missing_allocation";
+export type CrmSatisfiedBy =
+  | "donorbox"
+  | "coding_form"
+  | "donor_and_allocations"
+  | null;
+
+/**
+ * The per-gift inputs the completeness deriver reads. satisfiedBy and
+ * crmReason are computed ONCE in the gift SELECT queries (giftSatisfiedBy /
+ * giftCrmReason SQL fragments) and passed through verbatim — no logic is
+ * duplicated here.
+ */
+export interface CrmCompletenessGiftInput {
+  giftId: string;
+  satisfiedBy: CrmSatisfiedBy;
+  crmReason: CrmRecordReason | null;
+}
+
+export interface CrmGiftCompletenessDetail {
+  giftId: string;
+  reasons: CrmRecordReason[];
+  satisfiedBy: CrmSatisfiedBy;
+}
+
+export interface CrmRecordCompletenessOut {
+  complete: boolean;
+  completeGiftIds: string[];
+  incompleteGiftIds: string[];
+  reasonsByGift: CrmGiftCompletenessDetail[];
+}
+
+function giftCompletenessFor(
+  g: CrmCompletenessGiftInput,
+): CrmGiftCompletenessDetail {
+  if (g.satisfiedBy !== null) {
+    return { giftId: g.giftId, reasons: [], satisfiedBy: g.satisfiedBy };
+  }
+  const reasons: CrmRecordReason[] = g.crmReason ? [g.crmReason] : [];
+  return { giftId: g.giftId, reasons, satisfiedBy: null };
+}
+
+/** Build the crmRecordCompleteness sub-dimension from a set of linked CRM gifts. */
+export function buildCrmRecordCompleteness(
+  gifts: CrmCompletenessGiftInput[],
+): CrmRecordCompletenessOut {
+  if (gifts.length === 0) {
+    return {
+      complete: true,
+      completeGiftIds: [],
+      incompleteGiftIds: [],
+      reasonsByGift: [],
+    };
+  }
+  const details = gifts.map(giftCompletenessFor);
+  const completeGiftIds = details
+    .filter((d) => d.satisfiedBy !== null)
+    .map((d) => d.giftId);
+  const incompleteGiftIds = details
+    .filter((d) => d.satisfiedBy === null)
+    .map((d) => d.giftId);
+  return {
+    complete: incompleteGiftIds.length === 0,
+    completeGiftIds,
+    incompleteGiftIds,
+    reasonsByGift: details,
+  };
+}

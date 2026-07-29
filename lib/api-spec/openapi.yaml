@@ -5242,40 +5242,6 @@ paths:
         - { $ref: "#/components/parameters/Page" }
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/BundleAnchorListResponse" } } } }
-  /reconciliation/workbench-clusters:
-    get:
-      operationId: listWorkbenchClusters
-      tags: [reconciliation]
-      summary: The unified cluster list for the reconciliation workbench — every piece of money work as ONE row with its CRM, transaction and accounting facets.
-      description: |
-        One paginated list of reconciliation CLUSTERS — each row is a self-contained
-        unit of money work carrying all three facets (CRM gifts, transaction evidence,
-        bank & accounting records), the money math (gross − fees = net = bank, gap) and
-        a server-derived rollup status, so the workbench never re-derives state.
-        Exactly three cluster kinds partition the universe (money-safety mirrors the
-        bundle-anchor omission rules — a QB deposit settlement-linked to a payout
-        or tied to a charge reconciles THROUGH that cluster
-        and is never listed as its own row):
-          • stripe_payout — a payout with its charges, per-charge gift links,
-            settlement-linked QB deposit and linked processor-fee QB rows.
-          • qb_standalone — a QB staged payment/deposit with no payout or
-            charge/fee tie (checks, ACH, wires, direct gifts).
-          • crm_only — an on-books gift with NO counted QuickBooks or Stripe ledger
-            row (a Donorbox-only tie does not disqualify — it renders as a badge);
-            exempt/off-books gifts and reimbursable placeholders are omitted.
-        A gift legitimately paid by BOTH a Stripe charge and an independent QB row can
-        appear in two clusters (parallel evidence); both read completed.
-        `lensCounts` is computed over the same universe in the same request so the
-        rail counts always agree with the rows. Donor/gift names are anonymous-masked
-        for the viewer. Read-only; actions ship separately.
-      parameters:
-        - { name: lens, in: query, schema: { $ref: "#/components/schemas/WorkbenchLens" }, description: "Which lens to list (default all_open)." }
-        - { name: q, in: query, schema: { type: string }, description: "Free-text over payer/donor/gift names, QB memo/reference and charge/payout ids." }
-        - { $ref: "#/components/parameters/Limit" }
-        - { $ref: "#/components/parameters/Page" }
-      responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WorkbenchClusterListResponse" } } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
   /reconciliation/workbench-deposits:
     get:
       operationId: listWorkbenchDeposits
@@ -8504,7 +8470,7 @@ components:
       description: "List item for the unified reconciler — one per QB staged payment (the anchor). Carries the QB anchor facts + a compact best-guess summary; the full graph is fetched per card."
       properties:
         stagedPaymentId: { type: string }
-        qbCardState:     { $ref: "#/components/schemas/WorkbenchRowQbCardState", description: "The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-clusters). The raw staged-payment status is server-internal and no longer on this contract." }
+        qbCardState:     { $ref: "#/components/schemas/WorkbenchRowQbCardState", description: "The QB row's linkage status expressed in the ONE derived per-record QB card vocabulary (same as coverage.state.qbCards on workbench-deposits). The raw staged-payment status is server-internal and no longer on this contract." }
         queue:           { $ref: "#/components/schemas/QuickbooksStagedPaymentQueue" }
         amount:          { type: string, nullable: true }
         dateReceived:    { type: string, format: date, nullable: true }
@@ -9163,33 +9129,6 @@ components:
       properties:
         data:       { type: array, items: { $ref: "#/components/schemas/BundleAnchor" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
-    WorkbenchLens:
-      type: string
-      enum: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed, link_complete, attention_required, crm_only]
-      description: |
-        A lens is a saved filter over the cluster list — linkage-only in this phase
-        (record-adequacy lenses like "missing key info" are additive later).
-        all_open: any cluster with unresolved work (everything except completed and
-        purely-excluded clusters). needs_donor_or_gift: some evidence row still lacks
-        a confirmed CRM gift/donor (pending or match_proposed). needs_accounting:
-        money with no accounting side — a crm_only gift, or a payout with no settled
-        deposit (no pairing fact). settlement_gaps: a
-        payout whose Stripe-reported net (gross − fees) disagrees with the amount
-        that actually arrived at the bank — the money doesn't add up regardless of
-        linkage state. conflicts: retired (always empty) — conflict states rode
-        the removed settlement propose/confirm workflow. refunds: a charge carries a proposed
-        refund/chargeback propagation awaiting a human decision.
-        excluded_qb_says_donation: an excluded QB cluster whose line coding carries
-        a donation marker (a Donation item or a 4000/4100-series donation income
-        account) — likely wrongly excluded, surfaced for review.
-        excluded: every evidence row in the cluster is excluded. completed: all
-        linkage work done (evidence confirmed into gifts; payout settled).
-        A cluster carries EVERY lens it belongs to in `lenses` so dots and rail
-        counts agree.
-    WorkbenchClusterKind:
-      type: string
-      enum: [stripe_payout, qb_standalone, crm_only]
-      description: "Which anchor the cluster is built around: a Stripe payout bundle, a standalone QuickBooks staged payment/deposit, or a CRM gift with no processor/accounting evidence."
     WorkbenchClusterGift:
       type: object
       required: [giftId]
@@ -9286,13 +9225,6 @@ components:
                 donorKind: { type: string, enum: [organization, person, household] }
                 donorId:   { type: string }
                 donorName: { type: string, nullable: true }
-    WorkbenchClusterSettlement:
-      type: object
-      required: [lifecycle]
-      description: "The payout↔deposit pairing facts for a stripe_payout cluster, derived read-only from staged_payments.settled_stripe_payout_id (confirmed) or a negative payout amount (exempt — a Stripe withdrawal that never reaches the bank as a deposit)."
-      properties:
-        lifecycle:               { type: string, enum: [confirmed, exempt], description: "confirmed = a settled QB lump carries the pairing; exempt = negative payout (withdrawal)." }
-        depositStagedPaymentId:  { type: string, nullable: true, description: "The settled QB deposit lump (null for exempt)." }
     WorkbenchRowLinkCompleteness:
       type: string
       enum: [complete, partial, mixed, partial_mixed, missing]
@@ -9945,65 +9877,6 @@ components:
         lensCounts: { $ref: "#/components/schemas/WorkbenchDepositLensCounts" }
         pagination: { $ref: "#/components/schemas/Pagination" }
         viewerCanManageAccounting: { type: boolean }
-    WorkbenchCluster:
-      type: object
-      required: [id, kind, anchorId, status, lenses, gifts, charges, qbRecords, coverage]
-      description: |
-        One reconciliation cluster row. A single flat shape for all three kinds —
-        `kind` discriminates; kind-inapplicable fields are null/empty (house style,
-        mirrors BundleAnchor). Money fields are null when unknowable for the kind
-        (e.g. no fee data for QB-only money).
-      properties:
-        id:            { type: string, description: "Stable synthetic key: '<kind>:<anchorId>'." }
-        kind:          { $ref: "#/components/schemas/WorkbenchClusterKind" }
-        anchorId:      { type: string, description: "stripe_payouts.id (po_...), staged_payments.id, or gifts_and_payments.id per kind." }
-        date:          { type: string, format: date, nullable: true, description: "Anchor date: payout arrival, QB date received, or gift date received." }
-        title:         { type: string, nullable: true, description: "Display line for the row header: payer / donor / gift name, anonymous-masked." }
-        grossTotal:    { type: string, nullable: true, description: "Charge-sum gross for a payout, major units." }
-        feeTotal:      { type: string, nullable: true, description: "Processor-fee total for a payout, major units." }
-        refundTotal:   { type: string, nullable: true, description: "Σ |refund amounts| settling inside a payout, major units. Null for QB/crm_only clusters." }
-        adjustmentTotal: { type: string, nullable: true, description: "Net of adjustment-type balance txns settling inside a payout (fee refunds, failed-payment reversals, failed-payout recoveries), major units. Null for QB/crm_only clusters and payouts not yet re-synced." }
-        netTotal:      { type: string, nullable: true, description: "True Stripe-ledger net for a payout (gross − fees − refunds + adjustments; equals bank amount when Stripe's books balance); the staged amount for QB money; the gift amount for crm_only." }
-        bankAmount:    { type: string, nullable: true, description: "What hit the bank: the raw Stripe payout amount, or the settlement-linked/standalone QB deposit amount." }
-        gapAmount:     { type: string, nullable: true, description: "netTotal − bankAmount when both sides exist (the money-math gap line); null when either side is unknown." }
-        qbCandidateExists: { type: boolean, nullable: true, description: "For stripe_payout clusters with NO linked QB record: whether any lump-eligible QB candidate exists in the ingested data inside the matcher's amount/date window. False = likely not booked in QuickBooks yet (waiting on bookkeeping). Null for other cluster kinds or when a QB record is already linked." }
-        resolvedCount: { type: integer, nullable: true, description: "Evidence rows confirmed into gifts (excluded rows don't count toward the denominator). Null for crm_only." }
-        totalCount:    { type: integer, nullable: true, description: "Non-excluded evidence rows in the cluster. Null for crm_only." }
-        chargeCount:   { type: integer, nullable: true, description: "TRUE total charges behind a payout (charges[] is capped, mirrors bundle-anchors)." }
-        statusDetail:  { type: string, nullable: true, description: "Server-composed one-line diagnostic (e.g. '3 of 4 charges matched · no deposit tie yet'). Still needed: the UI shows it as the reason on an excluded cluster's card. Row STATUS words themselves derive from coverage.state, not from this field." }
-        lenses:        { type: array, items: { $ref: "#/components/schemas/WorkbenchLens" }, description: "Every lens this cluster belongs to (drives dots; agrees with lensCounts by construction)." }
-        gifts:         { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterGift" } }
-        charges:       { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterCharge" }, description: "Capped and ordered by amount desc; chargeCount carries the true total. Empty outside stripe_payout." }
-        qbRecords:     { type: array, items: { $ref: "#/components/schemas/WorkbenchClusterQbRecord" } }
-        settlement:    { allOf: [ { $ref: "#/components/schemas/WorkbenchClusterSettlement" } ], nullable: true, description: "Null for non-payout kinds and for orphan payouts with no settlement link yet." }
-        coverage:
-          $ref: "#/components/schemas/WorkbenchClusterCoverage"
-          description: "Three-dimension canonical cluster state (donorPurpose / paymentTransaction / accountingEvidence). Always present for all cluster kinds."
-    WorkbenchLensCounts:
-      type: object
-      required: [all_open, needs_donor_or_gift, needs_accounting, settlement_gaps, conflicts, refunds, excluded_qb_says_donation, excluded, completed, link_complete, attention_required, crm_only]
-      description: "Cluster counts per lens over the WHOLE universe (not the page), computed in the same request so the rail always agrees with the rows."
-      properties:
-        all_open:                  { type: integer }
-        needs_donor_or_gift:       { type: integer }
-        needs_accounting:          { type: integer }
-        settlement_gaps:           { type: integer }
-        conflicts:                 { type: integer }
-        refunds:                   { type: integer }
-        excluded_qb_says_donation: { type: integer }
-        excluded:                  { type: integer }
-        completed:                 { type: integer }
-        link_complete:             { type: integer, description: "Clusters where linkage is end-to-end complete but CRM records may still need work." }
-        attention_required:        { type: integer, description: "Clusters with a pending refund or other flag that blocks audit_ready status." }
-        crm_only:                  { type: integer, description: "On-books CRM gifts with no counted QB or Stripe ledger row." }
-    WorkbenchClusterListResponse:
-      type: object
-      required: [data, lensCounts, pagination, viewerCanManageAccounting]
-      properties:
-        data:       { type: array, items: { $ref: "#/components/schemas/WorkbenchCluster" } }
-        lensCounts: { $ref: "#/components/schemas/WorkbenchLensCounts" }
-        pagination: { $ref: "#/components/schemas/Pagination" }
-        viewerCanManageAccounting: { type: boolean, description: "Whether the CALLING user holds the finance (or admin) role and may change accounting relationships / QuickBooks treatment (business rules §6.2/§7.3). The UI grays gated actions with a labeled reason when false; the gated endpoints still enforce with a 403 finance_role_required." }
     WorkbenchRecentChangeUndo:
       type: object
       required: [kind, targetId]

@@ -2,8 +2,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import {
   clearPaymentApplicationsForStagedIds,
   clearPaymentApplicationsForChargeIds,
+  clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForStagedIds,
+  seedQbApplication,
   seedStripeApplication,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -72,7 +74,6 @@ let baseUrl = "";
 
 const stagedIds: string[] = [];
 const giftIds: string[] = [];
-const splitIds: string[] = [];
 const payoutIds: string[] = [];
 const chargeIds: string[] = [];
 const allocationIds: string[] = [];
@@ -132,13 +133,12 @@ async function seedStaged(opts: {
   const linkedGiftId =
     opts.matchedGiftId ?? opts.createdGiftId ?? opts.groupReconciledGiftId;
   if (linkedGiftId) {
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "100.00",
-      evidenceSource: "quickbooks",
       matchMethod: "system",
+      confirmedAt: null,
       createdTheGift: !!opts.createdGiftId,
     });
   }
@@ -146,25 +146,20 @@ async function seedStaged(opts: {
   return id;
 }
 
-// Link a staged payment to a pre-existing gift purely through the ledger: the
-// staged row carries NONE of the matched/created/group id columns — its
-// resolution lives entirely in its ONE counted payment_applications row
-// (counted-uniqueness, linear money model §7 step 5).
+// Link a staged payment to a pre-existing gift purely through the counted
+// unit→gift tie: the staged row carries NONE of the matched/created/group id
+// columns — its resolution lives entirely on its payment unit
+// (counted-uniqueness, linear money model §7 step 5). Returns the unit id.
 async function seedLedgerResolved(
   stagedPaymentId: string,
   giftId: string,
   subAmount: string,
 ): Promise<string> {
-  const id = nextId("split");
-  await db.insert(schema.paymentApplications).values({
-    id,
-    paymentUnitId: await unitIdForAnchor("quickbooks", stagedPaymentId),
+  return seedQbApplication({
+    stagedPaymentId,
     giftId,
     amountApplied: subAmount,
-    evidenceSource: "quickbooks",
   });
-  splitIds.push(id);
-  return id;
 }
 
 async function seedPayoutFor(
@@ -332,9 +327,10 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Charge-anchored ledger rows must go BEFORE their anchor charge (the FK is
-  // SET NULL and a nulled anchor trips the stripe-evidence CHECK).
+  // Charge-anchored ties and their canonical units must go BEFORE the anchor
+  // charge (units RESTRICT on stripe_charge_id).
   await clearPaymentApplicationsForChargeIds(chargeIds);
+  await clearPaymentUnitsForChargeIds(chargeIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
@@ -343,11 +339,10 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
-  if (splitIds.length)
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.id, splitIds));
   await clearPaymentApplicationsForStagedIds(stagedIds);
+  // Delete the staged rows' units outright — the staged FK is SET NULL, so
+  // deleting the payment would otherwise strand orphan units.
+  await clearPaymentUnitsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)

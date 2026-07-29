@@ -12,7 +12,7 @@ import { getTableColumns } from "drizzle-orm";
 import {
   clearPaymentApplicationsForRealm,
   qbCountedRowsForPayment,
-  unitIdForAnchor,
+  seedQbApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -140,12 +140,12 @@ async function seedStaged(
   });
   const linkGiftId = opts.linkedGiftId ?? opts.mintedGiftId;
   if (linkGiftId) {
-    await db.insert(schema.paymentApplications).values({
-      id: `${id}_pa`,
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: linkGiftId,
       amountApplied: "100.00",
-      evidenceSource: "quickbooks",
+      matchMethod: "system",
+      confirmedAt: null,
       createdTheGift: !!opts.mintedGiftId,
     });
   }

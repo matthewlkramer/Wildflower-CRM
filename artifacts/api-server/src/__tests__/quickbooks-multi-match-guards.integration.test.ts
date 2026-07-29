@@ -11,7 +11,7 @@ import {
   clearPaymentApplicationsForRealm,
   qbCountedRowsForPayment,
   qbSoleGiftIdForPayment,
-  unitIdForAnchor,
+  seedQbApplication,
 } from "./paymentApplicationsTestUtil";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import { getTableColumns } from "drizzle-orm";
@@ -156,14 +156,12 @@ async function seedStaged(
     organizationId: ORG_ID,
   });
   if (opts.linkedGiftId) {
-    await db.insert(schema.paymentApplications).values({
-      id: `${id}_pa_${opts.linkedGiftId}`,
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: opts.linkedGiftId,
       amountApplied: amount,
-      evidenceSource: "quickbooks",
       matchMethod: "system",
-      createdTheGift: false,
+      confirmedAt: null,
     });
   }
   return id;

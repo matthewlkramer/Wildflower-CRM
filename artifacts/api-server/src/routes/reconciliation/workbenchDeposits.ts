@@ -48,9 +48,9 @@ import {
   type QbCardEntry,
   type TransactionEntry,
   type WorkbenchRowState,
+  buildCrmRecordCompleteness,
 } from "./workbenchRowState";
 import { deriveDepositWorkbenchState } from "./workbenchDepositState";
-import { buildCrmRecordCompleteness } from "./workbenchClusters";
 import { reconAudit, fmtMoney } from "../../lib/reconciliationAudit";
 
 const router: IRouter = Router();
@@ -1352,24 +1352,12 @@ router.get(
               crmRecordCompleteness: buildCrmRecordCompleteness(
                 gifts.map((g) => ({
                   giftId: g.giftId,
-                  opportunityId: g.opportunityId,
-                  name: g.name,
-                  donorName: g.donorName,
-                  donorKind: g.donorKind,
-                  donorId: g.donorId,
-                  amount: g.amount,
-                  dateReceived: g.dateReceived,
-                  quickbooksTie: null,
-                  donorbox: g.donorbox,
-                  grantLetter: g.grantLetter,
-                  codingForm: g.codingForm,
-                  recordComplete: g.recordComplete,
                   satisfiedBy: g.recordComplete
-                    ? "donor_and_allocations"
+                    ? ("donor_and_allocations" as const)
                     : null,
-                  crmReason: g.recordComplete ? null : "missing_donor",
-                  linkedChargeIds: g.linkedChargeIds,
-                  linkedStagedPaymentIds: g.linkedStagedPaymentIds,
+                  crmReason: g.recordComplete
+                    ? null
+                    : ("missing_donor" as const),
                 })),
               ),
               complete:

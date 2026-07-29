@@ -12,10 +12,13 @@ import type { Server } from "node:http";
 import { getTableColumns } from "drizzle-orm";
 import { stagedStatusSql } from "../lib/derivedStatus";
 import {
+  clearPaymentApplicationsForGiftIds,
+  clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForStagedIds,
   qbMintedGiftIdForPayment,
   qbSoleGiftIdForPayment,
+  seedQbApplication,
   seedStripeApplication,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
@@ -281,17 +284,16 @@ async function seedStaged(opts: {
   });
   stagedIds.push(id);
   // A booked QB deposit/payment carries the gift it was minted into / matched
-  // to via the authoritative `payment_applications` ledger (the deprecated
-  // staged link columns are no longer written).
+  // to via the counted unit→gift tie (the deprecated staged link columns are
+  // no longer written).
   const linkedGiftId = opts.createdGiftId ?? opts.matchedGiftId ?? null;
   if (linkedGiftId) {
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "75.00",
-      evidenceSource: "quickbooks",
       matchMethod: "system",
+      confirmedAt: null,
       createdTheGift: opts.createdGiftId != null,
     });
   }
@@ -407,11 +409,8 @@ afterAll(async () => {
     await db
       .delete(schema.giftAllocations)
       .where(inArrayFn(schema.giftAllocations.giftId, allGiftIds));
-  // A QB mint books a cash-application ledger row (RESTRICT FK → gift).
-  if (allGiftIds.length)
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.giftId, allGiftIds));
+  // Unit→gift ties RESTRICT the gift delete — detach them first.
+  await clearPaymentApplicationsForGiftIds(allGiftIds);
   if (allGiftIds.length)
     await db
       .delete(schema.giftsAndPayments)
@@ -420,6 +419,9 @@ afterAll(async () => {
     await db
       .delete(schema.reconciliationBundleDrafts)
       .where(inArrayFn(schema.reconciliationBundleDrafts.id, draftIds));
+  // Units RESTRICT their anchor charge; staged-sourced units would be
+  // stranded orphans (SET NULL) — delete both sets before their anchors.
+  await clearPaymentUnitsForChargeIds(chargeIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
@@ -428,6 +430,7 @@ afterAll(async () => {
     await db
       .delete(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, payoutIds));
+  await clearPaymentUnitsForStagedIds(stagedIds);
   if (stagedIds.length)
     await db
       .delete(schema.stagedPayments)

@@ -717,9 +717,8 @@ router.get(
         stagedPaymentId: row.id,
         stripeChargeId: isCharge ? row.chargeId : null,
         // The QB ROW's linkage status in the ONE derived per-record QB card
-        // vocabulary (same mapping the workbench-clusters endpoint uses for
-        // coverage.state.qbCards). The raw staged-payment status is never
-        // compared directly and is NOT on the wire.
+        // vocabulary (qbCardStateOfStatus). The raw staged-payment status is
+        // never compared directly and is NOT on the wire.
         qbCardState: qbCardStateOfStatus(row.status),
         queue: row.queue,
         // A charge card reconciles for the charge's own gross, not the QB lump.

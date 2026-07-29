@@ -2,7 +2,12 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
-  unitIdForAnchor,
+  clearPaymentUnitsForChargeIds,
+  clearPaymentUnitsForDonorboxIds,
+  clearPaymentUnitsForStagedIds,
+  seedDonorboxApplication,
+  seedQbApplication,
+  seedStripeApplication,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
@@ -161,19 +166,17 @@ async function seedStaged(opts: {
     matchStatus: "unmatched",
   });
   stagedIds.push(id);
-  // QB cash-application links live SOLELY in the authoritative ledger: any
-  // staged payment that links a gift (matched / created / group-reconciled)
-  // gets a `payment_applications` row. The teardown clears these by
+  // QB cash-application links live SOLELY on the payment-unit gift pointer:
+  // any staged payment that links a gift (matched / created / group-
+  // reconciled) gets its unit's gift_id set. The teardown detaches these by
   // payment_id before deleting staged_payments.
   const linkedGiftId =
     opts.matchedGiftId ?? opts.createdGiftId ?? opts.groupReconciledGiftId ?? null;
   if (linkedGiftId) {
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", id),
+    await seedQbApplication({
+      stagedPaymentId: id,
       giftId: linkedGiftId,
       amountApplied: opts.amount ?? "100.00",
-      evidenceSource: "quickbooks",
       matchMethod: "system",
       createdTheGift: opts.createdGiftId != null,
     });
@@ -211,42 +214,24 @@ async function seedDonorboxDonation(): Promise<string> {
   return id;
 }
 
-// Book a COUNTED cash-application ledger row for a non-QB processor (Stripe /
-// Donorbox). This is the authoritative "settled through a non-QB processor"
-// signal the gifts-missing-qb read consults (stripeLedgerExistsForGift /
-// donorboxLedgerExistsForGift) — such money lands in QuickBooks at the payout
-// level, not per gift, so the gift is reconciled and must NOT surface as
-// "missing a QB record".
+// Book a COUNTED gift tie for a non-QB processor (Stripe / Donorbox) on the
+// payment unit. This is the authoritative "settled through a non-QB
+// processor" signal the gifts-missing-qb read consults
+// (stripeLedgerExistsForGift / donorboxLedgerExistsForGift) — such money
+// lands in QuickBooks at the payout level, not per gift, so the gift is
+// reconciled and must NOT surface as "missing a QB record".
 async function seedStripeLedgerRow(
   giftId: string,
   stripeChargeId: string,
 ): Promise<void> {
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    giftId,
-    paymentUnitId: await unitIdForAnchor("stripe", stripeChargeId),
-    amountApplied: "100.00",
-    evidenceSource: "stripe",
-    matchMethod: "human",
-    linkRole: "counted",
-    createdTheGift: false,
-  });
+  await seedStripeApplication({ stripeChargeId, giftId });
 }
 
 async function seedDonorboxLedgerRow(
   giftId: string,
   donorboxDonationId: string,
 ): Promise<void> {
-  await db.insert(schema.paymentApplications).values({
-    id: nextId("pa"),
-    giftId,
-    paymentUnitId: await unitIdForAnchor("donorbox", donorboxDonationId),
-    amountApplied: "100.00",
-    evidenceSource: "donorbox",
-    matchMethod: "human",
-    linkRole: "counted",
-    createdTheGift: false,
-  });
+  await seedDonorboxApplication({ donorboxDonationId, giftId });
 }
 
 type ProposedPayment = {
@@ -320,12 +305,15 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB) return;
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
-  // Clear every ledger row for the test gifts FIRST. Stripe/Donorbox-anchored
-  // rows carry payment_id = NULL (so the by-staged-id clear never reaches them)
-  // and their anchor FKs are ON DELETE SET NULL, which would trip the evidence
-  // CHECK if we deleted the parent charge/donation while the row still existed.
+  // Detach every gift tie FIRST (gift_id is RESTRICT-parented), then delete
+  // the units minted for our anchors (stripe_charge_id is RESTRICT; the
+  // staged/donorbox FKs are SET NULL and would strand orphan units), and only
+  // then the anchor rows themselves.
   await clearPaymentApplicationsForGiftIds(giftIds);
   await clearPaymentApplicationsForStagedIds(stagedIds);
+  await clearPaymentUnitsForChargeIds(chargeIds);
+  await clearPaymentUnitsForStagedIds(stagedIds);
+  await clearPaymentUnitsForDonorboxIds(donorboxDonationIds);
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)
@@ -429,27 +417,23 @@ describe.skipIf(!HAS_DB)("GET /reconciliation/gifts-missing-qb (integration)", (
     expect(resNoQ.json.linkedMatches).toBeUndefined();
   }, 30_000);
 
-  it("excludes a gift QB-linked ONLY via the ledger (no legacy columns) — proves the read consults payment_applications", async () => {
-    // Ledger-only divergence: a staged payment with NO legacy matched/created/
-    // group pointer, whose only tie to the gift is a `payment_applications` row.
+  it("excludes a gift QB-linked ONLY via the unit gift pointer (no legacy columns) — proves the read consults payment_units", async () => {
+    // Pointer-only divergence: a staged payment with NO legacy matched/created/
+    // group pointer, whose only tie to the gift is its payment unit's gift_id.
     // The legacy read (staged_payments.*_gift_id) would still surface this gift as
-    // "missing QB"; the ledger read must EXCLUDE it. This is the one state where
+    // "missing QB"; the pointer read must EXCLUDE it. This is the one state where
     // the two reads disagree, so it isolates which source the endpoint trusts.
     const org = await seedOrg({ label: "Ledger-Only Org" });
     const giftLedgerOnly = await seedGift({ organizationId: org });
-    const stagedUnlinked = await seedStaged({ label: "ledger-only" }); // no legacy link ⇒ no auto PA row
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      paymentUnitId: await unitIdForAnchor("quickbooks", stagedUnlinked),
+    const stagedUnlinked = await seedStaged({ label: "ledger-only" }); // no legacy link ⇒ no auto tie
+    await seedQbApplication({
+      stagedPaymentId: stagedUnlinked,
       giftId: giftLedgerOnly,
-      amountApplied: "100.00",
-      evidenceSource: "quickbooks",
       matchMethod: "system",
-      createdTheGift: false,
     });
 
     const { ids } = await listGifts(`q=${encodeURIComponent(MARKER)}&limit=200`);
-    expect(ids.has(giftLedgerOnly)).toBe(false); // ledger row alone excludes it
+    expect(ids.has(giftLedgerOnly)).toBe(false); // unit gift pointer alone excludes it
   }, 30_000);
 
   it("excludes a gift settled through a non-QB processor via a COUNTED Stripe or Donorbox ledger row", async () => {

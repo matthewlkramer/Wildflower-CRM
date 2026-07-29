@@ -240,7 +240,7 @@ export async function clearPaymentApplicationsForGiftIds(
 export async function seedStripeApplication(args: {
   stripeChargeId: string;
   giftId: string;
-  amountApplied: string;
+  amountApplied?: string;
   createdTheGift?: boolean;
   matchMethod?: "system" | "system_confirmed" | "human";
   confirmedAt?: Date | null;
@@ -252,6 +252,77 @@ export async function seedStripeApplication(args: {
     db,
     "stripe",
     args.stripeChargeId,
+  );
+  await db
+    .update(paymentUnits)
+    .set({
+      giftId: args.giftId,
+      giftMatchMethod: args.matchMethod ?? "human",
+      giftConfirmedAt:
+        args.confirmedAt === undefined ? new Date() : args.confirmedAt,
+      createdTheGift: args.createdTheGift ?? false,
+      updatedAt: new Date(),
+    })
+    .where(eq(paymentUnits.id, paymentUnitId));
+  return paymentUnitId;
+}
+
+/**
+ * Seed a counted QuickBooks-evidence tie — the test replacement for raw
+ * `payment_applications` inserts (the ledger is retired and never written by
+ * production code; guards and flags read `payment_units.gift_id`). A staged
+ * payment is "booked" against a gift if and only if its unit carries the
+ * gift tie. Returns the payment unit id.
+ */
+export async function seedQbApplication(args: {
+  stagedPaymentId: string;
+  giftId: string;
+  amountApplied?: string;
+  createdTheGift?: boolean;
+  matchMethod?: "system" | "system_confirmed" | "human";
+  confirmedAt?: Date | null;
+}): Promise<string> {
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
+  const { ensurePaymentUnit } = await import("../lib/paymentUnits");
+  const paymentUnitId = await ensurePaymentUnit(
+    db,
+    "quickbooks",
+    args.stagedPaymentId,
+  );
+  await db
+    .update(paymentUnits)
+    .set({
+      giftId: args.giftId,
+      giftMatchMethod: args.matchMethod ?? "human",
+      giftConfirmedAt:
+        args.confirmedAt === undefined ? new Date() : args.confirmedAt,
+      createdTheGift: args.createdTheGift ?? false,
+      updatedAt: new Date(),
+    })
+    .where(eq(paymentUnits.id, paymentUnitId));
+  return paymentUnitId;
+}
+
+/**
+ * Seed a counted Donorbox-evidence tie (Donorbox-only money — no Stripe
+ * charge, no staged payment). Same pointer semantics as the Stripe/QB seeds.
+ * Returns the payment unit id.
+ */
+export async function seedDonorboxApplication(args: {
+  donorboxDonationId: string;
+  giftId: string;
+  createdTheGift?: boolean;
+  matchMethod?: "system" | "system_confirmed" | "human";
+  confirmedAt?: Date | null;
+}): Promise<string> {
+  const { db, paymentUnits } = await import("@workspace/db");
+  const { eq } = await import("drizzle-orm");
+  const { ensurePaymentUnit } = await import("../lib/paymentUnits");
+  const paymentUnitId = await ensurePaymentUnit(
+    db,
+    "donorbox",
+    args.donorboxDonationId,
   );
   await db
     .update(paymentUnits)
@@ -374,4 +445,77 @@ export async function clearPaymentUnitsForChargeIds(
   await db
     .delete(paymentUnits)
     .where(inArray(paymentUnits.stripeChargeId, chargeIds));
+}
+
+/**
+ * Delete canonical payment units minted for a set of QB staged payments
+ * (with their deposit components, tie source_links, and legacy ledger rows).
+ * The staged FK is SET NULL, so deleting the payment would otherwise strand
+ * an orphan unit in the shared test DB; delete the unit outright instead.
+ */
+export async function clearPaymentUnitsForStagedIds(
+  stagedIds: string[],
+): Promise<void> {
+  if (!stagedIds.length) return;
+  const {
+    db,
+    bankDepositComponents,
+    paymentApplications,
+    paymentUnits,
+    sourceLinks,
+  } = await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
+  const unitIds = db
+    .select({ id: paymentUnits.id })
+    .from(paymentUnits)
+    .where(inArray(paymentUnits.sourceStagedPaymentId, stagedIds));
+  await db
+    .delete(bankDepositComponents)
+    .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
+  await db
+    .delete(paymentApplications)
+    .where(inArray(paymentApplications.paymentUnitId, unitIds));
+  await db
+    .delete(sourceLinks)
+    .where(inArray(sourceLinks.paymentUnitId, unitIds));
+  await db
+    .delete(paymentUnits)
+    .where(inArray(paymentUnits.sourceStagedPaymentId, stagedIds));
+}
+
+/**
+ * Delete canonical payment units minted for a set of Donorbox donations.
+ * Same rationale as the staged variant (donation FK is SET NULL — deleting
+ * the donation strands an orphan unit).
+ */
+export async function clearPaymentUnitsForDonorboxIds(
+  donorboxDonationIds: string[],
+): Promise<void> {
+  if (!donorboxDonationIds.length) return;
+  const {
+    db,
+    bankDepositComponents,
+    paymentApplications,
+    paymentUnits,
+    sourceLinks,
+  } = await import("@workspace/db");
+  const { inArray } = await import("drizzle-orm");
+  const unitIds = db
+    .select({ id: paymentUnits.id })
+    .from(paymentUnits)
+    .where(inArray(paymentUnits.donorboxDonationId, donorboxDonationIds));
+  await db
+    .delete(bankDepositComponents)
+    .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
+  await db
+    .delete(paymentApplications)
+    .where(inArray(paymentApplications.paymentUnitId, unitIds));
+  await db
+    .delete(sourceLinks)
+    .where(inArray(sourceLinks.paymentUnitId, unitIds));
+  await db
+    .delete(paymentUnits)
+    .where(
+      inArray(paymentUnits.donorboxDonationId, donorboxDonationIds),
+    );
 }

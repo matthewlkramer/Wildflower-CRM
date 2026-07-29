@@ -51,6 +51,7 @@ let db: (typeof import("@workspace/db"))["db"];
 let schema: typeof import("@workspace/db");
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
+let likeFn: (typeof import("drizzle-orm"))["like"];
 let server: Server;
 let baseUrl = "";
 let seq = 0;
@@ -253,6 +254,7 @@ beforeAll(async () => {
   db = schema.db;
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
+  likeFn = drizzle.like;
   await db.insert(schema.users).values({
     id: TEST_USER_ID,
     clerkId: `clerk_${TEST_USER_ID}`,
@@ -337,12 +339,18 @@ beforeEach(() => {
 describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
   it("writes only the bank-deposit exclusion row and supports update, validation, auth, and removal", async () => {
     const deposit = await seedDeposit("Deposit exclusion API test", "321.00");
+    // Scope the no-mint snapshot to rows derived from THIS suite's anchors
+    // (unit ids embed the anchor id, which embeds RUN). Parallel vitest
+    // workers legitimately mint units for their own suites mid-test, so a
+    // whole-table snapshot is inherently racy.
     const beforeUnits = await db
       .select({ id: schema.paymentUnits.id })
-      .from(schema.paymentUnits);
+      .from(schema.paymentUnits)
+      .where(likeFn(schema.paymentUnits.id, `%${RUN}%`));
     const beforeApplications = await db
       .select({ id: schema.paymentApplications.id })
-      .from(schema.paymentApplications);
+      .from(schema.paymentApplications)
+      .where(likeFn(schema.paymentApplications.id, `%${RUN}%`));
 
     const first = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
@@ -431,10 +439,12 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
 
     const afterUnits = await db
       .select({ id: schema.paymentUnits.id })
-      .from(schema.paymentUnits);
+      .from(schema.paymentUnits)
+      .where(likeFn(schema.paymentUnits.id, `%${RUN}%`));
     const afterApplications = await db
       .select({ id: schema.paymentApplications.id })
-      .from(schema.paymentApplications);
+      .from(schema.paymentApplications)
+      .where(likeFn(schema.paymentApplications.id, `%${RUN}%`));
     expect(afterUnits).toEqual(beforeUnits);
     expect(afterApplications).toEqual(beforeApplications);
   });
