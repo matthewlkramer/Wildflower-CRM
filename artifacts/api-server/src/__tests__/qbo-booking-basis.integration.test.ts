@@ -134,11 +134,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  const paymentIds = [
-    ids.grossPayment,
-    ids.netPayment,
-    ids.unmatchedPayment,
-  ];
+  const paymentIds = [ids.grossPayment, ids.netPayment, ids.unmatchedPayment];
   await db
     .delete(schema.qboAccountingChecks)
     .where(inArrayFn(schema.qboAccountingChecks.stagedPaymentId, paymentIds));
