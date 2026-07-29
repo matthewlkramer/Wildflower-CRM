@@ -300,6 +300,8 @@ export default function ReconciliationDepositsPage() {
     "search",
   );
   const [knownPaymentSearch, setKnownPaymentSearch] = useState("");
+  const [knownPaymentFilterAmount, setKnownPaymentFilterAmount] = useState("");
+  const [knownPaymentFilterDate, setKnownPaymentFilterDate] = useState("");
   const [knownPaymentAmount, setKnownPaymentAmount] = useState("");
   const [knownPaymentKind, setKnownPaymentKind] = useState<
     "check" | "direct_ach" | "wire" | "other"
@@ -374,7 +376,9 @@ export default function ReconciliationDepositsPage() {
     {
       amount: knownPaymentFor?.remainder,
       q: knownPaymentSearch.trim() || undefined,
-      limit: 25,
+      filterAmount: knownPaymentFilterAmount.trim() || undefined,
+      filterDate: knownPaymentFilterDate || undefined,
+      limit: 100,
     },
     {
       query: {
@@ -384,7 +388,9 @@ export default function ReconciliationDepositsPage() {
           {
             amount: knownPaymentFor?.remainder,
             q: knownPaymentSearch.trim() || undefined,
-            limit: 25,
+            filterAmount: knownPaymentFilterAmount.trim() || undefined,
+            filterDate: knownPaymentFilterDate || undefined,
+            limit: 100,
           },
         ),
       },
@@ -824,6 +830,8 @@ export default function ReconciliationDepositsPage() {
     });
     setKnownPaymentFor(null);
     setKnownPaymentSearch("");
+    setKnownPaymentFilterAmount("");
+    setKnownPaymentFilterDate("");
     invalidate();
   };
   const handleUnlinkCandidatePaymentUnit = async (
@@ -848,6 +856,8 @@ export default function ReconciliationDepositsPage() {
     });
     setKnownPaymentFor(null);
     setKnownPaymentSearch("");
+    setKnownPaymentFilterAmount("");
+    setKnownPaymentFilterDate("");
     invalidate();
   };
   const handleRemoveManualComponent = async () => {
@@ -1045,6 +1055,8 @@ export default function ReconciliationDepositsPage() {
       setKnownPaymentFor({ depositId, remainder });
       setKnownPaymentMode("search");
       setKnownPaymentSearch("");
+      setKnownPaymentFilterAmount("");
+      setKnownPaymentFilterDate("");
       setKnownPaymentAmount(remainder);
       setKnownPaymentDate("");
     },
@@ -1289,10 +1301,14 @@ export default function ReconciliationDepositsPage() {
                     deposit={deposit}
                     actions={actions}
                     onConfirmProvisional={(id) =>
-                      void confirmDepositQbo.mutateAsync({ id }).then(invalidate)
+                      void confirmDepositQbo
+                        .mutateAsync({ id })
+                        .then(invalidate)
                     }
                     onDismissProvisional={(id) =>
-                      void dismissDepositQbo.mutateAsync({ id }).then(invalidate)
+                      void dismissDepositQbo
+                        .mutateAsync({ id })
+                        .then(invalidate)
                     }
                   />
                 ))}
@@ -1407,6 +1423,31 @@ export default function ReconciliationDepositsPage() {
                 onChange={(event) => setKnownPaymentSearch(event.target.value)}
                 placeholder="Search payer, memo, or payment unit…"
               />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="space-y-1 text-xs">
+                  <span className="font-medium">Amount</span>
+                  <Input
+                    value={knownPaymentFilterAmount}
+                    onChange={(event) =>
+                      setKnownPaymentFilterAmount(event.target.value)
+                    }
+                    inputMode="decimal"
+                    placeholder="Any amount"
+                    aria-label="Filter payments by amount"
+                  />
+                </label>
+                <label className="space-y-1 text-xs">
+                  <span className="font-medium">Date</span>
+                  <Input
+                    type="date"
+                    value={knownPaymentFilterDate}
+                    onChange={(event) =>
+                      setKnownPaymentFilterDate(event.target.value)
+                    }
+                    aria-label="Filter payments by date"
+                  />
+                </label>
+              </div>
               <div className="max-h-64 space-y-2 overflow-y-auto">
                 {candidatePaymentUnits.isLoading ? (
                   <p className="text-sm text-muted-foreground">
@@ -1475,8 +1516,8 @@ export default function ReconciliationDepositsPage() {
                   ))
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    No payment units match this search. Try a payer, memo,
-                    amount, date, or payment-unit ID.
+                    No payment units match this search and filters. Try a payer,
+                    memo, amount, date, or payment-unit ID.
                   </p>
                 )}
               </div>

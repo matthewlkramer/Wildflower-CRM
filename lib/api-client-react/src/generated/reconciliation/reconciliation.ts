@@ -937,8 +937,8 @@ export function useListDepositCandidatePayouts<TData = Awaited<ReturnType<typeof
 
 
 /**
- * Finance/admin review only. Returns check, direct ACH, wire, and other payment units that are not already attached to a bank deposit component. Results can be narrowed by amount and source text.
- * @summary List unclaimed non-Stripe payment units for a deposit remainder.
+ * Finance/admin review only. Returns check, direct ACH, wire, and other payment units, including units already attached to this or another bank deposit. Results can be searched broadly and optionally filtered by exact amount and received date.
+ * @summary List eligible non-Stripe payment units for a deposit remainder.
  */
 export const getListDepositCandidatePaymentUnitsUrl = (bankDepositId: string,
     params?: ListDepositCandidatePaymentUnitsParams,) => {
@@ -1004,7 +1004,7 @@ export type ListDepositCandidatePaymentUnitsQueryError = ErrorType<FinanceForbid
 
 
 /**
- * @summary List unclaimed non-Stripe payment units for a deposit remainder.
+ * @summary List eligible non-Stripe payment units for a deposit remainder.
  */
 
 export function useListDepositCandidatePaymentUnits<TData = Awaited<ReturnType<typeof listDepositCandidatePaymentUnits>>, TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse>>(
