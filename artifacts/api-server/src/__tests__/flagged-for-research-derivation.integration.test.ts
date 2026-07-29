@@ -48,6 +48,11 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
+}));
+
 type Db = typeof import("@workspace/db");
 
 let db: Db["db"];
@@ -97,13 +102,37 @@ async function resolveFlag(id: string): Promise<void> {
 }
 
 // The four detail routes and the record each one targets.
-const CASES: Array<{ label: string; path: string; targetType: string; targetId: string }> =
-  [
-    { label: "organization", path: `/api/organizations/${ORG_ID}`, targetType: "organization", targetId: ORG_ID },
-    { label: "person", path: `/api/people/${PERSON_ID}`, targetType: "person", targetId: PERSON_ID },
-    { label: "opportunity/pledge", path: `/api/opportunities-and-pledges/${OPP_ID}`, targetType: "opportunity", targetId: OPP_ID },
-    { label: "gift", path: `/api/gifts-and-payments/${GIFT_ID}`, targetType: "gift", targetId: GIFT_ID },
-  ];
+const CASES: Array<{
+  label: string;
+  path: string;
+  targetType: string;
+  targetId: string;
+}> = [
+  {
+    label: "organization",
+    path: `/api/organizations/${ORG_ID}`,
+    targetType: "organization",
+    targetId: ORG_ID,
+  },
+  {
+    label: "person",
+    path: `/api/people/${PERSON_ID}`,
+    targetType: "person",
+    targetId: PERSON_ID,
+  },
+  {
+    label: "opportunity/pledge",
+    path: `/api/opportunities-and-pledges/${OPP_ID}`,
+    targetType: "opportunity",
+    targetId: OPP_ID,
+  },
+  {
+    label: "gift",
+    path: `/api/gifts-and-payments/${GIFT_ID}`,
+    targetType: "gift",
+    targetId: GIFT_ID,
+  },
+];
 
 beforeAll(async () => {
   if (!HAS_DB) return;
@@ -134,7 +163,11 @@ beforeAll(async () => {
     .values({ id: PERSON_ID, fullName: `Flag Deriv Person ${RUN}` });
   await db
     .insert(schema.opportunitiesAndPledges)
-    .values({ id: OPP_ID, name: `Flag Deriv Opp ${RUN}`, organizationId: ORG_ID });
+    .values({
+      id: OPP_ID,
+      name: `Flag Deriv Opp ${RUN}`,
+      organizationId: ORG_ID,
+    });
   await db.insert(schema.giftsAndPayments).values({
     id: GIFT_ID,
     amount: "250.00",
@@ -174,25 +207,28 @@ afterAll(async () => {
   await db.delete(schema.users).where(eqFn(schema.users.id, USER_ID));
 }, 60_000);
 
-describe.skipIf(!HAS_DB)("flaggedForResearch derivation on detail routes", () => {
-  for (const { label, path, targetType, targetId } of CASES) {
-    it(`${label}: false when unflagged, true when an open item exists, false after resolve`, async () => {
-      // No Cleanup Queue item yet -> badge off.
-      const before = await getDetail(path);
-      expect(before.status).toBe(200);
-      expect(before.json.flaggedForResearch).toBe(false);
+describe.skipIf(!HAS_DB)(
+  "flaggedForResearch derivation on detail routes",
+  () => {
+    for (const { label, path, targetType, targetId } of CASES) {
+      it(`${label}: false when unflagged, true when an open item exists, false after resolve`, async () => {
+        // No Cleanup Queue item yet -> badge off.
+        const before = await getDetail(path);
+        expect(before.status).toBe(200);
+        expect(before.json.flaggedForResearch).toBe(false);
 
-      // Flag it (open needs_research item) -> badge on.
-      const cleanupId = await flag(targetType, targetId);
-      const flagged = await getDetail(path);
-      expect(flagged.status).toBe(200);
-      expect(flagged.json.flaggedForResearch).toBe(true);
+        // Flag it (open needs_research item) -> badge on.
+        const cleanupId = await flag(targetType, targetId);
+        const flagged = await getDetail(path);
+        expect(flagged.status).toBe(200);
+        expect(flagged.json.flaggedForResearch).toBe(true);
 
-      // Resolve the item (open -> resolved) -> badge off again.
-      await resolveFlag(cleanupId);
-      const after = await getDetail(path);
-      expect(after.status).toBe(200);
-      expect(after.json.flaggedForResearch).toBe(false);
-    });
-  }
-});
+        // Resolve the item (open -> resolved) -> badge off again.
+        await resolveFlag(cleanupId);
+        const after = await getDetail(path);
+        expect(after.status).toBe(200);
+        expect(after.json.flaggedForResearch).toBe(false);
+      });
+    }
+  },
+);

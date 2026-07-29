@@ -1,4 +1,12 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -46,6 +54,11 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
+}));
+
 type Db = typeof import("@workspace/db");
 
 let db: Db["db"];
@@ -68,6 +81,8 @@ type CleanupItem = {
   reasonCode: string;
   note: string;
   status: string;
+  flaggedByUserId: string | null;
+  flaggedByUserName: string | null;
 };
 
 async function flag(
@@ -105,6 +120,7 @@ beforeAll(async () => {
     id: USER_ID,
     clerkId: `clerk_${USER_ID}`,
     email: `${USER_ID}@wildflowerschools.org`,
+    displayName: "Cleanup Queue Reporter",
     role: "team_member",
   });
   await db
@@ -167,6 +183,8 @@ describe.skipIf(!HAS_DB)("POST /cleanup-queue (flag for research)", () => {
     expect(json.targetType).toBe("opportunity");
     expect(json.targetId).toBe(OPP_ID);
     expect(json.reasonCode).toBe("needs_research");
+    expect(json.flaggedByUserId).toBe(USER_ID);
+    expect(json.flaggedByUserName).toBe("Cleanup Queue Reporter");
     expect(json.status).toBe("open");
   });
 
@@ -188,6 +206,35 @@ describe.skipIf(!HAS_DB)("POST /cleanup-queue (flag for research)", () => {
       .from(schema.cleanupQueue)
       .where(eqFn(schema.cleanupQueue.targetId, OPP_ID));
     expect(rows.length).toBe(1);
+  });
+
+  it("updates the shared cleanup note", async () => {
+    const res = await fetch(`${baseUrl}/api/cleanup-queue/${CLEANUP_ID}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        note: "Original issue.\n\nCleanup Queue Reporter: I checked the source file and still need a second review.",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as CleanupItem;
+    expect(json.note).toContain("still need a second review");
+    expect(json.flaggedByUserName).toBe("Cleanup Queue Reporter");
+
+    const stored = await db
+      .select({ note: schema.cleanupQueue.note })
+      .from(schema.cleanupQueue)
+      .where(eqFn(schema.cleanupQueue.id, CLEANUP_ID));
+    expect(stored[0]?.note).toBe(json.note);
+  });
+
+  it("rejects an empty replacement note", async () => {
+    const res = await fetch(`${baseUrl}/api/cleanup-queue/${CLEANUP_ID}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ note: "   " }),
+    });
+    expect(res.status).toBe(400);
   });
 
   it("rejects a blank note (400)", async () => {
