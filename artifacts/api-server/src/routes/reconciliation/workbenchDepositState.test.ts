@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  depositCompleteFromState,
   deriveDepositWorkbenchState,
   type DepositTransactionInput,
   type DepositWorkbenchStateInput,
 } from "./workbenchDepositState";
-import { rowCompleteFromState } from "./workbenchRowState";
 
 const matched = (
   id: string,
@@ -78,7 +78,7 @@ describe("deriveDepositWorkbenchState", () => {
       state: "partial",
       relationshipCount: 1,
     });
-    expect(rowCompleteFromState(state)).toBe(false);
+    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("does not let an evidence-only row become CRM complete through Array.every on an empty list", () => {
@@ -86,17 +86,17 @@ describe("deriveDepositWorkbenchState", () => {
 
     expect(state.information.crmComplete).toBe(false);
     expect(state.information.state).toBe("incomplete");
-    expect(rowCompleteFromState(state)).toBe(false);
+    expect(depositCompleteFromState(state)).toBe(false);
   });
 
-  it("marks a fully linked deposit with complete CRM records and accounting evidence audit-ready", () => {
+  it("marks a fully linked, CRM-complete, evidenced deposit operationally complete", () => {
     const state = deriveDepositWorkbenchState(base());
 
     expect(state.linkage.state).toBe("complete");
-    expect(state.information.qbComplete).toBe(true);
+    expect(state.information.crmComplete).toBe(true);
     expect(state.information.qbEvidenceComplete).toBe(true);
-    expect(state.information.state).toBe("audit_ready");
-    expect(rowCompleteFromState(state)).toBe(true);
+    expect(state.information.state).toBe("accounting_pending");
+    expect(depositCompleteFromState(state)).toBe(true);
   });
 
   it("keeps a fully linked row open when accounting evidence is absent", () => {
@@ -105,9 +105,8 @@ describe("deriveDepositWorkbenchState", () => {
     );
 
     expect(state.linkage.state).toBe("complete");
-    expect(state.information.qbComplete).toBe(false);
-    expect(state.information.state).toBe("accounting_pending");
-    expect(rowCompleteFromState(state)).toBe(false);
+    expect(state.information.qbEvidenceComplete).toBe(false);
+    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("ignores excluded transactions when measuring active transaction coverage", () => {
@@ -151,6 +150,7 @@ describe("deriveDepositWorkbenchState", () => {
 
     expect(state.linkage.state).toBe("partial");
     expect(state.linkage.transactionToCrm.state).toBe("missing");
+    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("keeps accounting corrections as attention-required without changing the underlying relationship facts", () => {
@@ -161,6 +161,6 @@ describe("deriveDepositWorkbenchState", () => {
     expect(state.linkage.state).toBe("complete");
     expect(state.flags.attentionRequired).toBe(true);
     expect(state.information.state).toBe("accounting_pending");
-    expect(rowCompleteFromState(state)).toBe(false);
+    expect(depositCompleteFromState(state)).toBe(false);
   });
 });
