@@ -69,6 +69,7 @@ export * from "./qboAccountingChecks";
 export * from "./connectionEnthusiasmHistory";
 export * from "./grantLeads";
 export * from "./auditLog";
+export * from "./appFeedback";
 export * from "./duplicateDismissals";
 export * from "./cleanupQueue";
 export * from "./codingFormRows";

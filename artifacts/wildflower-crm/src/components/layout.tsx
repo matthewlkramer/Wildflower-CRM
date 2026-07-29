@@ -41,6 +41,7 @@ import { HeaderEntityFilter } from "@/components/entity-filter";
 import { SidebarCollapsedContext } from "@/components/sidebar-collapsed-context";
 import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
 import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
+import { FeedbackDialog } from "@/components/feedback-dialog";
 
 type NavLink = {
   href: string;
@@ -84,6 +85,7 @@ const navItems: NavEntry[] = [
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/admin/feedback", label: "Feedback", icon: MessageSquare, adminOnly: true },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
@@ -131,7 +133,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           );
         }
-        const isActive = location === item.href || location.startsWith(`${item.href}/`);
+        const isActive = location === item.href || (item.href !== "/admin" && location.startsWith(`${item.href}/`));
         const Icon = item.icon;
         const indented = !collapsed && "indent" in item && item.indent;
         return (
@@ -304,6 +306,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
           {/* Right: action buttons */}
           <div className="flex items-center gap-2">
+            <FeedbackDialog />
             <AddMeetingNoteDialog unpinned />
             <CommandPaletteTrigger />
             <HeaderEntityFilter />
