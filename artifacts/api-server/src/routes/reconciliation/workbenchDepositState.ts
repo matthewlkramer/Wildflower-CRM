@@ -1,4 +1,5 @@
 import {
+  QB_DOCUMENTATION_COMPLETE,
   informationStateOf,
   type CrmCardEntry,
   type QbCardEntry,
@@ -39,11 +40,10 @@ export type DepositWorkbenchStateInput = {
  * link-complete only when the bank/composition relationship and every live,
  * countable transaction→CRM relationship are complete.
  *
- * Deposit reconciliation does not have a second "fill out QuickBooks" step.
- * Once the appropriate accounting record is linked, that is the completed
- * accounting evidence for this workflow. Rows therefore become audit-ready
- * when their CRM records are complete, accounting evidence is present, and no
- * correction/refund/conflict still requires attention.
+ * Information state keeps the wider system distinction between linked QBO
+ * evidence and the future fill-out-QBO documentation workflow. The deposit
+ * queue's operational Completed classification is derived separately by
+ * depositCompleteFromState().
  */
 export function deriveDepositWorkbenchState(
   input: DepositWorkbenchStateInput,
@@ -96,7 +96,6 @@ export function deriveDepositWorkbenchState(
 
   const attentionRequired =
     input.attentionRequired || input.accountingCorrection;
-  const accountingDocumented = input.accountingEvidencePresent;
 
   return {
     linkage: {
@@ -121,11 +120,11 @@ export function deriveDepositWorkbenchState(
       state: informationStateOf({
         crmComplete,
         qbEvidenceComplete: input.accountingEvidencePresent,
-        qbDocumented: accountingDocumented,
+        qbDocumented: QB_DOCUMENTATION_COMPLETE,
         attentionRequired,
       }),
       crmComplete,
-      qbComplete: accountingDocumented,
+      qbComplete: QB_DOCUMENTATION_COMPLETE,
       qbEvidenceComplete: input.accountingEvidencePresent,
     },
     flags: {
@@ -138,4 +137,24 @@ export function deriveDepositWorkbenchState(
     transactions: input.transactions.map(({ entry }) => entry),
     crmCards: input.crmCards,
   };
+}
+
+/**
+ * Operational completion for the deposit queue.
+ *
+ * A row leaves All open when its money composition is resolved, every live
+ * payment is linked to a complete CRM gift, accounting evidence is linked, and
+ * no correction/refund/conflict remains. This intentionally does not require
+ * the separate future fill-out-QBO documentation workflow that gates
+ * information.state === "audit_ready" across the wider reconciliation system.
+ */
+export function depositCompleteFromState(state: WorkbenchRowState): boolean {
+  return (
+    state.linkage.state === "complete" &&
+    state.information.crmComplete &&
+    state.information.qbEvidenceComplete &&
+    !state.flags.excluded &&
+    !state.flags.conflict &&
+    !state.flags.attentionRequired
+  );
 }
