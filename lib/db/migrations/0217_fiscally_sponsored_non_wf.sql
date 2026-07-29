@@ -25,7 +25,7 @@
 --
 -- DEPENDS ON 0216 (adds the non_wf enum value) — apply that first, autocommit.
 -- This file is transactional:
---   psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0217_fiscally_sponsored_non_wf.sql
+--   lib/db/migrations/0217_fiscally_sponsored_non_wf.sql
 --
 -- Idempotent: the rule insert is ON CONFLICT DO NOTHING, the updates are
 -- condition-guarded, and the deposit exclusions skip already-excluded deposits.
