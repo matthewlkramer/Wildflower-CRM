@@ -1,0 +1,37 @@
+name: Inspect workbench contract
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/workbench-alignment-search-undo
+      - name: Print contract and hook definitions
+        run: |
+          set -euo pipefail
+          echo '=== OPENAPI CANDIDATE DEFINITIONS ==='
+          grep -n 'candidate-payment-units\|DepositCandidatePaymentUnit\|BankDepositComponentMutation' lib/openapi.yaml | head -80
+          for n in $(grep -n 'DepositCandidatePaymentUnit' lib/openapi.yaml | cut -d: -f1 | head -8); do s=$((n>20?n-20:1)); e=$((n+55)); sed -n "${s},${e}p" lib/openapi.yaml; done
+          echo '=== PACKAGE GENERATION SCRIPTS ==='
+          cat package.json
+          echo '=== PAGE TOP 1-260 ==='
+          sed -n '1,260p' artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          echo '=== PAGE HANDLERS 260-650 ==='
+          sed -n '260,650p' artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          echo '=== ROW ACTION TYPES/COMPOSITION/GIFTS ==='
+          sed -n '1,170p' artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+          sed -n '190,560p' artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+          echo '=== ROW GIFTS/ACCOUNTING/ROW ==='
+          sed -n '560,980p' artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+          echo '=== CURRENT TESTS ==='
+          sed -n '1,260p' artifacts/wildflower-crm/src/components/reconciliation-deposits/presentation.test.ts
+          grep -n 'candidate-payment-units\|deposit-components\|Recent Changes' artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts artifacts/api-server/src/__tests__/workbench-recent-changes.integration.test.ts || true
