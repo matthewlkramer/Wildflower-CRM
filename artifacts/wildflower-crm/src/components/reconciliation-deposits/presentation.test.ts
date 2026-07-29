@@ -5,6 +5,7 @@ import type {
   WorkbenchDepositQbRecord,
 } from "@workspace/api-client-react";
 import {
+  accountingCorrectionPresentation,
   accountingRecordIdentity,
   dedupeAccountingGroups,
   preferStagedAccountingRecords,
@@ -72,6 +73,33 @@ describe("deposit presentation helpers", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0].key).toBe("charge");
     expect(groups[0].records).toHaveLength(1);
+  });
+
+  it("keeps a correction-needed check visible after its QBO row is nested", () => {
+    expect(
+      accountingCorrectionPresentation({
+        disposition: "correction_needed",
+        note: "Class is wrong",
+      }),
+    ).toEqual({ label: "Correction needed", note: "Class is wrong" });
+  });
+
+  it("supplies an explanation when a correction has no note", () => {
+    expect(
+      accountingCorrectionPresentation({
+        disposition: "correction_needed",
+        note: null,
+      }),
+    ).toEqual({
+      label: "Correction needed",
+      note: "This QuickBooks record is on the accounting corrections worklist.",
+    });
+  });
+
+  it("does not add a blocker for non-correction accounting states", () => {
+    expect(
+      accountingCorrectionPresentation({ disposition: "consistent", note: null }),
+    ).toBeNull();
   });
 
   it("collapses a single same-amount allocation into inline coding", () => {
