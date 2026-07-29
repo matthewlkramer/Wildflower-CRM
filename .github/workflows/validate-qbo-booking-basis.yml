@@ -1,15 +1,19 @@
 name: Validate QBO booking basis
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/qbo-gross-net-booking-basis
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 concurrency:
-  group: validate-qbo-booking-basis
+  group: validate-qbo-booking-basis-pr
   cancel-in-progress: true
 
 jobs:
@@ -75,6 +79,7 @@ jobs:
 
       - name: Commit validated implementation
         run: |
+          rm -f .github/qbo-booking-basis-trigger
           rm -f .github/workflows/validate-qbo-booking-basis.yml
           rmdir .github/workflows 2>/dev/null || true
           git config user.name "github-actions[bot]"
