@@ -45,6 +45,7 @@ import type {
   FinanceForbiddenResponse,
   FlagQboAccountingErrorBody,
   FlagQboAccountingErrorResult,
+  ForbiddenResponse,
   GiftMissingQbList,
   IncompleteGiftList,
   InlineError,
@@ -79,6 +80,8 @@ import type {
   SetBankDepositExclusionBody,
   SetQboAccountingCheckDispositionBody,
   SettlementLineage,
+  SplitGiftAcrossStripeChargesBody,
+  SplitGiftAcrossStripeChargesResult,
   SplitStagedPaymentUnitsBody,
   SplitStagedPaymentUnitsResult,
   UnsplitStagedPaymentUnitsResult,
@@ -99,6 +102,77 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
 /**
+ * @summary Finance/admin only. Convert one payout-level CRM gift into one gross gift per live Stripe charge and link each charge to its gift. The selected gift must match the payout gross or its fee-explained net, every live charge must have the same payer, and the gift must have exactly one allocation whose designation can be copied without guessing.
+ */
+export const getSplitGiftAcrossStripeChargesUrl = (bankDepositId: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposits/${bankDepositId}/split-gift-across-stripe-charges`
+}
+
+export const splitGiftAcrossStripeCharges = async (bankDepositId: string,
+    splitGiftAcrossStripeChargesBody: SplitGiftAcrossStripeChargesBody, options?: RequestInit): Promise<SplitGiftAcrossStripeChargesResult> => {
+
+  return customFetch<SplitGiftAcrossStripeChargesResult>(getSplitGiftAcrossStripeChargesUrl(bankDepositId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      splitGiftAcrossStripeChargesBody,)
+  }
+);}
+
+
+
+
+export const getSplitGiftAcrossStripeChargesMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>, TError,{bankDepositId: string;data: BodyType<SplitGiftAcrossStripeChargesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>, TError,{bankDepositId: string;data: BodyType<SplitGiftAcrossStripeChargesBody>}, TContext> => {
+
+const mutationKey = ['splitGiftAcrossStripeCharges'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>, {bankDepositId: string;data: BodyType<SplitGiftAcrossStripeChargesBody>}> = (props) => {
+          const {bankDepositId,data} = props ?? {};
+
+          return  splitGiftAcrossStripeCharges(bankDepositId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SplitGiftAcrossStripeChargesMutationResult = NonNullable<Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>>
+    export type SplitGiftAcrossStripeChargesMutationBody = BodyType<SplitGiftAcrossStripeChargesBody>
+    export type SplitGiftAcrossStripeChargesMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Finance/admin only. Convert one payout-level CRM gift into one gross gift per live Stripe charge and link each charge to its gift. The selected gift must match the payout gross or its fee-explained net, every live charge must have the same payer, and the gift must have exactly one allocation whose designation can be copied without guessing.
+ */
+export const useSplitGiftAcrossStripeCharges = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>, TError,{bankDepositId: string;data: BodyType<SplitGiftAcrossStripeChargesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof splitGiftAcrossStripeCharges>>,
+        TError,
+        {bankDepositId: string;data: BodyType<SplitGiftAcrossStripeChargesBody>},
+        TContext
+      > => {
+      return useMutation(getSplitGiftAcrossStripeChargesMutationOptions(options));
+    }
+    /**
  * The unified reconciler's work queue. Each card is anchored on a QB
 staged_payments row (a QB record is required for every complete match) and
 carries the QB facts plus a compact auto-proposed best guess for the donor /

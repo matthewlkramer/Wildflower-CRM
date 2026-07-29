@@ -83,6 +83,11 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Allocation create/PATCH/delete gated by the parent pledge's governing FY via resolvePledgeAllocationFreeze.",
   },
+  "routes/reconciliation/splitGiftAcrossStripeCharges.ts": {
+    classification: "guarded",
+    reason:
+      "Human payout-split action changes an existing gift amount and allocation, so it gates the selected gift through resolveGiftFreezeById before writing.",
+  },
   "lib/bulkUpdate.ts": {
     classification: "guarded",
     reason:
@@ -123,7 +128,8 @@ const EXPECTED: Record<string, FileClass> = {
   },
   "lib/quickbooksSync.ts": {
     classification: "exempt",
-    reason: "QuickBooks pull-sync: system money writer creating new staged records.",
+    reason:
+      "QuickBooks pull-sync: system money writer creating new staged records.",
   },
   "lib/applyProposalActions.ts": {
     classification: "exempt",
@@ -207,7 +213,8 @@ describe("freeze-guard inventory", () => {
   const writers = new Map<string, string>();
   for (const full of walk(SRC)) {
     const src = readFileSync(full, "utf8");
-    if (WRITE_RE.test(src) || GENERIC_WRITE_RE.test(src)) writers.set(relKey(full), src);
+    if (WRITE_RE.test(src) || GENERIC_WRITE_RE.test(src))
+      writers.set(relKey(full), src);
   }
 
   it("every gift/pledge/allocation write surface is classified", () => {
@@ -220,7 +227,10 @@ describe("freeze-guard inventory", () => {
     for (const [rel, meta] of Object.entries(EXPECTED)) {
       if (meta.classification !== "guarded") continue;
       const src = writers.get(rel);
-      expect(src, `${rel} is classified guarded but has no write surface`).toBeDefined();
+      expect(
+        src,
+        `${rel} is classified guarded but has no write surface`,
+      ).toBeDefined();
       const usesGuard = GUARD_SYMBOLS.some((s) => src!.includes(s));
       expect(
         usesGuard,
@@ -232,7 +242,10 @@ describe("freeze-guard inventory", () => {
   it("every exempt file documents a reason", () => {
     for (const [rel, meta] of Object.entries(EXPECTED)) {
       if (meta.classification !== "exempt") continue;
-      expect(meta.reason.trim().length, `${rel} needs an exempt reason`).toBeGreaterThan(0);
+      expect(
+        meta.reason.trim().length,
+        `${rel} needs an exempt reason`,
+      ).toBeGreaterThan(0);
     }
   });
 });

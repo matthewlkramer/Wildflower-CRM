@@ -6781,6 +6781,20 @@ export interface ApplyFinancialCorrectionResult {
   linkedGiftIds: string[];
 }
 
+export interface SplitGiftAcrossStripeChargesBody {
+  /** @minLength 1 */
+  giftId: string;
+}
+
+export interface SplitGiftAcrossStripeChargesResult {
+  giftIds: string[];
+  chargeIds: string[];
+  grossAmount: string;
+  netAmount: string;
+  feeAmount: string;
+  giftName?: string | null;
+}
+
 export type CleanupQueueStatus = typeof CleanupQueueStatus[keyof typeof CleanupQueueStatus];
 
 

@@ -50,8 +50,10 @@ export type DepositActions = Omit<
   ) => void;
   clearComponentQbSource?: (componentId: string) => void;
   openSinglePaymentDeposit?: (bankDepositId: string, amount: string) => void;
-  /** Unified gift/opportunity/pledge search for the Gifts-column anchor. */
+  /** Unified gift/opportunity/pledge search for a specific payment anchor. */
   openLinkEvidence?: (anchor: AnchorRef, mode: "all" | "pledges") => void;
+  /** Column-level gift search must choose among every open payment on the row. */
+  openColumnGiftSearch?: (deposit: WorkbenchDeposit) => void;
   openDepositQbEvidenceSearch?: (deposit: WorkbenchDeposit) => void;
   unlinkAccountingRecord?: (
     bankDepositId: string,
@@ -203,6 +205,7 @@ const NOOP_ACTIONS: DepositActions = {
   openLinkGift: () => undefined,
   openCreateGift: () => undefined,
   openLinkEvidence: () => undefined,
+  openColumnGiftSearch: () => undefined,
   openIdentify: () => undefined,
   openDonorboxSearch: () => undefined,
   openCodingFormLookup: () => undefined,
@@ -1205,8 +1208,7 @@ export function DepositRow({
             (component.countedGiftIds?.length ?? 0) === 0 &&
             ((Boolean(component.stagedPaymentId) &&
               component.stagedActionable === true) ||
-              (Boolean(component.paymentUnitId) &&
-                !component.exclusionReason)),
+              (Boolean(component.paymentUnitId) && !component.exclusionReason)),
         )
       : [];
   const hasGiftColumnCards =
@@ -1360,7 +1362,7 @@ export function DepositRow({
                     label: "Search and link gift…",
                     onSelect: () => {
                       if (giftColumnAnchor)
-                        actions.openLinkEvidence?.(giftColumnAnchor, "all");
+                        actions.openColumnGiftSearch?.(deposit);
                     },
                     disabled: !giftColumnAnchor,
                     disabledReason: !giftColumnAnchor
@@ -1810,10 +1812,7 @@ export function DepositRow({
                               label: "Find Donorbox match…",
                               onSelect: () => {
                                 if (!manualNoQb)
-                                  actions.openDonorboxSearch?.(
-                                    anchor,
-                                    preview,
-                                  );
+                                  actions.openDonorboxSearch?.(anchor, preview);
                               },
                               disabled: manualNoQb,
                               disabledReason: manualNoQb

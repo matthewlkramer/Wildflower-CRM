@@ -209,6 +209,31 @@ paths:
         "409": { description: "Item is no longer open (already resolved or dismissed)." }
 
   # ─── Coding-form import (one-time donation coding-form reconciliation) ───────
+  /reconciliation/deposits/{bankDepositId}/split-gift-across-stripe-charges:
+    post:
+      operationId: splitGiftAcrossStripeCharges
+      tags: [reconciliation]
+      summary: >-
+        Finance/admin only. Convert one payout-level CRM gift into one gross gift
+        per live Stripe charge and link each charge to its gift. The selected gift
+        must match the payout gross or its fee-explained net, every live charge must
+        have the same payer, and the gift must have exactly one allocation whose
+        designation can be copied without guessing.
+      parameters:
+        - name: bankDepositId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/SplitGiftAcrossStripeChargesBody" } } }
+      responses:
+        "200": { description: Split and linked, content: { application/json: { schema: { $ref: "#/components/schemas/SplitGiftAcrossStripeChargesResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The gift or payout is not safe to split automatically. }
+
   /coding-form-rows:
     get:
       operationId: listCodingFormRows
@@ -10157,6 +10182,21 @@ components:
         evidenceKind:  { type: string, enum: [qb_staged, stripe_charge] }
         evidenceId:    { type: string }
         linkedGiftIds: { type: array, items: { type: string }, description: "Gifts now corroborated by the evidence (idempotent — already-linked gifts included)." }
+    SplitGiftAcrossStripeChargesBody:
+      type: object
+      required: [giftId]
+      properties:
+        giftId: { type: string, minLength: 1 }
+    SplitGiftAcrossStripeChargesResult:
+      type: object
+      required: [giftIds, chargeIds, grossAmount, netAmount, feeAmount]
+      properties:
+        giftIds: { type: array, items: { type: string } }
+        chargeIds: { type: array, items: { type: string } }
+        grossAmount: { type: string }
+        netAmount: { type: string }
+        feeAmount: { type: string }
+        giftName: { type: string, nullable: true }
     CleanupQueueStatus:
       type: string
       enum: [open, resolved, dismissed]
