@@ -1,0 +1,40 @@
+name: Inspect workbench implementation PR
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/workbench-alignment-search-undo
+      - name: Inspect relevant workbench code
+        run: |
+          set -euo pipefail
+          ROWS=artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+          PAGE=artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          RECENT=artifacts/api-server/src/routes/reconciliation/recentChanges.ts
+          API=artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts
+          ROUTES=artifacts/api-server/src/routes/reconciliation
+          echo '=== ROWS SYMBOLS ==='
+          grep -nE 'DEPOSIT_GRID|function (Composition|Gifts|Gift|Accounting|NodeQbCard|DepositRow)|export function DepositGridHeader|CardActionsMenu' "$ROWS" || true
+          echo '=== ROWS 1-240 ==='; sed -n '1,240p' "$ROWS"
+          echo '=== ROWS 240-560 ==='; sed -n '240,560p' "$ROWS"
+          echo '=== ROWS 560-920 ==='; sed -n '560,920p' "$ROWS"
+          echo '=== PAGE SYMBOLS ==='
+          grep -nEi 'unclaimed|near this remainder|openSinglePaymentDeposit|recent changes|recentChanges|payment unit|remainder|claimed' "$PAGE" || true
+          echo '=== PAGE MATCH CONTEXT ==='
+          for n in $(grep -nEi 'unclaimed|near this remainder|openSinglePaymentDeposit|recent changes|recentChanges|payment unit|remainder|claimed' "$PAGE" | cut -d: -f1 | head -50); do
+            start=$((n>20?n-20:1)); end=$((n+42)); echo "--- $PAGE:$start-$end ---"; sed -n "${start},${end}p" "$PAGE";
+          done
+          echo '=== RECENT CHANGES ROUTE ==='; cat "$RECENT"
+          echo '=== API SEARCH/UNLINK SYMBOLS ==='
+          grep -RniE 'payment.?unit|candidate|unclaimed|nearby|retarget|unlink|bank-deposit-components' "$ROUTES" | head -240 || true
