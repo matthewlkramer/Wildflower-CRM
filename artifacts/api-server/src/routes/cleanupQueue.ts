@@ -8,7 +8,11 @@ import {
   users,
 } from "@workspace/db/schema";
 import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
-import { FlagForResearchBody, ListCleanupQueueQueryParams } from "@workspace/api-zod";
+import {
+  FlagForResearchBody,
+  ListCleanupQueueQueryParams,
+  UpdateCleanupItemBody,
+} from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import {
@@ -40,6 +44,7 @@ const userNameExpr = sql<string | null>`COALESCE(
 
 type CleanupRow = typeof cleanupQueue.$inferSelect & {
   targetName: string | null;
+  flaggedByUserName: string | null;
   resolvedByUserName: string | null;
 };
 
@@ -51,6 +56,8 @@ function serialize(row: CleanupRow) {
     targetName: row.targetName,
     reasonCode: row.reasonCode,
     note: row.note,
+    flaggedByUserId: row.flaggedByUserId ?? null,
+    flaggedByUserName: row.flaggedByUserName ?? null,
     status: row.status,
     flaggedAt: row.flaggedAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
@@ -84,6 +91,7 @@ router.get(
           targetId: cleanupQueue.targetId,
           reasonCode: cleanupQueue.reasonCode,
           note: cleanupQueue.note,
+          flaggedByUserId: cleanupQueue.flaggedByUserId,
           status: cleanupQueue.status,
           flaggedAt: cleanupQueue.flaggedAt,
           resolvedAt: cleanupQueue.resolvedAt,
@@ -117,6 +125,16 @@ router.get(
               LIMIT 1
             )
           )`,
+          flaggedByUserName: sql<string | null>`(
+            SELECT COALESCE(
+              NULLIF(flagged_user.display_name, ''),
+              NULLIF(TRIM(CONCAT_WS(' ', flagged_user.first_name, flagged_user.last_name)), ''),
+              flagged_user.email
+            )
+            FROM users flagged_user
+            WHERE flagged_user.id = ${cleanupQueue.flaggedByUserId}
+            LIMIT 1
+          )`,
           resolvedByUserName: userNameExpr,
         })
         .from(cleanupQueue)
@@ -149,6 +167,7 @@ router.post(
     if (!body) return;
 
     const reasonCode = "needs_research";
+    const actor = getAppUser(req);
     const note = body.note.trim();
     if (note.length === 0) {
       res
@@ -165,6 +184,7 @@ router.post(
         targetId: body.targetId,
         reasonCode,
         note,
+        flaggedByUserId: actor?.id ?? null,
         status: "open",
       })
       .onConflictDoNothing({
@@ -206,6 +226,38 @@ router.post(
     res
       .status(409)
       .json({ error: "conflict", message: "Could not flag this record." });
+  }),
+);
+
+// The note is intentionally editable in every status. Resolved and dismissed
+// cards remain useful as a durable exchange between the person who flagged the
+// issue and the person who investigated it.
+router.patch(
+  "/cleanup-queue/:id",
+  asyncHandler(async (req, res) => {
+    const id = paramId(req);
+    const body = parseOrBadRequest(UpdateCleanupItemBody, req.body, res);
+    if (!body) return;
+    const note = body.note.trim();
+    if (!note) {
+      res.status(400).json({
+        error: "bad_request",
+        message: "A cleanup note is required.",
+      });
+      return;
+    }
+
+    const updated = await db
+      .update(cleanupQueue)
+      .set({ note, updatedAt: new Date() })
+      .where(eq(cleanupQueue.id, id))
+      .returning();
+    if (!updated[0]) {
+      notFound(res, "cleanup item");
+      return;
+    }
+    const enriched = await enrich(updated);
+    res.json(serialize(enriched[0]!));
   }),
 );
 
@@ -269,7 +321,11 @@ async function enrich(
     ),
   ];
   const userIds = [
-    ...new Set(rows.map((r) => r.resolvedByUserId).filter(Boolean) as string[]),
+    ...new Set(
+      rows
+        .flatMap((r) => [r.flaggedByUserId, r.resolvedByUserId])
+        .filter(Boolean) as string[],
+    ),
   ];
 
   const [oppRows, stagedRows, payoutRows, userRows] = await Promise.all([
@@ -332,6 +388,9 @@ async function enrich(
           : r.targetType === "stripe_payout"
             ? (payoutMap.get(r.targetId) ?? null)
             : null,
+    flaggedByUserName: r.flaggedByUserId
+      ? (userMap.get(r.flaggedByUserId) ?? null)
+      : null,
     resolvedByUserName: r.resolvedByUserId
       ? (userMap.get(r.resolvedByUserId) ?? null)
       : null,

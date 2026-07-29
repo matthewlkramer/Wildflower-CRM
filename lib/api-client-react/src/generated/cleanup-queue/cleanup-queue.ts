@@ -25,7 +25,8 @@ import type {
   CleanupItemList,
   FlagForResearchBody,
   ListCleanupQueueParams,
-  NotFoundResponse
+  NotFoundResponse,
+  UpdateCleanupItemBody
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -190,6 +191,77 @@ export const useFlagForResearch = <TError = ErrorType<BadRequestResponse>,
         TContext
       > => {
       return useMutation(getFlagForResearchMutationOptions(options));
+    }
+    /**
+ * @summary Update the cleanup item's shared working note. Any signed-in team member may edit it.
+ */
+export const getUpdateCleanupItemUrl = (id: string,) => {
+
+
+  
+
+  return `/api/cleanup-queue/${id}`
+}
+
+export const updateCleanupItem = async (id: string,
+    updateCleanupItemBody: UpdateCleanupItemBody, options?: RequestInit): Promise<CleanupItem> => {
+  
+  return customFetch<CleanupItem>(getUpdateCleanupItemUrl(id),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateCleanupItemBody,)
+  }
+);}
+  
+
+
+
+export const getUpdateCleanupItemMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCleanupItem>>, TError,{id: string;data: BodyType<UpdateCleanupItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCleanupItem>>, TError,{id: string;data: BodyType<UpdateCleanupItemBody>}, TContext> => {
+
+const mutationKey = ['updateCleanupItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCleanupItem>>, {id: string;data: BodyType<UpdateCleanupItemBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCleanupItem(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCleanupItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateCleanupItem>>>
+    export type UpdateCleanupItemMutationBody = BodyType<UpdateCleanupItemBody>
+    export type UpdateCleanupItemMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Update the cleanup item's shared working note. Any signed-in team member may edit it.
+ */
+export const useUpdateCleanupItem = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCleanupItem>>, TError,{id: string;data: BodyType<UpdateCleanupItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCleanupItem>>,
+        TError,
+        {id: string;data: BodyType<UpdateCleanupItemBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateCleanupItemMutationOptions(options));
     }
     /**
  * @summary Mark a cleanup item as resolved (the record was cleaned up by hand).

@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListCleanupQueue,
   getListCleanupQueueQueryKey,
+  useUpdateCleanupItem,
   useResolveCleanupItem,
   useDismissCleanupItem,
   type CleanupItem,
@@ -13,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,8 +51,6 @@ function targetHref(type: string, id: string): string {
       return `/gifts/${id}`;
     case "staged_payment":
     case "stripe_payout":
-      // Staged payments and Stripe payouts have no standalone detail page; send
-      // the reviewer to the Reconciliation Workbench where the flagged money lives.
       return "/reconciliation/deposits";
     default:
       return `/pledges/${id}`;
@@ -61,17 +61,59 @@ export default function CleanupQueuePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<CleanupQueueStatus>("open");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftNote, setDraftNote] = useState("");
 
   const params = { status, limit: 200 } as const;
   const { data, isLoading, isError } = useListCleanupQueue(params, {
     query: { queryKey: getListCleanupQueueQueryKey(params) },
   });
 
+  const updateMut = useUpdateCleanupItem();
   const resolveMut = useResolveCleanupItem();
   const dismissMut = useDismissCleanupItem();
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: [CLEANUP_KEY_PREFIX] });
+
+  const startEditing = (item: CleanupItem) => {
+    setEditingId(item.id);
+    setDraftNote(item.note);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
+    setDraftNote("");
+  };
+
+  const handleSaveNote = (item: CleanupItem) => {
+    const note = draftNote.trim();
+    if (!note) {
+      toast({
+        title: "A note is required",
+        description: "Cleanup records cannot have an empty note.",
+        variant: "destructive",
+      });
+      return;
+    }
+    updateMut.mutate(
+      { id: item.id, data: { note } },
+      {
+        onSuccess: () => {
+          cancelEditing();
+          void invalidate();
+          toast({ title: "Cleanup note saved" });
+        },
+        onError: (err) =>
+          toast({
+            title: "Couldn't save note",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          }),
+      },
+    );
+  };
 
   const handleResolve = (item: CleanupItem) => {
     resolveMut.mutate(
@@ -118,7 +160,8 @@ export default function CleanupQueuePage() {
   };
 
   const items = data?.data ?? [];
-  const pending = resolveMut.isPending || dismissMut.isPending;
+  const pending =
+    updateMut.isPending || resolveMut.isPending || dismissMut.isPending;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -127,9 +170,9 @@ export default function CleanupQueuePage() {
           Cleanup Queue
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Records flagged for manual data cleanup. Open each record to fix it,
-          then resolve the item — or dismiss it if no change is needed. Resolved
-          and dismissed items drop out of the open view.
+          Records flagged for manual data cleanup. Edit the shared note to
+          exchange updates with other reviewers, then resolve the item — or
+          dismiss it if no change is needed.
         </p>
       </div>
 
@@ -171,67 +214,116 @@ export default function CleanupQueuePage() {
         </p>
       ) : (
         <div className="space-y-3">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-lg border p-4 space-y-2"
-              data-testid={`cleanup-item-${item.id}`}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  {REASON_LABEL[item.reasonCode] ?? item.reasonCode}
-                </Badge>
-                {item.status !== "open" ? (
-                  <Badge variant="outline">{STATUS_LABEL[item.status]}</Badge>
-                ) : null}
-                <span className="ml-auto text-xs text-muted-foreground">
-                  Flagged {formatDateShort(item.flaggedAt)}
-                </span>
-              </div>
-
-              <Link
-                href={targetHref(item.targetType, item.targetId)}
-                className="font-medium text-primary underline-offset-2 hover:underline break-words"
-                data-testid={`link-cleanup-target-${item.id}`}
+          {items.map((item) => {
+            const editing = editingId === item.id;
+            return (
+              <div
+                key={item.id}
+                className="rounded-lg border p-4 space-y-2"
+                data-testid={`cleanup-item-${item.id}`}
               >
-                {item.targetName ?? `${item.targetType} ${item.targetId}`}
-              </Link>
-
-              <p className="text-sm text-muted-foreground">{item.note}</p>
-
-              {item.status === "open" ? (
-                <div className="flex justify-end gap-2 pt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => handleDismiss(item)}
-                    data-testid={`button-dismiss-${item.id}`}
-                  >
-                    Dismiss
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={pending}
-                    onClick={() => handleResolve(item)}
-                    data-testid={`button-resolve-${item.id}`}
-                  >
-                    Resolve
-                  </Button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="secondary">
+                    {REASON_LABEL[item.reasonCode] ?? item.reasonCode}
+                  </Badge>
+                  {item.status !== "open" ? (
+                    <Badge variant="outline">{STATUS_LABEL[item.status]}</Badge>
+                  ) : null}
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    Flagged {formatDateShort(item.flaggedAt)} by{" "}
+                    {item.flaggedByUserName ?? "System"}
+                  </span>
                 </div>
-              ) : (
-                <p className="text-xs text-muted-foreground pt-1">
-                  {STATUS_LABEL[item.status]}
-                  {item.resolvedByUserName
-                    ? ` by ${item.resolvedByUserName}`
-                    : ""}
-                  {item.resolvedAt
-                    ? ` on ${formatDateShort(item.resolvedAt)}`
-                    : ""}
-                </p>
-              )}
-            </div>
-          ))}
+
+                <Link
+                  href={targetHref(item.targetType, item.targetId)}
+                  className="font-medium text-primary underline-offset-2 hover:underline break-words"
+                  data-testid={`link-cleanup-target-${item.id}`}
+                >
+                  {item.targetName ?? `${item.targetType} ${item.targetId}`}
+                </Link>
+
+                {editing ? (
+                  <div className="space-y-2">
+                    <Textarea
+                      value={draftNote}
+                      onChange={(event) => setDraftNote(event.target.value)}
+                      rows={5}
+                      disabled={updateMut.isPending}
+                      data-testid={`textarea-cleanup-note-${item.id}`}
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={updateMut.isPending}
+                        onClick={cancelEditing}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={updateMut.isPending || !draftNote.trim()}
+                        onClick={() => handleSaveNote(item)}
+                        data-testid={`button-save-note-${item.id}`}
+                      >
+                        Save note
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+                    {item.note}
+                  </p>
+                )}
+
+                {!editing ? (
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => startEditing(item)}
+                      data-testid={`button-edit-note-${item.id}`}
+                    >
+                      Edit note
+                    </Button>
+                    {item.status === "open" ? (
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleDismiss(item)}
+                          data-testid={`button-dismiss-${item.id}`}
+                        >
+                          Dismiss
+                        </Button>
+                        <Button
+                          size="sm"
+                          disabled={pending}
+                          onClick={() => handleResolve(item)}
+                          data-testid={`button-resolve-${item.id}`}
+                        >
+                          Resolve
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        {STATUS_LABEL[item.status]}
+                        {item.resolvedByUserName
+                          ? ` by ${item.resolvedByUserName}`
+                          : ""}
+                        {item.resolvedAt
+                          ? ` on ${formatDateShort(item.resolvedAt)}`
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
