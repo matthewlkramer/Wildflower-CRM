@@ -1,5 +1,4 @@
 import {
-  QB_DOCUMENTATION_COMPLETE,
   informationStateOf,
   type CrmCardEntry,
   type QbCardEntry,
@@ -36,15 +35,15 @@ export type DepositWorkbenchStateInput = {
 /**
  * Canonical state derivation for the deposit-first workbench.
  *
- * The deposit route used to treat "payout paired to bank" as end-to-end
- * completion, even when one or more live charges still had no CRM gift. This
- * helper derives the three relationship surfaces independently and only marks
- * the row link-complete when the bank/composition relationship and every live,
+ * The three money relationships are measured independently and the row is
+ * link-complete only when the bank/composition relationship and every live,
  * countable transaction→CRM relationship are complete.
  *
- * Information completeness remains independent. QuickBooks documentation is
- * not yet a built workflow, so QB_DOCUMENTATION_COMPLETE continues to gate
- * audit_ready exactly as it does in the cluster workbench.
+ * Deposit reconciliation does not have a second "fill out QuickBooks" step.
+ * Once the appropriate accounting record is linked, that is the completed
+ * accounting evidence for this workflow. Rows therefore become audit-ready
+ * when their CRM records are complete, accounting evidence is present, and no
+ * correction/refund/conflict still requires attention.
  */
 export function deriveDepositWorkbenchState(
   input: DepositWorkbenchStateInput,
@@ -97,6 +96,7 @@ export function deriveDepositWorkbenchState(
 
   const attentionRequired =
     input.attentionRequired || input.accountingCorrection;
+  const accountingDocumented = input.accountingEvidencePresent;
 
   return {
     linkage: {
@@ -121,11 +121,11 @@ export function deriveDepositWorkbenchState(
       state: informationStateOf({
         crmComplete,
         qbEvidenceComplete: input.accountingEvidencePresent,
-        qbDocumented: QB_DOCUMENTATION_COMPLETE,
+        qbDocumented: accountingDocumented,
         attentionRequired,
       }),
       crmComplete,
-      qbComplete: QB_DOCUMENTATION_COMPLETE,
+      qbComplete: accountingDocumented,
       qbEvidenceComplete: input.accountingEvidencePresent,
     },
     flags: {
