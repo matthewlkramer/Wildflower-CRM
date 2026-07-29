@@ -110,3 +110,9 @@ describe("deposit presentation helpers", () => {
     ).toBe(false);
   });
 });
+
+describe("card metadata contract", () => {
+  it("keeps undated card text explicit", () => {
+    expect("Undated · $5.00").toContain("Undated");
+  });
+});

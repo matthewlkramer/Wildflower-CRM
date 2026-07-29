@@ -79,10 +79,6 @@ router.get(
         summary: row.summary ?? "",
         undo: undoOf(row.metadata),
       }))
-      .filter(
-        (item): item is typeof item & { undo: NonNullable<typeof item.undo> } =>
-          item.undo !== null,
-      )
       .slice(0, 20);
 
     res.json({ items });
