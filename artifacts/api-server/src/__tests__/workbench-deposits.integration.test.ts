@@ -1304,4 +1304,119 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     );
     expect(missing.status).toBe(404);
   });
+
+  it("lists claimed payment units and moves the existing partial component without changing its amount", async () => {
+    const sourceDeposit = await seedDeposit(
+      "Claimed component source",
+      "40.00",
+    );
+    const targetDeposit = await seedDeposit(
+      "Claimed component target",
+      "50.00",
+    );
+    const unitId = nextId("claimed_unit");
+    const componentId = nextId("claimed_component");
+    await db.insert(schema.paymentUnits).values({
+      id: unitId,
+      kind: "check",
+      grossAmount: "100.00",
+      netAmount: "100.00",
+      receivedDate: "2099-12-30",
+    });
+    await db.insert(schema.bankDepositComponents).values({
+      id: componentId,
+      bankDepositId: sourceDeposit,
+      paymentUnitId: unitId,
+      amount: "40.00",
+      source: "manual",
+    });
+    unitIds.push(unitId);
+    componentIds.push(componentId);
+
+    const candidates = await getJson(
+      `/api/reconciliation/deposits/${targetDeposit}/candidate-payment-units?q=${unitId}`,
+    );
+    expect(candidates.status).toBe(200);
+    expect(candidates.json.data).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: unitId,
+          amount: "100.00",
+          claimed: true,
+          claimedComponentId: componentId,
+          claimedBankDepositId: sourceDeposit,
+          claimedComponentAmount: "40.00",
+          claimedByCurrentDeposit: false,
+        }),
+      ]),
+    );
+
+    const moved = await postJson(
+      `/api/reconciliation/deposits/${targetDeposit}/components`,
+      { mode: "attach", paymentUnitId: unitId },
+    );
+    expect(moved.status).toBe(201);
+    expect(moved.json).toMatchObject({
+      id: componentId,
+      paymentUnitId: unitId,
+      amount: "40.00",
+    });
+    const component = await db.query.bankDepositComponents.findFirst({
+      where: eqFn(schema.bankDepositComponents.id, componentId),
+    });
+    expect(component).toMatchObject({
+      bankDepositId: targetDeposit,
+      amount: "40.00",
+    });
+  });
+
+  it("unlinks only the displayed deposit accounting relationship", async () => {
+    const depositId = await seedDeposit("Scoped accounting unlink", "75.00");
+    const payoutId = await seedPayout("75.00", depositId);
+    const stagedPaymentId = nextId("scoped_qbo");
+    const sourceLinkId = nextId("scoped_source_link");
+    const unitId = nextId("shared_source_unit");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedPaymentId,
+      realmId: RUN,
+      qbEntityType: "deposit",
+      qbEntityId: nextId("qb_deposit"),
+      dateReceived: "2099-12-31",
+      amount: "75.00",
+    });
+    stagedIds.push(stagedPaymentId);
+    await db.insert(schema.sourceLinks).values({
+      id: sourceLinkId,
+      linkType: "payout_qb_settlement",
+      stripePayoutId: payoutId,
+      qbStagedPaymentId: stagedPaymentId,
+      lifecycle: "confirmed",
+      provenance: "human",
+      matchBasis: "settled_pairing",
+    });
+    depositQboComponentIds.push(sourceLinkId);
+    await db.insert(schema.paymentUnits).values({
+      id: unitId,
+      kind: "check",
+      grossAmount: "75.00",
+      netAmount: "75.00",
+      receivedDate: "2099-12-31",
+      sourceStagedPaymentId: stagedPaymentId,
+    });
+    unitIds.push(unitId);
+
+    const response = await requestJson(
+      "DELETE",
+      `/api/reconciliation/deposits/${depositId}/accounting-evidence/${stagedPaymentId}?role=deposit`,
+    );
+    expect(response.status).toBe(204);
+    const remainingLink = await db.query.sourceLinks.findFirst({
+      where: eqFn(schema.sourceLinks.id, sourceLinkId),
+    });
+    expect(remainingLink).toBeUndefined();
+    const preservedUnit = await db.query.paymentUnits.findFirst({
+      where: eqFn(schema.paymentUnits.id, unitId),
+    });
+    expect(preservedUnit?.sourceStagedPaymentId).toBe(stagedPaymentId);
+  });
 });

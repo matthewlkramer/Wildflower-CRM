@@ -156,7 +156,7 @@ describe.skipIf(!HAS_DB)(
           id: string;
           actorName: string | null;
           summary: string;
-          undo: { kind: string; targetId: string };
+          undo: { kind: string; targetId: string } | null;
         }>;
       };
       const byId = new Map(json.items.map((item) => [item.id, item]));
@@ -165,11 +165,17 @@ describe.skipIf(!HAS_DB)(
         actorName: `Recent Rail Tester ${RUN}`,
         undo: { kind: "revert_stripe_charge", targetId: "ch_target_1" },
       });
-      expect(byId.has(nonReversibleId)).toBe(false);
-      expect(byId.has(malformedUndoId)).toBe(false);
+      expect(byId.get(nonReversibleId)).toMatchObject({
+        summary: `${RUN} set a donor as an intermediate step`,
+        undo: null,
+      });
+      expect(byId.get(malformedUndoId)).toMatchObject({
+        summary: `${RUN} action with bogus undo`,
+        undo: null,
+      });
       expect(byId.has(otherUserId)).toBe(false);
       expect(byId.has(otherDomainId)).toBe(false);
-      expect(json.items.every((item) => item.undo != null)).toBe(true);
+      expect(json.items.some((item) => item.undo == null)).toBe(true);
     });
   },
 );
