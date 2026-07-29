@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - agent/app-feedback-workflow-v2
+    paths-ignore:
+      - .agent/validation-error.txt
 
 permissions:
   contents: write
@@ -14,7 +16,6 @@ concurrency:
 
 jobs:
   validate:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
