@@ -20,7 +20,7 @@ import {
 import type {
   ClusterActions,
   AnchorRef,
-} from "@/components/reconciliation-clusters/rows";
+} from "@/components/reconciliation-clusters/actions";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 import {
   accountingRecordIdentity,

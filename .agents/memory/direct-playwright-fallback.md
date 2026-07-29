@@ -13,7 +13,9 @@ hard constraints).
 **How to apply:**
 
 - Full-suite runs die silently mid-run (process vanishes, no tally — likely
-  OOM). Run in small `-g "F8|F9"` style batches instead.
+  OOM). Run in small `-g "F8|F9"` style batches instead. Even a 2-test batch
+  dies silently if a stale Chromium from an earlier interrupted run is still
+  resident — check `ps aux | grep chrome-linux` and PID-kill leftovers first.
 - Launch detached and poll (agent bash has a 120s cap):
   `(setsid nohup pnpm exec playwright test <spec> -g "..." --reporter=line --timeout=90000 > /tmp/x.log 2>&1 < /dev/null &)` then sleep + tail.
 - **Never `pkill -f "playwright"`** — it matches the agent's own bash command

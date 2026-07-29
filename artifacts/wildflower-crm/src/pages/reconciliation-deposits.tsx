@@ -102,7 +102,7 @@ import {
   type UnlinkOption,
 } from "@/components/reconciliation-clusters/dialogs";
 import { TieChargeQbDialog } from "@/components/reconciliation-bundles/TieChargeQbDialog";
-import type { AnchorRef } from "@/components/reconciliation-clusters/rows";
+import type { AnchorRef } from "@/components/reconciliation-clusters/actions";
 import type { DonorType } from "@/components/entity-picker";
 import {
   AlertDialog,

@@ -9,8 +9,9 @@
  * workbench tabs were retired):
  *   F2  — org-detail Add-task assignee combobox lists users (regression:
  *         it used to always show "No results.").
- *   F4  — /reconciliation/clusters "Settlement gaps" lens renders.
- *   F5  — cluster free-text search filters rows (per-column filters retired).
+ *   F4  — /reconciliation/deposits "Ambiguous pairing" lens renders (adapted —
+ *         the clusters view was removed; deposits is the sole workbench).
+ *   F5  — deposit free-text search filters rows (per-column filters retired).
  *   F6  — past-deadline open opportunity shows red date + Overdue badge on
  *         /grants-calendar (opp seeded via the real API, then archived).
  *   F7  — gift-detail Thank-you panel + Grant letter upload (upload exercised
@@ -163,32 +164,32 @@ test("F2: add-task assignee combobox lists users (no spurious 'No results.')", a
   expect(saved.rows[0].assignee_user_id).toBeTruthy();
 });
 
-/* ---------- F4: settlement lens renders ---------- */
+/* ---------- F4: deposit lens renders ---------- */
 
-test("F4: reconciliation clusters 'Settlement gaps' lens renders", async ({ page }) => {
-  await page.goto("/reconciliation/clusters");
-  await expect(page.getByTestId("input-cluster-search")).toBeVisible();
-  await page.getByTestId("button-lens-settlement_gaps").click();
-  await expect(page.getByTestId("text-cluster-total")).toBeVisible();
+test("F4: reconciliation deposits 'Ambiguous pairing' lens renders", async ({ page }) => {
+  await page.goto("/reconciliation/deposits");
+  await expect(page.getByTestId("input-deposit-search")).toBeVisible();
+  await page.getByTestId("button-deposit-lens-ambiguous_pairing").click();
+  await expect(page.getByTestId("text-deposit-total")).toBeVisible();
   // The lens must render without an error state.
   await expect(page.getByText(/failed|error/i).first()).not.toBeVisible().catch(() => {});
 });
 
-/* ---------- F5: cluster search filters ---------- */
+/* ---------- F5: deposit search filters ---------- */
 
-test("F5: cluster free-text search filters rows (adapted — per-column filters retired)", async ({ page }) => {
-  await page.goto("/reconciliation/clusters");
-  await page.getByTestId("button-lens-all_open").click();
-  const total = page.getByTestId("text-cluster-total");
+test("F5: deposit free-text search filters rows (adapted — per-column filters retired)", async ({ page }) => {
+  await page.goto("/reconciliation/deposits");
+  await page.getByTestId("button-deposit-lens-all_open").click();
+  const total = page.getByTestId("text-deposit-total");
   await expect(total).toBeVisible();
   const before = (await total.textContent()) ?? "";
 
-  await page.getByTestId("input-cluster-search").fill("zzz-no-such-payer-xyz");
+  await page.getByTestId("input-deposit-search").fill("zzz-no-such-payer-xyz");
   await expect(total).not.toHaveText(before, { timeout: 10_000 });
   const filtered = (await total.textContent()) ?? "";
   expect(filtered).toMatch(/\b0\b/);
 
-  await page.getByTestId("input-cluster-search").fill("");
+  await page.getByTestId("input-deposit-search").fill("");
   await expect(total).toHaveText(before, { timeout: 10_000 });
 });
 

@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkbenchDeposit } from "@workspace/api-client-react";
-import type { ClusterActions } from "@/components/reconciliation-clusters/rows";
+import type { ClusterActions } from "@/components/reconciliation-clusters/actions";
 import { DEPOSIT_LENSES, DepositRow } from "./rows";
 
 (globalThis as Record<string, unknown>)["IS_REACT_ACT_ENVIRONMENT"] = true;

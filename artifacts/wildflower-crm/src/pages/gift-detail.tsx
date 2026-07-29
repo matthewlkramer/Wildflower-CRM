@@ -948,10 +948,10 @@ function GiftStripeChainCard({ giftId }: { giftId: string }) {
                 {RECON_CHAIN_LABEL[payout.reconciliationStatus]}
               </div>
               <Link
-                href="/reconciliation/clusters"
+                href="/reconciliation/deposits"
                 className="text-xs underline-offset-2 hover:underline"
               >
-                View reconciliation clusters →
+                View reconciliation workbench →
               </Link>
             </div>
           ) : (

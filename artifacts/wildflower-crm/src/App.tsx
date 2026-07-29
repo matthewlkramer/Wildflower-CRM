@@ -36,7 +36,6 @@ import CodingFormImport from "@/pages/coding-form-import";
 import FundableProjects from "@/pages/fundable-projects";
 import Campaigns from "@/pages/campaigns";
 import Settings from "@/pages/settings";
-import ReconciliationClusters from "@/pages/reconciliation-clusters";
 import ReconciliationDeposits from "@/pages/reconciliation-deposits";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
@@ -217,15 +216,15 @@ function ClerkProviderWithRoutes() {
           
           <Route path="/gifts"><ProtectedRoute component={Gifts} /></Route>
           <Route path="/gifts/:id"><ProtectedRoute component={GiftDetail} /></Route>
-          {/* Legacy reconciliation surfaces — all superseded by the cluster workbench. */}
-          <Route path="/staged-payments"><Redirect to="/reconciliation/clusters" /></Route>
-          <Route path="/stripe-staged-charges"><Redirect to="/reconciliation/clusters" /></Route>
-          <Route path="/stripe-reconciliation"><Redirect to="/reconciliation/clusters" /></Route>
-          <Route path="/donorbox-review"><Redirect to="/reconciliation/clusters" /></Route>
+          {/* Legacy reconciliation surfaces — all superseded by the deposit-first workbench. */}
+          <Route path="/staged-payments"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/stripe-staged-charges"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/stripe-reconciliation"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/donorbox-review"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/reconciliation"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/reconciliation-workbench"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/reconciliation/deposits"><ProtectedRoute component={ReconciliationDeposits} /></Route>
-          <Route path="/reconciliation/clusters"><ProtectedRoute component={ReconciliationClusters} /></Route>
+          <Route path="/reconciliation/clusters"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/interactions"><ProtectedRoute component={Interactions} /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
@@ -243,7 +242,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
           <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
           <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
-          <Route path="/financial-corrections"><Redirect to="/reconciliation/clusters" /></Route>
+          <Route path="/financial-corrections"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/cleanup-queue"><ProtectedRoute component={CleanupQueue} /></Route>
           <Route path="/restriction-text-review"><ProtectedRoute component={RestrictionTextReview} /></Route>
           <Route path="/coding-form-import"><ProtectedRoute component={CodingFormImport} /></Route>
