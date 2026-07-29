@@ -1,0 +1,84 @@
+name: Validate QBO booking basis
+
+on:
+  push:
+    branches:
+      - agent/qbo-gross-net-booking-basis
+
+permissions:
+  contents: write
+
+concurrency:
+  group: validate-qbo-booking-basis
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d wildflower_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: reconciliation-test-only
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/qbo-gross-net-booking-basis
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          npm install --global pnpm@10
+          pnpm install --frozen-lockfile
+
+      - name: Format touched TypeScript files
+        run: |
+          pnpm exec prettier --write \
+            lib/db/src/schema/qboAccountingChecks.ts \
+            artifacts/api-server/src/lib/qboAccountingRecompute.ts \
+            artifacts/api-server/src/__tests__/qbo-booking-basis.integration.test.ts
+
+      - name: Build schema and typecheck
+        run: |
+          pnpm --filter @workspace/db run push-force
+          pnpm run check:api
+          pnpm --filter @workspace/db run typecheck
+
+      - name: Run focused tests
+        run: |
+          pnpm --filter @workspace/api-server exec vitest run \
+            src/__tests__/qbo-booking-basis.integration.test.ts \
+            src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Commit validated implementation
+        run: |
+          rm -f .github/workflows/validate-qbo-booking-basis.yml
+          rmdir .github/workflows 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Accept gross or net QBO Stripe booking"
+          git push origin HEAD:agent/qbo-gross-net-booking-basis
