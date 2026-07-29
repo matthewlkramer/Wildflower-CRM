@@ -655,6 +655,62 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     );
   });
 
+  it("does not keep a fully linked Stripe payout open because of a gift-less accounting component", async () => {
+    const deposit = await seedDeposit(
+      "Stripe fee-net payout with QBO evidence",
+      "142.00",
+    );
+    const payout = await seedPayout("142.00", deposit);
+    await db
+      .update(schema.stripePayouts)
+      .set({ grossTotal: "150.00", feeTotal: "8.00", netTotal: "142.00" })
+      .where(eqFn(schema.stripePayouts.id, payout));
+    const charge = await seedCharge(payout, { grossAmount: "150.00" });
+    const giftId = nextId("fee_net_gift");
+    const chargeUnitId = nextId("fee_net_charge_unit");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      name: "Fee-net Stripe gift",
+      amount: "150.00",
+      dateReceived: "2099-12-31",
+      organizationId: ORG_ID,
+    });
+    giftIds.push(giftId);
+    await db.insert(schema.paymentUnits).values({
+      id: chargeUnitId,
+      kind: "stripe_charge",
+      stripeChargeId: charge,
+      grossAmount: "150.00",
+      feeAmount: "8.00",
+      netAmount: "142.00",
+      receivedDate: "2099-12-31",
+      giftId,
+      giftMatchMethod: "human",
+    });
+    unitIds.push(chargeUnitId);
+
+    // This is downstream accounting evidence, not a second donor payment.
+    await seedUnit(deposit, "142.00");
+
+    const completed = await listDeposits(
+      "completed",
+      "Stripe fee-net payout with QBO evidence",
+    );
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.lenses).toContain("completed");
+    expect(row?.lenses).not.toContain("needs_gift");
+    expect(row?.charges).toHaveLength(1);
+    expect(row?.gifts.map((item: any) => item.giftId)).toEqual([giftId]);
+
+    const open = await listDeposits(
+      "all_open",
+      "Stripe fee-net payout with QBO evidence",
+    );
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(
+      false,
+    );
+  });
+
   it("prefers charge-grain gifts when a Stripe payout also carries a legacy component gift", async () => {
     const deposit = await seedDeposit("Stripe charge gift authority", "20.00");
     const payout = await seedPayout("20.00", deposit);
@@ -726,9 +782,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row?.gifts.map((item: any) => item.giftId).sort()).toEqual(
       [...chargeGiftIds].sort(),
     );
-    expect(
-      row?.gifts.some((item: any) => item.giftId === legacyGiftId),
-    ).toBe(false);
+    expect(row?.gifts.some((item: any) => item.giftId === legacyGiftId)).toBe(
+      false,
+    );
   });
 
   it("surfaces correction_needed accounting checks for component units", async () => {

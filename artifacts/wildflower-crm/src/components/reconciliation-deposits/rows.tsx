@@ -704,16 +704,6 @@ function chargePreview(charge: WorkbenchDeposit["charges"][number]): EvidencePre
   };
 }
 
-function qbPreview(record: WorkbenchDeposit["qbRecords"][number]): EvidencePreview {
-  return {
-    amount: money(record.amount),
-    date: record.dateReceived ?? "—",
-    method: "QuickBooks payment",
-    source: `QuickBooks record ${record.stagedPaymentId}`,
-    memo: record.memo ?? record.lineDescription ?? null,
-  };
-}
-
 export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisional, onDismissProvisional }: DepositRowProps) {
   const actions = suppliedActions ?? NOOP_ACTIONS;
   const isNotFundraising = deposit.lenses.includes("not_fundraising");
@@ -721,37 +711,55 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
     deposit.bank.payee,
     deposit.bank.refNo,
   ].filter(Boolean).join(" · ");
-  const linkedStagedPaymentIds = new Set(deposit.gifts.flatMap((gift) => gift.linkedStagedPaymentIds ?? []));
   const giftColumnAnchor: AnchorRef | null = (() => {
-    const record = deposit.qbRecords.find((item) => !linkedStagedPaymentIds.has(item.stagedPaymentId));
-    if (record) return { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.stagedPaymentId };
-    const charge = deposit.charges.find((item) => !item.linkedGiftId);
-    if (charge) return { kind: "charge", id: charge.chargeId, label: charge.payerName ?? charge.chargeId };
-    const component = deposit.composition.kind === "components"
-      ? deposit.composition.components.find((item) => item.stagedPaymentId)
+  const charge = deposit.charges.find((item) => !item.linkedGiftId);
+  if (charge) {
+    return {
+      kind: "charge",
+      id: charge.chargeId,
+      label: charge.payerName ?? charge.chargeId,
+    };
+  }
+  const component =
+    deposit.composition.kind === "components"
+      ? deposit.composition.components.find(
+          (item) =>
+            (item.countedGiftIds?.length ?? 0) === 0 &&
+            Boolean(item.stagedPaymentId),
+        )
       : undefined;
-    if (component?.stagedPaymentId) return { kind: "staged", id: component.stagedPaymentId, label: component.label ?? component.kind };
-    return null;
-  })();
-  const bankPreview: EvidencePreview = {
-    amount: money(deposit.bank.amount),
-    date: deposit.date ? formatDateShort(deposit.date) : "—",
-    method: "Bank deposit",
-    source: deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId,
-    memo: deposit.bank.memo ?? null,
-  };
-  const unlinkedCharges = deposit.charges.filter((charge) => !charge.linkedGiftId);
-  const unlinkedComponents = deposit.composition.kind === "components"
-    ? deposit.composition.components.filter((component) => component.source === "bank_spine" && (component.countedGiftIds?.length ?? 0) === 0 && component.stagedPaymentId)
+  if (component?.stagedPaymentId) {
+    return {
+      kind: "staged",
+      id: component.stagedPaymentId,
+      label: component.label ?? component.kind,
+    };
+  }
+  return null;
+})();
+const bankPreview: EvidencePreview = {
+  amount: money(deposit.bank.amount),
+  date: deposit.date ? formatDateShort(deposit.date) : "—",
+  method: "Bank deposit",
+  source: deposit.bank.memo ?? deposit.bank.reference ?? deposit.anchorId,
+  memo: deposit.bank.memo ?? null,
+};
+const unlinkedCharges = deposit.charges.filter(
+  (charge) => !charge.linkedGiftId,
+);
+const unlinkedComponents =
+  deposit.composition.kind === "components"
+    ? deposit.composition.components.filter(
+        (component) =>
+          component.source === "bank_spine" &&
+          (component.countedGiftIds?.length ?? 0) === 0 &&
+          component.stagedPaymentId,
+      )
     : [];
-  const componentStagedPaymentIds = new Set(
-    deposit.composition.components.map((component) => component.stagedPaymentId).filter(Boolean),
-  );
-  const unlinkedQbRecords = deposit.qbRecords.filter((record) =>
-    !record.bankTransactionId
-    && !linkedStagedPaymentIds.has(record.stagedPaymentId)
-    && !componentStagedPaymentIds.has(record.stagedPaymentId));
-  const hasGiftColumnCards = deposit.gifts.length > 0 || unlinkedCharges.length > 0 || unlinkedQbRecords.length > 0 || unlinkedComponents.length > 0;
+const hasGiftColumnCards =
+  deposit.gifts.length > 0 ||
+  unlinkedCharges.length > 0 ||
+  unlinkedComponents.length > 0;
   const giftAnchor = (gift: WorkbenchDeposit["gifts"][number]): AnchorRef | null => {
     const stagedId = gift.linkedStagedPaymentIds?.[0];
     if (stagedId) {
@@ -906,22 +914,6 @@ export function DepositRow({ deposit, actions: suppliedActions, onConfirmProvisi
                     ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, chargePreview(charge)) }] : []),
                     ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, chargePreview(charge)) }] : []),
                     ...(actions.isFinanceOrAdmin && deposit.composition.payoutId && actions.openChargeQbSearch ? [{ label: "Search QuickBooks…", onSelect: () => actions.openChargeQbSearch?.(charge) }] : []),
-                  ]} />
-                </div>
-              </div>
-            );
-          })}
-          {unlinkedQbRecords.map((record) => {
-            const anchor: AnchorRef = { kind: "staged", id: record.stagedPaymentId, label: record.payerName ?? record.memo ?? record.lineDescription ?? record.reference ?? record.stagedPaymentId };
-            return (
-              <div key={`unlinked-qb-${record.stagedPaymentId}`} className="rounded-md border border-dashed bg-card px-2.5 py-1.5">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="min-w-0 truncate text-[11px] font-medium">{anchor.label}</p>
-                  <CardActionsMenu items={[
-                    { label: "Search and link gift…", onSelect: () => actions.openLinkGift(anchor) },
-                    { label: "Create gift…", onSelect: () => actions.openCreateGift(anchor, qbPreview(record)) },
-                    ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch ? [{ label: "Find Donorbox match…", onSelect: () => actions.openDonorboxSearch?.(anchor, qbPreview(record)) }] : []),
-                    ...(actions.canUseCodingForm && actions.openCodingFormLookup ? [{ label: "Find coding form match…", onSelect: () => actions.openCodingFormLookup?.(anchor, qbPreview(record)) }] : []),
                   ]} />
                 </div>
               </div>

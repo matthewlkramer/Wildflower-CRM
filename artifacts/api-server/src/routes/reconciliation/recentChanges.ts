@@ -3,22 +3,21 @@ import { db } from "@workspace/db";
 import { auditLog, users } from "@workspace/db/schema";
 import { desc, eq, sql } from "drizzle-orm";
 import { asyncHandler } from "../../lib/helpers";
+import { getAppUser } from "../../lib/appRequest";
 import { type ReconUndoKind } from "../../lib/reconciliationAudit";
 
 /**
- * GET /reconciliation/workbench-recent-changes — the workbench's recent-changes
- * rail. Hydrates from the audit log's reconciliation-domain entries (every
- * human queue action records exactly one, tagged metadata.domain =
- * "reconciliation" via reconAudit). The undo pointer is read back verbatim from
- * the metadata — validity is NOT re-checked here; the target endpoint keeps its
- * own guards and 409s cleanly if state moved on. Team-wide (requireAuth is
- * applied by the reconciliation composition root; NOT admin-gated — unlike the
- * full audit-log page, this surfaces only reconciliation queue actions).
+ * GET /reconciliation/workbench-recent-changes — the signed-in reviewer's
+ * recent reversible reconciliation actions.
+ *
+ * The rail exists primarily as a quick undo surface, not as a team-wide audit
+ * feed. Intermediate/non-reversible actions (for example, setting a donor
+ * immediately before creating a gift) remain in audit_log but do not displace
+ * the actions this reviewer can actually undo. The full audit log remains the
+ * authority for team-wide history.
  */
 const router: IRouter = Router();
 
-// Human-readable actor label: display name, then first+last, then email.
-// (Same precedence as the audit-log page.)
 const actorNameExpr = sql<string | null>`COALESCE(
   NULLIF(${users.displayName}, ''),
   NULLIF(TRIM(CONCAT_WS(' ', ${users.firstName}, ${users.lastName})), ''),
@@ -32,27 +31,35 @@ const UNDO_KINDS: ReadonlySet<string> = new Set([
   "reinclude_stripe_charge",
 ] satisfies ReconUndoKind[]);
 
-// Defensive read of the undo pointer out of the stored metadata JSON — a
-// malformed/legacy entry degrades to "no undo" instead of breaking the rail.
 function undoOf(
   metadata: unknown,
-): { kind: string; targetId: string } | null {
+): { kind: ReconUndoKind; targetId: string } | null {
   if (!metadata || typeof metadata !== "object") return null;
   const u = (metadata as Record<string, unknown>).undo;
   if (!u || typeof u !== "object") return null;
   const { kind, targetId } = u as Record<string, unknown>;
   if (typeof kind !== "string" || !UNDO_KINDS.has(kind)) return null;
   if (typeof targetId !== "string" || !targetId) return null;
-  return { kind, targetId };
+  return { kind: kind as ReconUndoKind, targetId };
 }
 
 router.get(
   "/reconciliation/workbench-recent-changes",
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user?.id) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    // Keep the proven reconciliation-domain query shape, then apply the
+    // reviewer/undo filters in memory. A wider window prevents intermediate
+    // non-reversible events from displacing useful undo entries.
     const rows = await db
       .select({
         id: auditLog.id,
         at: auditLog.createdAt,
+        actorUserId: auditLog.actorUserId,
         actorName: actorNameExpr.as("actor_name"),
         summary: auditLog.summary,
         metadata: auditLog.metadata,
@@ -61,17 +68,24 @@ router.get(
       .leftJoin(users, eq(users.id, auditLog.actorUserId))
       .where(sql`${auditLog.metadata} ->> 'domain' = 'reconciliation'`)
       .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
-      .limit(20);
+      .limit(500);
 
-    res.json({
-      items: rows.map((r) => ({
-        id: r.id,
-        at: r.at,
-        actorName: r.actorName,
-        summary: r.summary ?? "",
-        undo: undoOf(r.metadata),
-      })),
-    });
+    const items = rows
+      .filter((row) => row.actorUserId === user.id)
+      .map((row) => ({
+        id: row.id,
+        at: row.at,
+        actorName: row.actorName,
+        summary: row.summary ?? "",
+        undo: undoOf(row.metadata),
+      }))
+      .filter(
+        (item): item is typeof item & { undo: NonNullable<typeof item.undo> } =>
+          item.undo !== null,
+      )
+      .slice(0, 20);
+
+    res.json({ items });
   }),
 );
 
