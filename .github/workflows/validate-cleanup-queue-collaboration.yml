@@ -67,7 +67,6 @@ jobs:
         run: |
           pnpm exec prettier --write \
             lib/db/src/schema/cleanupQueue.ts \
-            lib/db/migrations/0220_cleanup_queue_collaboration.sql \
             artifacts/api-server/src/routes/cleanupQueue.ts \
             artifacts/api-server/src/__tests__/flag-for-research.integration.test.ts \
             artifacts/wildflower-crm/src/pages/cleanup-queue.tsx
