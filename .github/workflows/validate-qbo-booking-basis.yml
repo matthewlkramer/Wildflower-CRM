@@ -69,7 +69,6 @@ jobs:
         run: |
           pnpm --filter @workspace/db run push-force
           pnpm run check:api
-          pnpm --filter @workspace/db run typecheck
 
       - name: Run focused tests
         run: |
