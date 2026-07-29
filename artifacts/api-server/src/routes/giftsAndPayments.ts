@@ -22,7 +22,7 @@ import {
   sourceLinks,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNotNull, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
 import { getViewer, type Viewer } from "../lib/identityVisibility";
 import {
@@ -224,6 +224,7 @@ import {
   stripeLedgerGiftIdForCharge,
   stripeLedgerMintedGiftIdForCharge,
   donorboxBackedExistsSql,
+  untiePaymentUnitFromGift,
 } from "../lib/paymentApplications";
 import { isReimbursablePlaceholderGift } from "../lib/reimbursablePlaceholder";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
@@ -2420,11 +2421,21 @@ router.get(
     // longer read — retired, docs/adr-linear-money-model.md; a multi-matched
     // member's counted tie renders as a direct match.) Off-books gifts may
     // still surface evidence if any exists, but it isn't required of them.
+    // LEFT join: manual/bank-sourced units (checks, wires composed directly
+    // into a bank deposit; pu_manual_* minted from the workbench) have no
+    // staged_payments row — they must still appear as counted payments (their
+    // QB detail fields are simply null). Unit received_date/gross fill in for
+    // the missing staged row. Stripe-charge-sourced units are EXCLUDED: their
+    // evidence renders on the dedicated Stripe chain card, and their ties are
+    // reverted through the Stripe-specific flows, never the generic untie.
     const ledgerRows = await db
       .select({
+        paymentUnitId: paymentUnits.id,
+        unitKind: paymentUnits.kind,
         stagedPaymentId: paymentUnits.sourceStagedPaymentId,
         amountApplied: paymentUnits.grossAmount,
         createdTheGift: paymentUnits.createdTheGift,
+        unitReceivedDate: paymentUnits.receivedDate,
         realmId: stagedPayments.realmId,
         qbEntityType: stagedPayments.qbEntityType,
         qbEntityId: stagedPayments.qbEntityId,
@@ -2440,13 +2451,17 @@ router.get(
         )`,
       })
       .from(paymentUnits)
-      .innerJoin(
+      .leftJoin(
         stagedPayments,
         eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
-      .where(eq(paymentUnits.giftId, id));
+      .where(
+        and(eq(paymentUnits.giftId, id), ne(paymentUnits.kind, "stripe_charge")),
+      );
 
     const quickbooksRecords = ledgerRows.map((r) => ({
+      paymentUnitId: r.paymentUnitId,
+      unitKind: r.unitKind,
       stagedPaymentId: r.stagedPaymentId,
       linkType: (r.countedAppCount > 1
         ? "split"
@@ -2461,7 +2476,7 @@ router.get(
       qbPaymentMethod: r.qbPaymentMethod,
       payerName: r.payerName,
       amount: r.amountApplied ?? "0",
-      dateReceived: r.dateReceived,
+      dateReceived: r.dateReceived ?? r.unitReceivedDate,
     }));
 
     // CORROBORATING — non-counting QB evidence claims (source_links
@@ -2496,6 +2511,10 @@ router.get(
     // A corroborating claim is never how a split books (splits write counted
     // ties) and never mints a gift, so its label is always matched.
     const corroboratingRecords = corroboratingRows.map((r) => ({
+      // Corroborating rows are evidence claims, not counted ties — they carry
+      // no untie-able unit target.
+      paymentUnitId: null,
+      unitKind: null,
       stagedPaymentId: r.stagedPaymentId,
       linkType: "matched" as
         | "matched"
@@ -2577,6 +2596,70 @@ router.get(
       stripeFeeRecords,
       restrictions,
     });
+  }),
+);
+
+// ─── Untie one counted payment unit from a gift ─────────────────────────────
+// The gift-detail "unlink payment" action. Accounting-changing → finance-
+// gated; freeze-guarded on the gift's governing fiscal year. Clears only the
+// unit→gift tie facts (the unit + its bank/QB evidence survive and return to
+// the workbench's unmatched pool). Unlinking the unit that created the gift
+// is allowed — the gift becomes evidence-less and surfaces in the incomplete
+// lanes; it is never auto-archived.
+router.post(
+  "/gifts-and-payments/:id/payment-units/:unitId/untie",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const id = paramId(req);
+    const unitId = String(req.params.unitId ?? "");
+
+    const gift = await db
+      .select(giftHeaderColumns)
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id))
+      .then((r) => r[0]);
+    if (!gift) return notFound(res, "gift");
+
+    const freeze = await resolveGiftFreeze(gift.dateReceived);
+    if (freeze.frozen) return respondFrozen(res, freeze);
+
+    const outcome = await db.transaction((tx) =>
+      untiePaymentUnitFromGift(tx, { unitId, giftId: id }),
+    );
+    if (outcome.kind === "unit_not_found") return notFound(res, "payment unit");
+    if (outcome.kind === "not_tied_to_gift") {
+      return res.status(409).json({
+        error: "unit_not_tied_to_gift",
+        message: "This payment is not currently linked to this gift.",
+      });
+    }
+    if (outcome.kind === "stripe_unit") {
+      return res.status(409).json({
+        error: "stripe_unit_untie_unsupported",
+        message:
+          "Stripe payments are unlinked through the Stripe reconciliation flows, not from the gift page.",
+      });
+    }
+
+    // The tie feeds paid-coverage → pledge stage/status must re-derive.
+    await applyDerivedOppFieldsMany(gift.opportunityId);
+    await auditUpdate(
+      req,
+      "gift",
+      id,
+      { linkedPaymentUnit: unitId },
+      { linkedPaymentUnit: null },
+      ["linkedPaymentUnit"],
+      outcome.createdTheGift
+        ? `Unlinked payment ${unitId} (it originally created this gift)`
+        : `Unlinked payment ${unitId}`,
+    );
+
+    const [row] = await db
+      .select(giftHeaderColumns)
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, id));
+    res.json(row);
   }),
 );
 

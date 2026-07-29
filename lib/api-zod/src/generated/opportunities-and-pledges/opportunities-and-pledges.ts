@@ -821,7 +821,7 @@ export const MintGiftFromOpportunityParams = zod.object({
 })
 
 export const MintGiftFromOpportunityBody = zod.object({
-  "awaitingSettlement": zod.boolean().optional().describe('When true, stamp the minted gift `awaiting_settlement=true` (the \'won gift awaiting imminent payment\' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain \'won gift\').'),
+  "awaitingSettlement": zod.boolean().optional().describe('Deprecated and rejected: pre-minting a gift for imminent on-books money was the duplicate-payment generator (the money later arrives and mints again via reconciliation). Sending true now 409s with awaiting_settlement_mint_removed. Expected money belongs in pledge expected payments; the gift is minted from the bank deposit when it lands. Off-books gifts (the only remaining manual mint) never settle, so the flag is meaningless here.'),
   "offBooksException": zod.boolean().optional().describe('Evidence-only escape hatch (Task #788): manual minting of a gift from a pledge\/opportunity is blocked (409 manual_gift_on_pledge_blocked) — pledge payments are minted from QuickBooks evidence via reconciliation. Set true (finance\/admin only) to record money that will never appear in QuickBooks. Request-level flag only; never persisted.')
 }).describe('Options for proactively minting a gift from an opportunity\/pledge. All money\/donor\/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor.')
 

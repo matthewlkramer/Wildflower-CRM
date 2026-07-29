@@ -26,6 +26,7 @@ import type {
   BulkUpdateResult,
   CandidateThankYouEmailList,
   CreateGiftOrPaymentBody,
+  ErrorResponse,
   ForbiddenResponse,
   GiftAuditReconciliation,
   GiftOrPayment,
@@ -691,6 +692,91 @@ export function useGetGiftAuditReconciliation<TData = Awaited<ReturnType<typeof 
 
 
 /**
+ * @summary Unlink one counted payment unit from this gift (clears the unit→gift
+tie facts; the unit itself and its bank/QB evidence are untouched and
+return to the unmatched pool in the reconciliation workbench).
+Finance-gated (accounting-changing) and freeze-guarded: blocked when
+the gift's fiscal year is audit-closed. Unlinking the unit that
+created the gift is allowed — the gift simply becomes evidence-less
+and surfaces in the incomplete lanes (never auto-archived).
+
+ */
+export const getUntieGiftPaymentUnitUrl = (id: string,
+    unitId: string,) => {
+
+
+  
+
+  return `/api/gifts-and-payments/${id}/payment-units/${unitId}/untie`
+}
+
+export const untieGiftPaymentUnit = async (id: string,
+    unitId: string, options?: RequestInit): Promise<GiftOrPayment> => {
+  
+  return customFetch<GiftOrPayment>(getUntieGiftPaymentUnitUrl(id,unitId),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getUntieGiftPaymentUnitMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof untieGiftPaymentUnit>>, TError,{id: string;unitId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof untieGiftPaymentUnit>>, TError,{id: string;unitId: string}, TContext> => {
+
+const mutationKey = ['untieGiftPaymentUnit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof untieGiftPaymentUnit>>, {id: string;unitId: string}> = (props) => {
+          const {id,unitId} = props ?? {};
+
+          return  untieGiftPaymentUnit(id,unitId,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UntieGiftPaymentUnitMutationResult = NonNullable<Awaited<ReturnType<typeof untieGiftPaymentUnit>>>
+    
+    export type UntieGiftPaymentUnitMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | ErrorResponse>
+
+    /**
+ * @summary Unlink one counted payment unit from this gift (clears the unit→gift
+tie facts; the unit itself and its bank/QB evidence are untouched and
+return to the unmatched pool in the reconciliation workbench).
+Finance-gated (accounting-changing) and freeze-guarded: blocked when
+the gift's fiscal year is audit-closed. Unlinking the unit that
+created the gift is allowed — the gift simply becomes evidence-less
+and surfaces in the incomplete lanes (never auto-archived).
+
+ */
+export const useUntieGiftPaymentUnit = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof untieGiftPaymentUnit>>, TError,{id: string;unitId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof untieGiftPaymentUnit>>,
+        TError,
+        {id: string;unitId: string},
+        TContext
+      > => {
+      return useMutation(getUntieGiftPaymentUnitMutationOptions(options));
+    }
+    /**
  * @summary Merge several gifts into one gift, summing amounts and combining allocations.
  */
 export const getMergeGiftsAndPaymentsUrl = () => {

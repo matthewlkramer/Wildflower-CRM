@@ -1028,15 +1028,16 @@ router.post(
   }),
 );
 
-// Proactively mint a real gift from an opportunity/pledge (the "won gift" and
-// "won gift awaiting imminent payment" actions on the opportunity detail). This
-// is the money-first counterpart to the reconciliation path: instead of a bank
-// event minting a gift, the fundraiser records the win up front. All money,
-// donor, and scope are DERIVED from the opportunity (never supplied by the
-// client) so the gift inherits the pledge's scope; the only choice is whether to
-// stamp `awaiting_settlement` (so the fresh, cash-tie-less gift is not treated
-// as a reconciliation error while payment is imminent). Never blocks: a scope-
-// less opp still mints a header + a seeded default allocation.
+// Mint an off-books gift from an opportunity/pledge (the "Record off-books
+// gift" action on the opportunity detail). This is exclusively for money that
+// never appears in our bank/QuickBooks (donor pays a vendor directly) — every
+// on-books payment is minted from money evidence via the reconciliation
+// workbench instead. The old "won gift (awaiting imminent payment)" pre-mint
+// flavors are retired: they typed a payment into existence before money
+// arrived and generated duplicate payment records. All money, donor, and
+// scope are DERIVED from the opportunity (never supplied by the client) so
+// the gift inherits the pledge's scope. A scope-less opp still mints a
+// header + a seeded default allocation.
 router.post(
   "/opportunities-and-pledges/:id/mint-gift",
   asyncHandler(async (req, res) => {
@@ -1075,6 +1076,20 @@ router.post(
     }
     if (!requireFinance(req, res)) return;
 
+    // Awaiting-settlement pre-minting is retired: recording a gift for money
+    // that is "about to arrive" is exactly the typed-in assertion that created
+    // duplicate payment records (the money later lands and mints again via
+    // reconciliation). Off-books money never settles, so the flag also
+    // contradicts the off-books exception this endpoint now exclusively
+    // serves. Expected on-books money belongs in pledge expected payments.
+    if (body.awaitingSettlement) {
+      return res.status(409).json({
+        error: "awaiting_settlement_mint_removed",
+        message:
+          "Pre-minting a gift for imminent money is no longer supported — it created duplicate payment records. Record expected money on the pledge's expected payments; the payment is recorded from the bank deposit in the reconciliation workbench when it arrives.",
+      });
+    }
+
     // Donor XOR: copy all three FKs straight from the opportunity (its own
     // num_nonnulls = 1 CHECK guarantees exactly one is set), so the minted gift
     // inherits the same single donor without re-deriving it.
@@ -1088,7 +1103,6 @@ router.post(
     // Amount = the awarded amount when the ask has been sized, else the ask.
     const dateReceived = todayInChicago();
     const amount = opp.awardedAmount ?? opp.askAmount ?? null;
-    const awaitingSettlement = body.awaitingSettlement ?? false;
 
     const giftId = newId();
     await db.transaction(async (tx) => {
@@ -1099,7 +1113,9 @@ router.post(
         opportunityId: opp.id,
         amount,
         dateReceived,
-        awaitingSettlement,
+        // Off-books money never settles — the awaiting-settlement pre-mint
+        // flavor is retired (rejected above).
+        awaitingSettlement: false,
         // Authoritative loan-vs-grant flag carried over from the opportunity.
         loanOrGrant: opp.loanOrGrant,
       });
@@ -1136,9 +1152,7 @@ router.post(
         req,
         "gift",
         gift.id,
-        awaitingSettlement
-          ? `Minted gift awaiting settlement from opportunity ${id}`
-          : `Minted gift from opportunity ${id}`,
+        `Minted off-books gift from opportunity ${id}`,
       );
     }
     res.status(201).json(gift);

@@ -5,6 +5,8 @@ import {
   useGetGiftOrPayment,
   useUpdateGiftOrPayment,
   useArchiveGiftOrPayment,
+  useUntieGiftPaymentUnit,
+  useGetCurrentUser,
   useGetOrganization,
   useGetHousehold,
   useGetPaymentIntermediary,
@@ -1011,6 +1013,49 @@ function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail })
       enabled: !!gift.id,
     },
   });
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  // Finance/admin gate for unlinking a payment. The server enforces with a
+  // 403 finance_role_required; this only labels the disabled button (blocked
+  // actions are shown disabled with the reason, never hidden).
+  const viewerRole = useGetCurrentUser().data?.role;
+  const viewerIsFinance = viewerRole === "finance" || viewerRole === "admin";
+  const untie = useUntieGiftPaymentUnit({
+    mutation: {
+      onSuccess: async () => {
+        toast({
+          title: "Payment unlinked",
+          description:
+            "The payment returned to the unmatched pool in the reconciliation workbench.",
+        });
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getGetGiftAuditReconciliationQueryKey(gift.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getGetGiftOrPaymentQueryKey(gift.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListGiftsAndPaymentsQueryKey(),
+          }),
+          gift.opportunityId
+            ? queryClient.invalidateQueries({
+                queryKey: getGetOpportunityOrPledgeQueryKey(gift.opportunityId),
+              })
+            : Promise.resolve(),
+        ]);
+      },
+      onError: (error: unknown) => {
+        const message =
+          error instanceof Error ? error.message : "Failed to unlink payment";
+        toast({
+          title: "Could not unlink payment",
+          description: message,
+          variant: "destructive",
+        });
+      },
+    },
+  });
 
   const counted = data?.quickbooksRecords ?? [];
   const corroborating = data?.corroboratingRecords ?? [];
@@ -1066,7 +1111,21 @@ function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail })
             ) : (
               <div className="space-y-2" data-testid="gift-qb-payments-list">
                 {counted.map((record) => (
-                  <QbRecordRow key={record.stagedPaymentId} record={record} />
+                  <QbRecordRow
+                    key={record.paymentUnitId ?? record.stagedPaymentId}
+                    record={record}
+                    viewerIsFinance={viewerIsFinance}
+                    unlinking={untie.isPending}
+                    onUnlink={
+                      record.paymentUnitId
+                        ? () =>
+                            untie.mutateAsync({
+                              id: gift.id,
+                              unitId: record.paymentUnitId!,
+                            })
+                        : undefined
+                    }
+                  />
                 ))}
               </div>
             )}
@@ -1097,20 +1156,29 @@ function GiftPaymentsReconciliationCard({ gift }: { gift: GiftOrPaymentDetail })
   );
 }
 
-// A single QuickBooks record row inside the Payments & reconciliation card.
+// A single payment record row inside the Payments & reconciliation card.
 // Corroborating rows carry no counted amount (amount is always null server-side)
-// so they render an "Audit only" chip instead of a currency figure.
+// so they render an "Audit only" chip instead of a currency figure. Counted
+// rows with a payment-unit target expose a finance-gated Unlink action
+// (disabled with the reason for non-finance viewers — never hidden).
 function QbRecordRow({
   record,
   corroborating,
+  viewerIsFinance,
+  unlinking,
+  onUnlink,
 }: {
   record: GiftAuditReconciliationRecord;
   corroborating?: boolean;
+  viewerIsFinance?: boolean;
+  unlinking?: boolean;
+  onUnlink?: () => Promise<unknown>;
 }) {
+  const isCreated = record.linkType === "created";
   return (
     <div
       className="rounded-md border px-3 py-2"
-      data-testid={`gift-qb-payment-${record.stagedPaymentId}`}
+      data-testid={`gift-qb-payment-${record.stagedPaymentId ?? record.paymentUnitId}`}
     >
       <div className="flex items-center justify-between gap-2">
         <Badge variant="secondary">
@@ -1129,6 +1197,35 @@ function QbRecordRow({
         <div>Deposit to: {record.qbDepositToAccountName || "—"}</div>
         <div>Received: {formatDate(record.dateReceived)}</div>
       </div>
+      {onUnlink ? (
+        <div className="mt-2 flex justify-end">
+          <ConfirmDeleteDialog
+            title="Unlink this payment?"
+            description={
+              (isCreated
+                ? "This payment originally created this gift. Unlinking removes only the link — the gift record stays (it will show as missing payment evidence), and the payment returns to the unmatched pool in the reconciliation workbench. "
+                : "This removes only the link between this payment and this gift. The payment and its bank/QuickBooks evidence are untouched and return to the unmatched pool in the reconciliation workbench. ") +
+              "Pledge payment coverage will be recalculated."
+            }
+            confirmLabel="Unlink payment"
+            busyLabel="Unlinking…"
+            destructive={false}
+            onConfirm={onUnlink}
+            confirmTestId={`confirm-unlink-payment-${record.paymentUnitId}`}
+            trigger={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={!viewerIsFinance || unlinking}
+                data-testid={`button-unlink-payment-${record.paymentUnitId}`}
+              >
+                Unlink
+                {!viewerIsFinance ? " (finance role required)" : ""}
+              </Button>
+            }
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

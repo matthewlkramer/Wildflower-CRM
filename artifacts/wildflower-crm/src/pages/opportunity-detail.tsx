@@ -140,6 +140,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { DerivedRow } from "@/components/derived-row";
 
@@ -187,6 +197,9 @@ function OppView({
   const [flagResearchOpen, setFlagResearchOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [closeAwardOpen, setCloseAwardOpen] = useState(false);
+  // Explicit confirmation before recording an off-books gift (the only manual
+  // gift-creation path left on a pledge — money that never hits our bank).
+  const [offBooksConfirmOpen, setOffBooksConfirmOpen] = useState(false);
   // Non-null while the "mark dormant/lost" close-date prompt is open.
   const [closingLossType, setClosingLossType] = useState<OpportunityLossType | null>(null);
   const [closeDateValue, setCloseDateValue] = useState("");
@@ -237,9 +250,10 @@ function OppView({
     },
   });
 
-  // "Won gift" / "Won gift awaiting imminent payment" actions — proactively
-  // mint a real gift from this opportunity (money/donor/scope derived
-  // server-side). On success we land on the new gift's detail page.
+  // "Record off-books gift" action — mints a gift for money that never hits
+  // our bank/QuickBooks (money/donor/scope derived server-side). On-books
+  // payments are never minted here; they come from the reconciliation
+  // workbench. On success we land on the new gift's detail page.
   const mintGift = useMintGiftFromOpportunity({
     mutation: {
       onSuccess: async (gift) => {
@@ -470,36 +484,28 @@ function OppView({
                 Mark as committed pledge
               </DropdownMenuItem>
               {/*
-                Evidence-only gift creation (Task #788): manually minting a
-                gift from a pledge/opportunity is an off-books exception —
-                finance only. Blocked rows are labeled, never hidden (user
-                rule); the API enforces the same guard with
+                Payments are minted from money evidence in the reconciliation
+                workbench — never typed in here. The old "won gift (awaiting
+                imminent payment)" mint actions silently asserted the
+                off-books exception and generated duplicate payment records;
+                they are gone. The only manual path left is the explicit
+                off-books exception (money that never hits our bank), finance
+                only, behind a confirmation dialog. Blocked rows are labeled,
+                never hidden (user rule); the API enforces the same guard with
                 manual_gift_on_pledge_blocked / finance 403.
               */}
               <DropdownMenuItem
-                disabled={!viewerIsFinance || mintGift.isPending}
-                onSelect={() =>
-                  mintGift.mutate({
-                    id: opp.id,
-                    data: { awaitingSettlement: true, offBooksException: true },
-                  })
-                }
-                data-testid="action-mark-won-gift-awaiting"
+                onSelect={() => navigate("/reconciliation/deposits")}
+                data-testid="action-record-payment-workbench"
               >
-                Mark as won gift awaiting imminent payment
-                {!viewerIsFinance ? " (finance role required — off-books exception)" : ""}
+                Record payment (via reconciliation workbench)
               </DropdownMenuItem>
               <DropdownMenuItem
                 disabled={!viewerIsFinance || mintGift.isPending}
-                onSelect={() =>
-                  mintGift.mutate({
-                    id: opp.id,
-                    data: { awaitingSettlement: false, offBooksException: true },
-                  })
-                }
-                data-testid="action-mark-won-gift"
+                onSelect={() => setOffBooksConfirmOpen(true)}
+                data-testid="action-record-off-books-gift"
               >
-                Mark as won gift
+                Record off-books gift
                 {!viewerIsFinance ? " (finance role required — off-books exception)" : ""}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -596,6 +602,43 @@ function OppView({
         onOpenChange={setArchiveOpen}
         confirmTestId="button-confirm-archive-opp"
       />
+      {/*
+        Off-books gift confirmation: the only remaining manual gift-creation
+        path on a pledge. Requires an explicit assertion that this money will
+        never appear in our bank/QuickBooks — real payments are recorded in
+        the reconciliation workbench when the money arrives.
+      */}
+      <AlertDialog open={offBooksConfirmOpen} onOpenChange={setOffBooksConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Record an off-books gift?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Only use this for money that will never hit our bank account or
+              QuickBooks (for example, a donor paying a vendor directly). If
+              actual money is arriving, do not record it here — it will be
+              recorded from the bank deposit in the reconciliation workbench,
+              and recording it manually creates duplicate payment records.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-off-books-gift">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={mintGift.isPending}
+              onClick={() =>
+                mintGift.mutate({
+                  id: opp.id,
+                  data: { offBooksException: true },
+                })
+              }
+              data-testid="button-confirm-off-books-gift"
+            >
+              {mintGift.isPending ? "Recording…" : "Record off-books gift"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/*
         Close-date prompt: newly marking a row dormant/lost requires an
         actualCompletionDate (API rejects the close transition without one).

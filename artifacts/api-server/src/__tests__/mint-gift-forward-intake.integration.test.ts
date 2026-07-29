@@ -231,6 +231,16 @@ describe.skipIf(!HAS_DB)("mint-gift forward intake", () => {
     expect(json.error).toBe("finance_role_required");
   });
 
+  it("rejects the retired awaiting-settlement pre-mint even with the off-books exception", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const { status, json } = await mint(OPP_SCOPED, {
+      offBooksException: true,
+      awaitingSettlement: true,
+    });
+    expect(status).toBe(409);
+    expect(json.error).toBe("awaiting_settlement_mint_removed");
+  });
+
   it("never mints from a write-off record", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const { status, json } = await mint(OPP_WRITEOFF, { offBooksException: true });

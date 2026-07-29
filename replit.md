@@ -79,11 +79,14 @@ current-status document.
      (a recomputed deterministic pairing with `ambiguous_bank_match`; NOT a
      confirmation workflow — `settlement_links` is retired and dropped);
    - `payment_units` as the canonical donor-level payment/evidence identity;
-   - `payment_applications` (anchored solely by `payment_unit_id`) for the
-     component/payment-unit → CRM gift relationship: each unit has 0 or 1
-     counted gift; apparent multiple gifts are merged into allocation rows on
-     one gift; the three legacy source-anchor columns (`payment_id` /
-     `stripe_charge_id` / `donorbox_donation_id`) are dropped; never re-add one;
+   - the direct pointer `payment_units.gift_id` plus the unit's tie-fact
+     columns for the component/payment-unit → CRM gift relationship (see
+     [`docs/adr-unit-gift-pointer.md`](docs/adr-unit-gift-pointer.md); the
+     counted `payment_applications` ledger is retired from all write paths —
+     never write or revive it): each unit has 0 or 1 counted gift; apparent
+     multiple gifts are merged into allocation rows on one gift; the three
+     legacy source-anchor columns (`payment_id` / `stripe_charge_id` /
+     `donorbox_donation_id`) are dropped; never re-add one;
    - exclusion is a component/payment-unit fact. The current PR #42
      `bank_deposit_exclusions` implementation is being migrated down from
      deposit grain; a deposit's not-fundraising state is derived when all

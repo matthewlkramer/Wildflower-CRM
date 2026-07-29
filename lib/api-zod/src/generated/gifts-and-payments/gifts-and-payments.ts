@@ -660,8 +660,10 @@ export const GetGiftAuditReconciliationResponse = zod.object({
   "name": zod.string().nullish()
 }).nullish(),
   "quickbooksRecords": zod.array(zod.object({
-  "stagedPaymentId": zod.string(),
-  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
+  "paymentUnitId": zod.string().nullish().describe('The counted payment unit behind this row (null on corroborating rows — they are evidence claims, not ties). Target for the per-payment untie action.'),
+  "unitKind": zod.union([zod.literal('stripe_charge'),zod.literal('check'),zod.literal('direct_ach'),zod.literal('wire'),zod.literal('other'),zod.literal(null)]).nullish().describe('The payment unit\'s kind (null on corroborating rows).'),
+  "stagedPaymentId": zod.string().nullish().describe('QuickBooks staged payment backing this unit, when it has one. Null for manual\/bank-sourced units.'),
+  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this payment.'),
   "realmId": zod.string().nullish(),
   "qbEntityType": zod.string().nullish(),
   "qbEntityId": zod.string().nullish(),
@@ -671,10 +673,12 @@ export const GetGiftAuditReconciliationResponse = zod.object({
   "payerName": zod.string().nullish(),
   "amount": zod.string().nullish().describe('QuickBooks amount for this record (the split sub-amount for split links).'),
   "dateReceived": zod.string().date().nullish()
-}).describe('A QuickBooks record this gift appears in (\"where\"), derived read-only from the gift\'s QB linkage.')),
+}).describe('A counted payment (or corroborating evidence row) this gift appears in (\"where\"). Counted rows are one per payment unit tied to this gift (payment_units.gift_id); QB detail fields are present only when the unit has a QuickBooks staged-payment source — manual\/bank-sourced units (checks, wires composed into a bank deposit) appear with null QB fields.')),
   "corroboratingRecords": zod.array(zod.object({
-  "stagedPaymentId": zod.string(),
-  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this QuickBooks staged row.'),
+  "paymentUnitId": zod.string().nullish().describe('The counted payment unit behind this row (null on corroborating rows — they are evidence claims, not ties). Target for the per-payment untie action.'),
+  "unitKind": zod.union([zod.literal('stripe_charge'),zod.literal('check'),zod.literal('direct_ach'),zod.literal('wire'),zod.literal('other'),zod.literal(null)]).nullish().describe('The payment unit\'s kind (null on corroborating rows).'),
+  "stagedPaymentId": zod.string().nullish().describe('QuickBooks staged payment backing this unit, when it has one. Null for manual\/bank-sourced units.'),
+  "linkType": zod.enum(['matched', 'created', 'split']).describe('How the gift is tied to this payment.'),
   "realmId": zod.string().nullish(),
   "qbEntityType": zod.string().nullish(),
   "qbEntityId": zod.string().nullish(),
@@ -684,7 +688,7 @@ export const GetGiftAuditReconciliationResponse = zod.object({
   "payerName": zod.string().nullish(),
   "amount": zod.string().nullish().describe('QuickBooks amount for this record (the split sub-amount for split links).'),
   "dateReceived": zod.string().date().nullish()
-}).describe('A QuickBooks record this gift appears in (\"where\"), derived read-only from the gift\'s QB linkage.')),
+}).describe('A counted payment (or corroborating evidence row) this gift appears in (\"where\"). Counted rows are one per payment unit tied to this gift (payment_units.gift_id); QB detail fields are present only when the unit has a QuickBooks staged-payment source — manual\/bank-sourced units (checks, wires composed into a bank deposit) appear with null QB fields.')),
   "stripeFeeRecords": zod.array(zod.object({
   "stagedPaymentId": zod.string().describe('staged_payments.id of the fee row.'),
   "chargeId": zod.string().describe('Stripe charge id (ch_...) the fee row belongs to.'),
@@ -707,6 +711,109 @@ export const GetGiftAuditReconciliationResponse = zod.object({
   "displayUsage": zod.string().nullish()
 }))
 }).describe('Per-gift audit-reconciliation view: when the money arrived, the\nQuickBooks record(s) it appears in, who gave it, and its restrictions.\nOff-books gifts are flagged `auditExcluded` (excluded from audit\nreconciliation) and carry no QuickBooks expectation.\n')
+
+/**
+ * @summary Unlink one counted payment unit from this gift (clears the unit→gift
+tie facts; the unit itself and its bank/QB evidence are untouched and
+return to the unmatched pool in the reconciliation workbench).
+Finance-gated (accounting-changing) and freeze-guarded: blocked when
+the gift's fiscal year is audit-closed. Unlinking the unit that
+created the gift is allowed — the gift simply becomes evidence-less
+and surfaces in the incomplete lanes (never auto-archived).
+
+ */
+export const UntieGiftPaymentUnitParams = zod.object({
+  "id": zod.coerce.string(),
+  "unitId": zod.coerce.string()
+})
+
+export const UntieGiftPaymentUnitResponse = zod.object({
+  "id": zod.string(),
+  "legacyGiftId": zod.string().nullish(),
+  "name": zod.string().nullish(),
+  "details": zod.string().nullish(),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.enum(['ach', 'check', 'wire', 'stock', 'donor_box', 'daf_ach', 'daf_check', 'daf_bill_com']).nullish(),
+  "amount": zod.string().nullish().describe('The human-entered gift amount. NO LONGER auto-overwritten by reconciliation (Task #448) — evidence is linked, the entered amount is preserved, and disagreements surface in the settled-vs-entered reconciliation queue. Compare against derivedSettledAmount.'),
+  "titleReference": zod.string().nullish().describe('Grant title or reference number, carried to the Revenue Extractor report (\"Title \/ Reference #\"). No effect on derivation \/ analytics \/ QB tie.'),
+  "memoDescription": zod.string().nullish().describe('Memo \/ description line finance keys into QuickBooks, carried to the Revenue Extractor report. No effect on derivation \/ analytics \/ QB tie.'),
+  "derivedSettledAmount": zod.string().nullish().describe('Settled GROSS actually landed for this gift, derived from all linked payments (QuickBooks + Stripe + non-stripe Donorbox). Null when no payment is linked yet. The UI shows \'you entered $X, settled $Y\' by comparing with `amount`.'),
+  "derivedProcessorFee": zod.string().nullish().describe('Total processor fees withheld across the gift\'s linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked.'),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "opportunityId": zod.string().nullish(),
+  "advisorPersonId": zod.string().nullish(),
+  "giftBeingMatchedId": zod.string().nullish(),
+  "overpayOfGiftId": zod.string().nullish().describe('When set, the audited original gift this surplus gift offsets. Booked in the current open FY when an audited, frozen gift is over-paid. The original stays quickbooks_tie_status=\'amount_mismatch\' forever; the PRESENCE of an active (non-archived) linked surplus gift is what marks the original \'resolved\' in the worklist.'),
+  "primaryContactPersonId": zod.string().nullish(),
+  "paymentIntermediaryId": zod.string().nullish(),
+  "ownerUserId": zod.string().nullish(),
+  "offBooks": zod.boolean().describe('DERIVED (Task #594): true when the gift is off-books \/ payment-exempt — it has at least one allocation and EVERY allocation sits on a no-payment entity (entities.expectsPayment = false: \"Direct to School\" \/ \"Wildflower Foundation TSNE\"). Replaces the retired header booleans (designatedToSchool \/ offBooksFiscalSponsor \/ paymentExpected). Off-books gifts still count toward revenue goals but are exempt from the QuickBooks-tie requirement and excluded from audit reconciliation. Never settable; make a gift off-books by putting its allocations on a no-payment entity.'),
+  "quickbooksTieStatus": zod.enum(['exempt', 'tied', 'amount_mismatch', 'missing']).describe('Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.').describe('Live-derived (never persisted) QuickBooks-tie signal computed from counted payment_applications ledger rows. Never set via create\/update.'),
+  "loanOrGrant": zod.enum(['loan', 'grant']).describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n').optional().describe('Authoritative loan-vs-grant classification. Set explicitly on create\/update; gift type badge follows from this flag (loan_or_grant=loan ⇒ loan_fund_investment).'),
+  "reconciliationLanes": zod.object({
+  "funding": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.'),
+  "crmRecord": zod.enum(['unlinked', 'proposed', 'confirmed', 'exempt']).describe('Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system\/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded\/rejected). The CRM-record lane never emits exempt.').nullable()
+}).describe('The two independently-tracked reconciliation lanes for a unit of money (INV-4). funding = the accounting\/evidence side (QuickBooks\/Stripe); crmRecord = the donor-record side. Derived, never a stored source of truth. crmRecord is null where a donor lane does not apply (e.g. a Stripe payout, which is a batch with no single donor).').optional().describe('Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list\/detail reads, omitted from bare mutation responses.'),
+  "tags": zod.string().nullish().describe('Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns.'),
+  "thankYouSentAt": zod.string().date().nullish().describe('Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time.'),
+  "thankYouEmailMessageId": zod.string().nullish().describe('FK to the email_messages row that was identified as the thank-you. Read-only; set via \/link-thank-you-email or the thank_you_acknowledgment proposal accept.'),
+  "thankYouAttachments": zod.array(zod.object({
+  "id": zod.string(),
+  "filename": zod.string().nullish(),
+  "mimeType": zod.string().nullish(),
+  "sizeBytes": zod.number().nullish(),
+  "downloadUrl": zod.string()
+})).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
+  "grantLetterUrl": zod.string().nullish(),
+  "grantLetterFilename": zod.string().nullish(),
+  "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
+  "thankYouLetterUrl": zod.string().nullish(),
+  "thankYouLetterFilename": zod.string().nullish(),
+  "thankYouLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when thankYouLetterUrl is set; cleared when it is removed.'),
+  "organizationName": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "paymentIntermediaryName": zod.string().nullish(),
+  "quickbooksStagedPaymentId": zod.string().nullish().describe('Id of the QuickBooks staged payment reconciled to \/ that created this gift, if any. Lets the reconciler show linked status and offer unmatch.'),
+  "donorboxBacked": zod.boolean().optional().describe('True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list.'),
+  "codingForm": zod.boolean().optional().describe('True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = \'applied\' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list.'),
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "entityIds": zod.array(zod.string()).nullish().describe('Distinct entity_id values from gift_allocations.'),
+  "displayUsages": zod.array(zod.string()).nullish().describe('Distinct display_usage values from gift_allocations (server-computed labels).'),
+  "grantYears": zod.array(zod.string()).nullish().describe('Distinct grant_year values from gift_allocations.'),
+  "regionIds": zod.array(zod.string()).nullish().describe('Distinct region IDs from region_ids arrays across all allocations.'),
+  "fundableProjectIds": zod.array(zod.string()).nullish().describe('Distinct fundable_project_id values from gift_allocations.'),
+  "purposeVerbatims": zod.array(zod.string()).nullish().describe('Distinct non-null purpose_verbatim strings across allocations (the donor\'s verbatim restriction language).'),
+  "regionalRestrictionTypes": zod.array(zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')).nullish().describe('Distinct regional_restriction_type values across allocations.'),
+  "otherRestrictionTypes": zod.array(zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')).nullish().describe('Distinct other_restriction_type values across allocations.'),
+  "timeRestrictionTypes": zod.array(zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')).nullish().describe('Distinct time_restriction_type values across allocations.'),
+  "restrictionLabel": zod.string().nullish().describe('Derived restriction summary across allocations: Restricted \/ Unrestricted. Restricted when any allocation has a donor-restricted axis (regional\/usage\/time), a fundable project (fundable_project_id IS NOT NULL), or an entity other than wildflower_foundation. Null when the gift has no allocations.'),
+  "campaignSlug": zod.string().nullish().describe('FK to fundraising_campaigns.slug. Null when the gift isn\'t linked to a structured campaign record.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "donorbox": zod.object({
+  "id": zod.string().describe('Donorbox donation id.'),
+  "donationType": zod.string().nullish().describe('Donorbox payment instrument (e.g. stripe).'),
+  "amount": zod.string().nullish(),
+  "processingFee": zod.string().nullish(),
+  "currency": zod.string().nullish(),
+  "donatedAt": zod.string().datetime({}).nullish(),
+  "campaignName": zod.string().nullish(),
+  "designation": zod.string().nullish(),
+  "comment": zod.string().nullish(),
+  "recurring": zod.boolean(),
+  "refunded": zod.boolean().describe('True when refunded (fully\/partially) in Donorbox. Surfaced as a badge — Donorbox refunds are NOT auto-applied to gifts.'),
+  "anonymous": zod.boolean(),
+  "donorName": zod.string().nullish(),
+  "donorEmail": zod.string().nullish(),
+  "donorEmployer": zod.string().nullish()
+}).describe('Read-only Donorbox donation facts joined onto a Stripe-sourced record\n(a Stripe staged charge or a gift minted\/matched from one) by\ndonorbox_donations.stripe_charge_id = stripe_staged_charges.id — a 1:1\njoin present only for Stripe-type Donorbox donations. Enrichment only:\nit NEVER mints a gift (the Stripe sync already pulls those charges). The\nverbatim Donorbox payload, custom questions, and review\/donor-match\nstate are deliberately omitted.\n').nullish().describe('Donorbox donation facts for this gift, joined via its linked Stripe charge (donorbox_donations.stripe_charge_id = the gift\'s matched\/created stripe_staged_charges.id). Populated only on the detail endpoint. Enrichment only — never mints a gift.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
 
 /**
  * @summary Merge several gifts into one gift, summing amounts and combining allocations.

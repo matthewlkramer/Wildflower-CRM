@@ -2456,7 +2456,21 @@ export interface GiftOrPaymentList {
 }
 
 /**
- * How the gift is tied to this QuickBooks staged row.
+ * The payment unit's kind (null on corroborating rows).
+ */
+export type GiftAuditReconciliationRecordUnitKind = typeof GiftAuditReconciliationRecordUnitKind[keyof typeof GiftAuditReconciliationRecordUnitKind] | null;
+
+
+export const GiftAuditReconciliationRecordUnitKind = {
+  stripe_charge: 'stripe_charge',
+  check: 'check',
+  direct_ach: 'direct_ach',
+  wire: 'wire',
+  other: 'other',
+} as const;
+
+/**
+ * How the gift is tied to this payment.
  */
 export type GiftAuditReconciliationRecordLinkType = typeof GiftAuditReconciliationRecordLinkType[keyof typeof GiftAuditReconciliationRecordLinkType];
 
@@ -2468,11 +2482,16 @@ export const GiftAuditReconciliationRecordLinkType = {
 } as const;
 
 /**
- * A QuickBooks record this gift appears in ("where"), derived read-only from the gift's QB linkage.
+ * A counted payment (or corroborating evidence row) this gift appears in ("where"). Counted rows are one per payment unit tied to this gift (payment_units.gift_id); QB detail fields are present only when the unit has a QuickBooks staged-payment source — manual/bank-sourced units (checks, wires composed into a bank deposit) appear with null QB fields.
  */
 export interface GiftAuditReconciliationRecord {
-  stagedPaymentId: string;
-  /** How the gift is tied to this QuickBooks staged row. */
+  /** The counted payment unit behind this row (null on corroborating rows — they are evidence claims, not ties). Target for the per-payment untie action. */
+  paymentUnitId?: string | null;
+  /** The payment unit's kind (null on corroborating rows). */
+  unitKind?: GiftAuditReconciliationRecordUnitKind;
+  /** QuickBooks staged payment backing this unit, when it has one. Null for manual/bank-sourced units. */
+  stagedPaymentId?: string | null;
+  /** How the gift is tied to this payment. */
   linkType: GiftAuditReconciliationRecordLinkType;
   realmId?: string | null;
   qbEntityType?: string | null;
@@ -8883,7 +8902,7 @@ export interface WriteOffPledgeBody {
  * Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor.
  */
 export interface MintGiftFromOpportunityBody {
-  /** When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift'). */
+  /** Deprecated and rejected: pre-minting a gift for imminent on-books money was the duplicate-payment generator (the money later arrives and mints again via reconciliation). Sending true now 409s with awaiting_settlement_mint_removed. Expected money belongs in pledge expected payments; the gift is minted from the bank deposit when it lands. Off-books gifts (the only remaining manual mint) never settle, so the flag is meaningless here. */
   awaitingSettlement?: boolean;
   /** Evidence-only escape hatch (Task #788): manual minting of a gift from a pledge/opportunity is blocked (409 manual_gift_on_pledge_blocked) — pledge payments are minted from QuickBooks evidence via reconciliation. Set true (finance/admin only) to record money that will never appear in QuickBooks. Request-level flag only; never persisted. */
   offBooksException?: boolean;

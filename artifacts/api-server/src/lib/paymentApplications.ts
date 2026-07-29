@@ -501,6 +501,64 @@ async function clearTieByAnchor(tx: Tx, where: SQL): Promise<string[]> {
   return [...new Set(tied.map((r) => r.giftId).filter((g): g is string => !!g))];
 }
 
+/** Outcome of a single-unit untie request. */
+export type UntieUnitResult =
+  | { kind: "ok"; createdTheGift: boolean }
+  | { kind: "unit_not_found" }
+  | { kind: "stripe_unit" }
+  | { kind: "not_tied_to_gift"; actualGiftId: string | null };
+
+/**
+ * Clear the unit→gift tie on ONE payment unit, verified against the gift the
+ * caller is acting on (the gift-detail "unlink payment" action). The unit and
+ * all its bank/QB evidence are untouched — it simply returns to the unmatched
+ * pool. Stripe-charge-sourced units are refused (`stripe_unit`): their ties
+ * are managed by the Stripe-specific revert flows (charge-tie supersede,
+ * clear-by-anchor), and a generic untie would bypass those. Corroborating
+ * unit↔gift claims in source_links are left alone (evidence, not the tie) —
+ * EXCEPT the `supersede_demotion` crumb for this exact (unit, gift) pair,
+ * which is consumed: it records the tie the human just deliberately removed,
+ * and leaving it would let a later tie-revert promote the stale tie back.
+ * Unlinking a created_the_gift unit is allowed: the gift stays (possibly
+ * evidence-less) and is never auto-archived. Caller holds the transaction and
+ * recomputes derived opp fields afterwards.
+ */
+export async function untiePaymentUnitFromGift(
+  tx: Tx,
+  args: { unitId: string; giftId: string },
+): Promise<UntieUnitResult> {
+  const unit = await tx
+    .select({
+      giftId: paymentUnits.giftId,
+      createdTheGift: paymentUnits.createdTheGift,
+      unitKind: paymentUnits.kind,
+    })
+    .from(paymentUnits)
+    .where(eq(paymentUnits.id, args.unitId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!unit) return { kind: "unit_not_found" };
+  if (unit.giftId !== args.giftId) {
+    return { kind: "not_tied_to_gift", actualGiftId: unit.giftId };
+  }
+  if (unit.unitKind === "stripe_charge") return { kind: "stripe_unit" };
+  await tx
+    .update(paymentUnits)
+    .set({ ...CLEARED_TIE_FACTS, updatedAt: new Date() })
+    .where(eq(paymentUnits.id, args.unitId));
+  await tx
+    .delete(sourceLinks)
+    .where(
+      and(
+        eq(sourceLinks.linkType, "unit_gift_corroboration"),
+        eq(sourceLinks.matchBasis, "supersede_demotion"),
+        eq(sourceLinks.paymentUnitId, args.unitId),
+        eq(sourceLinks.giftId, args.giftId),
+      ),
+    );
+  return { kind: "ok", createdTheGift: unit.createdTheGift };
+}
+
 /**
  * Clear the tie on the unit anchored to a Stripe charge. Returns the
  * affected gift ids (recompute their tie). Caller holds the transaction.

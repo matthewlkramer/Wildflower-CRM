@@ -2003,6 +2003,27 @@ paths:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftAuditReconciliation" } } } }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /gifts-and-payments/{id}/payment-units/{unitId}/untie:
+    post:
+      operationId: untieGiftPaymentUnit
+      tags: [gifts-and-payments]
+      summary: |
+        Unlink one counted payment unit from this gift (clears the unit→gift
+        tie facts; the unit itself and its bank/QB evidence are untouched and
+        return to the unmatched pool in the reconciliation workbench).
+        Finance-gated (accounting-changing) and freeze-guarded: blocked when
+        the gift's fiscal year is audit-closed. Unlinking the unit that
+        created the gift is allowed — the gift simply becomes evidence-less
+        and surfaces in the incomplete lanes (never auto-archived).
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: unitId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GiftOrPayment" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "unit_not_tied_to_gift — the unit is not currently counted against this gift; stripe_unit_untie_unsupported — Stripe-charge-sourced units are unlinked via the Stripe reconciliation flows, never this generic untie.", content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+
   # ─── Gift allocations ──────────────────────────────────────────────────────
   /gift-allocations:
     get:
@@ -7340,11 +7361,19 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     GiftAuditReconciliationRecord:
       type: object
-      required: [stagedPaymentId, linkType]
-      description: A QuickBooks record this gift appears in ("where"), derived read-only from the gift's QB linkage.
+      required: [linkType]
+      description: >-
+        A counted payment (or corroborating evidence row) this gift appears in
+        ("where"). Counted rows are one per payment unit tied to this gift
+        (payment_units.gift_id); QB detail fields are present only when the
+        unit has a QuickBooks staged-payment source — manual/bank-sourced
+        units (checks, wires composed into a bank deposit) appear with null
+        QB fields.
       properties:
-        stagedPaymentId:      { type: string }
-        linkType:             { type: string, enum: [matched, created, split], description: "How the gift is tied to this QuickBooks staged row." }
+        paymentUnitId:        { type: string, nullable: true, description: "The counted payment unit behind this row (null on corroborating rows — they are evidence claims, not ties). Target for the per-payment untie action." }
+        unitKind:             { type: string, nullable: true, enum: [stripe_charge, check, direct_ach, wire, other, null], description: "The payment unit's kind (null on corroborating rows)." }
+        stagedPaymentId:      { type: string, nullable: true, description: "QuickBooks staged payment backing this unit, when it has one. Null for manual/bank-sourced units." }
+        linkType:             { type: string, enum: [matched, created, split], description: "How the gift is tied to this payment." }
         realmId:              { type: string, nullable: true }
         qbEntityType:         { type: string, nullable: true }
         qbEntityId:           { type: string, nullable: true }
@@ -12001,7 +12030,7 @@ components:
       type: object
       description: "Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor."
       properties:
-        awaitingSettlement: { type: boolean, description: "When true, stamp the minted gift `awaiting_settlement=true` (the 'won gift awaiting imminent payment' action) so it is not treated as a reconciliation error while it briefly has no cash tie. Defaults false (a plain 'won gift')." }
+        awaitingSettlement: { type: boolean, description: "Deprecated and rejected: pre-minting a gift for imminent on-books money was the duplicate-payment generator (the money later arrives and mints again via reconciliation). Sending true now 409s with awaiting_settlement_mint_removed. Expected money belongs in pledge expected payments; the gift is minted from the bank deposit when it lands. Off-books gifts (the only remaining manual mint) never settle, so the flag is meaningless here." }
         offBooksException: { type: boolean, description: "Evidence-only escape hatch (Task #788): manual minting of a gift from a pledge/opportunity is blocked (409 manual_gift_on_pledge_blocked) — pledge payments are minted from QuickBooks evidence via reconciliation. Set true (finance/admin only) to record money that will never appear in QuickBooks. Request-level flag only; never persisted." }
     ResolveGiftOverpayBody:
       type: object
