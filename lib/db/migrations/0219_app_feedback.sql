@@ -1,4 +1,5 @@
 -- Private in-app product feedback queue. Screenshots are stored in the
+-- psql "$PROD_DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0219_app_feedback.sql
 -- existing authenticated object store; only their relative URL is persisted.
 
 CREATE TABLE IF NOT EXISTS app_feedback (
