@@ -1810,10 +1810,7 @@ router.get(
     );
     const targetAmount = query.amount ? Number(query.amount) : remainder;
     const search = query.q?.trim() || null;
-    const rawFilterAmount =
-      typeof req.query.filterAmount === "string"
-        ? req.query.filterAmount.trim()
-        : "";
+    const rawFilterAmount = query.filterAmount?.trim() ?? "";
     const filterAmount = rawFilterAmount ? Number(rawFilterAmount) : null;
     if (
       filterAmount !== null &&
@@ -1825,10 +1822,7 @@ router.get(
       });
       return;
     }
-    const filterDate =
-      typeof req.query.filterDate === "string" && req.query.filterDate.trim()
-        ? req.query.filterDate.trim()
-        : null;
+    const filterDate = query.filterDate?.trim() || null;
     if (filterDate) {
       const parsed = new Date(`${filterDate}T00:00:00Z`);
       if (

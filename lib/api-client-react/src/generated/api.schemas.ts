@@ -10997,13 +10997,21 @@ export type ListDepositCandidatePayouts200 = {
 
 export type ListDepositCandidatePaymentUnitsParams = {
 /**
- * Target amount in major units; results are ordered by proximity.
+ * Target amount in major units; results are ordered by proximity but not filtered by proximity.
  */
 amount?: string;
 /**
- * Optional text over the source staged-payment payer or memo and the payment-unit id.
+ * Optional text over payer, memo, amount, date, source label, or payment-unit id.
  */
 q?: string;
+/**
+ * Optional exact payment-unit amount in major units.
+ */
+filterAmount?: string;
+/**
+ * Optional exact payment-unit received date.
+ */
+filterDate?: string;
 /**
  * @minimum 1
  * @maximum 100

@@ -379,7 +379,7 @@ export default function ReconciliationDepositsPage() {
       filterAmount: knownPaymentFilterAmount.trim() || undefined,
       filterDate: knownPaymentFilterDate || undefined,
       limit: 100,
-    } as any,
+    },
     {
       query: {
         enabled: knownPaymentFor != null && knownPaymentMode === "search",
@@ -391,7 +391,7 @@ export default function ReconciliationDepositsPage() {
             filterAmount: knownPaymentFilterAmount.trim() || undefined,
             filterDate: knownPaymentFilterDate || undefined,
             limit: 100,
-          } as any,
+          },
         ),
       },
     },
