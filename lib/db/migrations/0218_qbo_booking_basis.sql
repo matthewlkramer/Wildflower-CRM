@@ -25,9 +25,11 @@ WITH classified AS (
   SELECT
     qac.id,
     CASE
-      WHEN abs(sp.amount - payout.amount) <= 0.01 THEN 'net'
+      WHEN abs(sp.amount - COALESCE(payout.net_total, payout.amount)) <= 0.01
+        THEN 'net'
       WHEN payout.gross_total IS NOT NULL
-        AND abs(sp.amount - payout.gross_total) <= 0.01 THEN 'gross'
+        AND abs(sp.amount - payout.gross_total) <= 0.01
+        THEN 'gross'
       ELSE 'unmatched'
     END AS booking_basis
   FROM qbo_accounting_checks qac
