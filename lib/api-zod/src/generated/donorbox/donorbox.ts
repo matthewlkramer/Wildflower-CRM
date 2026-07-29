@@ -139,7 +139,8 @@ export const CreateGiftFromDonorboxDonationBody = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish().describe('Conduit the donor gave through (Donorbox\/PayPal), propagated onto the gift.'),
-  "force": zod.boolean().optional().describe('Override the dedupe guard and mint even when possible duplicates were found.')
+  "force": zod.boolean().optional().describe('Override the dedupe guard and mint even when possible duplicates were found.'),
+  "paymentUnitId": zod.string().nullish().describe('Bank-deposit payment unit this donation settles (workbench component flow). When set, the donation is stamped onto this existing gift-less direct unit BEFORE the booking runs, so the counted tie lands on THIS unit instead of minting a parallel donorbox-anchored unit (which would double-count the money). The unit must be direct (non-Stripe), gift-less, and not already claimed by another donation.')
 }).describe('Mint a NEW gift from a non-Stripe Donorbox donation. Exactly one donor\nFK must be set (Donor XOR). The server runs a dedupe guard against\nexisting gifts \/ staged payments \/ Donorbox links; pass force=true to\noverride a possible-duplicate (409) and mint anyway.\n')
 
 /**

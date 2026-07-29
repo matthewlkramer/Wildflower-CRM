@@ -23,6 +23,13 @@ export type AnchorRef =
        */
       bankDepositId?: string;
       amount?: string;
+      /**
+       * The component's decomposed payment unit. When set, gift actions target
+       * exactly this unit: link-gift adopts it by id (no amount matching),
+       * create-gift mints from it, and Donorbox lookup stamps the donation
+       * onto it before booking.
+       */
+      paymentUnitId?: string;
     };
 
 /**

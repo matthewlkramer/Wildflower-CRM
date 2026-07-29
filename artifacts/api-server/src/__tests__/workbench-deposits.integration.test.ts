@@ -282,6 +282,11 @@ afterAll(async () => {
       .where(inArrayFn(schema.paymentUnits.id, unitIds));
   }
   if (giftIds.length) {
+    // Minted gifts carry a seeded starter allocation (gift_id is
+    // onDelete: restrict) — clear allocations before the gift headers.
+    await db
+      .delete(schema.giftAllocations)
+      .where(inArrayFn(schema.giftAllocations.giftId, giftIds));
     await db
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
@@ -1145,6 +1150,160 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       .from(schema.bankDepositComponents)
       .where(eqFn(schema.bankDepositComponents.bankDepositId, deposit));
     expect(components).toHaveLength(1);
+  });
+
+  it("mints a gift from a composed direct payment unit and books the tie in one transaction", async () => {
+    const deposit = await seedDeposit("Unit mint deposit", "150.00");
+    const unitId = await seedUnit(deposit, "150.00");
+
+    const minted = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(minted.status).toBe(201);
+    expect(minted.json.paymentUnitId).toBe(unitId);
+    const giftId = minted.json.gift.id as string;
+    giftIds.push(giftId);
+    // No staged source label → the kind fallback names the gift.
+    expect(minted.json.gift.name).toBe("Check payment");
+
+    const unit = await db
+      .select({
+        giftId: schema.paymentUnits.giftId,
+        method: schema.paymentUnits.giftMatchMethod,
+        createdTheGift: schema.paymentUnits.createdTheGift,
+      })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, unitId))
+      .then((r) => r[0]);
+    expect(unit).toMatchObject({
+      giftId,
+      method: "human",
+      createdTheGift: true,
+    });
+
+    const allocations = await db
+      .select({
+        subAmount: schema.giftAllocations.subAmount,
+        countsTowardGoal: schema.giftAllocations.countsTowardGoal,
+      })
+      .from(schema.giftAllocations)
+      .where(eqFn(schema.giftAllocations.giftId, giftId));
+    expect(allocations).toHaveLength(1);
+    expect(allocations[0]).toMatchObject({
+      subAmount: "150.00",
+      countsTowardGoal: true,
+    });
+
+    // A second mint on the same unit must refuse — the unit already pays.
+    const again = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(again.status).toBe(409);
+    expect(again.json.error).toBe("unit_already_paying");
+  });
+
+  it("honors mint overrides for name, date, and goal counting", async () => {
+    const deposit = await seedDeposit("Unit mint override deposit", "80.00");
+    const unitId = await seedUnit(deposit, "80.00");
+
+    const minted = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      {
+        organizationId: ORG_ID,
+        name: "Custom mint name",
+        dateReceived: "2099-01-15",
+        countsTowardGoal: false,
+      },
+    );
+    expect(minted.status).toBe(201);
+    giftIds.push(minted.json.gift.id);
+    expect(minted.json.gift.name).toBe("Custom mint name");
+    expect(minted.json.gift.dateReceived).toBe("2099-01-15");
+
+    const allocations = await db
+      .select({ countsTowardGoal: schema.giftAllocations.countsTowardGoal })
+      .from(schema.giftAllocations)
+      .where(eqFn(schema.giftAllocations.giftId, minted.json.gift.id));
+    expect(allocations).toHaveLength(1);
+    expect(allocations[0]?.countsTowardGoal).toBe(false);
+  });
+
+  it("refuses unit mints for uncomposed units, bad donors, and unknown units", async () => {
+    // A unit not composed on any bank deposit has no money spine to book on.
+    const looseUnitId = nextId("unit");
+    await db.insert(schema.paymentUnits).values({
+      id: looseUnitId,
+      kind: "check",
+      grossAmount: "10.00",
+      netAmount: "10.00",
+      receivedDate: "2099-12-31",
+    });
+    unitIds.push(looseUnitId);
+    const uncomposed = await postJson(
+      `/api/reconciliation/payment-units/${looseUnitId}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(uncomposed.status).toBe(409);
+    expect(uncomposed.json.error).toBe("unit_not_composed");
+
+    // Donor XOR: zero donors and two donors both fail validation.
+    const deposit = await seedDeposit("Unit mint donor XOR deposit", "20.00");
+    const unitId = await seedUnit(deposit, "20.00");
+    const noDonor = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      {},
+    );
+    expect(noDonor.status).toBe(400);
+    const twoDonors = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      { organizationId: ORG_ID, householdId: "some_household" },
+    );
+    expect(twoDonors.status).toBe(400);
+
+    const missing = await postJson(
+      `/api/reconciliation/payment-units/${nextId("missing_unit")}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(missing.status).toBe(404);
+  });
+
+  it("refuses unit mints for Stripe-backed and excluded units", async () => {
+    // Stripe money mints through the charge flow, never the unit route.
+    const stripeDeposit = await seedDeposit("Unit mint stripe deposit", "30.00");
+    const payoutId = await seedPayout("30.00", stripeDeposit);
+    const chargeId = await seedCharge(payoutId, { grossAmount: "30.00" });
+    const stripeUnitId = nextId("unit");
+    await db.insert(schema.paymentUnits).values({
+      id: stripeUnitId,
+      kind: "stripe_charge",
+      stripeChargeId: chargeId,
+      grossAmount: "30.00",
+      netAmount: "28.50",
+      receivedDate: "2099-12-31",
+    });
+    unitIds.push(stripeUnitId);
+    const stripeMint = await postJson(
+      `/api/reconciliation/payment-units/${stripeUnitId}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(stripeMint.status).toBe(409);
+    expect(stripeMint.json.error).toBe("unit_not_direct");
+
+    // Excluded money never books a counted gift.
+    const deposit = await seedDeposit("Unit mint excluded deposit", "45.00");
+    const unitId = await seedUnit(deposit, "45.00");
+    await db
+      .update(schema.bankDepositComponents)
+      .set({ exclusionReason: "intercompany_transfer" })
+      .where(eqFn(schema.bankDepositComponents.paymentUnitId, unitId));
+    const excludedMint = await postJson(
+      `/api/reconciliation/payment-units/${unitId}/create-gift`,
+      { organizationId: ORG_ID },
+    );
+    expect(excludedMint.status).toBe(409);
+    expect(excludedMint.json.error).toBe("unit_excluded");
   });
 
   it("lists candidate payouts, repoints an ambiguous tie, and unlinks it", async () => {

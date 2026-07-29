@@ -38,6 +38,7 @@ import type {
   ConfirmChargeTiesResult,
   ConfirmSettlementLinkBody,
   ConfirmSettlementLinkResult,
+  CreateGiftFromPaymentUnitBody,
   DepositCandidatePaymentUnitList,
   DepositQboComponentMutationResult,
   ExcludeStagedPaymentBody,
@@ -57,6 +58,7 @@ import type {
   ListReconciliationCardsParams,
   ListWorkbenchDepositsParams,
   NotFoundResponse,
+  PaymentUnitGiftResponse,
   PayoutBankMatchConfirmation,
   PayoutDepositLink,
   PayoutSearchList,
@@ -1094,6 +1096,78 @@ export const useAddBankDepositComponent = <TError = ErrorType<BadRequestResponse
         TContext
       > => {
       return useMutation(getAddBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow.
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ */
+export const getCreateGiftFromPaymentUnitUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/payment-units/${id}/create-gift`
+}
+
+export const createGiftFromPaymentUnit = async (id: string,
+    createGiftFromPaymentUnitBody: CreateGiftFromPaymentUnitBody, options?: RequestInit): Promise<PaymentUnitGiftResponse> => {
+
+  return customFetch<PaymentUnitGiftResponse>(getCreateGiftFromPaymentUnitUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createGiftFromPaymentUnitBody,)
+  }
+);}
+
+
+
+
+export const getCreateGiftFromPaymentUnitMutationOptions = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>, TError,{id: string;data: BodyType<CreateGiftFromPaymentUnitBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>, TError,{id: string;data: BodyType<CreateGiftFromPaymentUnitBody>}, TContext> => {
+
+const mutationKey = ['createGiftFromPaymentUnit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>, {id: string;data: BodyType<CreateGiftFromPaymentUnitBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createGiftFromPaymentUnit(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateGiftFromPaymentUnitMutationResult = NonNullable<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>>
+    export type CreateGiftFromPaymentUnitMutationBody = BodyType<CreateGiftFromPaymentUnitBody>
+    export type CreateGiftFromPaymentUnitMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ */
+export const useCreateGiftFromPaymentUnit = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>, TError,{id: string;data: BodyType<CreateGiftFromPaymentUnitBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createGiftFromPaymentUnit>>,
+        TError,
+        {id: string;data: BodyType<CreateGiftFromPaymentUnitBody>},
+        TContext
+      > => {
+      return useMutation(getCreateGiftFromPaymentUnitMutationOptions(options));
     }
     /**
  * Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.

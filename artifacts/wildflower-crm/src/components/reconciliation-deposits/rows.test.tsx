@@ -217,11 +217,11 @@ describe("deposit workbench rows", () => {
     );
   });
 
-  it("enables gift linking — and labels the QB-blocked paths — for a manual gift-less payment", () => {
+  it("enables all unit-backed gift actions for a manual gift-less payment", () => {
     // "Record without a gift" leaves a manual bank_spine component whose unit
-    // has no gift and no QB staged source. Linking an existing gift must stay
-    // available (adopt-unit path); mint/pledge paths are blocked with the
-    // accurate reason, NOT the misleading "resolve composition" one.
+    // has no gift and no QB staged source. Linking an existing gift (adopt-unit
+    // path), minting a standalone gift, and identifying the donor all act on
+    // the decomposed payment unit; only the pledge path still needs QB.
     render(
       makeDeposit({
         composition: {
@@ -248,18 +248,75 @@ describe("deposit workbench rows", () => {
     );
     const menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
-    expect(
-      menuItem(menu as HTMLElement, "Search and link gift…")?.getAttribute("data-disabled"),
-    ).toBeNull();
-    for (const label of ["Create standalone gift…", "Record as payment on pledge…"]) {
-      const item = menuItem(menu as HTMLElement, label);
-      expect(item?.getAttribute("data-disabled"), label).not.toBeNull();
-      expect(item?.textContent, label).toContain(
-        "No QuickBooks record backs this manual payment yet",
-      );
+    for (const label of [
+      "Search and link gift…",
+      "Create standalone gift…",
+      "Identify donor…",
+    ]) {
+      expect(
+        menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
+        label,
+      ).toBeNull();
     }
+    const pledgeItem = menuItem(menu as HTMLElement, "Record as payment on pledge…");
+    expect(pledgeItem?.getAttribute("data-disabled")).not.toBeNull();
+    expect(pledgeItem?.textContent).toContain(
+      "No QuickBooks record backs this manual payment yet",
+    );
     expect(menu?.textContent).not.toContain(
       "No unlinked payment evidence — resolve the deposit's composition first.",
     );
+  });
+
+  it("falls back to the unit-backed component anchor when the staged QB row is no longer actionable", () => {
+    // A component can carry a staged QB source that has since become
+    // unavailable (booked elsewhere, excluded, or derived-excluded by a
+    // confirmed charge tie). Staged-anchored actions would 409 — the row must
+    // anchor on the payment unit instead: pledge path blocked, mint enabled.
+    const stagedBackedComponent = (stagedActionable: boolean) =>
+      makeDeposit({
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [{
+            componentId: "component_qb",
+            paymentUnitId: "unit_qb",
+            amount: "100.00",
+            kind: "check",
+            needsReview: false,
+            ambiguousDepositMatch: false,
+            countedGiftIds: [],
+            source: "bank_spine",
+            stagedPaymentId: "staged_1",
+            stagedActionable,
+            label: "Chia Rodeski",
+          }],
+          units: [],
+        },
+      });
+
+    // Not actionable → component/unit anchor: mint enabled, pledge blocked.
+    render(stagedBackedComponent(false), { isFinanceOrAdmin: true });
+    let menu = openMenuContaining("Create standalone gift…");
+    expect(menu).not.toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute("data-disabled"),
+    ).toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Record as payment on pledge…")?.getAttribute("data-disabled"),
+    ).not.toBeNull();
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+
+    // Actionable → staged anchor: pledge path available again.
+    render(stagedBackedComponent(true), { isFinanceOrAdmin: true });
+    menu = openMenuContaining("Create standalone gift…");
+    expect(menu).not.toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Record as payment on pledge…")?.getAttribute("data-disabled"),
+    ).toBeNull();
   });
 });

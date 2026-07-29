@@ -22,6 +22,7 @@ import {
   useConfirmPayoutChargeTies,
   useConfirmDepositQboComponent,
   useConfirmStripeRefundPropagation,
+  useCreateGiftFromPaymentUnit,
   useCreateGiftFromStagedPayment,
   useCreateGiftFromStripeStagedCharge,
   useCreateGiftFromDonorboxDonation,
@@ -221,6 +222,7 @@ export default function ReconciliationDepositsPage() {
   const createDonorboxGift = useCreateGiftFromDonorboxDonation();
   const resolveStaged = useResolveStagedPayment();
   const createStagedGift = useCreateGiftFromStagedPayment();
+  const createUnitGift = useCreateGiftFromPaymentUnit();
   const reconcileStaged = useReconcileStagedPayment();
   const excludeCharge = useExcludeStripeStagedCharge();
   const excludeStaged = useExcludeStagedPayment();
@@ -458,6 +460,7 @@ export default function ReconciliationDepositsPage() {
     createDonorboxGift.isPending ||
     resolveStaged.isPending ||
     createStagedGift.isPending ||
+    createUnitGift.isPending ||
     reconcileStaged.isPending ||
     excludeCharge.isPending ||
     excludeStaged.isPending ||
@@ -623,7 +626,8 @@ export default function ReconciliationDepositsPage() {
       await reconcileStaged.mutateAsync({ id: anchor.id, data: { giftId } });
     } else {
       // Manual gift-less payment: the adopt-unit path points the component's
-      // existing payment unit at the gift (amount picks the right unit).
+      // existing payment unit at the gift. The exact unit id wins where known;
+      // otherwise the amount picks the right unit on multi-payment deposits.
       if (!anchor.bankDepositId) {
         throw new Error(
           "This payment can't be linked from here — reload and try again.",
@@ -634,7 +638,11 @@ export default function ReconciliationDepositsPage() {
         data: {
           mode: "gift",
           giftId,
-          ...(anchor.amount ? { amount: anchor.amount } : {}),
+          ...(anchor.paymentUnitId
+            ? { paymentUnitId: anchor.paymentUnitId }
+            : anchor.amount
+              ? { amount: anchor.amount }
+              : {}),
         },
       });
     }
@@ -784,15 +792,24 @@ export default function ReconciliationDepositsPage() {
 
   const handleCreateFromDonorbox = async (row: DonorboxReviewRow) => {
     if (!donorboxFor) return;
+    const anchor = donorboxFor.anchor;
+    // Component anchor with a known unit: the donorbox mint stamps the
+    // donation onto THAT unit and books the tie in one transaction — no
+    // follow-up link call (the unit is already paying the new gift).
+    const unitId =
+      anchor.kind === "component" ? (anchor.paymentUnitId ?? null) : null;
     const donorbox = await createDonorboxGift.mutateAsync({
       id: row.id,
       data: {
         organizationId: row.organizationId ?? null,
         individualGiverPersonId: row.individualGiverPersonId ?? null,
         householdId: row.householdId ?? null,
+        ...(unitId ? { paymentUnitId: unitId } : {}),
       },
     });
-    await linkAnchorToGift(donorboxFor.anchor, donorbox.gift.id);
+    if (!unitId) {
+      await linkAnchorToGift(anchor, donorbox.gift.id);
+    }
     setDonorboxFor(null);
     setDonorboxSearch("");
     invalidate();
@@ -814,17 +831,40 @@ export default function ReconciliationDepositsPage() {
   const handleDonor = async (type: DonorType, id: string) => {
     const target = identifyFor;
     if (!target) return;
-    // Identify-donor only exists for charge/staged evidence; component anchors
-    // are gated off in the UI — guard structurally so a leak can't call the
-    // staged endpoint with a componentId.
-    if (target.anchor.kind !== "charge" && target.anchor.kind !== "staged") {
-      toast({
-        title: "Not available for this payment",
-        description:
-          "This manual payment has no QuickBooks record to identify a donor on.",
-        variant: "destructive",
-      });
-      setIdentifyFor(null);
+    // Component anchor: there is no evidence row to hold a donor pick, so
+    // identifying the donor mints the gift from the payment unit directly
+    // (the gift IS where the donor lives).
+    if (target.anchor.kind === "component") {
+      const unitId = target.anchor.paymentUnitId;
+      if (!unitId) {
+        toast({
+          title: "Not available for this payment",
+          description:
+            "This manual payment has no payment unit to record the donor on — reload and try again.",
+          variant: "destructive",
+        });
+        setIdentifyFor(null);
+        return;
+      }
+      try {
+        await createUnitGift.mutateAsync({
+          id: unitId,
+          data: donorBody(type, id),
+        });
+        setIdentifyFor(null);
+        invalidate();
+        toast({
+          title: "Gift created",
+          description: `A gift for this payment was created for the selected donor.`,
+        });
+      } catch (err) {
+        toast({
+          title: "Couldn't record donor",
+          description: apiErrorMessage(err) ?? errMessage(err),
+          variant: "destructive",
+        });
+        invalidate();
+      }
       return;
     }
     const body = donorBody(type, id);
@@ -843,13 +883,14 @@ export default function ReconciliationDepositsPage() {
   ) => {
     const target = createFor;
     if (!target) return;
-    // Gifts mint only from QB/Stripe evidence; component anchors are gated off
-    // in the UI — guard structurally so a leak can't mint via a componentId.
-    if (target.anchor.kind !== "charge" && target.anchor.kind !== "staged") {
+    // Component anchors mint from their decomposed payment unit; charge/staged
+    // anchors mint from their evidence row. A component without a unit id has
+    // nothing to mint from — guard structurally.
+    if (target.anchor.kind === "component" && !target.anchor.paymentUnitId) {
       toast({
         title: "Not available for this payment",
         description:
-          "This manual payment has no QuickBooks record to mint a gift from — link an existing gift instead.",
+          "This manual payment has no payment unit to mint a gift from — link an existing gift instead.",
         variant: "destructive",
       });
       setCreateFor(null);
@@ -863,11 +904,17 @@ export default function ReconciliationDepositsPage() {
           id: target.anchor.id,
           data: overrides,
         });
-      } else {
+      } else if (target.anchor.kind === "staged") {
         await resolveStaged.mutateAsync({ id: target.anchor.id, data: body });
         await createStagedGift.mutateAsync({
           id: target.anchor.id,
           data: overrides,
+        });
+      } else {
+        // Unit-anchored mint: donor + overrides in one transactional call.
+        await createUnitGift.mutateAsync({
+          id: target.anchor.paymentUnitId!,
+          data: { ...overrides, ...body },
         });
       }
       setCreateFor(null);

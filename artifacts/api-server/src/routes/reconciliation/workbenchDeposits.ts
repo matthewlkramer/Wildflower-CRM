@@ -4,6 +4,7 @@ import {
   bankDepositComponents,
   bankDepositExclusions,
   bankDeposits,
+  giftsAndPayments,
   qboAccountingChecks,
   sourceLinks,
   sourceLinkId,
@@ -22,10 +23,13 @@ import {
   viewerCanManageAccounting,
 } from "../../lib/financeGuard";
 import { getViewer, maskName } from "../../lib/identityVisibility";
+import { validateGiftInvariants } from "@workspace/api-zod";
 import {
   ClearBankDepositExclusionParams,
   AddBankDepositComponentBody,
   AddBankDepositComponentParams,
+  CreateGiftFromPaymentUnitBody,
+  CreateGiftFromPaymentUnitParams,
   AttachDepositQboEvidenceBody,
   AttachDepositQboEvidenceParams,
   FlagQboAccountingErrorBody,
@@ -52,6 +56,14 @@ import {
 } from "./workbenchRowState";
 import { deriveDepositWorkbenchState } from "./workbenchDepositState";
 import { reconAudit, fmtMoney } from "../../lib/reconciliationAudit";
+import { qbStatusCaseText } from "../../lib/derivedStatus";
+import {
+  seedInitialGiftAllocation,
+  assertGiftHasAllocations,
+} from "../../lib/giftAllocationSeed";
+import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
+import { respondInvariantFailure } from "../quickbooks/shared";
+import { giftHeaderColumns } from "../giftsAndPayments";
 
 const router: IRouter = Router();
 
@@ -951,6 +963,10 @@ router.get(
             'unconfirmed', false, 'source', 'bank_spine',
             'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
+            'stagedActionable', (
+              SELECT (${sql.raw(qbStatusCaseText("lsp"))}) = 'pending'
+              FROM staged_payments lsp WHERE lsp.id = u.source_staged_payment_id
+            ),
             'label', (
               SELECT COALESCE(lsp.payer_name, lsp.qb_transaction_memo, lsp.line_description)
               FROM staged_payments lsp WHERE lsp.id = u.source_staged_payment_id
@@ -983,6 +999,7 @@ router.get(
             'unconfirmed', dqc.confirmed_at IS NULL, 'source', 'qbo_provisional',
             'manual', false,
             'stagedPaymentId', sp.id,
+            'stagedActionable', (${sql.raw(qbStatusCaseText("sp"))}) = 'pending',
             'label', COALESCE(sp.payer_name, sp.qb_transaction_memo, sp.line_description, sp.raw_reference, sp.id),
             'exclusionReason', sp.exclusion_reason,
             'matchBasis', dqc.match_basis,
@@ -2067,6 +2084,47 @@ router.post(
         `);
         if (!giftResult.rows.length) return { kind: "gift_not_found" as const };
 
+        // Explicit unit pick (workbench component anchor): adopt exactly the
+        // named gift-less unit — no amount-based candidate matching.
+        if (body.paymentUnitId != null) {
+          const exactResult = await tx.execute(sql`
+            SELECT u.id, c.id AS component_id, c.amount::text AS component_amount,
+                   c.needs_review
+            FROM bank_deposit_components c
+            JOIN payment_units u ON u.id = c.payment_unit_id
+            WHERE c.bank_deposit_id = ${params.bankDepositId}
+              AND u.id = ${body.paymentUnitId}
+              AND u.gift_id IS NULL
+              AND u.stripe_charge_id IS NULL
+              AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
+            FOR UPDATE OF u
+          `);
+          const exactUnit = (
+            exactResult.rows as Array<{
+              id: string;
+              component_id: string;
+              component_amount: string;
+              needs_review: boolean;
+            }>
+          )[0];
+          if (!exactUnit) return { kind: "unit_unavailable" as const };
+          await tx.execute(sql`
+            UPDATE payment_units
+            SET gift_id = ${body.giftId},
+                gift_match_method = 'human',
+                gift_confirmed_by_user_id = ${user?.id ?? null},
+                gift_confirmed_at = now()
+            WHERE id = ${exactUnit.id}
+          `);
+          return {
+            kind: "ok" as const,
+            id: exactUnit.component_id,
+            paymentUnitId: exactUnit.id,
+            amount: Number(exactUnit.component_amount).toFixed(2),
+            needsReview: exactUnit.needs_review,
+          };
+        }
+
         // A deposit recorded as a gift-less single payment ("Record without a
         // gift") already carries the whole-amount unit+component — linking a
         // gift then means pointing THAT unit at the gift, not composing a
@@ -2312,6 +2370,214 @@ router.post(
       source: "manual",
       needsReview: result.needsReview,
     });
+  }),
+);
+
+// ─── POST /reconciliation/payment-units/:id/create-gift ────────────────────
+// Unit-anchored mint: create the CRM gift for a decomposed direct bank-deposit
+// payment whose QBO row is unavailable (booked elsewhere, excluded, or
+// derived-excluded by a confirmed charge tie) or absent. Mirrors the
+// staged-payment mint: gift + seeded starter allocation + the unit's gift tie
+// (created_the_gift = true) in one transaction. Only direct (non-Stripe)
+// gift-less units composed on a bank deposit are eligible — Stripe money
+// mints through its charge flow.
+router.post(
+  "/reconciliation/payment-units/:id/create-gift",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const params = parseOrBadRequest(
+      CreateGiftFromPaymentUnitParams,
+      req.params,
+      res,
+    );
+    if (!params) return;
+    const body = parseOrBadRequest(CreateGiftFromPaymentUnitBody, req.body, res);
+    if (!body) return;
+
+    const donor = {
+      organizationId: body.organizationId ?? null,
+      individualGiverPersonId: body.individualGiverPersonId ?? null,
+      householdId: body.householdId ?? null,
+    };
+    const issues = validateGiftInvariants(donor);
+    if (issues.length) return respondInvariantFailure(res, issues);
+
+    const giftId = newId();
+    const result = await db.transaction(async (tx) => {
+      const unitResult = await tx.execute(sql`
+        SELECT u.id, u.kind, u.stripe_charge_id, u.gift_id,
+               COALESCE(u.gross_amount, u.net_amount)::text AS amount,
+               u.received_date::text AS received_date,
+               (SELECT c.bank_deposit_id FROM bank_deposit_components c
+                WHERE c.payment_unit_id = u.id ORDER BY c.id LIMIT 1) AS bank_deposit_id,
+               (SELECT c.exclusion_reason FROM bank_deposit_components c
+                WHERE c.payment_unit_id = u.id ORDER BY c.id LIMIT 1) AS component_exclusion_reason,
+               lsp.payer_name AS source_payer_name,
+               COALESCE(lsp.payer_name, lsp.qb_transaction_memo, lsp.line_description) AS source_label,
+               lsp.entity_id AS source_entity_id,
+               lsp.matched_payment_intermediary_id AS source_intermediary_id
+        FROM payment_units u
+        LEFT JOIN staged_payments lsp ON lsp.id = u.source_staged_payment_id
+        WHERE u.id = ${params.id}
+        FOR UPDATE OF u
+      `);
+      const unit = (
+        unitResult.rows as Array<{
+          id: string;
+          kind: string;
+          stripe_charge_id: string | null;
+          gift_id: string | null;
+          amount: string | null;
+          received_date: string | null;
+          bank_deposit_id: string | null;
+          component_exclusion_reason: string | null;
+          source_payer_name: string | null;
+          source_label: string | null;
+          source_entity_id: string | null;
+          source_intermediary_id: string | null;
+        }>
+      )[0];
+      if (!unit) return { kind: "not_found" as const };
+      if (
+        unit.stripe_charge_id ||
+        !["check", "direct_ach", "wire", "other"].includes(unit.kind)
+      ) {
+        return { kind: "not_direct" as const };
+      }
+      if (unit.gift_id) return { kind: "already_paying" as const };
+      if (!unit.bank_deposit_id) return { kind: "not_composed" as const };
+      // Excluded money is a component/payment-unit fact: never book a counted
+      // gift on a payment finance has marked not-fundraising.
+      if (unit.component_exclusion_reason) return { kind: "excluded" as const };
+      if (unit.amount == null || Number(unit.amount) <= 0) {
+        return { kind: "no_amount" as const };
+      }
+
+      const overrideName = body.name?.trim();
+      const giftDateReceived = body.dateReceived ?? unit.received_date;
+      const kindLabel =
+        unit.kind === "check"
+          ? "Check"
+          : unit.kind === "wire"
+            ? "Wire"
+            : unit.kind === "direct_ach"
+              ? "ACH"
+              : "Direct";
+      await tx.insert(giftsAndPayments).values({
+        id: giftId,
+        name: overrideName || (unit.source_label ?? `${kindLabel} payment`),
+        amount: unit.amount,
+        dateReceived: giftDateReceived,
+        organizationId: donor.organizationId,
+        individualGiverPersonId: donor.individualGiverPersonId,
+        householdId: donor.householdId,
+        paymentIntermediaryId:
+          body.paymentIntermediaryId ?? unit.source_intermediary_id ?? null,
+        details: `Created from a bank-deposit payment (${unit.kind}).`,
+        ownerUserId: user.id,
+      });
+      // Every gift needs at least one allocation (the sole home of money
+      // scope). Seed a default full-amount line carrying the source QBO row's
+      // attributed entity + goal-counting signal where one exists, each
+      // overridable by the human body field (entityId: explicit null clears).
+      await seedInitialGiftAllocation(tx, {
+        giftId,
+        amount: unit.amount,
+        dateReceived: giftDateReceived,
+        entityId:
+          body.entityId !== undefined
+            ? body.entityId
+            : (unit.source_entity_id ?? null),
+        countsTowardGoal:
+          body.countsTowardGoal ??
+          !isGovernmentReimbursement({
+            amount: unit.amount,
+            payerName: unit.source_payer_name,
+            lineItemNames: null,
+            lineAccountNames: null,
+            rawReference: null,
+            lineDescription: null,
+          }),
+      });
+      await assertGiftHasAllocations(tx, giftId);
+      // The unit's gift tie IS the resolution record (one authority): the
+      // minted gift is paid by this unit, human-confirmed, mint-owned.
+      await tx.execute(sql`
+        UPDATE payment_units
+        SET gift_id = ${giftId},
+            gift_match_method = 'human',
+            gift_confirmed_by_user_id = ${user.id},
+            gift_confirmed_at = now(),
+            created_the_gift = true
+        WHERE id = ${unit.id}
+      `);
+      return { kind: "ok" as const, unit };
+    });
+
+    if (result.kind === "not_found") {
+      notFound(res, "payment unit");
+      return;
+    }
+    if (result.kind === "not_direct") {
+      res.status(409).json({
+        error: "unit_not_direct",
+        message:
+          "Only direct (non-Stripe) payments can mint a gift here — Stripe money mints from its charge.",
+      });
+      return;
+    }
+    if (result.kind === "already_paying") {
+      res.status(409).json({
+        error: "unit_already_paying",
+        message: "This payment already pays a gift.",
+      });
+      return;
+    }
+    if (result.kind === "not_composed") {
+      res.status(409).json({
+        error: "unit_not_composed",
+        message: "This payment is not composed on a bank deposit.",
+      });
+      return;
+    }
+    if (result.kind === "excluded") {
+      res.status(409).json({
+        error: "unit_excluded",
+        message:
+          "This payment is excluded from fundraising — clear the exclusion before creating a gift.",
+      });
+      return;
+    }
+    if (result.kind === "no_amount") {
+      res.status(409).json({
+        error: "unit_has_no_amount",
+        message: "This payment has no positive amount to book.",
+      });
+      return;
+    }
+
+    const [gift] = await db
+      .select(giftHeaderColumns)
+      .from(giftsAndPayments)
+      .where(eq(giftsAndPayments.id, giftId));
+    // No safe undo: reverting a manual mint would orphan the created gift.
+    await reconAudit(req, {
+      action: "create",
+      entityType: "gift",
+      entityId: giftId,
+      summary: `Created gift "${gift?.name ?? giftId}" from a ${fmtMoney(result.unit.amount)} bank-deposit payment`,
+      undo: null,
+      extra: {
+        paymentUnitId: result.unit.id,
+        bankDepositId: result.unit.bank_deposit_id,
+      },
+    });
+    res.status(201).json({ gift, paymentUnitId: result.unit.id });
   }),
 );
 

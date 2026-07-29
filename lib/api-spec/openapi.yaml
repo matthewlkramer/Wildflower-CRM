@@ -4701,6 +4701,24 @@ paths:
         "403": { $ref: "#/components/responses/FinanceForbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "The amount exceeds the current unexplained remainder, the selected payment unit is unavailable, or the selected gift's payment units are ambiguous." }
+  /reconciliation/payment-units/{id}/create-gift:
+    post:
+      operationId: createGiftFromPaymentUnit
+      tags: [reconciliation]
+      summary: Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+      description: Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateGiftFromPaymentUnitBody" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentUnitGiftResponse" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The unit already pays a gift, is Stripe-backed, is not composed on a bank deposit, or its bank-deposit component is excluded from fundraising." }
   /reconciliation/deposits/{bankDepositId}/qbo-evidence:
     post:
       operationId: attachDepositQboEvidence
@@ -8086,6 +8104,7 @@ components:
         householdId:             { type: string, nullable: true }
         paymentIntermediaryId:   { type: string, nullable: true, description: "Conduit the donor gave through (Donorbox/PayPal), propagated onto the gift." }
         force:                   { type: boolean, description: "Override the dedupe guard and mint even when possible duplicates were found." }
+        paymentUnitId:           { type: string, nullable: true, description: "Bank-deposit payment unit this donation settles (workbench component flow). When set, the donation is stamped onto this existing gift-less direct unit BEFORE the booking runs, so the counted tie lands on THIS unit instead of minting a parallel donorbox-anchored unit (which would double-count the money). The unit must be direct (non-Stripe), gift-less, and not already claimed by another donation." }
     DonorboxExcludeBody:
       type: object
       required: [exclusionReason]
@@ -9523,6 +9542,7 @@ components:
               unconfirmed: { type: boolean, description: "True for a provisional QBO accounting-plane decomposition row." }
               source: { type: string, enum: [bank_spine, qbo_provisional] }
               stagedPaymentId: { type: string, nullable: true }
+              stagedActionable: { type: boolean, nullable: true, description: "True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId." }
               receivedDate: { type: string, format: date, nullable: true, description: "The backing payment unit's received date (bank_spine components only)." }
               sourceStagedPaymentManual: { type: boolean, description: "Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column." }
               label: { type: string, nullable: true }
@@ -9732,6 +9752,7 @@ components:
             mode: { type: string, enum: [gift] }
             giftId: { type: string }
             amount: { type: string, nullable: true, description: "Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder." }
+            paymentUnitId: { type: string, nullable: true, description: "Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie." }
     AttachDepositQboEvidenceBody:
       type: object
       required: [stagedPaymentId]
@@ -10439,7 +10460,8 @@ components:
       type: object
       description: |
         Optional human overrides for the evidence-mint create-gift endpoints
-        (/staged-payments/{id}/create-gift and /stripe-staged-charges/{id}/create-gift).
+        (/staged-payments/{id}/create-gift, /stripe-staged-charges/{id}/create-gift
+        and /reconciliation/payment-units/{id}/create-gift).
         Every field is optional: an OMITTED field keeps today's evidence-derived
         default (payer/date from the evidence row; entity + goal-counting from the
         QuickBooks attribution where present). A PRESENT field overrides that
@@ -10452,6 +10474,22 @@ components:
         dateReceived: { type: string, format: date, nullable: true, description: "Override the gift's date received (also drives the seeded allocation's fiscal year). Omitted keeps the evidence date." }
         entityId:     { type: string, nullable: true, description: "Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path)." }
         countsTowardGoal: { type: boolean, nullable: true, description: "Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money)." }
+    CreateGiftFromPaymentUnitBody:
+      allOf:
+        - $ref: "#/components/schemas/MintGiftOverridesBody"
+        - type: object
+          description: "Donor + overrides for the unit-anchored mint. Exactly one donor FK must be set (Donor XOR); null/omit the others. The gift AMOUNT is never overridable — the mint books the unit's money."
+          properties:
+            organizationId:          { type: string, nullable: true }
+            individualGiverPersonId: { type: string, nullable: true }
+            householdId:             { type: string, nullable: true }
+            paymentIntermediaryId:   { type: string, nullable: true, description: "Conduit the donor gave through, propagated onto the gift." }
+    PaymentUnitGiftResponse:
+      type: object
+      required: [gift, paymentUnitId]
+      properties:
+        gift:          { $ref: "#/components/schemas/GiftOrPayment" }
+        paymentUnitId: { type: string }
     StagedGiftResponse:
       type: object
       required: [gift, stagedPaymentId]

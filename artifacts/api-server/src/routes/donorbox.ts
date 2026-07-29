@@ -575,6 +575,7 @@ router.post(
     const giftId = newId();
     const NOT_PENDING = "__donorbox_not_pending__";
     const INVARIANT = "__donorbox_invariant__";
+    const UNIT_UNAVAILABLE = "__donorbox_unit_unavailable__";
     let lockedIssues: InvariantIssue[] = [];
     try {
       await db.transaction(async (tx) => {
@@ -614,6 +615,53 @@ router.post(
         if (issues.length) {
           lockedIssues = issues;
           throw new Error(INVARIANT);
+        }
+        // Workbench component flow: the reviewer picked the bank-deposit
+        // payment unit this donation settles. Stamp the donation onto THAT
+        // gift-less direct unit BEFORE booking, so the counted tie below
+        // resolves to it instead of minting a parallel donorbox-anchored
+        // unit (which would double-count the deposit's money).
+        if (body.paymentUnitId != null) {
+          const unitRows = await tx.execute(sql`
+            SELECT id, stripe_charge_id, gift_id, donorbox_donation_id, kind
+            FROM payment_units
+            WHERE id = ${body.paymentUnitId}
+            FOR UPDATE
+          `);
+          const unit = (
+            unitRows.rows as Array<{
+              id: string;
+              stripe_charge_id: string | null;
+              gift_id: string | null;
+              donorbox_donation_id: string | null;
+              kind: string;
+            }>
+          )[0];
+          if (
+            !unit ||
+            unit.stripe_charge_id != null ||
+            unit.gift_id != null ||
+            (unit.donorbox_donation_id != null &&
+              unit.donorbox_donation_id !== id) ||
+            !["check", "direct_ach", "wire", "other"].includes(unit.kind)
+          ) {
+            throw new Error(UNIT_UNAVAILABLE);
+          }
+          // The donation must not already anchor a DIFFERENT unit — the
+          // booking's anchor predicate would be ambiguous.
+          const rival = await tx.execute(sql`
+            SELECT id FROM payment_units
+            WHERE donorbox_donation_id = ${id} AND id <> ${unit.id}
+            LIMIT 1
+          `);
+          if (rival.rows.length) throw new Error(UNIT_UNAVAILABLE);
+          if (unit.donorbox_donation_id == null) {
+            await tx.execute(sql`
+              UPDATE payment_units
+              SET donorbox_donation_id = ${id}
+              WHERE id = ${unit.id}
+            `);
+          }
         }
         await tx.insert(giftsAndPayments).values(
           buildGiftValuesFromDonorbox(
@@ -679,6 +727,14 @@ router.post(
       }
       if (e instanceof Error && e.message === INVARIANT) {
         return respondInvariant(res, lockedIssues);
+      }
+      if (e instanceof Error && e.message === UNIT_UNAVAILABLE) {
+        res.status(409).json({
+          error: "payment_unit_unavailable",
+          message:
+            "That bank-deposit payment is no longer available for this donation — it already pays a gift, is Stripe-backed, or another Donorbox donation claims it.",
+        });
+        return;
       }
       throw e;
     }

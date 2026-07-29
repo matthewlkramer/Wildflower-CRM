@@ -3644,6 +3644,8 @@ export interface DonorboxCreateGiftBody {
   paymentIntermediaryId?: string | null;
   /** Override the dedupe guard and mint even when possible duplicates were found. */
   force?: boolean;
+  /** Bank-deposit payment unit this donation settles (workbench component flow). When set, the donation is stamped onto this existing gift-less direct unit BEFORE the booking runs, so the counted tie lands on THIS unit instead of minting a parallel donorbox-anchored unit (which would double-count the money). The unit must be direct (non-Stripe), gift-less, and not already claimed by another donation. */
+  paymentUnitId?: string | null;
 }
 
 export interface DonorboxExcludeBody {
@@ -5898,6 +5900,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   unconfirmed?: boolean;
   source?: WorkbenchDepositCompositionComponentsItemSource;
   stagedPaymentId?: string | null;
+  /** True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId. */
+  stagedActionable?: boolean | null;
   /** The backing payment unit's received date (bank_spine components only). */
   receivedDate?: string | null;
   /** Derived UI hint: the payment-unit pointer differs from the bank component's recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column. */
@@ -6231,6 +6235,8 @@ export type AddBankDepositComponentBody = {
   giftId: string;
   /** Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder. */
   amount?: string | null;
+  /** Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie. */
+  paymentUnitId?: string | null;
 };
 
 export interface AttachDepositQboEvidenceBody {
@@ -7279,7 +7285,8 @@ export interface ResolveStagedPaymentBody {
 
 /**
  * Optional human overrides for the evidence-mint create-gift endpoints
-(/staged-payments/{id}/create-gift and /stripe-staged-charges/{id}/create-gift).
+(/staged-payments/{id}/create-gift, /stripe-staged-charges/{id}/create-gift
+and /reconciliation/payment-units/{id}/create-gift).
 Every field is optional: an OMITTED field keeps today's evidence-derived
 default (payer/date from the evidence row; entity + goal-counting from the
 QuickBooks attribution where present). A PRESENT field overrides that
@@ -7298,6 +7305,19 @@ export interface MintGiftOverridesBody {
   entityId?: string | null;
   /** Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money). */
   countsTowardGoal?: boolean | null;
+}
+
+export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
+  organizationId?: string | null;
+  individualGiverPersonId?: string | null;
+  householdId?: string | null;
+  /** Conduit the donor gave through, propagated onto the gift. */
+  paymentIntermediaryId?: string | null;
+});
+
+export interface PaymentUnitGiftResponse {
+  gift: GiftOrPayment;
+  paymentUnitId: string;
 }
 
 export interface StagedGiftResponse {

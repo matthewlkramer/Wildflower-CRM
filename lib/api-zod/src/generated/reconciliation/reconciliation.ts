@@ -576,8 +576,29 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
 }),zod.object({
   "mode": zod.enum(['gift']),
   "giftId": zod.string(),
-  "amount": zod.string().nullish().describe('Component amount in major units; defaults to the gift\'s unclaimed unit amount or the deposit\'s unexplained remainder.')
+  "amount": zod.string().nullish().describe('Component amount in major units; defaults to the gift\'s unclaimed unit amount or the deposit\'s unexplained remainder.'),
+  "paymentUnitId": zod.string().nullish().describe('Adopt exactly this deposit component\'s gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie.')
 })])
+
+/**
+ * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow.
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ */
+export const CreateGiftFromPaymentUnitParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const CreateGiftFromPaymentUnitBody = zod.object({
+  "name": zod.string().nullish().describe('Override the derived gift name\/description. Null\/omitted keeps the evidence-derived name.'),
+  "dateReceived": zod.string().date().nullish().describe('Override the gift\'s date received (also drives the seeded allocation\'s fiscal year). Omitted keeps the evidence date.'),
+  "entityId": zod.string().nullish().describe('Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path).'),
+  "countsTowardGoal": zod.boolean().nullish().describe('Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money).')
+}).describe('Optional human overrides for the evidence-mint create-gift endpoints\n(\/staged-payments\/{id}\/create-gift, \/stripe-staged-charges\/{id}\/create-gift\nand \/reconciliation\/payment-units\/{id}\/create-gift).\nEvery field is optional: an OMITTED field keeps today\'s evidence-derived\ndefault (payer\/date from the evidence row; entity + goal-counting from the\nQuickBooks attribution where present). A PRESENT field overrides that\ndefault on the minted gift header and its seeded starter allocation. The\ngift AMOUNT is never overridable here — the mint books the evidence amount\n(Stripe GROSS \/ QB amount) and the counted ledger row; adjust the gift on\nits detail page afterward if the entered amount should differ.\n').and(zod.object({
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "paymentIntermediaryId": zod.string().nullish().describe('Conduit the donor gave through, propagated onto the gift.')
+}).describe('Donor + overrides for the unit-anchored mint. Exactly one donor FK must be set (Donor XOR); null\/omit the others. The gift AMOUNT is never overridable — the mint books the unit\'s money.'))
 
 /**
  * Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.
@@ -1284,6 +1305,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
   "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),
   "stagedPaymentId": zod.string().nullish(),
+  "stagedActionable": zod.boolean().nullish().describe('True when stagedPaymentId is set AND that QBO row\'s derived status is pending, so the staged-payment flows (identify\/mint\/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId.'),
   "receivedDate": zod.string().date().nullish().describe('The backing payment unit\'s received date (bank_spine components only).'),
   "sourceStagedPaymentManual": zod.boolean().optional().describe('Derived UI hint: the payment-unit pointer differs from the bank component\'s recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column.'),
   "label": zod.string().nullish(),
