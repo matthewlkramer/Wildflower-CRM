@@ -1,15 +1,19 @@
 name: Validate workbench usability
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/workbench-alignment-search-undo
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
 
 permissions:
   contents: write
 
 concurrency:
-  group: validate-workbench-usability
+  group: validate-workbench-usability-pr
   cancel-in-progress: true
 
 jobs:
