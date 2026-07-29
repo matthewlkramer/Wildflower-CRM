@@ -9856,6 +9856,11 @@ components:
         dateReceived: { type: string, format: date, nullable: true }
         paymentMethod: { type: string, nullable: true }
         linkedChargeId: { type: string, nullable: true }
+        tieLifecycle:
+          type: string
+          enum: [proposed, confirmed]
+          nullable: true
+          description: "For fee / charge_tie roles: lifecycle of the source_links charge tie. Drives the correct undo — proposed ties are dismissed (reject endpoint); confirmed ties are reverted (POST /reconciliation/charges/{chargeId}/qb-tie/revert). Null for component/provisional roles."
         componentId: { type: string, nullable: true }
         paymentUnitId: { type: string, nullable: true }
         accountingCheckId: { type: string, nullable: true }

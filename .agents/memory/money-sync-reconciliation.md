@@ -128,6 +128,7 @@ gift link). Retired Stripe pointer-era entries in `legacy-reconciliation/index.m
 - [Sibling Stripe-fee row link](charge-fee-row-link.md) — charge ties match gross OR net exactly; confirm auto-claims the deposit's negative fee row as Plane-1 evidence ONLY (never payment_applications); TS pairing must stay lockstep with the SQL backfill; stamp under savepoint so a race never aborts confirm.
 - [Charge-tie supersede + evidence vs claim](charge-tie-supersede.md) — tie confirm moves exact-cents QB counted money to the charge grain (one-builder rule; raw-SQL twins ELIMINATED); derived status evidence needs a BOOKED charge, claims use raw linkage; parity tests pin the distinction.
 - [Payout net_total = true ledger net](stripe-payout-net-rollup.md) — net = gross−fee−refund+adjustment == bank when books balance; rollup skips the payout's own txn, unknown bt types flow through adjustment via bt.net; no SQL backfill — full re-pull recomputes.
+- **Bank-spine recompute is advisory-lock serialized** — concurrent `recomputeBankSpine` runs (overlapping sync tails, parallel test workers) bulk-insert the same deterministic ids in different scan orders and deadlock (40P01). A session-level `pg_advisory_lock` on a dedicated pool connection makes callers queue; keep any new global recompute behind the same pattern instead of letting it run concurrently.
 
 ## Donorbox
 

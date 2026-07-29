@@ -62,6 +62,8 @@ export type DepositActions = Omit<
     bankDepositId: string,
     reason: DepositExclusionReason,
   ) => void;
+  /** Undo for a CONFIRMED charge↔QB tie (proposed ties go through rejectChargeQbTie). */
+  openRevertChargeQbTie?: (chargeId: string, label: string) => void;
 };
 
 const BANK_EXCLUSION_MENU: Array<{
@@ -236,6 +238,7 @@ const NOOP_ACTIONS: DepositActions = {
   openDepositQbEvidenceSearch: () => undefined,
   openFlagAccountingError: () => undefined,
   applyBankDepositExclusion: () => undefined,
+  openRevertChargeQbTie: () => undefined,
 };
 
 export function DepositGridHeader() {
@@ -915,9 +918,20 @@ function Accounting({
     }
     if (record.role === "charge_tie" && record.linkedChargeId) {
       const chargeId = record.linkedChargeId;
+      const tieLifecycle =
+        "tieLifecycle" in record ? (record.tieLifecycle ?? null) : null;
+      if (tieLifecycle === "confirmed") {
+        const label = `${record.payerName ?? record.reference ?? "QB record"} ${money(record.amount)}`;
+        return [
+          {
+            label: "Unlink (remove confirmed tie)",
+            onSelect: () => actions.openRevertChargeQbTie?.(chargeId, label),
+          },
+        ];
+      }
       return [
         {
-          label: "Unlink",
+          label: "Unlink (dismiss proposed)",
           onSelect: () => actions.rejectChargeQbTie(chargeId),
         },
       ];

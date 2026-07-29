@@ -193,17 +193,17 @@ router.get(
       );
       const term = `%${escapedSearch}%`;
       filters.push(sql`(
-        ${appFeedback.message} ILIKE ${term} ESCAPE '\'
-        OR ${appFeedback.pagePath} ILIKE ${term} ESCAPE '\'
-        OR COALESCE(${appFeedback.pageTitle}, '') ILIKE ${term} ESCAPE '\'
-        OR COALESCE(${appFeedback.adminNotes}, '') ILIKE ${term} ESCAPE '\'
+        ${appFeedback.message} ILIKE ${term} ESCAPE '\\'
+        OR ${appFeedback.pagePath} ILIKE ${term} ESCAPE '\\'
+        OR COALESCE(${appFeedback.pageTitle}, '') ILIKE ${term} ESCAPE '\\'
+        OR COALESCE(${appFeedback.adminNotes}, '') ILIKE ${term} ESCAPE '\\'
         OR EXISTS (
           SELECT 1 FROM users feedback_user
           WHERE feedback_user.id = ${appFeedback.createdByUserId}
             AND (
-              feedback_user.email ILIKE ${term} ESCAPE '\'
-              OR COALESCE(feedback_user.display_name, '') ILIKE ${term} ESCAPE '\'
-              OR (COALESCE(feedback_user.first_name, '') || ' ' || COALESCE(feedback_user.last_name, '')) ILIKE ${term} ESCAPE '\'
+              feedback_user.email ILIKE ${term} ESCAPE '\\'
+              OR COALESCE(feedback_user.display_name, '') ILIKE ${term} ESCAPE '\\'
+              OR (COALESCE(feedback_user.first_name, '') || ' ' || COALESCE(feedback_user.last_name, '')) ILIKE ${term} ESCAPE '\\'
             )
         )
       )`);

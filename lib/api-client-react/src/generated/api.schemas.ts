@@ -5245,6 +5245,17 @@ export const WorkbenchDepositNodeQbRecordRole = {
 } as const;
 
 /**
+ * For fee / charge_tie roles: lifecycle of the source_links charge tie. Drives the correct undo — proposed ties are dismissed (reject endpoint); confirmed ties are reverted (POST /reconciliation/charges/{chargeId}/qb-tie/revert). Null for component/provisional roles.
+ */
+export type WorkbenchDepositNodeQbRecordTieLifecycle = typeof WorkbenchDepositNodeQbRecordTieLifecycle[keyof typeof WorkbenchDepositNodeQbRecordTieLifecycle] | null;
+
+
+export const WorkbenchDepositNodeQbRecordTieLifecycle = {
+  proposed: 'proposed',
+  confirmed: 'confirmed',
+} as const;
+
+/**
  * Derived QBO evidence rollup for a deposit-workbench node. This is display-only and does not create a general gift↔QBO relationship.
  */
 export interface WorkbenchDepositNodeQbRecord {
@@ -5257,6 +5268,8 @@ export interface WorkbenchDepositNodeQbRecord {
   dateReceived?: string | null;
   paymentMethod?: string | null;
   linkedChargeId?: string | null;
+  /** For fee / charge_tie roles: lifecycle of the source_links charge tie. Drives the correct undo — proposed ties are dismissed (reject endpoint); confirmed ties are reverted (POST /reconciliation/charges/{chargeId}/qb-tie/revert). Null for component/provisional roles. */
+  tieLifecycle?: WorkbenchDepositNodeQbRecordTieLifecycle;
   componentId?: string | null;
   paymentUnitId?: string | null;
   accountingCheckId?: string | null;

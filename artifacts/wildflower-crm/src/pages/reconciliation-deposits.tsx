@@ -34,6 +34,7 @@ import {
   useGetCurrentUser,
   useLinkStripeChargeToGift,
   useRejectChargeQbTie,
+  useRevertChargeQbTie,
   useReconcileStagedPayment,
   useResolveStagedPayment,
   useResolveStripeStagedCharge,
@@ -239,6 +240,7 @@ export default function ReconciliationDepositsPage() {
   const clearBankDepositExclusion = useClearBankDepositExclusion();
   const confirmMatch = useConfirmStagedPaymentMatch();
   const rejectChargeQbTie = useRejectChargeQbTie();
+  const revertChargeQbTie = useRevertChargeQbTie();
   const approveCard = useApproveReconciliationCard();
   const setAccountingDisposition = useSetQboAccountingCheckDisposition();
   const deposits = data?.data ?? [];
@@ -288,6 +290,10 @@ export default function ReconciliationDepositsPage() {
     label: string;
   } | null>(null);
   const [dismissFor, setDismissFor] = useState<{
+    chargeId: string;
+    label: string;
+  } | null>(null);
+  const [revertTieFor, setRevertTieFor] = useState<{
     chargeId: string;
     label: string;
   } | null>(null);
@@ -470,6 +476,7 @@ export default function ReconciliationDepositsPage() {
     confirmChargeTies.isPending ||
     confirmMatch.isPending ||
     rejectChargeQbTie.isPending ||
+    revertChargeQbTie.isPending ||
     approveCard.isPending ||
     setAccountingDisposition.isPending ||
     confirmDepositQbo.isPending ||
@@ -1404,6 +1411,8 @@ export default function ReconciliationDepositsPage() {
     canUseCodingForm: canManageAccounting && me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
+    openRevertChargeQbTie: (chargeId, label) =>
+      setRevertTieFor({ chargeId, label }),
     confirmProposedMatch: (stagedPaymentId, label) =>
       void handleConfirmProposedMatch(stagedPaymentId, label),
     openUnlinkChooser: (giftLabel, options) =>
@@ -2588,6 +2597,54 @@ export default function ReconciliationDepositsPage() {
               }}
             >
               Dismiss
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={revertTieFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setRevertTieFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove confirmed QuickBooks tie?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {revertTieFor?.label} will no longer be tied to this Stripe
+              charge. The QuickBooks record and the charge both stay booked —
+              only the confirmed link between them is removed, so each can be
+              re-tied to the right record.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => {
+                if (!revertTieFor) return;
+                void revertChargeQbTie
+                  .mutateAsync({ chargeId: revertTieFor.chargeId })
+                  .then(() => {
+                    setRevertTieFor(null);
+                    invalidate();
+                    toast({
+                      title: "QB tie removed",
+                      description:
+                        "The confirmed charge–QB link was reverted.",
+                    });
+                  })
+                  .catch((err) => {
+                    toast({
+                      title: "Couldn't remove QB tie",
+                      description: apiErrorMessage(err) ?? errMessage(err),
+                      variant: "destructive",
+                    });
+                    invalidate();
+                  });
+              }}
+            >
+              Remove tie
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

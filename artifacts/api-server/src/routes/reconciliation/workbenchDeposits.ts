@@ -201,6 +201,7 @@ type NodeQbRecord = {
   dateReceived: string | null;
   paymentMethod?: string | null;
   linkedChargeId?: string | null;
+  tieLifecycle?: "proposed" | "confirmed" | null;
   componentId?: string | null;
   paymentUnitId?: string | null;
   accountingCheckId?: string | null;
@@ -282,6 +283,7 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
       sp.qb_payer_type,
       sp.exclusion_reason,
       sl.link_type,
+      sl.lifecycle::text AS tie_lifecycle,
       sl.stripe_charge_id,
       qc.id AS accounting_check_id
     FROM staged_payments sp
@@ -319,6 +321,10 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
       dateReceived: (raw.date_received as string | null) ?? null,
       paymentMethod: (raw.qb_payment_method as string | null) ?? null,
       linkedChargeId: (raw.stripe_charge_id as string | null) ?? null,
+      tieLifecycle:
+        raw.tie_lifecycle === "proposed" || raw.tie_lifecycle === "confirmed"
+          ? raw.tie_lifecycle
+          : null,
       componentId: componentRef?.componentId ?? null,
       paymentUnitId: componentRef?.paymentUnitId ?? null,
       accountingCheckId: (raw.accounting_check_id as string | null) ?? null,

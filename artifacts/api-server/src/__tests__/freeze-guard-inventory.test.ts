@@ -178,6 +178,11 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Unified reconciler approve: the charge-anchored escape hatch latches an OPEN opportunity into a pledge at mint time (writtenPledge/awardedAmount) — the exact write the exempt mint engine (lib/reconciliationCommit.ts mintGiftInTx) performs on the QB-anchored path; system ground-truth booking, not a human edit of an audited fact.",
   },
+  "routes/reconciliation/workbenchDeposits.ts": {
+    classification: "exempt",
+    reason:
+      "Deposit-workbench payment-unit mint: creates a NEW gift from a bank-deposit payment unit at reconciliation time (same system ground-truth booking as lib/reconciliationCommit.ts); never edits an existing audited gift.",
+  },
 };
 
 function walk(dir: string): string[] {

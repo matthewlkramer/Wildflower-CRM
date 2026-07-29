@@ -1,7 +1,18 @@
-import { db } from "@workspace/db";
+import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
+
+/**
+ * Cross-process serialization for the recompute: two concurrent runs bulk-
+ * insert the SAME deterministic ids (e.g. 'pu_' || charge id) in different
+ * scan orders, so they can deadlock each other on index/FK waits (observed
+ * under overlapping sync tails and parallel test workers). A session-level
+ * advisory lock held on a dedicated connection makes later callers queue —
+ * the recompute is idempotent fill-only DML, so running back-to-back is
+ * always safe and never loses work.
+ */
+const BANK_SPINE_ADVISORY_LOCK_KEY = 728411001;
 
 /**
  * Forward maintenance of the bank-spine money model
@@ -30,6 +41,24 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  * exists, so step 2 also re-derives lifecycle on existing stripe units.
  */
 export async function recomputeBankSpine(): Promise<void> {
+  const lockSession = await pool.connect();
+  try {
+    await lockSession.query("SELECT pg_advisory_lock($1)", [
+      BANK_SPINE_ADVISORY_LOCK_KEY,
+    ]);
+    await runBankSpineRecompute();
+  } finally {
+    try {
+      await lockSession.query("SELECT pg_advisory_unlock($1)", [
+        BANK_SPINE_ADVISORY_LOCK_KEY,
+      ]);
+    } finally {
+      lockSession.release();
+    }
+  }
+}
+
+async function runBankSpineRecompute(): Promise<void> {
   // 1. Project positive bank evidence lines into bank_deposits (0159/0170).
   await db.execute(sql`
     INSERT INTO bank_deposits (

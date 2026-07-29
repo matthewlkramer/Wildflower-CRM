@@ -137,3 +137,15 @@ penalty to plain ascending. Verify code == dev == prod via `pg_indexes.indexdef`
 
 ## Raw sql subquery in SELECT list: never interpolate `${table.col}`
 Inside a raw `sql` scalar subquery placed in the SELECT list of a join-less query, `${outerTable.col}` renders as a bare unqualified `"col"`, which Postgres resolves to the SUBQUERY alias (e.g. `srcl.id`) — reads silently return wrong/null values with no error. Use literal qualified identifiers instead (`"stripe_staged_charges"."id"`). Verified via `.toSQL()`; the equivalent hand-written psql works, so only the rendered SQL exposes it. Unit tests should assert the rendered SQL contains the qualified name.
+
+## 8. `ESCAPE '\'` in a sql template literal → escaping silently disabled
+
+In a JS/TS template literal, `\'` is an escape sequence for `'`, so
+``sql`... ILIKE ${term} ESCAPE '\'` `` emits `ESCAPE ''` — and Postgres treats an
+**empty** escape string as "no escape character". The `\%`/`\_` prefixes your code
+added to the search term then match literal backslashes instead of escaping
+wildcards, so literal `%`/`_` searches silently return nothing (no error).
+
+**Fix:** write `ESCAPE '\\'` in the template literal (emits `ESCAPE '\'` in SQL).
+Verify with a test that searches for a literal `%`. Sweep any ILIKE/LIKE + ESCAPE
+in sql templates when you find one instance.
