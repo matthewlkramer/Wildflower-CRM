@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  depositCompleteFromState,
   deriveDepositWorkbenchState,
   type DepositTransactionInput,
   type DepositWorkbenchStateInput,
@@ -78,7 +77,6 @@ describe("deriveDepositWorkbenchState", () => {
       state: "partial",
       relationshipCount: 1,
     });
-    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("does not let an evidence-only row become CRM complete through Array.every on an empty list", () => {
@@ -86,27 +84,14 @@ describe("deriveDepositWorkbenchState", () => {
 
     expect(state.information.crmComplete).toBe(false);
     expect(state.information.state).toBe("incomplete");
-    expect(depositCompleteFromState(state)).toBe(false);
   });
 
-  it("marks a fully linked, CRM-complete, evidenced deposit operationally complete", () => {
+  it("keeps a link-complete row accounting-pending until QuickBooks documentation exists", () => {
     const state = deriveDepositWorkbenchState(base());
 
     expect(state.linkage.state).toBe("complete");
-    expect(state.information.crmComplete).toBe(true);
-    expect(state.information.qbEvidenceComplete).toBe(true);
+    expect(state.information.qbComplete).toBe(false);
     expect(state.information.state).toBe("accounting_pending");
-    expect(depositCompleteFromState(state)).toBe(true);
-  });
-
-  it("keeps a fully linked row open when accounting evidence is absent", () => {
-    const state = deriveDepositWorkbenchState(
-      base({ accountingEvidencePresent: false }),
-    );
-
-    expect(state.linkage.state).toBe("complete");
-    expect(state.information.qbEvidenceComplete).toBe(false);
-    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("ignores excluded transactions when measuring active transaction coverage", () => {
@@ -150,7 +135,6 @@ describe("deriveDepositWorkbenchState", () => {
 
     expect(state.linkage.state).toBe("partial");
     expect(state.linkage.transactionToCrm.state).toBe("missing");
-    expect(depositCompleteFromState(state)).toBe(false);
   });
 
   it("keeps accounting corrections as attention-required without changing the underlying relationship facts", () => {
@@ -161,6 +145,5 @@ describe("deriveDepositWorkbenchState", () => {
     expect(state.linkage.state).toBe("complete");
     expect(state.flags.attentionRequired).toBe(true);
     expect(state.information.state).toBe("accounting_pending");
-    expect(depositCompleteFromState(state)).toBe(false);
   });
 });
