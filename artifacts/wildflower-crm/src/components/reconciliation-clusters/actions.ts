@@ -14,11 +14,27 @@ export type AnchorRef =
   | { kind: "staged"; id: string; label: string }
   | { kind: "component"; id: string; label: string };
 
+/**
+ * Editable-field prefill for the standalone-create-gift dialog, pulled from the
+ * evidence row when the client knows it (Stripe payer name / charge date).
+ * Blank fields mean "keep the server's evidence-derived default" — the dialog
+ * only sends overrides the user actually changed.
+ */
+export interface CreateGiftPrefill {
+  name: string | null;
+  /** ISO yyyy-mm-dd. */
+  dateReceived: string | null;
+}
+
 /** Action callbacks the page wires to the real endpoints. */
 export interface ClusterActions {
   busy: boolean;
   openLinkGift: (anchor: AnchorRef) => void;
-  openCreateGift: (anchor: AnchorRef, preview: EvidencePreview) => void;
+  openCreateGift: (
+    anchor: AnchorRef,
+    preview: EvidencePreview,
+    prefill?: CreateGiftPrefill,
+  ) => void;
   openIdentify: (anchor: AnchorRef, preview: EvidencePreview | null) => void;
   openDonorboxSearch?: (anchor: AnchorRef, preview: EvidencePreview) => void;
   openCodingFormLookup?: (anchor: AnchorRef, preview: EvidencePreview) => void;

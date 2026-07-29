@@ -182,7 +182,7 @@ export function CodingFormLookupDialog({
   );
 }
 
-function PreviewField({
+export function PreviewField({
   label,
   value,
   locked,

@@ -176,6 +176,7 @@ stored lifecycle (`status` column); map to shared derived vocab via
 - [Stripe charge donor crossing](stripe-charge-donor-crossing.md) — gift proposals are donor-scoped; a wrong confirmed donor deterministically links the wrong donor's gift; repairs must mirror the FULL link write-set (PA row + charge stamps + final-amount stamp + tie re-derivation).
 - [Recon search bands & confirm gating](reconciliation-search-and-confirm-gating.md) — text overrides the amount band; never pre-gate ahead of the locking confirm primitive; overridable blockers = exclusion + amount-mismatch; claimed-money blockers stay hard 409.
 - [Recon three-facet model](recon-three-facet-model.md) — owner-ratified vocabulary who/why|transaction|accounting (CRM gift ≠ who/why); linkage vs adequacy are separate signals.
+- [Dirty-prefill must match server default](dirty-prefill-must-match-server-default.md) — override dialogs sending only touched fields must prefill EXACTLY the server default (blank if none); display fallbacks silently drop overrides.
 
 ## Imports/backfills & prod verification
 

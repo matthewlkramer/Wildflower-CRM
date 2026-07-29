@@ -77,6 +77,8 @@ import {
   type WorkbenchDepositCompositionComponentsItem,
   type WorkbenchDepositLens,
   type WorkbenchRecentChange,
+  type MintGiftOverridesBody,
+  type OpportunityOrPledge,
 } from "@workspace/api-client-react";
 import { formatCurrency } from "@/lib/format";
 import {
@@ -102,7 +104,14 @@ import {
   type UnlinkOption,
 } from "@/components/reconciliation-clusters/dialogs";
 import { TieChargeQbDialog } from "@/components/reconciliation-bundles/TieChargeQbDialog";
-import type { AnchorRef } from "@/components/reconciliation-clusters/actions";
+import {
+  CreateStandaloneGiftDialog,
+  LinkEvidenceSearchDialog,
+} from "@/components/reconciliation-deposits/gift-column-dialogs";
+import type {
+  AnchorRef,
+  CreateGiftPrefill,
+} from "@/components/reconciliation-clusters/actions";
 import type { DonorType } from "@/components/entity-picker";
 import {
   AlertDialog,
@@ -126,7 +135,12 @@ import {
   apiErrorMessage,
   is409,
 } from "@/components/reconciliation-bundles/settlement-actions";
-import { deriveApproveBodyFromProposal } from "@/lib/reconciliation";
+import {
+  deriveApproveBody,
+  deriveApproveBodyFromProposal,
+  hasAmountBlocker,
+  type OutcomeChoice,
+} from "@/lib/reconciliation";
 
 type CandidatePaymentUnitWithClaim = DepositCandidatePaymentUnit & {
   claimed?: boolean;
@@ -245,7 +259,14 @@ export default function ReconciliationDepositsPage() {
   const [createFor, setCreateFor] = useState<{
     anchor: AnchorRef;
     preview: EvidencePreview;
+    prefill: CreateGiftPrefill | null;
   } | null>(null);
+  const [linkEvidenceFor, setLinkEvidenceFor] = useState<{
+    anchor: AnchorRef;
+    mode: "all" | "pledges";
+  } | null>(null);
+  const [oppOutcomeFor, setOppOutcomeFor] =
+    useState<OpportunityOrPledge | null>(null);
   const [identifyFor, setIdentifyFor] = useState<{
     anchor: AnchorRef;
     preview: EvidencePreview;
@@ -768,26 +789,200 @@ export default function ReconciliationDepositsPage() {
     if (!codingFormFor) return;
     setCodingHint(row);
     if (mode === "create") {
-      setCreateFor(codingFormFor);
+      setCreateFor({ ...codingFormFor, prefill: null });
     } else {
       setIdentifyFor(codingFormFor);
     }
     setCodingFormFor(null);
   };
-  const handleDonor = async (type: DonorType, id: string, create: boolean) => {
-    const target = create ? createFor : identifyFor;
+  const handleDonor = async (type: DonorType, id: string) => {
+    const target = identifyFor;
     if (!target) return;
     const body = donorBody(type, id);
     if (target.anchor.kind === "charge") {
       await resolveCharge.mutateAsync({ id: target.anchor.id, data: body });
-      if (create) await createChargeGift.mutateAsync({ id: target.anchor.id });
     } else {
       await resolveStaged.mutateAsync({ id: target.anchor.id, data: body });
-      if (create) await createStagedGift.mutateAsync({ id: target.anchor.id });
     }
-    setCreateFor(null);
     setIdentifyFor(null);
     invalidate();
+  };
+  const handleCreateStandalone = async (
+    type: DonorType,
+    id: string,
+    overrides: MintGiftOverridesBody,
+  ) => {
+    const target = createFor;
+    if (!target) return;
+    try {
+      const body = donorBody(type, id);
+      if (target.anchor.kind === "charge") {
+        await resolveCharge.mutateAsync({ id: target.anchor.id, data: body });
+        await createChargeGift.mutateAsync({
+          id: target.anchor.id,
+          data: overrides,
+        });
+      } else {
+        await resolveStaged.mutateAsync({ id: target.anchor.id, data: body });
+        await createStagedGift.mutateAsync({
+          id: target.anchor.id,
+          data: overrides,
+        });
+      }
+      setCreateFor(null);
+      setCodingHint(null);
+      invalidate();
+      toast({
+        title: "Gift created",
+        description: `A standalone gift was minted from “${target.anchor.label}”.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't create gift",
+        description: is409(err) ? apiErrorMessage(err) : errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+    }
+  };
+  /**
+   * Book a staged payment against a picked gift or opportunity via the unified
+   * approve endpoint (server re-derives + re-validates; amount-tolerance
+   * failures need an explicit human override reason).
+   */
+  const approveStagedAgainst = async (
+    stagedPaymentId: string,
+    pick: { giftId?: string; giftLabel?: string; opp?: OpportunityOrPledge },
+    outcomeChoice: OutcomeChoice,
+  ): Promise<boolean> => {
+    const graph = await queryClient.fetchQuery(
+      getGetReconciliationGraphQueryOptions(stagedPaymentId),
+    );
+    let overrideReason = "";
+    if (hasAmountBlocker(graph.blockers)) {
+      const entered = window.prompt(
+        "The amounts don't match within tolerance. Enter a reason to override:",
+      );
+      if (entered == null || !entered.trim()) return false;
+      overrideReason = entered.trim();
+    }
+    const derived = deriveApproveBody({
+      donor: null,
+      gift: pick.giftId
+        ? {
+            nodeType: "gift",
+            id: pick.giftId,
+            label: pick.giftLabel ?? pick.giftId,
+            donorId: null,
+          }
+        : null,
+      opportunity: pick.opp
+        ? {
+            nodeType: "opportunity",
+            id: pick.opp.id,
+            label: pick.opp.name ?? pick.opp.id,
+          }
+        : null,
+      outcomeChoice,
+      overrideAmountMismatchReason: overrideReason,
+      graph,
+    });
+    if (!derived.ok) {
+      toast({ title: "Can't link yet", description: derived.reason });
+      return false;
+    }
+    if (
+      derived.confirm &&
+      !window.confirm(
+        `${derived.confirm.title}\n\n${derived.confirm.description}`,
+      )
+    ) {
+      return false;
+    }
+    await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+    return true;
+  };
+  const handleLinkEvidenceGift = async (gift: GiftOrPayment) => {
+    const target = linkEvidenceFor;
+    if (!target) return;
+    try {
+      if (target.anchor.kind === "charge") {
+        await linkCharge.mutateAsync({
+          id: target.anchor.id,
+          data: { giftId: gift.id },
+        });
+      } else {
+        const done = await approveStagedAgainst(
+          target.anchor.id,
+          { giftId: gift.id, giftLabel: gift.name ?? gift.id },
+          "create_gift_from_opportunity",
+        );
+        if (!done) return;
+      }
+      setLinkEvidenceFor(null);
+      invalidate();
+      toast({
+        title: "Gift linked",
+        description: `“${target.anchor.label}” now pays the selected gift.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't link gift",
+        description: is409(err) ? apiErrorMessage(err) : errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+    }
+  };
+  const handleLinkEvidenceOpp = async (
+    opp: OpportunityOrPledge,
+    choice?: OutcomeChoice,
+  ) => {
+    const target = linkEvidenceFor;
+    if (!target || target.anchor.kind === "charge") return;
+    if (target.anchor.kind !== "staged") {
+      toast({
+        title: "Not available",
+        description:
+          "Only QuickBooks-backed payments can be booked against an opportunity or pledge.",
+      });
+      return;
+    }
+    // An OPEN opportunity has two booking outcomes — ask the human which one.
+    if (!choice && opp.status === "open" && linkEvidenceFor?.mode === "all") {
+      setOppOutcomeFor(opp);
+      return;
+    }
+    const outcome: OutcomeChoice =
+      choice ??
+      (opp.status === "open"
+        ? "convert_to_pledge_and_first_payment"
+        : "create_gift_from_opportunity");
+    try {
+      const done = await approveStagedAgainst(
+        target.anchor.id,
+        { opp },
+        outcome,
+      );
+      if (!done) return;
+      setOppOutcomeFor(null);
+      setLinkEvidenceFor(null);
+      invalidate();
+      toast({
+        title:
+          outcome === "convert_to_pledge_and_first_payment"
+            ? "Pledge created with first payment"
+            : "Payment recorded",
+        description: `“${target.anchor.label}” was booked against “${opp.name ?? "the selected record"}”.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Couldn't record payment",
+        description: is409(err) ? apiErrorMessage(err) : errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+    }
   };
   const handleExclude = async (reason: StagedPaymentExclusionReason) => {
     if (!excludeFor) return;
@@ -984,7 +1179,9 @@ export default function ReconciliationDepositsPage() {
   const actions: DepositActions = {
     busy,
     openLinkGift: setLinkGiftFor,
-    openCreateGift: (anchor, preview) => setCreateFor({ anchor, preview }),
+    openCreateGift: (anchor, preview, prefill) =>
+      setCreateFor({ anchor, preview, prefill: prefill ?? null }),
+    openLinkEvidence: (anchor, mode) => setLinkEvidenceFor({ anchor, mode }),
     openIdentify: (anchor, preview) =>
       setIdentifyFor({
         anchor,
@@ -1807,7 +2004,7 @@ export default function ReconciliationDepositsPage() {
           });
         }}
       />
-      <DonorResolveDialog
+      <CreateStandaloneGiftDialog
         open={createFor != null}
         onOpenChange={(open) => {
           if (!open) {
@@ -1815,7 +2012,6 @@ export default function ReconciliationDepositsPage() {
             setCodingHint(null);
           }
         }}
-        mode="create"
         recordLabel={createFor?.anchor.label ?? ""}
         preview={createFor?.preview ?? null}
         contextNote={
@@ -1823,9 +2019,73 @@ export default function ReconciliationDepositsPage() {
             ? `Coding form suggests ${codingHint.donorName ?? codingHint.donorNameRaw ?? "an unidentified donor"}${codingHint.intendedUsageSuggested ? ` · purpose: ${codingHint.intendedUsageSuggested}` : ""}.`
             : null
         }
+        prefill={createFor?.prefill ?? null}
         busy={busy}
-        onSubmit={(type, id) => void handleDonor(type, id, true)}
+        onSubmit={(type, id, overrides) =>
+          void handleCreateStandalone(type, id, overrides)
+        }
       />
+      <LinkEvidenceSearchDialog
+        open={linkEvidenceFor != null}
+        onOpenChange={(open) => {
+          if (!open) setLinkEvidenceFor(null);
+        }}
+        mode={linkEvidenceFor?.mode ?? "all"}
+        anchorKind={linkEvidenceFor?.anchor.kind ?? null}
+        busy={busy}
+        onPickGift={(gift) => void handleLinkEvidenceGift(gift)}
+        onPickOpp={(opp) => void handleLinkEvidenceOpp(opp)}
+      />
+      <AlertDialog
+        open={oppOutcomeFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setOppOutcomeFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>How should this be booked?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{oppOutcomeFor?.name ?? oppOutcomeFor?.id}” is still an open
+              opportunity. Convert it into a pledge with this as its first
+              payment, or book a one-time gift from it and keep the opportunity
+              as-is.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                const opp = oppOutcomeFor;
+                if (opp)
+                  void handleLinkEvidenceOpp(
+                    opp,
+                    "create_gift_from_opportunity",
+                  );
+              }}
+              data-testid="button-opp-outcome-gift"
+            >
+              One-time gift
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                const opp = oppOutcomeFor;
+                if (opp)
+                  void handleLinkEvidenceOpp(
+                    opp,
+                    "convert_to_pledge_and_first_payment",
+                  );
+              }}
+              data-testid="button-opp-outcome-pledge"
+            >
+              Convert to pledge + first payment
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <DonorResolveDialog
         open={identifyFor != null}
         onOpenChange={(open) => {
@@ -1843,7 +2103,7 @@ export default function ReconciliationDepositsPage() {
             : null
         }
         busy={busy}
-        onSubmit={(type, id) => void handleDonor(type, id, false)}
+        onSubmit={(type, id) => void handleDonor(type, id)}
       />
       <ExcludeReasonDialog
         open={excludeFor != null}

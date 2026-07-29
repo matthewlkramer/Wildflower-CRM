@@ -20,6 +20,7 @@ import {
 import type {
   ClusterActions,
   AnchorRef,
+  CreateGiftPrefill,
 } from "@/components/reconciliation-clusters/actions";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 import {
@@ -49,6 +50,8 @@ export type DepositActions = Omit<
   ) => void;
   clearComponentQbSource?: (componentId: string) => void;
   openSinglePaymentDeposit?: (bankDepositId: string, amount: string) => void;
+  /** Unified gift/opportunity/pledge search for the Gifts-column anchor. */
+  openLinkEvidence?: (anchor: AnchorRef, mode: "all" | "pledges") => void;
   openDepositQbEvidenceSearch?: (deposit: WorkbenchDeposit) => void;
   unlinkAccountingRecord?: (
     bankDepositId: string,
@@ -127,7 +130,13 @@ function checkTone(
 function CardActionsMenu({
   items,
 }: {
-  items: Array<{ label: string; onSelect: () => void; disabled?: boolean }>;
+  items: Array<{
+    label: string;
+    onSelect: () => void;
+    disabled?: boolean;
+    /** Shown as a muted second line when the item is disabled (label-not-hide). */
+    disabledReason?: string;
+  }>;
 }) {
   if (!items.length) return null;
   return (
@@ -152,13 +161,27 @@ function CardActionsMenu({
             disabled={item.disabled}
             onSelect={item.onSelect}
           >
-            {item.label}
+            {item.disabled && item.disabledReason ? (
+              <span className="flex max-w-[260px] flex-col">
+                <span>{item.label}</span>
+                <span className="whitespace-normal text-[10px] leading-snug text-muted-foreground">
+                  {item.disabledReason}
+                </span>
+              </span>
+            ) : (
+              item.label
+            )}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
+
+const NO_GIFT_ANCHOR_REASON =
+  "No unlinked payment evidence — resolve the deposit's composition first.";
+const CHARGE_PLEDGE_BLOCKED_REASON =
+  "No QuickBooks record backs this charge yet — Stripe money can only be linked to an existing gift.";
 
 export interface DepositRowProps {
   deposit: WorkbenchDeposit;
@@ -173,6 +196,7 @@ const NOOP_ACTIONS: DepositActions = {
   busy: false,
   openLinkGift: () => undefined,
   openCreateGift: () => undefined,
+  openLinkEvidence: () => undefined,
   openIdentify: () => undefined,
   openDonorboxSearch: () => undefined,
   openCodingFormLookup: () => undefined,
@@ -1065,13 +1089,22 @@ export function DepositRow({
   const bankSourceDetails = [deposit.bank.payee, deposit.bank.refNo]
     .filter(Boolean)
     .join(" · ");
-  const giftColumnAnchor: AnchorRef | null = (() => {
+  const giftColumnTarget: {
+    anchor: AnchorRef;
+    prefill: CreateGiftPrefill;
+  } | null = (() => {
     const charge = deposit.charges.find((item) => !item.linkedGiftId);
     if (charge) {
       return {
-        kind: "charge",
-        id: charge.chargeId,
-        label: charge.payerName ?? charge.chargeId,
+        anchor: {
+          kind: "charge",
+          id: charge.chargeId,
+          label: charge.payerName ?? charge.chargeId,
+        },
+        prefill: {
+          name: charge.payerName ?? null,
+          dateReceived: charge.chargeDate?.slice(0, 10) ?? null,
+        },
       };
     }
     const component =
@@ -1084,13 +1117,20 @@ export function DepositRow({
         : undefined;
     if (component?.stagedPaymentId) {
       return {
-        kind: "staged",
-        id: component.stagedPaymentId,
-        label: component.label ?? component.kind,
+        anchor: {
+          kind: "staged",
+          id: component.stagedPaymentId,
+          label: component.label ?? component.kind,
+        },
+        prefill: {
+          name: null,
+          dateReceived: component.receivedDate?.slice(0, 10) ?? null,
+        },
       };
     }
     return null;
   })();
+  const giftColumnAnchor = giftColumnTarget?.anchor ?? null;
   const bankPreview: EvidencePreview = {
     amount: money(deposit.bank.amount),
     date: deposit.date ? formatDateShort(deposit.date) : "—",
@@ -1257,24 +1297,46 @@ export function DepositRow({
                 items={[
                   {
                     label: "Search and link gift…",
-                    onSelect: () =>
-                      actions.openSinglePaymentDeposit?.(
-                        deposit.anchorId,
-                        deposit.composition.unexplainedAmount ??
-                          deposit.bank.amount ??
-                          "",
-                      ),
+                    onSelect: () => {
+                      if (giftColumnAnchor)
+                        actions.openLinkEvidence?.(giftColumnAnchor, "all");
+                    },
+                    disabled: !giftColumnAnchor,
+                    disabledReason: !giftColumnAnchor
+                      ? NO_GIFT_ANCHOR_REASON
+                      : undefined,
+                  },
+                  {
+                    label: "Create standalone gift…",
+                    onSelect: () => {
+                      if (giftColumnTarget)
+                        actions.openCreateGift(
+                          giftColumnTarget.anchor,
+                          bankPreview,
+                          giftColumnTarget.prefill,
+                        );
+                    },
+                    disabled: !giftColumnAnchor,
+                    disabledReason: !giftColumnAnchor
+                      ? NO_GIFT_ANCHOR_REASON
+                      : undefined,
+                  },
+                  {
+                    label: "Record as payment on pledge…",
+                    onSelect: () => {
+                      if (giftColumnAnchor && giftColumnAnchor.kind !== "charge")
+                        actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
+                    },
+                    disabled:
+                      !giftColumnAnchor || giftColumnAnchor.kind === "charge",
+                    disabledReason: !giftColumnAnchor
+                      ? NO_GIFT_ANCHOR_REASON
+                      : giftColumnAnchor.kind === "charge"
+                        ? CHARGE_PLEDGE_BLOCKED_REASON
+                        : undefined,
                   },
                   ...(giftColumnAnchor
                     ? [
-                        {
-                          label: "Create gift…",
-                          onSelect: () =>
-                            actions.openCreateGift(
-                              giftColumnAnchor,
-                              bankPreview,
-                            ),
-                        },
                         {
                           label: "Identify donor…",
                           onSelect: () =>
@@ -1514,9 +1576,17 @@ export function DepositRow({
                         onSelect: () => actions.openLinkGift(anchor),
                       },
                       {
-                        label: "Create gift…",
+                        label: "Create standalone gift…",
                         onSelect: () =>
-                          actions.openCreateGift(anchor, chargePreview(charge)),
+                          actions.openCreateGift(
+                            anchor,
+                            chargePreview(charge),
+                            {
+                              name: charge.payerName ?? null,
+                              dateReceived:
+                                charge.chargeDate?.slice(0, 10) ?? null,
+                            },
+                          ),
                       },
                       {
                         label: "Identify donor…",
@@ -1609,8 +1679,13 @@ export function DepositRow({
                         onSelect: () => actions.openLinkGift(anchor),
                       },
                       {
-                        label: "Create gift…",
-                        onSelect: () => actions.openCreateGift(anchor, preview),
+                        label: "Create standalone gift…",
+                        onSelect: () =>
+                          actions.openCreateGift(anchor, preview, {
+                            name: null,
+                            dateReceived:
+                              component.receivedDate?.slice(0, 10) ?? null,
+                          }),
                       },
                       {
                         label: "Identify donor…",

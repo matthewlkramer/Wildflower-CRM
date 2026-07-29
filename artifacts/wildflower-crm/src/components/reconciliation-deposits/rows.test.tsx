@@ -138,4 +138,82 @@ describe("deposit workbench rows", () => {
     act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
     expect(document.body.textContent).toContain("Return to open queue");
   });
+
+  /** Open the card-actions menu whose content contains `text`; return the open menu content element. */
+  function openMenuContaining(text: string): HTMLElement | null {
+    const triggers = container.querySelectorAll('button[aria-label="Card actions"]');
+    for (const trigger of triggers) {
+      act(() => trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+      const menu = document.querySelector<HTMLElement>('[role="menu"]');
+      if (menu?.textContent?.includes(text)) return menu;
+      act(() => {
+        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+    }
+    return null;
+  }
+
+  function menuItem(menu: HTMLElement, label: string): HTMLElement | null {
+    return (
+      Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+        (item) => item.textContent?.includes(label),
+      ) ?? null
+    );
+  }
+
+  it("labels (never hides) blocked gifts-column actions when no evidence anchor exists", () => {
+    render(makeDeposit(), { isFinanceOrAdmin: true });
+    const menu = openMenuContaining("Create standalone gift…");
+    expect(menu).not.toBeNull();
+    for (const label of [
+      "Search and link gift…",
+      "Create standalone gift…",
+      "Record as payment on pledge…",
+    ]) {
+      const item = menuItem(menu as HTMLElement, label);
+      expect(item, label).not.toBeNull();
+      expect(item?.getAttribute("data-disabled"), label).not.toBeNull();
+    }
+    expect(menu?.textContent).toContain(
+      "No unlinked payment evidence — resolve the deposit's composition first.",
+    );
+  });
+
+  it("blocks only the pledge path — with the Stripe reason — for an unlinked charge anchor", () => {
+    render(
+      makeDeposit({
+        composition: {
+          kind: "stripe_payout",
+          payoutId: "po_1",
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [],
+        },
+        charges: [{
+          chargeId: "ch_1",
+          amount: "100.00",
+          feeAmount: "0.00",
+          netAmount: "100.00",
+          payerName: "Payer",
+          chargeDate: "2024-01-02",
+          linkedGiftId: null,
+          attributedDonor: null,
+        }],
+      }),
+      { isFinanceOrAdmin: true },
+    );
+    const menu = openMenuContaining("Record as payment on pledge…");
+    expect(menu).not.toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Search and link gift…")?.getAttribute("data-disabled"),
+    ).toBeNull();
+    expect(
+      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute("data-disabled"),
+    ).toBeNull();
+    const pledgeItem = menuItem(menu as HTMLElement, "Record as payment on pledge…");
+    expect(pledgeItem?.getAttribute("data-disabled")).not.toBeNull();
+    expect(pledgeItem?.textContent).toContain(
+      "Stripe money can only be linked to an existing gift",
+    );
+  });
 });
