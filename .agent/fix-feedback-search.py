@@ -17,8 +17,8 @@ replace_once(
       filters.push(sql`(''',
     '''    if (query.search) {
       const escapedSearch = query.search.replace(
-        /[\\%_]/g,
-        (character) => `\\${character}`,
+        /[\\\\%_]/g,
+        (character) => `\\\\${character}`,
       );
       const term = `%${escapedSearch}%`;
       filters.push(sql`(''',
