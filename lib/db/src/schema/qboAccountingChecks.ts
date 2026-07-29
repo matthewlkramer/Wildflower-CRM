@@ -5,7 +5,9 @@ import {
   timestamp,
   uniqueIndex,
   index,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { stagedPayments } from "./stagedPayments";
 import { users } from "./users";
 import { qboAccountingDispositionEnum } from "./_enums";
@@ -23,6 +25,12 @@ import { qboAccountingDispositionEnum } from "./_enums";
  *     human to fix QBO in QBO, then a re-compare flips it to `corrected`;
  *   - `accepted_historical` records a deliberate decision to leave frozen
  *     history wrong (with `note` explaining why).
+ *
+ * `booking_basis` records how a Stripe payout was posted in QBO. Wildflower has
+ * historically used both gross and net booking, so either is accepted as a
+ * complete accounting treatment for now. `unmatched` means the QBO amount
+ * matches neither basis and remains a correction. The field is derived by the
+ * comparer, not manually entered.
  *
  * `expected` / `actual` are jsonb snapshots written by the comparer (donor /
  * revenue composition, gross, fees, entity/account/class/location) so the row
@@ -47,6 +55,10 @@ export const qboAccountingChecks = pgTable(
     // Snapshot of what QBO actually said at compare time.
     actual: jsonb("actual"),
     disposition: qboAccountingDispositionEnum("disposition").notNull(),
+    // Derived Stripe posting basis: gross and net are both acceptable; unmatched
+    // is the only basis that requires correction. Null for non-Stripe checks or
+    // historical rows not yet recomputed.
+    bookingBasis: text("booking_basis"),
     // Human explanation — required in practice for accepted_historical.
     note: text("note"),
     resolvedByUserId: text("resolved_by_user_id").references(() => users.id, {
@@ -63,6 +75,11 @@ export const qboAccountingChecks = pgTable(
       t.stagedPaymentId,
     ),
     index("qbo_accounting_checks_disposition_idx").on(t.disposition),
+    index("qbo_accounting_checks_booking_basis_idx").on(t.bookingBasis),
+    check(
+      "qbo_accounting_checks_booking_basis_ck",
+      sql`${t.bookingBasis} IS NULL OR ${t.bookingBasis} IN ('gross', 'net', 'unmatched')`,
+    ),
   ],
 );
 
