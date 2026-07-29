@@ -36,14 +36,15 @@ export type DepositWorkbenchStateInput = {
 /**
  * Canonical state derivation for the deposit-first workbench.
  *
- * The three money relationships are measured independently and the row is
- * link-complete only when the bank/composition relationship and every live,
+ * The deposit route used to treat "payout paired to bank" as end-to-end
+ * completion, even when one or more live charges still had no CRM gift. This
+ * helper derives the three relationship surfaces independently and only marks
+ * the row link-complete when the bank/composition relationship and every live,
  * countable transaction→CRM relationship are complete.
  *
- * Information state keeps the wider system distinction between linked QBO
- * evidence and the future fill-out-QBO documentation workflow. The deposit
- * queue's operational Completed classification is derived separately by
- * depositCompleteFromState().
+ * Information completeness remains independent. QuickBooks documentation is
+ * not yet a built workflow, so QB_DOCUMENTATION_COMPLETE continues to gate
+ * audit_ready exactly as it does in the cluster workbench.
  */
 export function deriveDepositWorkbenchState(
   input: DepositWorkbenchStateInput,
@@ -137,24 +138,4 @@ export function deriveDepositWorkbenchState(
     transactions: input.transactions.map(({ entry }) => entry),
     crmCards: input.crmCards,
   };
-}
-
-/**
- * Operational completion for the deposit queue.
- *
- * A row leaves All open when its money composition is resolved, every live
- * payment is linked to a complete CRM gift, accounting evidence is linked, and
- * no correction/refund/conflict remains. This intentionally does not require
- * the separate future fill-out-QBO documentation workflow that gates
- * information.state === "audit_ready" across the wider reconciliation system.
- */
-export function depositCompleteFromState(state: WorkbenchRowState): boolean {
-  return (
-    state.linkage.state === "complete" &&
-    state.information.crmComplete &&
-    state.information.qbEvidenceComplete &&
-    !state.flags.excluded &&
-    !state.flags.conflict &&
-    !state.flags.attentionRequired
-  );
 }
