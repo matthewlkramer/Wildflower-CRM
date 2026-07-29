@@ -1,5 +1,6 @@
 import type {
   WorkbenchDeposit,
+  WorkbenchDepositAccountingCheck,
   WorkbenchDepositNodeQbRecord,
   WorkbenchDepositQbRecord,
 } from "@workspace/api-client-react";
@@ -60,6 +61,32 @@ export function dedupeAccountingGroups(
       }),
     }))
     .filter((group) => group.records.length > 0);
+}
+
+export type AccountingCorrectionPresentation = {
+  label: "Correction needed";
+  note: string;
+} | null;
+
+/**
+ * Accounting checks are stored separately from the QBO evidence card. When the
+ * card is nested under a payment/deposit group, the separate check row is
+ * intentionally deduplicated; this projection keeps a blocking correction and
+ * its explanation visible on the nested card instead of silently hiding it.
+ */
+export function accountingCorrectionPresentation(
+  check:
+    | Pick<WorkbenchDepositAccountingCheck, "disposition" | "note">
+    | null
+    | undefined,
+): AccountingCorrectionPresentation {
+  if (check?.disposition !== "correction_needed") return null;
+  return {
+    label: "Correction needed",
+    note:
+      check.note?.trim() ||
+      "This QuickBooks record is on the accounting corrections worklist.",
+  };
 }
 
 export type SingleAllocationPresentation = {
