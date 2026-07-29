@@ -115,4 +115,22 @@ replace_checked(
     "gift group anchor",
 )
 
+replace_checked(
+    """rows = replace_once(
+    rows,
+    '''    <div className="flex items-center justify-end">''',
+    '''    <div className="absolute right-0 top-0 z-10">''',
+    "accounting column menu positioning",
+)""",
+    """rows = replace_once(
+    rows,
+    '''  const columnMenu = actions.isFinanceOrAdmin ? (
+    <div className="flex items-center justify-end">''',
+    '''  const columnMenu = actions.isFinanceOrAdmin ? (
+    <div className="absolute right-0 top-0 z-10">''',
+    "accounting column menu positioning",
+)""",
+    "accounting menu anchor",
+)
+
 path.write_text(text, encoding="utf-8")
