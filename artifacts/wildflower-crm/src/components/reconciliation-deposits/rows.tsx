@@ -23,6 +23,7 @@ import type {
 } from "@/components/reconciliation-clusters/rows";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
 import {
+  accountingCorrectionPresentation,
   accountingRecordIdentity,
   dedupeAccountingGroups,
   preferStagedAccountingRecords,
@@ -656,9 +657,11 @@ function accountingLabel(
 
 function NodeQbCard({
   record,
+  check,
   menuItems,
 }: {
   record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord;
+  check?: WorkbenchDepositAccountingCheck;
   menuItems?: Array<{
     label: string;
     onSelect: () => void;
@@ -667,6 +670,7 @@ function NodeQbCard({
 }) {
   const registerRecord =
     "bankTransactionId" in record && record.bankTransactionId ? record : null;
+  const correction = accountingCorrectionPresentation(check);
   return (
     <div className="rounded-md border border-dashed bg-card px-2 py-1.5">
       <div className="flex items-center justify-between gap-2">
@@ -678,6 +682,11 @@ function NodeQbCard({
             record.stagedPaymentId}
         </span>
         <span className="flex shrink-0 items-center gap-1">
+          {correction ? (
+            <Badge variant="destructive" className="text-[9px]">
+              {correction.label}
+            </Badge>
+          ) : null}
           <span className="text-[10px] tabular-nums">
             {money(record.amount)}
           </span>
@@ -700,6 +709,11 @@ function NodeQbCard({
               .filter(Boolean)
               .join(" · ")}
       </div>
+      {correction ? (
+        <div className="mt-1 whitespace-normal break-words text-[9px] font-medium text-destructive">
+          {correction.note}
+        </div>
+      ) : null}
       {registerRecord ? (
         <div className="whitespace-normal break-words text-[9px] text-muted-foreground">
           {record.memo ?? "No memo"}
@@ -912,6 +926,7 @@ function Accounting({
             <NodeQbCard
               key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`}
               record={record}
+              check={checksByPayment.get(record.stagedPaymentId)}
               menuItems={nodeMenuItems(record)}
             />
           ))}
