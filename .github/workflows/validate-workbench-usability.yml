@@ -65,6 +65,7 @@ jobs:
           python .agent/fix-apply-anchor-3.py
           python .agent/fix-apply-anchor-4.py
           python .agent/fix-apply-anchor-5.py
+          python .agent/fix-apply-anchor-6.py
           python .agent/apply-workbench-usability.py
 
       - name: Format touched source
