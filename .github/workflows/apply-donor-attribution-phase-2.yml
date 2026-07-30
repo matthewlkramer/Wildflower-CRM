@@ -1,0 +1,70 @@
+name: Apply donor attribution phase 2
+
+on:
+  push:
+    branches:
+      - agent/donor-attribution-phase-2
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/donor-attribution-phase-2
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Decode and apply implementation
+        run: |
+          base64 -d .github/scripts/apply_donor_attribution_phase2.py.gz.b64 \
+            | gzip -d > /tmp/apply_donor_attribution_phase2.py
+          python /tmp/apply_donor_attribution_phase2.py
+
+      - name: Regenerate API clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - name: Format changed source files
+        run: |
+          pnpm exec prettier --write \
+            lib/db/src/schema/donorRoutingPreferences.ts \
+            artifacts/api-server/src/lib/donorRouting.ts \
+            artifacts/api-server/src/routes/donorRouting.ts \
+            artifacts/api-server/src/routes/people.ts \
+            artifacts/api-server/src/routes/households.ts \
+            artifacts/api-server/src/routes/organizations.ts \
+            artifacts/api-server/src/routes/topPriorities.ts \
+            artifacts/api-server/src/app.ts \
+            artifacts/api-server/src/__tests__/donor-routing.integration.test.ts \
+            artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts \
+            artifacts/api-server/src/__tests__/people-org-soft-credit.integration.test.ts \
+            artifacts/wildflower-crm/src/components/preferred-donor-card.tsx \
+            .agents/memory/individual-org-soft-credit.md \
+            docs/donor-attribution-phase-2.md
+
+      - run: pnpm run check:codegen
+      - run: pnpm run check:api
+      - run: pnpm run check:web
+      - run: pnpm run check:test-api-unit
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement donor attribution phase 2"
+          git push origin HEAD:agent/donor-attribution-phase-2
