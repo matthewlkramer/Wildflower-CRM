@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq, inArray } from "drizzle-orm";
+import { errorChainIncludes } from "../lib/errorCause";
 
 const RAW_DB_URL = process.env.DATABASE_URL;
 const HAS_DB =
@@ -155,8 +156,8 @@ describe.skipIf(!HAS_DB)("gift donor-routing trigger", () => {
       thrown = error;
     }
     expect(thrown).toBeTruthy();
-    expect(String((thrown as { cause?: unknown }).cause ?? thrown)).toContain(
-      "donor_routing_decision_required",
-    );
+    expect(
+      errorChainIncludes(thrown, "donor_routing_decision_required"),
+    ).toBe(true);
   });
 });
