@@ -154,7 +154,7 @@ async function serializeSettings(
   ]);
   return {
     source: displayNode(sourceNode, req),
-    mode: direct?.mode ?? "self",
+    mode: direct?.mode ?? "automatic",
     target: targetNode ? displayNode(targetNode, req) : null,
     resolved: resolution.resolved
       ? displayNode(resolution.resolved, req)
@@ -384,11 +384,13 @@ router.put(
     }
 
     const proposed: StoredPreference | null =
-      body.mode === "self"
+      body.mode === "automatic"
         ? null
-        : body.mode === "ask"
-          ? { mode: "ask", target: null }
-          : { mode: "target", target };
+        : body.mode === "self"
+          ? { mode: "self", target: null }
+          : body.mode === "ask"
+            ? { mode: "ask", target: null }
+            : { mode: "target", target };
     try {
       await resolveDonorRouting(source, db as unknown as SqlExecutor, {
         source,

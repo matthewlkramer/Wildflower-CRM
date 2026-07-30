@@ -13,14 +13,14 @@ import { organizations } from "./organizations";
 import { users } from "./users";
 
 export type DonorRecordKind = "individual" | "household" | "organization";
-export type StoredDonorRoutingMode = "target" | "ask";
+export type StoredDonorRoutingMode = "self" | "target" | "ask";
 
 /**
  * Explicit exceptions to the implicit donor-routing default.
  *
- * No row means "use this record". A row either points to another donor record
- * or says to ask each time. Keeping self-routing implicit avoids millions of
- * redundant rows while still giving every donor record an effective pathway.
+ * No row means "automatic default" (an individual routes to their primary
+ * household when one exists; other donors use themselves). A row can explicitly
+ * keep this record, point to another donor, or require a decision each time.
  */
 export const donorRoutingPreferences = pgTable(
   "donor_routing_preferences",
@@ -70,7 +70,7 @@ export const donorRoutingPreferences = pgTable(
     check(
       "donor_routing_target_shape_ck",
       sql`(
-          ${t.mode} = 'ask'
+          ${t.mode} IN ('self', 'ask')
           AND ${t.targetKind} IS NULL
           AND num_nonnulls(${t.targetPersonId}, ${t.targetHouseholdId}, ${t.targetOrganizationId}) = 0
         ) OR (
