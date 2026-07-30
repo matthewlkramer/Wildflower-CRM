@@ -32,8 +32,6 @@ jobs:
           --health-retries 10
     env:
       CI: "true"
-      NODE_ENV: production
-      LOG_LEVEL: debug
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_test
       AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
       AI_INTEGRATIONS_ANTHROPIC_API_KEY: donor-routing-test-only
@@ -55,6 +53,7 @@ jobs:
           python .agent/apply-preferred-donor-ui-export-tests.py
           python .agent/fix-preferred-donor-openapi.py
           python .agent/fix-preferred-donor-export.py
+          python .agent/fix-preferred-donor-test-isolation.py
           pnpm --filter @workspace/api-spec run codegen
       - name: Format touched source
         run: |
@@ -68,6 +67,7 @@ jobs:
             artifacts/api-server/src/routes/peopleEntityRoles.ts \
             artifacts/api-server/src/routes/index.ts \
             artifacts/api-server/src/__tests__/donor-routing.integration.test.ts \
+            artifacts/api-server/src/__tests__/people-org-soft-credit.integration.test.ts \
             artifacts/wildflower-crm/src/components/preferred-donor-card.tsx \
             artifacts/wildflower-crm/src/pages/individual-detail.tsx \
             artifacts/wildflower-crm/src/pages/household-detail.tsx \
