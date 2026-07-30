@@ -10,6 +10,7 @@ import {
 } from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { errorChainIncludes } from "./lib/errorCause";
 
 // Interop-safe access to helmet's default export: some TS resolution modes
 // (e.g. Vercel's builder) type the CJS module namespace as non-callable.
@@ -118,8 +119,10 @@ app.use(
     const anyErr = err as
       | { status?: number; statusCode?: number; message?: string }
       | undefined;
-    const donorDecisionRequired =
-      anyErr?.message?.includes("donor_routing_decision_required") === true;
+    const donorDecisionRequired = errorChainIncludes(
+      err,
+      "donor_routing_decision_required",
+    );
     const status = donorDecisionRequired
       ? 409
       : (anyErr?.status ?? anyErr?.statusCode ?? 500);
