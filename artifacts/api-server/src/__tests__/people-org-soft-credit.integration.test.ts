@@ -40,6 +40,9 @@ vi.mock("../middlewares/requireAuth", () => ({
     next();
   },
 }));
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) => next(),
+}));
 
 const RUN = `sc_${Date.now()}`;
 

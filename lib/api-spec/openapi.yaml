@@ -24,6 +24,7 @@ tags:
   - { name: people }
   - { name: people-entity-roles }
   - { name: donor-payment-intermediaries }
+  - { name: donor-routing }
   - { name: emails }
   - { name: phone-numbers }
   - { name: addresses }
@@ -143,6 +144,35 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  # ─── Preferred donor pathways ───────────────────────────────────────────────
+  /donor-routing/{sourceKind}/{sourceId}:
+    get:
+      operationId: getDonorRouting
+      tags: [donor-routing]
+      summary: Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
+      parameters:
+        - { name: sourceKind, in: path, required: true, schema: { $ref: "#/components/schemas/DonorRecordKind" } }
+        - { name: sourceId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/DonorRoutingSettings" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      operationId: updateDonorRouting
+      tags: [donor-routing]
+      summary: Replace a donor record's preferred pathway and related donor defaults.
+      parameters:
+        - { name: sourceKind, in: path, required: true, schema: { $ref: "#/components/schemas/DonorRecordKind" } }
+        - { name: sourceId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UpdateDonorRoutingBody" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/DonorRoutingSettings" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The pathway is circular, unavailable, or otherwise unsafe." }
+
   # ─── Cleanup queue (records flagged for manual data cleanup) ─────────────────
   /cleanup-queue:
     get:
@@ -10226,6 +10256,71 @@ components:
         netAmount: { type: string }
         feeAmount: { type: string }
         giftName: { type: string, nullable: true }
+    DonorRecordKind:
+      type: string
+      enum: [individual, household, organization]
+    DonorRoutingMode:
+      type: string
+      enum: [self, target, ask]
+    DonorReference:
+      type: object
+      required: [kind, id, name]
+      properties:
+        kind: { $ref: "#/components/schemas/DonorRecordKind" }
+        id: { type: string }
+        name: { type: string }
+    DonorRoutingIntermediaryReference:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string, nullable: true }
+    DonorRoutingHouseholdReference:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+    DonorRoutingSettings:
+      type: object
+      required: [source, mode, target, resolved, path, requiresDecision, primaryHousehold, defaultPaymentIntermediary]
+      properties:
+        source: { $ref: "#/components/schemas/DonorReference" }
+        mode: { $ref: "#/components/schemas/DonorRoutingMode" }
+        target:
+          anyOf:
+            - { $ref: "#/components/schemas/DonorReference" }
+            - { type: "null" }
+        resolved:
+          anyOf:
+            - { $ref: "#/components/schemas/DonorReference" }
+            - { type: "null" }
+        path:
+          type: array
+          items: { $ref: "#/components/schemas/DonorReference" }
+        requiresDecision: { type: boolean }
+        primaryHousehold:
+          anyOf:
+            - { $ref: "#/components/schemas/DonorRoutingHouseholdReference" }
+            - { type: "null" }
+        defaultPaymentIntermediary:
+          anyOf:
+            - { $ref: "#/components/schemas/DonorRoutingIntermediaryReference" }
+            - { type: "null" }
+    UpdateDonorRoutingBody:
+      type: object
+      required: [mode, targetKind, targetId, primaryHouseholdId, defaultPaymentIntermediaryId]
+      properties:
+        mode: { $ref: "#/components/schemas/DonorRoutingMode" }
+        targetKind:
+          anyOf:
+            - { $ref: "#/components/schemas/DonorRecordKind" }
+            - { type: "null" }
+        targetId: { type: [string, "null"] }
+        primaryHouseholdId: { type: [string, "null"] }
+        defaultPaymentIntermediaryId: { type: [string, "null"] }
+
     CleanupQueueStatus:
       type: string
       enum: [open, resolved, dismissed]

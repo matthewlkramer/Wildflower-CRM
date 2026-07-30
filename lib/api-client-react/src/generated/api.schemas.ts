@@ -6814,6 +6814,63 @@ export interface SplitGiftAcrossStripeChargesResult {
   giftName?: string | null;
 }
 
+export type DonorRecordKind = typeof DonorRecordKind[keyof typeof DonorRecordKind];
+
+
+export const DonorRecordKind = {
+  individual: 'individual',
+  household: 'household',
+  organization: 'organization',
+} as const;
+
+export type DonorRoutingMode = typeof DonorRoutingMode[keyof typeof DonorRoutingMode];
+
+
+export const DonorRoutingMode = {
+  self: 'self',
+  target: 'target',
+  ask: 'ask',
+} as const;
+
+export interface DonorReference {
+  kind: DonorRecordKind;
+  id: string;
+  name: string;
+}
+
+export interface DonorRoutingIntermediaryReference {
+  id: string;
+  name: string;
+  type?: string | null;
+}
+
+export interface DonorRoutingHouseholdReference {
+  id: string;
+  name: string;
+}
+
+export interface DonorRoutingSettings {
+  source: DonorReference;
+  mode: DonorRoutingMode;
+  target: DonorReference | null;
+  resolved: DonorReference | null;
+  path: DonorReference[];
+  requiresDecision: boolean;
+  primaryHousehold: DonorRoutingHouseholdReference | null;
+  defaultPaymentIntermediary: DonorRoutingIntermediaryReference | null;
+}
+
+export interface UpdateDonorRoutingBody {
+  mode: DonorRoutingMode;
+  targetKind: DonorRecordKind | null;
+  /** @nullable */
+  targetId: string | null;
+  /** @nullable */
+  primaryHouseholdId: string | null;
+  /** @nullable */
+  defaultPaymentIntermediaryId: string | null;
+}
+
 export type CleanupQueueStatus = typeof CleanupQueueStatus[keyof typeof CleanupQueueStatus];
 
 

@@ -23,6 +23,7 @@ import {
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
 import { GivesThroughCard } from "@/components/gives-through-card";
+import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import {
   RecordLayout,
   FieldCard,
@@ -313,6 +314,8 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
               </p>
             )}
           </RelatedCard>
+
+          <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 
           <GivesThroughCard donor={{ householdId: household.id }} />
 

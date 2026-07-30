@@ -12,6 +12,7 @@
     "import:bank-csv": "tsx ./src/import-bank-csv.ts",
     "recompute:bank-spine": "tsx ./src/recompute-bank-spine.ts",
     "audit:reconciliation": "tsx ./src/audit-reconciliation.ts",
+    "export:donor-attribution": "tsx ./src/export-donor-attribution.ts",
     "test": "tsx --test ./src/*.test.ts",
     "gen:coding-forms-seed": "tsx ./src/generate-coding-forms-seed-sql.ts",
     "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../tsconfig.json && tsc -p tsconfig.json --noEmit'"
