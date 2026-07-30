@@ -104,6 +104,38 @@ jobs:
               total += count
               path.write_text(text)
           print(f"fixed {total} primary-household correlation expressions")
+
+          soft_path = Path("artifacts/api-server/src/__tests__/people-org-soft-credit.integration.test.ts")
+          soft_text = soft_path.read_text()
+          old_helper = '''async function seedHouseholdMembership(personId: string, householdId: string): Promise<void> {
+            const id = nextId("role");
+            await db.insert(schema.peopleEntityRoles).values({
+              id,
+              personId,
+              entityType: "household",
+              householdId,
+              current: "current",
+            });
+            seededRoleIds.push(id);
+          }'''
+          new_helper = '''async function seedHouseholdMembership(personId: string, householdId: string): Promise<void> {
+            const id = nextId("role");
+            await db.insert(schema.peopleEntityRoles).values({
+              id,
+              personId,
+              entityType: "household",
+              householdId,
+              current: "current",
+            });
+            await db
+              .update(schema.people)
+              .set({ primaryHouseholdId: householdId })
+              .where(eqFn(schema.people.id, personId));
+            seededRoleIds.push(id);
+          }'''
+          if old_helper not in soft_text:
+              raise SystemExit("household test helper pattern not found")
+          soft_path.write_text(soft_text.replace(old_helper, new_helper))
           PY
 
       - name: Regenerate API clients
