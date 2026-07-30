@@ -12,6 +12,7 @@ export * from "./cleanup-queue/cleanup-queue";
 export * from "./coding-form-rows/coding-form-rows";
 export * from "./correspondents/correspondents";
 export * from "./donor-payment-intermediaries/donor-payment-intermediaries";
+export * from "./donor-routing/donor-routing";
 export * from "./donorbox/donorbox";
 export * from "./email-messages/email-messages";
 export * from "./email-proposals/email-proposals";

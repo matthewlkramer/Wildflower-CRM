@@ -51,6 +51,7 @@ import {
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { GivesThroughCard } from "@/components/gives-through-card";
+import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
@@ -933,6 +934,8 @@ function PersonView({ person }: { person: PersonDetail }) {
           <PeopleCard person={person} />
 
           <OrganizationsCard roles={roles} personId={person.id} />
+
+          <PreferredDonorCard sourceKind="individual" sourceId={person.id} />
 
           <GivesThroughCard donor={{ individualGiverPersonId: person.id }} />
 

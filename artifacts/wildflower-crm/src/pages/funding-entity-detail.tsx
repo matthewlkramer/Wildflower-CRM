@@ -67,6 +67,7 @@ import {
 } from "@/components/inline-edit";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { GivesThroughCard } from "@/components/gives-through-card";
+import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import {
   InlineEditInterestsThematic,
   InlineEditInterestsAges,
@@ -1049,6 +1050,8 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
           </RelatedCard>
 
           <RelatedOrganizationsCard org={org} />
+
+          <PreferredDonorCard sourceKind="organization" sourceId={org.id} />
 
           <GivesThroughCard donor={{ organizationId: org.id }} />
         </>

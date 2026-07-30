@@ -19,6 +19,7 @@ import {
 } from "./_enums";
 import { users } from "./users";
 import { regions } from "./regions";
+import { households } from "./households";
 
 export const people = pgTable("people", {
   id: text("id").primaryKey(),
@@ -34,6 +35,12 @@ export const people = pgTable("people", {
   // Free-text region link; SET NULL so a region delete doesn't cascade to people.
   currentHomeRegionId: text("current_home_region_id").references(
     () => regions.id,
+    { onDelete: "set null" },
+  ),
+  // One current household authority. Legacy household role rows remain during
+  // the transition, but new business logic reads this direct pointer.
+  primaryHouseholdId: text("primary_household_id").references(
+    () => households.id,
     { onDelete: "set null" },
   ),
   details: text("details"),
@@ -103,6 +110,7 @@ export const people = pgTable("people", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 }, (t) => [
   index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
+  index("people_primary_household_id_idx").on(t.primaryHouseholdId),
   index("people_owner_user_id_idx").on(t.ownerUserId),
   index("people_assistant_person_id_idx").on(t.assistantPersonId),
   index("people_priority_idx").on(t.priority),

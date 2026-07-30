@@ -10,6 +10,7 @@ export * from "./households";
 export * from "./people";
 export * from "./peopleEntityRoles";
 export * from "./donorPaymentIntermediaries";
+export * from "./donorRoutingPreferences";
 export * from "./emails";
 export * from "./phoneNumbers";
 export * from "./addresses";
