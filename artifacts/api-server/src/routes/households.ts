@@ -1,7 +1,22 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { households, peopleEntityRoles, emails, addresses } from "@workspace/db/schema";
-import { and, asc, count, eq, getTableColumns, ilike, sql, type SQL } from "drizzle-orm";
+import {
+  households,
+  people,
+  peopleEntityRoles,
+  emails,
+  addresses,
+} from "@workspace/db/schema";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  ilike,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   ListHouseholdsQueryParams,
   CreateHouseholdBody,
@@ -9,53 +24,65 @@ import {
   BulkUpdateHouseholdsBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  parseBoolQuery,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+} from "../lib/helpers";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, unarchiveOne } from "../lib/archive";
-import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import {
+  activeOnlyUnlessAdmin,
+  archiveOne,
+  unarchiveOne,
+} from "../lib/archive";
+import {
+  peopleEntityRolesQuery,
+  maskPeopleEntityRoles,
+} from "../lib/peopleRolesSelect";
 import { getViewer } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-// Same pattern as people: per-row aggregates via correlated subqueries.
-// Lifetime giving and most-recent gift fold in gifts to member
-// individuals (peopleEntityRoles where household_id matches) so the
-// view answers "what has this household given, in any form?".
-// See people.ts: outer-scope id must be `"households"."id"` raw, not
-// `${households.id}` (Drizzle inlines as bare `"id"`, ambiguous in
-// subqueries whose FROM has an `id` col).
+// Per-row related-giving aggregates. A household receives credit for:
+// 1. gifts recorded directly to the household;
+// 2. gifts recorded to people whose primary household is this household; and
+// 3. gifts from organizations where one of those current members is a current
+//    principal. Archived gifts are excluded from every path.
 const HOUSEHOLDS_ID = sql.raw(`"households"."id"`);
+const householdGiftWhere = sql`(
+  archived_at IS NULL AND (
+    household_id = ${HOUSEHOLDS_ID}
+    OR individual_giver_person_id IN (
+      SELECT id FROM people WHERE primary_household_id = ${HOUSEHOLDS_ID}
+    )
+    OR organization_id IN (
+      SELECT DISTINCT per.organization_id
+      FROM people_entity_roles per
+      JOIN people p ON p.id = per.person_id
+      WHERE p.primary_household_id = ${HOUSEHOLDS_ID}
+        AND per.connection = 'principal'
+        AND per.current = 'current'
+        AND per.organization_id IS NOT NULL
+    )
+  )
+)`;
 const householdsListSelect = {
   ...getTableColumns(households),
   lifetimeGiving: sql<string | null>`(
-    COALESCE(
-      (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE household_id = ${HOUSEHOLDS_ID}),
-      0
-    ) + COALESCE(
-      (SELECT SUM(amount) FROM gifts_and_payments
-        WHERE individual_giver_person_id IN (
-          SELECT person_id FROM people_entity_roles
-          WHERE household_id = ${HOUSEHOLDS_ID}
-        )),
-      0
-    )
+    SELECT COALESCE(SUM(amount), 0)
+    FROM gifts_and_payments
+    WHERE ${householdGiftWhere}
   )::text`.as("lifetime_giving"),
-  // See people.ts — Postgres GREATEST is NULL-poisoning, so MAX over a
-  // UNION is what we actually want.
   mostRecentGiftDate: sql<string | null>`(
-    SELECT MAX(d) FROM (
-      SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE household_id = ${HOUSEHOLDS_ID}
-      UNION ALL
-      SELECT MAX(date_received) AS d FROM gifts_and_payments
-        WHERE individual_giver_person_id IN (
-          SELECT person_id FROM people_entity_roles
-          WHERE household_id = ${HOUSEHOLDS_ID}
-        )
-    ) AS _gift_dates
+    SELECT MAX(date_received)
+    FROM gifts_and_payments
+    WHERE ${householdGiftWhere}
   )`.as("most_recent_gift_date"),
   openOpportunityCount: sql<number>`(
     SELECT COUNT(*)::int FROM opportunities_and_pledges
@@ -95,14 +122,23 @@ router.get(
   "/households/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select(householdsListSelect).from(households).where(eq(households.id, id)).then((r) => r[0]);
+    const row = await db
+      .select(householdsListSelect)
+      .from(households)
+      .where(eq(households.id, id))
+      .then((r) => r[0]);
     if (!row) return notFound(res, "household");
     const [people, emailRows, addressRows] = await Promise.all([
       peopleEntityRolesQuery().where(eq(peopleEntityRoles.householdId, id)),
       db.select().from(emails).where(eq(emails.householdId, id)),
       db.select().from(addresses).where(eq(addresses.householdId, id)),
     ]);
-    res.json({ ...row, people: maskPeopleEntityRoles(people, getViewer(req)), emails: emailRows, addresses: addressRows });
+    res.json({
+      ...row,
+      people: maskPeopleEntityRoles(people, getViewer(req)),
+      emails: emailRows,
+      addresses: addressRows,
+    });
   }),
 );
 
@@ -123,8 +159,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreateHouseholdBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(households).values({ id: newId(), ...body }).returning();
-    if (row) await auditCreate(req, "household", row.id, `Created household ${row.name}`);
+    const [row] = await db
+      .insert(households)
+      .values({ id: newId(), ...body })
+      .returning();
+    if (row)
+      await auditCreate(
+        req,
+        "household",
+        row.id,
+        `Created household ${row.name}`,
+      );
     res.status(201).json(row);
   }),
 );
@@ -135,14 +180,25 @@ router.patch(
     const body = parseOrBadRequest(UpdateHouseholdBody, req.body, res);
     if (!body) return;
     const id = paramId(req);
-    const [before] = await db.select().from(households).where(eq(households.id, id));
+    const [before] = await db
+      .select()
+      .from(households)
+      .where(eq(households.id, id));
     const [row] = await db
       .update(households)
       .set({ ...body, updatedAt: new Date() })
       .where(eq(households.id, id))
       .returning();
     if (!row) return notFound(res, "household");
-    await auditUpdate(req, "household", row.id, before as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated household ${row.name}`);
+    await auditUpdate(
+      req,
+      "household",
+      row.id,
+      before as Record<string, unknown> | undefined,
+      row as Record<string, unknown>,
+      Object.keys(body),
+      `Updated household ${row.name}`,
+    );
     res.json(row);
   }),
 );

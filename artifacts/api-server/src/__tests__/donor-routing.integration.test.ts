@@ -129,11 +129,11 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
-  it("defaults every donor record to itself", async () => {
+  it("uses the automatic default and falls back to the record itself", async () => {
     const { status, json } = await get("individual", PERSON_ID);
     expect(status).toBe(200);
     expect(json).toMatchObject({
-      mode: "self",
+      mode: "automatic",
       requiresDecision: false,
       source: { kind: "individual", id: PERSON_ID, name: "Arthur Rock" },
       resolved: { kind: "individual", id: PERSON_ID, name: "Arthur Rock" },
@@ -213,7 +213,7 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
     const org = await get("organization", ORG_ID);
     expect(org.status).toBe(200);
     expect(org.json).toMatchObject({
-      mode: "self",
+      mode: "automatic",
       resolved: { kind: "organization", id: ORG_ID },
     });
   });

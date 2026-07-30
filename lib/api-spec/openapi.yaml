@@ -10261,7 +10261,7 @@ components:
       enum: [individual, household, organization]
     DonorRoutingMode:
       type: string
-      enum: [self, target, ask]
+      enum: [automatic, self, target, ask]
     DonorReference:
       type: object
       required: [kind, id, name]

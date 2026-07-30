@@ -115,16 +115,12 @@ const personOpenAsksExpr = sql`(
 // signals OR-combined so each gift counts once, and archived gifts excluded.
 const personOrgCreditGiftWhere = sql`(
   g.organization_id IS NOT NULL AND g.archived_at IS NULL
-  AND (
-    g.primary_contact_person_id = ${PEOPLE_ID}
-    OR g.advisor_person_id = ${PEOPLE_ID}
-    OR g.organization_id IN (
-      SELECT organization_id FROM people_entity_roles
-      WHERE person_id = ${PEOPLE_ID}
-        AND connection = 'principal'
-        AND current = 'current'
-        AND organization_id IS NOT NULL
-    )
+  AND g.organization_id IN (
+    SELECT organization_id FROM people_entity_roles
+    WHERE person_id = ${PEOPLE_ID}
+      AND connection = 'principal'
+      AND current = 'current'
+      AND organization_id IS NOT NULL
   )
 )`;
 
@@ -134,10 +130,8 @@ const personLastGiftDateExpr = sql`(
       WHERE individual_giver_person_id = ${PEOPLE_ID} AND archived_at IS NULL
     UNION ALL
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE archived_at IS NULL AND household_id IN (
-        SELECT household_id FROM people_entity_roles
-        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-      )
+      WHERE archived_at IS NULL
+        AND household_id = ${sql.raw(`"people"."primary_household_id"`)}
     UNION ALL
     SELECT MAX(g.date_received) AS d FROM gifts_and_payments g
       WHERE ${personOrgCreditGiftWhere}
@@ -152,10 +146,7 @@ const personLastGiftAmountExpr = sql`(
     SELECT amount, date_received FROM gifts_and_payments
       WHERE archived_at IS NULL AND (
         individual_giver_person_id = ${PEOPLE_ID}
-        OR household_id IN (
-          SELECT household_id FROM people_entity_roles
-          WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-        )
+        OR household_id = ${sql.raw(`"people"."primary_household_id"`)}
       )
     UNION ALL
     SELECT g.amount, g.date_received FROM gifts_and_payments g
@@ -169,19 +160,48 @@ const personLastGiftAmountExpr = sql`(
 // canSeeIdentity is the shared helper in ../lib/identityVisibility; the local
 // mask* wrappers adapt the (viewerId, viewerRole) call sites to a Viewer.
 
-function maskOrgName(name: string, anonymous: boolean, ownerUserId: string | null, viewerId: string, viewerRole: string): string {
-  return canSeeIdentity({ anonymous, ownerUserId }, { id: viewerId, role: viewerRole }) ? name : ANON_LABEL;
-}
-
-function maskPersonName(
-  raw: { fullName: string | null; firstName: string | null; lastName: string | null; id: string },
+function maskOrgName(
+  name: string,
   anonymous: boolean,
   ownerUserId: string | null,
   viewerId: string,
   viewerRole: string,
-): { firstName: string | null; lastName: string | null; fullName: string | null } {
-  if (canSeeIdentity({ anonymous, ownerUserId }, { id: viewerId, role: viewerRole })) {
-    return { firstName: raw.firstName, lastName: raw.lastName, fullName: raw.fullName };
+): string {
+  return canSeeIdentity(
+    { anonymous, ownerUserId },
+    { id: viewerId, role: viewerRole },
+  )
+    ? name
+    : ANON_LABEL;
+}
+
+function maskPersonName(
+  raw: {
+    fullName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    id: string;
+  },
+  anonymous: boolean,
+  ownerUserId: string | null,
+  viewerId: string,
+  viewerRole: string,
+): {
+  firstName: string | null;
+  lastName: string | null;
+  fullName: string | null;
+} {
+  if (
+    canSeeIdentity(
+      { anonymous, ownerUserId },
+      { id: viewerId, role: viewerRole },
+    )
+  ) {
+    return {
+      firstName: raw.firstName,
+      lastName: raw.lastName,
+      fullName: raw.fullName,
+    };
   }
   return { firstName: ANON_LABEL, lastName: null, fullName: ANON_LABEL };
 }
@@ -200,12 +220,29 @@ router.get(
           name: organizations.name,
           anonymous: organizations.anonymous,
           ownerUserId: organizations.ownerUserId,
-          openOpportunityCount: sql<number>`${orgOpenOppCountExpr}`.as("open_opportunity_count"),
-          openTaskCount: sql<number>`${orgOpenTaskCountExpr}`.as("open_task_count"),
-          openAsks: sql<Array<{ opportunityId: string; opportunityName: string }>>`${orgOpenAsksExpr}`.as("open_asks"),
-          affiliatedPeople: sql<Array<{ personId: string; personName: string; anonymous: boolean; ownerUserId: string | null }>>`${orgAffiliatedPeopleExpr}`.as("affiliated_people"),
-          lastGiftDate: sql<string | null>`${orgLastGiftDateExpr}`.as("last_gift_date"),
-          lastGiftAmount: sql<string | null>`${orgLastGiftAmountExpr}`.as("last_gift_amount"),
+          openOpportunityCount: sql<number>`${orgOpenOppCountExpr}`.as(
+            "open_opportunity_count",
+          ),
+          openTaskCount: sql<number>`${orgOpenTaskCountExpr}`.as(
+            "open_task_count",
+          ),
+          openAsks: sql<
+            Array<{ opportunityId: string; opportunityName: string }>
+          >`${orgOpenAsksExpr}`.as("open_asks"),
+          affiliatedPeople: sql<
+            Array<{
+              personId: string;
+              personName: string;
+              anonymous: boolean;
+              ownerUserId: string | null;
+            }>
+          >`${orgAffiliatedPeopleExpr}`.as("affiliated_people"),
+          lastGiftDate: sql<string | null>`${orgLastGiftDateExpr}`.as(
+            "last_gift_date",
+          ),
+          lastGiftAmount: sql<string | null>`${orgLastGiftAmountExpr}`.as(
+            "last_gift_amount",
+          ),
         })
         .from(organizations)
         .where(eq(organizations.priority, "top"))
@@ -219,11 +256,21 @@ router.get(
           fullName: people.fullName,
           anonymous: people.anonymous,
           ownerUserId: people.ownerUserId,
-          openOpportunityCount: sql<number>`${personOpenOppCountExpr}`.as("open_opportunity_count"),
-          openTaskCount: sql<number>`${personOpenTaskCountExpr}`.as("open_task_count"),
-          openAsks: sql<Array<{ opportunityId: string; opportunityName: string }>>`${personOpenAsksExpr}`.as("open_asks"),
-          lastGiftDate: sql<string | null>`${personLastGiftDateExpr}`.as("last_gift_date"),
-          lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as("last_gift_amount"),
+          openOpportunityCount: sql<number>`${personOpenOppCountExpr}`.as(
+            "open_opportunity_count",
+          ),
+          openTaskCount: sql<number>`${personOpenTaskCountExpr}`.as(
+            "open_task_count",
+          ),
+          openAsks: sql<
+            Array<{ opportunityId: string; opportunityName: string }>
+          >`${personOpenAsksExpr}`.as("open_asks"),
+          lastGiftDate: sql<string | null>`${personLastGiftDateExpr}`.as(
+            "last_gift_date",
+          ),
+          lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as(
+            "last_gift_amount",
+          ),
         })
         .from(people)
         .where(
@@ -246,16 +293,31 @@ router.get(
     const maskedOrgs = orgRows.map((f) => {
       // Opportunity titles often embed the donor name (e.g. "FY27 Arthur Rock
       // gift"), so mask them in lockstep with the parent org's name visibility.
-      const orgVisible = canSeeIdentity({ anonymous: f.anonymous, ownerUserId: f.ownerUserId }, { id: viewerId, role: viewerRole });
+      const orgVisible = canSeeIdentity(
+        { anonymous: f.anonymous, ownerUserId: f.ownerUserId },
+        { id: viewerId, role: viewerRole },
+      );
       return {
         ...f,
-        name: maskOrgName(f.name, f.anonymous, f.ownerUserId, viewerId, viewerRole),
+        name: maskOrgName(
+          f.name,
+          f.anonymous,
+          f.ownerUserId,
+          viewerId,
+          viewerRole,
+        ),
         openAsks: orgVisible
           ? (f.openAsks ?? [])
-          : (f.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL })),
+          : (f.openAsks ?? []).map((a) => ({
+              ...a,
+              opportunityName: ANON_LABEL,
+            })),
         affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
           ...p,
-          personName: canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, { id: viewerId, role: viewerRole })
+          personName: canSeeIdentity(
+            { anonymous: p.anonymous, ownerUserId: p.ownerUserId },
+            { id: viewerId, role: viewerRole },
+          )
             ? p.personName
             : ANON_LABEL,
         })),
@@ -263,11 +325,23 @@ router.get(
     });
 
     const maskedPeople = personRows.map((p) => {
-      const names = maskPersonName(p, p.anonymous, p.ownerUserId, viewerId, viewerRole);
-      const personVisible = canSeeIdentity({ anonymous: p.anonymous, ownerUserId: p.ownerUserId }, { id: viewerId, role: viewerRole });
+      const names = maskPersonName(
+        p,
+        p.anonymous,
+        p.ownerUserId,
+        viewerId,
+        viewerRole,
+      );
+      const personVisible = canSeeIdentity(
+        { anonymous: p.anonymous, ownerUserId: p.ownerUserId },
+        { id: viewerId, role: viewerRole },
+      );
       const openAsks = personVisible
         ? (p.openAsks ?? [])
-        : (p.openAsks ?? []).map((a) => ({ ...a, opportunityName: ANON_LABEL }));
+        : (p.openAsks ?? []).map((a) => ({
+            ...a,
+            opportunityName: ANON_LABEL,
+          }));
       return { ...p, ...names, openAsks };
     });
 

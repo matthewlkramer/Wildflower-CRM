@@ -43,10 +43,19 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import { executeBulkUpdate, reconcileArrayColumns } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
+import {
+  activeOnlyUnlessAdmin,
+  archiveOne,
+  executeBulkArchive,
+  requireAdmin,
+  unarchiveOne,
+} from "../lib/archive";
 import { mergeEntity, ORGANIZATION_MERGE_CONFIG } from "../lib/mergeEntities";
 import { auditCreate, auditUpdate } from "../lib/audit";
-import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import {
+  peopleEntityRolesQuery,
+  maskPeopleEntityRoles,
+} from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { generateRelationshipSummary } from "../lib/relationshipSummary";
@@ -84,7 +93,10 @@ function maskOrgRow<
     ...rest,
     primaryContactPersonName: maskName(
       rest.primaryContactPersonName,
-      { anonymous: primaryContactAnonymous, ownerUserId: primaryContactOwnerUserId },
+      {
+        anonymous: primaryContactAnonymous,
+        ownerUserId: primaryContactOwnerUserId,
+      },
       viewer,
     ),
   };
@@ -105,7 +117,7 @@ const orgsPrimaryContactIdExpr = sql`(
 
 const orgsLifetimeGivingExpr = sql`(
   SELECT COALESCE(SUM(amount), 0) FROM gifts_and_payments
-    WHERE organization_id = ${ORGS_ID}
+    WHERE organization_id = ${ORGS_ID} AND archived_at IS NULL
 )`;
 
 const orgsOpenOppCountExpr = sql`(
@@ -193,8 +205,7 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
 
-    if (q.search)
-      filters.push(ilike(organizations.name, `%${q.search}%`));
+    if (q.search) filters.push(ilike(organizations.name, `%${q.search}%`));
     if (q.parentOrganizationId)
       filters.push(
         eq(organizations.parentOrganizationId, q.parentOrganizationId),
@@ -205,65 +216,120 @@ router.get(
     if (issuesGrants != null)
       filters.push(eq(organizations.issuesGrants, issuesGrants));
     const makesPris = parseBoolQuery(req, "makesPris");
-    if (makesPris != null)
-      filters.push(eq(organizations.makesPris, makesPris));
+    if (makesPris != null) filters.push(eq(organizations.makesPris, makesPris));
 
     // Array-enum filters (support __blank__ sentinel via splitBlank).
     {
       const f = splitBlank(q.entityType as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.entityType), inArray(organizations.entityType, f.values as never[]))!);
+        filters.push(
+          or(
+            isNull(organizations.entityType),
+            inArray(organizations.entityType, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.entityType));
-      else if (f.values.length > 0) filters.push(inArray(organizations.entityType, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(inArray(organizations.entityType, f.values as never[]));
     }
     {
       const f = splitBlank(q.activeStatus as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.activeStatus), inArray(organizations.activeStatus, f.values as never[]))!);
+        filters.push(
+          or(
+            isNull(organizations.activeStatus),
+            inArray(organizations.activeStatus, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.activeStatus));
-      else if (f.values.length > 0) filters.push(inArray(organizations.activeStatus, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(inArray(organizations.activeStatus, f.values as never[]));
     }
     {
       const f = splitBlank(q.connectionStatus as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.connectionStatus), inArray(organizations.connectionStatus, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(organizations.connectionStatus));
-      else if (f.values.length > 0) filters.push(inArray(organizations.connectionStatus, f.values as never[]));
+        filters.push(
+          or(
+            isNull(organizations.connectionStatus),
+            inArray(organizations.connectionStatus, f.values as never[]),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(organizations.connectionStatus));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(organizations.connectionStatus, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.enthusiasm as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.enthusiasm), inArray(organizations.enthusiasm, f.values as never[]))!);
+        filters.push(
+          or(
+            isNull(organizations.enthusiasm),
+            inArray(organizations.enthusiasm, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.enthusiasm));
-      else if (f.values.length > 0) filters.push(inArray(organizations.enthusiasm, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(inArray(organizations.enthusiasm, f.values as never[]));
     }
     {
       const f = splitBlank(q.strategicAlignment as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.strategicAlignment), inArray(organizations.strategicAlignment, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(organizations.strategicAlignment));
-      else if (f.values.length > 0) filters.push(inArray(organizations.strategicAlignment, f.values as never[]));
+        filters.push(
+          or(
+            isNull(organizations.strategicAlignment),
+            inArray(organizations.strategicAlignment, f.values as never[]),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(organizations.strategicAlignment));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(organizations.strategicAlignment, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.capacityRating as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.capacityRating), inArray(organizations.capacityRating, f.values as never[]))!);
+        filters.push(
+          or(
+            isNull(organizations.capacityRating),
+            inArray(organizations.capacityRating, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.capacityRating));
-      else if (f.values.length > 0) filters.push(inArray(organizations.capacityRating, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(organizations.capacityRating, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.ownerUserId as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.ownerUserId), inArray(organizations.ownerUserId, f.values))!);
+        filters.push(
+          or(
+            isNull(organizations.ownerUserId),
+            inArray(organizations.ownerUserId, f.values),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.ownerUserId));
-      else if (f.values.length > 0) filters.push(inArray(organizations.ownerUserId, f.values));
+      else if (f.values.length > 0)
+        filters.push(inArray(organizations.ownerUserId, f.values));
     }
     {
       const f = splitBlank(q.priority as string[] | undefined);
       if (f.wantsBlank && f.values.length > 0)
-        filters.push(or(isNull(organizations.priority), inArray(organizations.priority, f.values as never[]))!);
+        filters.push(
+          or(
+            isNull(organizations.priority),
+            inArray(organizations.priority, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(organizations.priority));
-      else if (f.values.length > 0) filters.push(inArray(organizations.priority, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(inArray(organizations.priority, f.values as never[]));
     }
     {
       const ids = q.regionIds as string[] | undefined;
@@ -272,7 +338,10 @@ router.get(
         // tagged with Boston, Greater Boston, etc. (derived, never stored).
         const expanded = await expandRegionIdsForFilter(ids);
         filters.push(
-          sql`${organizations.regionIds} && ARRAY[${sql.join(expanded.map((id) => sql`${id}`), sql`, `)}]::text[]`,
+          sql`${organizations.regionIds} && ARRAY[${sql.join(
+            expanded.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::text[]`,
         );
       }
     }
@@ -282,7 +351,10 @@ router.get(
       const vals = q.interestsThematic as string[] | undefined;
       if (vals && vals.length > 0) {
         filters.push(
-          sql`${organizations.interestsThematic} && ARRAY[${sql.join(vals.map((v) => sql`${v}`), sql`, `)}]::text[]`,
+          sql`${organizations.interestsThematic} && ARRAY[${sql.join(
+            vals.map((v) => sql`${v}`),
+            sql`, `,
+          )}]::text[]`,
         );
       }
     }
@@ -330,18 +402,16 @@ router.get(
       .where(eq(organizations.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "organization");
-    const [
-      people,
-      emailRows,
-      phoneRows,
-      addressRows,
-      flaggedForResearch,
-    ] = await Promise.all([
+    const [people, emailRows, phoneRows, addressRows, flaggedForResearch] =
+      await Promise.all([
         peopleEntityRolesQuery().where(
           eq(peopleEntityRoles.organizationId, id),
         ),
         db.select().from(emails).where(eq(emails.organizationId, id)),
-        db.select().from(phoneNumbers).where(eq(phoneNumbers.organizationId, id)),
+        db
+          .select()
+          .from(phoneNumbers)
+          .where(eq(phoneNumbers.organizationId, id)),
         db.select().from(addresses).where(eq(addresses.organizationId, id)),
         // Passive "Needs research" badge — driven solely by the Cleanup Queue.
         isFlaggedForResearch(id),
@@ -444,14 +514,20 @@ router.post(
 router.post(
   "/organizations/:id/archive",
   asyncHandler(async (req, res) => {
-    await archiveOne(req, res, { entity: "organization", table: organizations });
+    await archiveOne(req, res, {
+      entity: "organization",
+      table: organizations,
+    });
   }),
 );
 
 router.post(
   "/organizations/:id/unarchive",
   asyncHandler(async (req, res) => {
-    await unarchiveOne(req, res, { entity: "organization", table: organizations });
+    await unarchiveOne(req, res, {
+      entity: "organization",
+      table: organizations,
+    });
   }),
 );
 
@@ -472,9 +548,19 @@ router.post(
     if (!body) return;
     const [row] = await db
       .insert(organizations)
-      .values({ id: newId(), ...body, entityType: (body.entityType ?? null) as never })
+      .values({
+        id: newId(),
+        ...body,
+        entityType: (body.entityType ?? null) as never,
+      })
       .returning(orgColumns);
-    if (row) await auditCreate(req, "organization", row.id, `Created organization ${row.name}`);
+    if (row)
+      await auditCreate(
+        req,
+        "organization",
+        row.id,
+        `Created organization ${row.name}`,
+      );
     res.status(201).json(row);
   }),
 );
@@ -486,13 +572,18 @@ router.patch(
     if (!body) return;
     const id = paramId(req);
     if (body.parentOrganizationId != null && body.parentOrganizationId === id) {
-      res.status(400).json({ error: "An organization cannot be its own parent." });
+      res
+        .status(400)
+        .json({ error: "An organization cannot be its own parent." });
       return;
     }
 
     // Full before-row for the audit diff (also reused for connection/enthusiasm
     // change history below).
-    const [auditBefore] = await db.select().from(organizations).where(eq(organizations.id, id));
+    const [auditBefore] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, id));
     const trackingFields = ["connectionStatus", "enthusiasm"] as const;
     const needsTracking = trackingFields.some((f) => f in body);
     const before = needsTracking ? auditBefore : undefined;
@@ -509,11 +600,30 @@ router.patch(
       const user = getAppUser(req);
       if (user) {
         const entries: (typeof connectionEnthusiasmHistory.$inferInsert)[] = [];
-        if ("connectionStatus" in body && row.connectionStatus !== before.connectionStatus) {
-          entries.push({ id: newId(), entityType: "organization", entityId: row.id, field: "connectionStatus", fromValue: before.connectionStatus, toValue: row.connectionStatus, changedByUserId: user.id });
+        if (
+          "connectionStatus" in body &&
+          row.connectionStatus !== before.connectionStatus
+        ) {
+          entries.push({
+            id: newId(),
+            entityType: "organization",
+            entityId: row.id,
+            field: "connectionStatus",
+            fromValue: before.connectionStatus,
+            toValue: row.connectionStatus,
+            changedByUserId: user.id,
+          });
         }
         if ("enthusiasm" in body && row.enthusiasm !== before.enthusiasm) {
-          entries.push({ id: newId(), entityType: "organization", entityId: row.id, field: "enthusiasm", fromValue: before.enthusiasm, toValue: row.enthusiasm, changedByUserId: user.id });
+          entries.push({
+            id: newId(),
+            entityType: "organization",
+            entityId: row.id,
+            field: "enthusiasm",
+            fromValue: before.enthusiasm,
+            toValue: row.enthusiasm,
+            changedByUserId: user.id,
+          });
         }
         if (entries.length > 0) {
           await db.insert(connectionEnthusiasmHistory).values(entries);
@@ -521,7 +631,15 @@ router.patch(
       }
     }
 
-    await auditUpdate(req, "organization", row.id, auditBefore as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated organization ${row.name}`);
+    await auditUpdate(
+      req,
+      "organization",
+      row.id,
+      auditBefore as Record<string, unknown> | undefined,
+      row as Record<string, unknown>,
+      Object.keys(body),
+      `Updated organization ${row.name}`,
+    );
     res.json(row);
   }),
 );
