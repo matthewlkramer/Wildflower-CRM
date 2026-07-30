@@ -14,6 +14,8 @@ jobs:
     timeout-minutes: 45
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/wf_test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: test
     services:
       postgres:
         image: postgres:16
@@ -61,6 +63,28 @@ jobs:
           gzip -t /tmp/donor-phase2.py.gz
           gzip -d -c /tmp/donor-phase2.py.gz > /tmp/apply_donor_attribution_phase2.py
           python /tmp/apply_donor_attribution_phase2.py
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts")
+          text = path.read_text()
+          old = '''    await expect(insertGift("ask")).rejects.toThrow(
+                /donor_routing_decision_required/,
+              );'''
+          new = '''    let thrown: unknown;
+              try {
+                await insertGift("ask");
+              } catch (error) {
+                thrown = error;
+              }
+              expect(thrown).toBeTruthy();
+              expect(String((thrown as { cause?: unknown }).cause ?? thrown)).toContain(
+                "donor_routing_decision_required",
+              );'''
+          if old not in text:
+              raise SystemExit("ask-path assertion pattern not found")
+          path.write_text(text.replace(old, new))
+          PY
 
       - name: Regenerate API clients
         run: pnpm --filter @workspace/api-spec run codegen
