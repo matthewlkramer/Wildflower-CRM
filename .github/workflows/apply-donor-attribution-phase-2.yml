@@ -1,9 +1,6 @@
 name: Apply donor attribution phase 2
 
 on:
-  push:
-    branches:
-      - agent/donor-attribution-phase-2
   pull_request:
     branches:
       - main
@@ -32,10 +29,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Decode and apply implementation
+      - name: Apply implementation
         run: |
-          base64 -d .github/scripts/apply_donor_attribution_phase2.py.gz.b64 \
-            | gzip -d > /tmp/apply_donor_attribution_phase2.py
+          cat .github/scripts/donor-phase2.00 \
+              .github/scripts/donor-phase2.01 \
+              .github/scripts/donor-phase2.02 \
+            | base64 -d | gzip -d > /tmp/apply_donor_attribution_phase2.py
           python /tmp/apply_donor_attribution_phase2.py
 
       - name: Regenerate API clients
@@ -45,6 +44,7 @@ jobs:
         run: |
           pnpm exec prettier --write \
             lib/db/src/schema/donorRoutingPreferences.ts \
+            lib/db/migrations/0222_donor_attribution_phase_2.sql \
             artifacts/api-server/src/lib/donorRouting.ts \
             artifacts/api-server/src/routes/donorRouting.ts \
             artifacts/api-server/src/routes/people.ts \
@@ -52,9 +52,6 @@ jobs:
             artifacts/api-server/src/routes/organizations.ts \
             artifacts/api-server/src/routes/topPriorities.ts \
             artifacts/api-server/src/app.ts \
-            artifacts/api-server/src/__tests__/donor-routing.integration.test.ts \
-            artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts \
-            artifacts/api-server/src/__tests__/people-org-soft-credit.integration.test.ts \
             artifacts/wildflower-crm/src/components/preferred-donor-card.tsx \
             .agents/memory/individual-org-soft-credit.md \
             docs/donor-attribution-phase-2.md
@@ -63,6 +60,16 @@ jobs:
       - run: pnpm run check:api
       - run: pnpm run check:web
       - run: pnpm run check:test-api-unit
+
+      - name: Remove one-time harness
+        run: |
+          rm -f \
+            .github/scripts/apply_donor_attribution_phase2.py.gz.b64 \
+            .github/scripts/donor-phase2.00 \
+            .github/scripts/donor-phase2.01 \
+            .github/scripts/donor-phase2.02 \
+            .github/run-donor-attribution-phase-2 \
+            .github/workflows/apply-donor-attribution-phase-2.yml
 
       - name: Commit implementation
         run: |
