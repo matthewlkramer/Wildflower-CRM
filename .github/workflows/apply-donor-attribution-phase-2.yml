@@ -65,9 +65,10 @@ jobs:
           python /tmp/apply_donor_attribution_phase2.py
           python - <<'PY'
           from pathlib import Path
+          import re
 
-          path = Path("artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts")
-          text = path.read_text()
+          test_path = Path("artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts")
+          test_text = test_path.read_text()
           old = '''    await expect(insertGift("ask")).rejects.toThrow(
                 /donor_routing_decision_required/,
               );'''
@@ -81,9 +82,28 @@ jobs:
               expect(String((thrown as { cause?: unknown }).cause ?? thrown)).toContain(
                 "donor_routing_decision_required",
               );'''
-          if old not in text:
+          if old not in test_text:
               raise SystemExit("ask-path assertion pattern not found")
-          path.write_text(text.replace(old, new))
+          test_path.write_text(test_text.replace(old, new))
+
+          pattern = re.compile(
+              r'((?:g\.)?household_id)\s*=\s*\(\s*SELECT primary_household_id FROM people\s*WHERE id = \$\{PEOPLE_ID\}\s*\)',
+              re.MULTILINE,
+          )
+          replacement = r'\1 = ${sql.raw(`"people"."primary_household_id"`)}'
+          total = 0
+          for relative in (
+              "artifacts/api-server/src/routes/people.ts",
+              "artifacts/api-server/src/routes/topPriorities.ts",
+          ):
+              path = Path(relative)
+              text = path.read_text()
+              text, count = pattern.subn(replacement, text)
+              if count == 0:
+                  raise SystemExit(f"primary-household correlation pattern not found in {relative}")
+              total += count
+              path.write_text(text)
+          print(f"fixed {total} primary-household correlation expressions")
           PY
 
       - name: Regenerate API clients
