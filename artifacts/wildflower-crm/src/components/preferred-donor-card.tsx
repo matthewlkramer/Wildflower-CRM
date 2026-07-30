@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 const MODE_LABEL: Record<DonorRoutingMode, string> = {
+  automatic: "Automatic default",
   self: "Use this record",
   target: "Route to another donor",
   ask: "Ask each time",
@@ -57,7 +58,7 @@ export function PreferredDonorCard({
   const update = useUpdateDonorRouting();
   const settings = query.data ?? null;
   const [editing, setEditing] = useState(false);
-  const [mode, setMode] = useState<DonorRoutingMode>("self");
+  const [mode, setMode] = useState<DonorRoutingMode>("automatic");
   const [targetType, setTargetType] = useState<DonorType>("organization");
   const [targetId, setTargetId] = useState<string | null>(null);
   const [primaryHouseholdId, setPrimaryHouseholdId] = useState<string | null>(
@@ -125,12 +126,14 @@ export function PreferredDonorCard({
     ? "Loading preferred donor settings…"
     : settings.mode === "ask"
       ? "Ask each time"
-      : settings.resolved
-        ? settings.resolved.id === settings.source.id &&
-          settings.resolved.kind === settings.source.kind
-          ? "Use this record"
-          : `Use ${settings.resolved.name}`
-        : "Needs a donor decision";
+      : settings.mode === "automatic" && settings.resolved
+        ? `Automatic: use ${settings.resolved.name}`
+        : settings.resolved
+          ? settings.resolved.id === settings.source.id &&
+            settings.resolved.kind === settings.source.kind
+            ? "Use this record"
+            : `Use ${settings.resolved.name}`
+          : "Needs a donor decision";
 
   return (
     <RelatedCard

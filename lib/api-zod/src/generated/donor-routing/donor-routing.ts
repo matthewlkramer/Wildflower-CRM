@@ -22,7 +22,7 @@ export const GetDonorRoutingResponse = zod.object({
   "id": zod.string(),
   "name": zod.string()
 }),
-  "mode": zod.enum(['self', 'target', 'ask']),
+  "mode": zod.enum(['automatic', 'self', 'target', 'ask']),
   "target": zod.union([zod.object({
   "kind": zod.enum(['individual', 'household', 'organization']),
   "id": zod.string(),
@@ -59,7 +59,7 @@ export const UpdateDonorRoutingParams = zod.object({
 })
 
 export const UpdateDonorRoutingBody = zod.object({
-  "mode": zod.enum(['self', 'target', 'ask']),
+  "mode": zod.enum(['automatic', 'self', 'target', 'ask']),
   "targetKind": zod.union([zod.enum(['individual', 'household', 'organization']),zod.null()]),
   "targetId": zod.string().nullable(),
   "primaryHouseholdId": zod.string().nullable(),
@@ -72,7 +72,7 @@ export const UpdateDonorRoutingResponse = zod.object({
   "id": zod.string(),
   "name": zod.string()
 }),
-  "mode": zod.enum(['self', 'target', 'ask']),
+  "mode": zod.enum(['automatic', 'self', 'target', 'ask']),
   "target": zod.union([zod.object({
   "kind": zod.enum(['individual', 'household', 'organization']),
   "id": zod.string(),

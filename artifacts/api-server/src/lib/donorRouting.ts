@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 
 export type DonorKind = "individual" | "household" | "organization";
-export type EffectiveDonorRoutingMode = "self" | "target" | "ask";
+export type EffectiveDonorRoutingMode = "automatic" | "self" | "target" | "ask";
 
 export interface DonorRef {
   kind: DonorKind;
@@ -17,7 +17,7 @@ export interface DonorNode extends DonorRef {
 }
 
 export interface StoredPreference {
-  mode: "target" | "ask";
+  mode: "self" | "target" | "ask";
   target: DonorRef | null;
 }
 
@@ -41,9 +41,6 @@ export class DonorRoutingDepthError extends Error {
   }
 }
 
-// Drizzle's transaction and database clients expose the same execute method,
-// but their generic types are intentionally different. Keep this narrow helper
-// structurally typed at the boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type SqlExecutor = {
   execute: (query: any) => Promise<{ rows: unknown[] }>;
@@ -124,7 +121,7 @@ export async function getDirectDonorPreference(
   `);
   const row = result.rows[0] as
     | {
-        mode: "target" | "ask";
+        mode: "self" | "target" | "ask";
         target_kind: DonorKind | null;
         target_person_id: string | null;
         target_household_id: string | null;
@@ -132,6 +129,7 @@ export async function getDirectDonorPreference(
       }
     | undefined;
   if (!row) return null;
+  if (row.mode === "self") return { mode: "self", target: null };
   if (row.mode === "ask") return { mode: "ask", target: null };
   const id =
     row.target_kind === "individual"
@@ -141,6 +139,25 @@ export async function getDirectDonorPreference(
         : row.target_organization_id;
   return row.target_kind && id
     ? { mode: "target", target: { kind: row.target_kind, id } }
+    : null;
+}
+
+async function implicitAutomaticTarget(
+  exec: SqlExecutor,
+  source: DonorRef,
+): Promise<DonorRef | null> {
+  if (source.kind !== "individual") return null;
+  const result = await exec.execute(sql`
+    SELECT primary_household_id
+    FROM people
+    WHERE id = ${source.id}
+    LIMIT 1
+  `);
+  const row = result.rows[0] as
+    | { primary_household_id: string | null }
+    | undefined;
+  return row?.primary_household_id
+    ? { kind: "household", id: row.primary_household_id }
     : null;
 }
 
@@ -171,7 +188,15 @@ export async function resolveDonorRouting(
       override && donorKey(override.source) === key
         ? override.preference
         : await getDirectDonorPreference(exec, current);
-    if (!pref) return { path, resolved: node, requiresDecision: false };
+    if (!pref) {
+      const automatic = await implicitAutomaticTarget(exec, current);
+      if (!automatic) return { path, resolved: node, requiresDecision: false };
+      current = automatic;
+      continue;
+    }
+    if (pref.mode === "self") {
+      return { path, resolved: node, requiresDecision: false };
+    }
     if (pref.mode === "ask") {
       return { path, resolved: null, requiresDecision: true };
     }

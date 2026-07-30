@@ -1,8 +1,26 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { people, peopleEntityRoles, emails, phoneNumbers, addresses, connectionEnthusiasmHistory } from "@workspace/db/schema";
+import {
+  people,
+  peopleEntityRoles,
+  emails,
+  phoneNumbers,
+  addresses,
+  connectionEnthusiasmHistory,
+} from "@workspace/db/schema";
 import { getAppUser } from "../lib/appRequest";
-import { and, asc, count, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  getTableColumns,
+  ilike,
+  isNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   ListPeopleQueryParams,
   CreatePersonBody,
@@ -12,13 +30,32 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { expandRegionIdsForFilter } from "../lib/regionContainment";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseBoolQuery, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
+import {
+  asyncHandler,
+  newId,
+  normalizeArrayQuery,
+  notFound,
+  parseBoolQuery,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+  splitBlank,
+} from "../lib/helpers";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate, reconcileArrayColumns } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, requireAdmin, unarchiveOne } from "../lib/archive";
+import {
+  activeOnlyUnlessAdmin,
+  archiveOne,
+  executeBulkArchive,
+  requireAdmin,
+  unarchiveOne,
+} from "../lib/archive";
 import { mergeEntity, PERSON_MERGE_CONFIG } from "../lib/mergeEntities";
 import { inArray } from "drizzle-orm";
-import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import {
+  peopleEntityRolesQuery,
+  maskPeopleEntityRoles,
+} from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
@@ -26,15 +63,28 @@ import { generateRelationshipSummary } from "../lib/relationshipSummary";
 
 // JSON object shape carried by the active/past organization-name aggregates so
 // the consumer can mask anonymous org names server-side (see maskOrgNameList).
-type OrgNameAgg = { name: string | null; anonymous: boolean | null; ownerUserId: string | null };
+type OrgNameAgg = {
+  name: string | null;
+  anonymous: boolean | null;
+  ownerUserId: string | null;
+};
 
 // Map an aggregated list of orgs back to the public string[] shape, replacing
 // anonymous orgs the viewer can't see with "Anonymous". Preserves null (the
 // ARRAY_AGG/JSONB_AGG "no rows" sentinel) so the response shape is unchanged.
-function maskOrgNameList(list: OrgNameAgg[] | null, viewer: Viewer): string[] | null {
+function maskOrgNameList(
+  list: OrgNameAgg[] | null,
+  viewer: Viewer,
+): string[] | null {
   if (!list) return null;
   return list
-    .map((o) => maskName(o.name, { anonymous: o.anonymous, ownerUserId: o.ownerUserId }, viewer))
+    .map((o) =>
+      maskName(
+        o.name,
+        { anonymous: o.anonymous, ownerUserId: o.ownerUserId },
+        viewer,
+      ),
+    )
     .filter((n): n is string => n !== null);
 }
 
@@ -48,12 +98,23 @@ function maskPersonRow<
 >(row: T, viewer: Viewer) {
   return {
     ...row,
-    activeOrganizationNames: maskOrgNameList(row.activeOrganizationNames, viewer),
+    activeOrganizationNames: maskOrgNameList(
+      row.activeOrganizationNames,
+      viewer,
+    ),
     pastOrganizationNames: maskOrgNameList(row.pastOrganizationNames, viewer),
   };
 }
 
-const PEOPLE_ARRAY_PARAMS = ["capacityRating", "connectionStatus", "enthusiasm", "ownerUserId", "priority", "regionIds", "newsletterStatus"] as const;
+const PEOPLE_ARRAY_PARAMS = [
+  "capacityRating",
+  "connectionStatus",
+  "enthusiasm",
+  "ownerUserId",
+  "priority",
+  "regionIds",
+  "newsletterStatus",
+] as const;
 
 // Derived newsletter status WHERE fragments. `unsubscribed` wins over
 // the `newsletter` flag (matches the detail-page display + Flodesk
@@ -99,16 +160,12 @@ const PEOPLE_ID = sql.raw(`"people"."id"`);
 // "archived gifts are excluded from financial totals" invariant.
 const peopleOrgCreditGiftWhere = sql`(
   g.organization_id IS NOT NULL AND g.archived_at IS NULL
-  AND (
-    g.primary_contact_person_id = ${PEOPLE_ID}
-    OR g.advisor_person_id = ${PEOPLE_ID}
-    OR g.organization_id IN (
-      SELECT organization_id FROM people_entity_roles
-      WHERE person_id = ${PEOPLE_ID}
-        AND connection = 'principal'
-        AND current = 'current'
-        AND organization_id IS NOT NULL
-    )
+  AND g.organization_id IN (
+    SELECT organization_id FROM people_entity_roles
+    WHERE person_id = ${PEOPLE_ID}
+      AND connection = 'principal'
+      AND current = 'current'
+      AND organization_id IS NOT NULL
   )
 )`;
 const peopleLifetimeGivingExpr = sql`(
@@ -118,10 +175,8 @@ const peopleLifetimeGivingExpr = sql`(
     0
   ) + COALESCE(
     (SELECT SUM(amount) FROM gifts_and_payments
-      WHERE archived_at IS NULL AND household_id IN (
-        SELECT household_id FROM people_entity_roles
-        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-      )),
+      WHERE archived_at IS NULL
+        AND household_id = ${sql.raw(`"people"."primary_household_id"`)}),
     0
   ) + COALESCE(
     (SELECT SUM(g.amount) FROM gifts_and_payments g
@@ -135,10 +190,8 @@ const peopleMostRecentGiftExpr = sql`(
       WHERE individual_giver_person_id = ${PEOPLE_ID} AND archived_at IS NULL
     UNION ALL
     SELECT MAX(date_received) AS d FROM gifts_and_payments
-      WHERE archived_at IS NULL AND household_id IN (
-        SELECT household_id FROM people_entity_roles
-        WHERE person_id = ${PEOPLE_ID} AND household_id IS NOT NULL
-      )
+      WHERE archived_at IS NULL
+        AND household_id = ${sql.raw(`"people"."primary_household_id"`)}
     UNION ALL
     SELECT MAX(g.date_received) AS d FROM gifts_and_payments g
       WHERE ${peopleOrgCreditGiftWhere}
@@ -186,13 +239,19 @@ const peopleDisplayNameOrder = sql`lower(coalesce(
 
 const peopleListSelect = {
   ...getTableColumns(people),
-  lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as("lifetime_giving"),
+  lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as(
+    "lifetime_giving",
+  ),
   // Postgres GREATEST returns NULL if any arg is NULL, which is wrong
   // here (a person with only direct gifts and no household gifts would
   // get NULL). Take MAX over a UNION of both sources instead — MAX
   // naturally ignores NULLs.
-  mostRecentGiftDate: sql<string | null>`${peopleMostRecentGiftExpr}`.as("most_recent_gift_date"),
-  openOpportunityCount: sql<number>`${peopleOpenOppCountExpr}`.as("open_opportunity_count"),
+  mostRecentGiftDate: sql<string | null>`${peopleMostRecentGiftExpr}`.as(
+    "most_recent_gift_date",
+  ),
+  openOpportunityCount: sql<number>`${peopleOpenOppCountExpr}`.as(
+    "open_opportunity_count",
+  ),
   // DISTINCT to dedupe in case a person has multiple current role rows
   // at the same organization (different role titles, etc.). We aggregate
   // JSON objects carrying name + anonymous + owner so the consumer can mask
@@ -258,34 +317,64 @@ router.get(
     // partners" toggle is on. Read from the raw query string (like deceased,
     // the generated zod coerces "false" to true). Param absent = no filter, so
     // other listPeople consumers (pickers, etc.) are unaffected.
-    const showFoundationPartners = parseBoolQuery(req, "showFoundationPartners");
-    if (showFoundationPartners === false) filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
+    const showFoundationPartners = parseBoolQuery(
+      req,
+      "showFoundationPartners",
+    );
+    if (showFoundationPartners === false)
+      filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
     const capacityFilter = splitBlank(q.capacityRating);
     if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {
-      filters.push(or(isNull(people.capacityRating), inArray(people.capacityRating, capacityFilter.values as never[]))!);
+      filters.push(
+        or(
+          isNull(people.capacityRating),
+          inArray(people.capacityRating, capacityFilter.values as never[]),
+        )!,
+      );
     } else if (capacityFilter.wantsBlank) {
       filters.push(isNull(people.capacityRating));
     } else if (capacityFilter.values.length > 0) {
-      filters.push(inArray(people.capacityRating, capacityFilter.values as never[]));
+      filters.push(
+        inArray(people.capacityRating, capacityFilter.values as never[]),
+      );
     }
     const connectionFilter = splitBlank(q.connectionStatus);
     if (connectionFilter.wantsBlank && connectionFilter.values.length > 0) {
-      filters.push(or(isNull(people.connectionStatus), inArray(people.connectionStatus, connectionFilter.values as never[]))!);
+      filters.push(
+        or(
+          isNull(people.connectionStatus),
+          inArray(people.connectionStatus, connectionFilter.values as never[]),
+        )!,
+      );
     } else if (connectionFilter.wantsBlank) {
       filters.push(isNull(people.connectionStatus));
     } else if (connectionFilter.values.length > 0) {
-      filters.push(inArray(people.connectionStatus, connectionFilter.values as never[]));
+      filters.push(
+        inArray(people.connectionStatus, connectionFilter.values as never[]),
+      );
     }
     {
       const f = splitBlank(q.enthusiasm as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(people.enthusiasm), inArray(people.enthusiasm, f.values as never[]))!);
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(people.enthusiasm),
+            inArray(people.enthusiasm, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(people.enthusiasm));
-      else if (f.values.length > 0) filters.push(inArray(people.enthusiasm, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(inArray(people.enthusiasm, f.values as never[]));
     }
     const ownerFilter = splitBlank(q.ownerUserId);
     if (ownerFilter.wantsBlank && ownerFilter.values.length > 0) {
-      filters.push(or(isNull(people.ownerUserId), inArray(people.ownerUserId, ownerFilter.values))!);
+      filters.push(
+        or(
+          isNull(people.ownerUserId),
+          inArray(people.ownerUserId, ownerFilter.values),
+        )!,
+      );
     } else if (ownerFilter.wantsBlank) {
       filters.push(isNull(people.ownerUserId));
     } else if (ownerFilter.values.length > 0) {
@@ -293,7 +382,12 @@ router.get(
     }
     const priorityFilter = splitBlank(q.priority);
     if (priorityFilter.wantsBlank && priorityFilter.values.length > 0) {
-      filters.push(or(isNull(people.priority), inArray(people.priority, priorityFilter.values as never[]))!);
+      filters.push(
+        or(
+          isNull(people.priority),
+          inArray(people.priority, priorityFilter.values as never[]),
+        )!,
+      );
     } else if (priorityFilter.wantsBlank) {
       filters.push(isNull(people.priority));
     } else if (priorityFilter.values.length > 0) {
@@ -305,20 +399,35 @@ router.get(
       const ids = q.regionIds as string[] | undefined;
       if (ids && ids.length > 0) {
         const expanded = await expandRegionIdsForFilter(ids);
-        filters.push(sql`${people.regionIds} && ARRAY[${sql.join(expanded.map((id) => sql`${id}`), sql`, `)}]::text[]`);
+        filters.push(
+          sql`${people.regionIds} && ARRAY[${sql.join(
+            expanded.map((id) => sql`${id}`),
+            sql`, `,
+          )}]::text[]`,
+        );
       }
     }
     // Presence filters on computed rollup fields (has value vs blank).
-    if (q.lifetimeGivingPresence === "has") filters.push(sql`${peopleLifetimeGivingExpr} > 0`);
-    else if (q.lifetimeGivingPresence === "blank") filters.push(sql`${peopleLifetimeGivingExpr} <= 0`);
-    if (q.lastGiftPresence === "has") filters.push(sql`${peopleMostRecentGiftExpr} IS NOT NULL`);
-    else if (q.lastGiftPresence === "blank") filters.push(sql`${peopleMostRecentGiftExpr} IS NULL`);
-    if (q.openAsksPresence === "has") filters.push(sql`${peopleOpenOppCountExpr} > 0`);
-    else if (q.openAsksPresence === "blank") filters.push(sql`${peopleOpenOppCountExpr} = 0`);
-    if (q.activeAffiliationPresence === "has") filters.push(peopleActiveAffiliationExists);
-    else if (q.activeAffiliationPresence === "blank") filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
-    if (q.lastContactedPresence === "has") filters.push(sql`people.last_contacted IS NOT NULL`);
-    else if (q.lastContactedPresence === "blank") filters.push(sql`people.last_contacted IS NULL`);
+    if (q.lifetimeGivingPresence === "has")
+      filters.push(sql`${peopleLifetimeGivingExpr} > 0`);
+    else if (q.lifetimeGivingPresence === "blank")
+      filters.push(sql`${peopleLifetimeGivingExpr} <= 0`);
+    if (q.lastGiftPresence === "has")
+      filters.push(sql`${peopleMostRecentGiftExpr} IS NOT NULL`);
+    else if (q.lastGiftPresence === "blank")
+      filters.push(sql`${peopleMostRecentGiftExpr} IS NULL`);
+    if (q.openAsksPresence === "has")
+      filters.push(sql`${peopleOpenOppCountExpr} > 0`);
+    else if (q.openAsksPresence === "blank")
+      filters.push(sql`${peopleOpenOppCountExpr} = 0`);
+    if (q.activeAffiliationPresence === "has")
+      filters.push(peopleActiveAffiliationExists);
+    else if (q.activeAffiliationPresence === "blank")
+      filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
+    if (q.lastContactedPresence === "has")
+      filters.push(sql`people.last_contacted IS NOT NULL`);
+    else if (q.lastContactedPresence === "blank")
+      filters.push(sql`people.last_contacted IS NULL`);
     // Derived newsletter status — OR the selected statuses together.
     {
       const statuses = (q.newsletterStatus as string[] | undefined) ?? [];
@@ -351,7 +460,11 @@ router.get(
   "/people/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const row = await db.select(peopleListSelect).from(people).where(eq(people.id, id)).then((r) => r[0]);
+    const row = await db
+      .select(peopleListSelect)
+      .from(people)
+      .where(eq(people.id, id))
+      .then((r) => r[0]);
     if (!row) return notFound(res, "person");
     const [roles, emailRows, phoneRows, addressRows, flaggedForResearch] =
       await Promise.all([
@@ -433,7 +546,11 @@ router.post(
             modeKey: "interestsGovModelsMode",
             column: people.interestsGovModels,
           },
-          { valueKey: "regionIds", modeKey: "regionIdsMode", column: people.regionIds },
+          {
+            valueKey: "regionIds",
+            modeKey: "regionIdsMode",
+            column: people.regionIds,
+          },
         ]);
       },
       // Mirror newsletter changes out to Flodesk per updated row, the
@@ -441,7 +558,10 @@ router.post(
       // Flodesk isn't configured; precedence rules still apply (a
       // Flodesk unsubscribe wins). Only worth doing when the patch
       // actually touched the newsletter flag.
-      afterApply: Object.prototype.hasOwnProperty.call(req.body?.patch ?? {}, "newsletter")
+      afterApply: Object.prototype.hasOwnProperty.call(
+        req.body?.patch ?? {},
+        "newsletter",
+      )
         ? async (id: string) => {
             syncPersonToFlodeskInBackground(id);
           }
@@ -490,9 +610,17 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
-    const [row] = await db.insert(people).values({ id: newId(), ...body }).returning();
+    const [row] = await db
+      .insert(people)
+      .values({ id: newId(), ...body })
+      .returning();
     if (row) {
-      await auditCreate(req, "person", row.id, `Created person ${[row.firstName, row.lastName].filter(Boolean).join(" ").trim()}`.trimEnd());
+      await auditCreate(
+        req,
+        "person",
+        row.id,
+        `Created person ${[row.firstName, row.lastName].filter(Boolean).join(" ").trim()}`.trimEnd(),
+      );
       // Push newsletter membership to Flodesk (fire-and-forget; safe + no-op
       // when Flodesk isn't configured or the person has no usable email).
       syncPersonToFlodeskInBackground(row.id);
@@ -510,7 +638,10 @@ router.patch(
 
     // Full before-row for the audit diff (also reused for the connection/
     // enthusiasm change history below).
-    const [auditBefore] = await db.select().from(people).where(eq(people.id, id));
+    const [auditBefore] = await db
+      .select()
+      .from(people)
+      .where(eq(people.id, id));
     const trackingFields = ["connectionStatus", "enthusiasm"] as const;
     const needsTracking = trackingFields.some((f) => f in body);
     const before = needsTracking ? auditBefore : undefined;
@@ -527,11 +658,30 @@ router.patch(
       const user = getAppUser(req);
       if (user) {
         const entries: (typeof connectionEnthusiasmHistory.$inferInsert)[] = [];
-        if ("connectionStatus" in body && row.connectionStatus !== before.connectionStatus) {
-          entries.push({ id: newId(), entityType: "person", entityId: row.id, field: "connectionStatus", fromValue: before.connectionStatus, toValue: row.connectionStatus, changedByUserId: user.id });
+        if (
+          "connectionStatus" in body &&
+          row.connectionStatus !== before.connectionStatus
+        ) {
+          entries.push({
+            id: newId(),
+            entityType: "person",
+            entityId: row.id,
+            field: "connectionStatus",
+            fromValue: before.connectionStatus,
+            toValue: row.connectionStatus,
+            changedByUserId: user.id,
+          });
         }
         if ("enthusiasm" in body && row.enthusiasm !== before.enthusiasm) {
-          entries.push({ id: newId(), entityType: "person", entityId: row.id, field: "enthusiasm", fromValue: before.enthusiasm, toValue: row.enthusiasm, changedByUserId: user.id });
+          entries.push({
+            id: newId(),
+            entityType: "person",
+            entityId: row.id,
+            field: "enthusiasm",
+            fromValue: before.enthusiasm,
+            toValue: row.enthusiasm,
+            changedByUserId: user.id,
+          });
         }
         if (entries.length > 0) {
           await db.insert(connectionEnthusiasmHistory).values(entries);
@@ -539,7 +689,15 @@ router.patch(
       }
     }
 
-    await auditUpdate(req, "person", row.id, auditBefore as Record<string, unknown> | undefined, row as Record<string, unknown>, Object.keys(body), `Updated person ${[row.firstName, row.lastName].filter(Boolean).join(" ")}`.trimEnd());
+    await auditUpdate(
+      req,
+      "person",
+      row.id,
+      auditBefore as Record<string, unknown> | undefined,
+      row as Record<string, unknown>,
+      Object.keys(body),
+      `Updated person ${[row.firstName, row.lastName].filter(Boolean).join(" ")}`.trimEnd(),
+    );
 
     // Propagate newsletter/unsubscribe changes out to Flodesk (fire-and-forget).
     syncPersonToFlodeskInBackground(row.id);

@@ -4,9 +4,13 @@ import * as helmetModule from "helmet";
 import { type HelmetOptions } from "helmet";
 import { pinoHttp } from "pino-http";
 import { clerkMiddleware } from "@clerk/express";
-import { CLERK_PROXY_PATH, clerkProxyMiddleware } from "./middlewares/clerkProxyMiddleware";
+import {
+  CLERK_PROXY_PATH,
+  clerkProxyMiddleware,
+} from "./middlewares/clerkProxyMiddleware";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { errorChainIncludes } from "./lib/errorCause";
 
 // Interop-safe access to helmet's default export: some TS resolution modes
 // (e.g. Vercel's builder) type the CJS module namespace as non-callable.
@@ -112,8 +116,16 @@ app.use(
     next: express.NextFunction,
   ) => {
     if (res.headersSent) return next(err);
-    const anyErr = err as { status?: number; statusCode?: number; message?: string } | undefined;
-    const status = anyErr?.status ?? anyErr?.statusCode ?? 500;
+    const anyErr = err as
+      | { status?: number; statusCode?: number; message?: string }
+      | undefined;
+    const donorDecisionRequired = errorChainIncludes(
+      err,
+      "donor_routing_decision_required",
+    );
+    const status = donorDecisionRequired
+      ? 409
+      : (anyErr?.status ?? anyErr?.statusCode ?? 500);
     // Always log via the singleton logger (never the optional req.log, which is
     // silently skipped when pino-http didn't attach) so an unexpected error is
     // never swallowed. `err` is serialized with its stack trace by pino.
@@ -122,9 +134,16 @@ app.use(
       "Unhandled API error",
     );
     res.status(status).json({
-      error: status >= 500 ? "internal_error" : "request_error",
-      message:
-        status >= 500 ? "Internal server error" : (anyErr?.message ?? "Request failed"),
+      error: donorDecisionRequired
+        ? "donor_routing_decision_required"
+        : status >= 500
+          ? "internal_error"
+          : "request_error",
+      message: donorDecisionRequired
+        ? "Choose the donor of record for this gift before saving."
+        : status >= 500
+          ? "Internal server error"
+          : (anyErr?.message ?? "Request failed"),
     });
   },
 );

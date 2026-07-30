@@ -6827,6 +6827,7 @@ export type DonorRoutingMode = typeof DonorRoutingMode[keyof typeof DonorRouting
 
 
 export const DonorRoutingMode = {
+  automatic: 'automatic',
   self: 'self',
   target: 'target',
   ask: 'ask',
