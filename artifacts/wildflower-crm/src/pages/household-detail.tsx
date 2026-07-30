@@ -23,6 +23,7 @@ import {
   LinkedOpportunitiesCard,
 } from "@/components/linked-records";
 import { GivesThroughCard } from "@/components/gives-through-card";
+import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import {
   RecordLayout,
   FieldCard,
@@ -51,7 +52,12 @@ export default function HouseholdDetail() {
   if (isError || !data) {
     return (
       <div className="space-y-4">
-        <Link href="/individuals" className="text-sm text-primary hover:underline">← Back to individuals</Link>
+        <Link
+          href="/individuals"
+          className="text-sm text-primary hover:underline"
+        >
+          ← Back to individuals
+        </Link>
         <div className="text-sm text-destructive">
           {error instanceof Error ? error.message : "Household not found."}
         </div>
@@ -73,8 +79,12 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
     mutation: {
       onSuccess: async () => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetHouseholdQueryKey(household.id) }),
-          queryClient.invalidateQueries({ queryKey: getListHouseholdsQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getGetHouseholdQueryKey(household.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListHouseholdsQueryKey(),
+          }),
         ]);
         toast({ title: "Household updated" });
       },
@@ -91,7 +101,9 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
   const archive = useArchiveHousehold({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListHouseholdsQueryKey() });
+        await queryClient.invalidateQueries({
+          queryKey: getListHouseholdsQueryKey(),
+        });
         toast({ title: "Household archived" });
         navigate("/individuals");
       },
@@ -227,11 +239,16 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
           >
             <div className="space-y-4">
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Emails</div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Emails
+                </div>
                 {household.emails && household.emails.length > 0 ? (
                   <ul className="space-y-1 text-sm">
                     {household.emails.map((e) => (
-                      <li key={e.id} className="flex items-center justify-between gap-2">
+                      <li
+                        key={e.id}
+                        className="flex items-center justify-between gap-2"
+                      >
                         <span className="truncate">{e.email}</span>
                         <span className="text-muted-foreground text-xs">
                           {e.isPreferred ? "preferred • " : ""}
@@ -240,26 +257,35 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
                       </li>
                     ))}
                   </ul>
-                ) : (<p className="text-sm text-muted-foreground">No emails.</p>)}
+                ) : (
+                  <p className="text-sm text-muted-foreground">No emails.</p>
+                )}
               </div>
               <Separator />
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Addresses</div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Addresses
+                </div>
                 {household.addresses && household.addresses.length > 0 ? (
                   <ul className="space-y-2 text-sm">
                     {household.addresses.map((a) => (
                       <li key={a.id}>
-                        {[a.street, a.cityName, a.stateCode, a.postalCode].filter(Boolean).join(", ") || "—"}
+                        {[a.street, a.cityName, a.stateCode, a.postalCode]
+                          .filter(Boolean)
+                          .join(", ") || "—"}
                       </li>
                     ))}
                   </ul>
-                ) : (<p className="text-sm text-muted-foreground">No addresses.</p>)}
+                ) : (
+                  <p className="text-sm text-muted-foreground">No addresses.</p>
+                )}
               </div>
             </div>
           </FieldCard>
 
           <div className="px-1 text-xs text-muted-foreground">
-            Created {formatDate(household.createdAt)} • Updated {formatDate(household.updatedAt)}
+            Created {formatDate(household.createdAt)} • Updated{" "}
+            {formatDate(household.updatedAt)}
           </div>
         </>
       }
@@ -309,10 +335,14 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
               </div>
             ) : (
               <p className="px-2 py-2 text-sm text-muted-foreground">
-                {members.length > 0 ? "All members are inactive." : "No members linked."}
+                {members.length > 0
+                  ? "All members are inactive."
+                  : "No members linked."}
               </p>
             )}
           </RelatedCard>
+
+          <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 
           <GivesThroughCard donor={{ householdId: household.id }} />
 

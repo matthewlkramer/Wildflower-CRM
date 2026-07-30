@@ -1,4 +1,5 @@
 import {
+  boolean,
   check,
   index,
   pgTable,
@@ -41,6 +42,7 @@ export const donorPaymentIntermediaries = pgTable(
       onDelete: "cascade",
     }),
     notes: text("notes"),
+    isDefault: boolean("is_default").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -71,6 +73,17 @@ export const donorPaymentIntermediaries = pgTable(
     uniqueIndex("dpi_unique_household_pi")
       .on(t.householdId, t.paymentIntermediaryId)
       .where(sql`${t.householdId} IS NOT NULL`),
+    uniqueIndex("dpi_default_org_uq")
+      .on(t.organizationId)
+      .where(sql`${t.organizationId} IS NOT NULL AND ${t.isDefault} = true`),
+    uniqueIndex("dpi_default_person_uq")
+      .on(t.individualGiverPersonId)
+      .where(
+        sql`${t.individualGiverPersonId} IS NOT NULL AND ${t.isDefault} = true`,
+      ),
+    uniqueIndex("dpi_default_household_uq")
+      .on(t.householdId)
+      .where(sql`${t.householdId} IS NOT NULL AND ${t.isDefault} = true`),
   ],
 );
 
