@@ -44,7 +44,6 @@ jobs:
         run: |
           pnpm exec prettier --write \
             lib/db/src/schema/donorRoutingPreferences.ts \
-            lib/db/migrations/0222_donor_attribution_phase_2.sql \
             artifacts/api-server/src/lib/donorRouting.ts \
             artifacts/api-server/src/routes/donorRouting.ts \
             artifacts/api-server/src/routes/people.ts \
