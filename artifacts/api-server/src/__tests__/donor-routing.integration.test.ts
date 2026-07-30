@@ -218,6 +218,44 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
     });
   });
 
+  it("serializes concurrent edits so opposite pointers cannot create a cycle", async () => {
+    await put("individual", PERSON_ID, {
+      mode: "self",
+      targetKind: null,
+      targetId: null,
+      primaryHouseholdId: HOUSEHOLD_ID,
+      defaultPaymentIntermediaryId: PI_ID,
+    });
+    await put("organization", ORG_ID, {
+      mode: "self",
+      targetKind: null,
+      targetId: null,
+      primaryHouseholdId: null,
+      defaultPaymentIntermediaryId: null,
+    });
+
+    const results = await Promise.all([
+      put("individual", PERSON_ID, {
+        mode: "target",
+        targetKind: "organization",
+        targetId: ORG_ID,
+        primaryHouseholdId: HOUSEHOLD_ID,
+        defaultPaymentIntermediaryId: PI_ID,
+      }),
+      put("organization", ORG_ID, {
+        mode: "target",
+        targetKind: "individual",
+        targetId: PERSON_ID,
+        primaryHouseholdId: null,
+        defaultPaymentIntermediaryId: null,
+      }),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
+    expect(results.find((result) => result.status === 409)?.json.error).toBe(
+      "donor_routing_cycle",
+    );
+  });
+
   it("supports an explicit ask-each-time pathway", async () => {
     const { status, json } = await put("individual", PERSON_ID, {
       mode: "ask",

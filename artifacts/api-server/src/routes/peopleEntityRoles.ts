@@ -8,18 +8,8 @@ import {
   UpdatePeopleEntityRoleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import {
-  asyncHandler,
-  newId,
-  notFound,
-  parseOrBadRequest,
-  parsePagination,
-  paramId,
-} from "../lib/helpers";
-import {
-  peopleEntityRolesQuery,
-  maskPeopleEntityRoles,
-} from "../lib/peopleRolesSelect";
+import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
 import { getViewer } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
@@ -59,7 +49,7 @@ async function syncPrimaryHousehold(
       .where(eq(people.id, active.personId));
     return;
   }
-  if (before?.householdId) {
+  if (before?.householdId && before.current === "current") {
     await tx
       .update(people)
       .set({ primaryHouseholdId: null, updatedAt: new Date() })
@@ -99,37 +89,21 @@ async function demoteOtherPrimaries(
 router.get(
   "/people-entity-roles",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(
-      ListPeopleEntityRolesQueryParams,
-      req.query,
-      res,
-    );
+    const q = parseOrBadRequest(ListPeopleEntityRolesQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.personId) filters.push(eq(peopleEntityRoles.personId, q.personId));
-
-    if (q.organizationId)
-      filters.push(eq(peopleEntityRoles.organizationId, q.organizationId));
-    if (q.paymentIntermediaryId)
-      filters.push(
-        eq(peopleEntityRoles.paymentIntermediaryId, q.paymentIntermediaryId),
-      );
-    if (q.householdId)
-      filters.push(eq(peopleEntityRoles.householdId, q.householdId));
+    
+    if (q.organizationId) filters.push(eq(peopleEntityRoles.organizationId, q.organizationId));
+    if (q.paymentIntermediaryId) filters.push(eq(peopleEntityRoles.paymentIntermediaryId, q.paymentIntermediaryId));
+    if (q.householdId) filters.push(eq(peopleEntityRoles.householdId, q.householdId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      peopleEntityRolesQuery()
-        .where(where)
-        .orderBy(desc(peopleEntityRoles.createdAt))
-        .limit(limit)
-        .offset(offset),
+      peopleEntityRolesQuery().where(where).orderBy(desc(peopleEntityRoles.createdAt)).limit(limit).offset(offset),
       db.select({ value: count() }).from(peopleEntityRoles).where(where),
     ]);
-    res.json({
-      data: maskPeopleEntityRoles(rows, getViewer(req)),
-      pagination: { page, limit, total: Number(total) },
-    });
+    res.json({ data: maskPeopleEntityRoles(rows, getViewer(req)), pagination: { page, limit, total: Number(total) } });
   }),
 );
 
@@ -190,9 +164,7 @@ router.delete(
         .from(peopleEntityRoles)
         .where(eq(peopleEntityRoles.id, paramId(req)))
         .limit(1);
-      await tx
-        .delete(peopleEntityRoles)
-        .where(eq(peopleEntityRoles.id, paramId(req)));
+      await tx.delete(peopleEntityRoles).where(eq(peopleEntityRoles.id, paramId(req)));
       await syncPrimaryHousehold(tx, before ?? null, null);
     });
     res.status(204).end();

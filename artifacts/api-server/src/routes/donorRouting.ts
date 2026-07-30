@@ -42,6 +42,8 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 
+const DONOR_ROUTING_ADVISORY_LOCK_KEY = 728411002;
+
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 function donorRef(kind: string, id: string): DonorRef | null {
@@ -414,8 +416,14 @@ router.put(
     try {
       await db.transaction(async (tx) => {
         await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(hashtext(${donorKey(source)}))`,
+          sql`SELECT pg_advisory_xact_lock(${DONOR_ROUTING_ADVISORY_LOCK_KEY})`,
         );
+        // Recheck after serialization. Two different sources can otherwise race
+        // into a cycle even though each request passed its preflight check.
+        await resolveDonorRouting(source, tx as unknown as SqlExecutor, {
+          source,
+          preference: proposed,
+        });
         const before = await getDirectDonorPreference(
           tx as unknown as SqlExecutor,
           source,
@@ -462,6 +470,21 @@ router.put(
         });
       });
     } catch (error) {
+      if (error instanceof DonorRoutingCycleError) {
+        res.status(409).json({
+          error: "donor_routing_cycle",
+          message:
+            "That change would create a circular preferred donor pathway.",
+        });
+        return;
+      }
+      if (error instanceof DonorRoutingDepthError) {
+        res.status(409).json({
+          error: "donor_routing_too_deep",
+          message: "That preferred donor pathway is too long.",
+        });
+        return;
+      }
       if (
         error instanceof Error &&
         error.message === "default_intermediary_unavailable"

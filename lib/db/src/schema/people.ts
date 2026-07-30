@@ -21,116 +21,105 @@ import { users } from "./users";
 import { regions } from "./regions";
 import { households } from "./households";
 
-export const people = pgTable(
-  "people",
-  {
-    id: text("id").primaryKey(),
-    prefix: text("prefix"),
-    firstName: text("first_name"),
-    nickname: text("nickname"),
-    middleName: text("middle_name"),
-    lastName: text("last_name"),
-    suffix: text("suffix"),
-    fullName: text("full_name"),
-    pronouns: pronounsEnum("pronouns"),
-    deceased: boolean("deceased").default(false).notNull(),
-    // Free-text region link; SET NULL so a region delete doesn't cascade to people.
-    currentHomeRegionId: text("current_home_region_id").references(
-      () => regions.id,
-      { onDelete: "set null" },
-    ),
-    // One current household authority. The legacy household role rows remain
-    // temporarily for UI/history compatibility, but new business logic reads this
-    // direct pointer rather than inferring one household from a many-to-many table.
-    primaryHouseholdId: text("primary_household_id").references(
-      () => households.id,
-      { onDelete: "set null" },
-    ),
-    details: text("details"),
-    // Team member who owns this person. RESTRICT preserves history when a
-    // team member archives.
-    ownerUserId: text("owner_user_id").references(() => users.id, {
-      onDelete: "restrict",
-    }),
-    tags: text("tags"),
-    lastContacted: date("last_contacted"),
-    interactionCount: integer("interaction_count"),
-    createdFromCopper: date("created_from_copper"),
-    updatedFromCopper: date("updated_from_copper"),
-    linkedin: text("linkedin"),
-    x: text("x"),
-    facebook: text("facebook"),
-    instagram: text("instagram"),
-    aboutMe: text("about_me"),
-    youtube: text("youtube"),
-    website: text("website"),
-    interestsThematic: text("interests_thematic").array(),
-    interestsAges: text("interests_ages").array(),
-    interestsGovModels: text("interests_gov_models").array(),
-    // Array of regions.id values the person prioritizes. NB: array columns
-    // cannot carry native PG FK constraints; integrity is enforced at write
-    // time by the API layer.
-    regionIds: text("region_ids").array(),
-    newsletter: boolean("newsletter").default(false).notNull(),
-    unsubscribedToNewsletter: boolean("unsubscribed_to_newsletter")
-      .default(false)
-      .notNull(),
-    // Estimated giving capacity tier. Same enum as funders.capacity_rating
-    // so we can compare and roll up individuals + orgs against the same
-    // bands. Nullable: not every contact has been rated.
-    capacityRating: capacityRatingEnum("capacity_rating"),
-    // Estimated net worth for this individual. Decimal (2dp) with headroom for
-    // very large estates (up to ~99T).
-    netWorth: numeric("net_worth", { precision: 16, scale: 2 }),
-    // Mirrors funders.connection_status / funders.enthusiasm so we can
-    // track pipeline progression on individual donors and prospects in
-    // the same vocabulary used for organizational funders.
-    connectionStatus: connectionStatusEnum("connection_status"),
-    enthusiasm: enthusiasmEnum("enthusiasm"),
-    childrenAtWf: text("children_at_wf"),
-    meetingLink: text("meeting_link"),
-    // QuickBooks Online Customer Id this individual maps to. Used to
-    // deterministically link incoming QuickBooks payments to this donor.
-    quickbooksCustomerId: text("quickbooks_customer_id"),
-    // Self-ref. SET NULL: if the assistant person is deleted, this person
-    // just loses the pointer.
-    assistantPersonId: text("assistant_person_id").references(
-      (): AnyPgColumn => people.id,
-      { onDelete: "set null" },
-    ),
-    // Solicitation priority tier (top/high/medium/low). The "top" band
-    // is surfaced as a star icon on the individuals table and inline next
-    // to the person's name wherever they appear as a donor.
-    priority: priorityEnum("priority"),
-    // When true, the person's real name is hidden in the UI (shown as
-    // "Anonymous") from everyone except the record owner and admins. This is a
-    // UI-only courtesy flag — the name is still stored and returned by the API.
-    anonymous: boolean("anonymous").default(false).notNull(),
-    // Soft-delete: non-null = archived (hidden from non-admins). Separate from
-    // real status fields (deceased); never set by status workflows.
-    archivedAt: timestamp("archived_at"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (t) => [
-    index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
-    index("people_primary_household_id_idx").on(t.primaryHouseholdId),
-    index("people_owner_user_id_idx").on(t.ownerUserId),
-    index("people_assistant_person_id_idx").on(t.assistantPersonId),
-    index("people_priority_idx").on(t.priority),
-    index("people_archived_at_idx").on(t.archivedAt),
-    index("people_region_ids_gin_idx").using("gin", t.regionIds),
-    index("people_interests_thematic_gin_idx").using(
-      "gin",
-      t.interestsThematic,
-    ),
-    index("people_interests_ages_gin_idx").using("gin", t.interestsAges),
-    index("people_interests_gov_models_gin_idx").using(
-      "gin",
-      t.interestsGovModels,
-    ),
-  ],
-);
+export const people = pgTable("people", {
+  id: text("id").primaryKey(),
+  prefix: text("prefix"),
+  firstName: text("first_name"),
+  nickname: text("nickname"),
+  middleName: text("middle_name"),
+  lastName: text("last_name"),
+  suffix: text("suffix"),
+  fullName: text("full_name"),
+  pronouns: pronounsEnum("pronouns"),
+  deceased: boolean("deceased").default(false).notNull(),
+  // Free-text region link; SET NULL so a region delete doesn't cascade to people.
+  currentHomeRegionId: text("current_home_region_id").references(
+    () => regions.id,
+    { onDelete: "set null" },
+  ),
+  // One current household authority. Legacy household role rows remain during
+  // the transition, but new business logic reads this direct pointer.
+  primaryHouseholdId: text("primary_household_id").references(
+    () => households.id,
+    { onDelete: "set null" },
+  ),
+  details: text("details"),
+  // Team member who owns this person. RESTRICT preserves history when a
+  // team member archives.
+  ownerUserId: text("owner_user_id").references(() => users.id, {
+    onDelete: "restrict",
+  }),
+  tags: text("tags"),
+  lastContacted: date("last_contacted"),
+  interactionCount: integer("interaction_count"),
+  createdFromCopper: date("created_from_copper"),
+  updatedFromCopper: date("updated_from_copper"),
+  linkedin: text("linkedin"),
+  x: text("x"),
+  facebook: text("facebook"),
+  instagram: text("instagram"),
+  aboutMe: text("about_me"),
+  youtube: text("youtube"),
+  website: text("website"),
+  interestsThematic: text("interests_thematic").array(),
+  interestsAges: text("interests_ages").array(),
+  interestsGovModels: text("interests_gov_models").array(),
+  // Array of regions.id values the person prioritizes. NB: array columns
+  // cannot carry native PG FK constraints; integrity is enforced at write
+  // time by the API layer.
+  regionIds: text("region_ids").array(),
+  newsletter: boolean("newsletter").default(false).notNull(),
+  unsubscribedToNewsletter: boolean("unsubscribed_to_newsletter")
+    .default(false)
+    .notNull(),
+  // Estimated giving capacity tier. Same enum as funders.capacity_rating
+  // so we can compare and roll up individuals + orgs against the same
+  // bands. Nullable: not every contact has been rated.
+  capacityRating: capacityRatingEnum("capacity_rating"),
+  // Estimated net worth for this individual. Decimal (2dp) with headroom for
+  // very large estates (up to ~99T).
+  netWorth: numeric("net_worth", { precision: 16, scale: 2 }),
+  // Mirrors funders.connection_status / funders.enthusiasm so we can
+  // track pipeline progression on individual donors and prospects in
+  // the same vocabulary used for organizational funders.
+  connectionStatus: connectionStatusEnum("connection_status"),
+  enthusiasm: enthusiasmEnum("enthusiasm"),
+  childrenAtWf: text("children_at_wf"),
+  meetingLink: text("meeting_link"),
+  // QuickBooks Online Customer Id this individual maps to. Used to
+  // deterministically link incoming QuickBooks payments to this donor.
+  quickbooksCustomerId: text("quickbooks_customer_id"),
+  // Self-ref. SET NULL: if the assistant person is deleted, this person
+  // just loses the pointer.
+  assistantPersonId: text("assistant_person_id").references(
+    (): AnyPgColumn => people.id,
+    { onDelete: "set null" },
+  ),
+  // Solicitation priority tier (top/high/medium/low). The "top" band
+  // is surfaced as a star icon on the individuals table and inline next
+  // to the person's name wherever they appear as a donor.
+  priority: priorityEnum("priority"),
+  // When true, the person's real name is hidden in the UI (shown as
+  // "Anonymous") from everyone except the record owner and admins. This is a
+  // UI-only courtesy flag — the name is still stored and returned by the API.
+  anonymous: boolean("anonymous").default(false).notNull(),
+  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+  // real status fields (deceased); never set by status workflows.
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => [
+  index("people_current_home_region_id_idx").on(t.currentHomeRegionId),
+  index("people_primary_household_id_idx").on(t.primaryHouseholdId),
+  index("people_owner_user_id_idx").on(t.ownerUserId),
+  index("people_assistant_person_id_idx").on(t.assistantPersonId),
+  index("people_priority_idx").on(t.priority),
+  index("people_archived_at_idx").on(t.archivedAt),
+  index("people_region_ids_gin_idx").using("gin", t.regionIds),
+  index("people_interests_thematic_gin_idx").using("gin", t.interestsThematic),
+  index("people_interests_ages_gin_idx").using("gin", t.interestsAges),
+  index("people_interests_gov_models_gin_idx").using("gin", t.interestsGovModels),
+]);
 
 export type Person = typeof people.$inferSelect;
 export type NewPerson = typeof people.$inferInsert;

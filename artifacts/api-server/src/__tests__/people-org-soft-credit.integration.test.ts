@@ -1,12 +1,4 @@
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 
@@ -32,8 +24,7 @@ import type { Server } from "node:http";
  */
 
 const RAW_DB_URL = process.env.DATABASE_URL;
-const HAS_DB =
-  !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
+const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
 
 const { TEST_USER_ID } = vi.hoisted(() => ({
   TEST_USER_ID: `soft_credit_user_${Date.now()}`,
@@ -50,8 +41,7 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 vi.mock("@clerk/express", () => ({
-  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
-    next(),
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) => next(),
 }));
 
 const RUN = `sc_${Date.now()}`;
@@ -111,10 +101,7 @@ async function seedHousehold(label: string): Promise<string> {
   return id;
 }
 
-async function seedPrincipalRole(
-  personId: string,
-  orgId: string,
-): Promise<void> {
+async function seedPrincipalRole(personId: string, orgId: string): Promise<void> {
   const id = nextId("role");
   await db.insert(schema.peopleEntityRoles).values({
     id,
@@ -127,10 +114,7 @@ async function seedPrincipalRole(
   seededRoleIds.push(id);
 }
 
-async function seedHouseholdMembership(
-  personId: string,
-  householdId: string,
-): Promise<void> {
+async function seedHouseholdMembership(personId: string, householdId: string): Promise<void> {
   const id = nextId("role");
   await db.insert(schema.peopleEntityRoles).values({
     id,
@@ -176,21 +160,14 @@ async function getPerson(id: string): Promise<{
 }> {
   const res = await fetch(`${baseUrl}/api/people/${id}`);
   const body = await res.json();
-  if (res.status !== 200)
-    throw new Error(`person ${res.status}: ${JSON.stringify(body)}`);
-  return body as {
-    lifetimeGiving: string | null;
-    mostRecentGiftDate: string | null;
-  };
+  if (res.status !== 200) throw new Error(`person ${res.status}: ${JSON.stringify(body)}`);
+  return body as { lifetimeGiving: string | null; mostRecentGiftDate: string | null };
 }
 
-async function getTopPriorityPerson(id: string): Promise<
-  | {
-      lastGiftDate: string | null;
-      lastGiftAmount: string | null;
-    }
-  | undefined
-> {
+async function getTopPriorityPerson(id: string): Promise<{
+  lastGiftDate: string | null;
+  lastGiftAmount: string | null;
+} | undefined> {
   const res = await fetch(`${baseUrl}/api/top-priorities`);
   const body = (await res.json()) as {
     individuals: Array<{
@@ -199,8 +176,7 @@ async function getTopPriorityPerson(id: string): Promise<
       lastGiftAmount: string | null;
     }>;
   };
-  if (res.status !== 200)
-    throw new Error(`top-priorities ${res.status}: ${JSON.stringify(body)}`);
+  if (res.status !== 200) throw new Error(`top-priorities ${res.status}: ${JSON.stringify(body)}`);
   return body.individuals.find((p) => p.id === id);
 }
 
@@ -237,200 +213,165 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  if (server)
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   if (seededGiftIds.length)
-    await db
-      .delete(schema.giftsAndPayments)
-      .where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
+    await db.delete(schema.giftsAndPayments).where(inArrayFn(schema.giftsAndPayments.id, seededGiftIds));
   if (seededRoleIds.length)
-    await db
-      .delete(schema.peopleEntityRoles)
-      .where(inArrayFn(schema.peopleEntityRoles.id, seededRoleIds));
+    await db.delete(schema.peopleEntityRoles).where(inArrayFn(schema.peopleEntityRoles.id, seededRoleIds));
   if (seededHouseholdIds.length)
-    await db
-      .delete(schema.households)
-      .where(inArrayFn(schema.households.id, seededHouseholdIds));
+    await db.delete(schema.households).where(inArrayFn(schema.households.id, seededHouseholdIds));
   if (seededPersonIds.length)
-    await db
-      .delete(schema.people)
-      .where(inArrayFn(schema.people.id, seededPersonIds));
+    await db.delete(schema.people).where(inArrayFn(schema.people.id, seededPersonIds));
   if (seededOrgIds.length)
-    await db
-      .delete(schema.organizations)
-      .where(inArrayFn(schema.organizations.id, seededOrgIds));
+    await db.delete(schema.organizations).where(inArrayFn(schema.organizations.id, seededOrgIds));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
 }, 60_000);
 
 beforeEach(() => {
-  if (!HAS_DB)
-    console.warn("[people-org-soft-credit] skipped: no live DATABASE_URL");
+  if (!HAS_DB) console.warn("[people-org-soft-credit] skipped: no live DATABASE_URL");
 });
 
-describe.skipIf(!HAS_DB)(
-  "individual org soft-credit — lifetime giving & last gift",
-  () => {
-    it("credits a primary-contact person (Arthur Rock pattern)", async () => {
-      const person = await seedPerson("PrimaryContact");
-      const org = await seedOrg("ARockCo");
-      await seedGift({
-        amount: "1000000.00",
-        dateReceived: "2024-01-15",
-        organizationId: org,
-        primaryContactPersonId: person,
-      });
-      await seedGift({
-        amount: "1500000.00",
-        dateReceived: "2025-06-25",
-        organizationId: org,
-        primaryContactPersonId: person,
-      });
-
-      const detail = await getPerson(person);
-      expect(detail.lifetimeGiving).toBe("2500000.00");
-      expect(detail.mostRecentGiftDate).toBe("2025-06-25");
-
-      const card = await getTopPriorityPerson(person);
-      expect(card?.lastGiftDate).toBe("2025-06-25");
-      expect(card?.lastGiftAmount).toBe("1500000.00");
+describe.skipIf(!HAS_DB)("individual org soft-credit — lifetime giving & last gift", () => {
+  it("credits a primary-contact person (Arthur Rock pattern)", async () => {
+    const person = await seedPerson("PrimaryContact");
+    const org = await seedOrg("ARockCo");
+    await seedGift({
+      amount: "1000000.00",
+      dateReceived: "2024-01-15",
+      organizationId: org,
+      primaryContactPersonId: person,
+    });
+    await seedGift({
+      amount: "1500000.00",
+      dateReceived: "2025-06-25",
+      organizationId: org,
+      primaryContactPersonId: person,
     });
 
-    it("credits a current principal who is NOT the primary contact (Katherine Bradley pattern)", async () => {
-      const principal = await seedPerson("Principal");
-      const aide = await seedPerson("Aide");
-      const org = await seedOrg("BradleyHoldings");
-      await seedPrincipalRole(principal, org);
-      // The aide is the primary contact, not the principal.
-      await seedGift({
-        amount: "750000.00",
-        dateReceived: "2023-09-01",
-        organizationId: org,
-        primaryContactPersonId: aide,
-      });
+    const detail = await getPerson(person);
+    expect(detail.lifetimeGiving).toBe("2500000.00");
+    expect(detail.mostRecentGiftDate).toBe("2025-06-25");
 
-      const detail = await getPerson(principal);
-      expect(detail.lifetimeGiving).toBe("750000.00");
-      expect(detail.mostRecentGiftDate).toBe("2023-09-01");
+    const card = await getTopPriorityPerson(person);
+    expect(card?.lastGiftDate).toBe("2025-06-25");
+    expect(card?.lastGiftAmount).toBe("1500000.00");
+  });
+
+  it("credits a current principal who is NOT the primary contact (Katherine Bradley pattern)", async () => {
+    const principal = await seedPerson("Principal");
+    const aide = await seedPerson("Aide");
+    const org = await seedOrg("BradleyHoldings");
+    await seedPrincipalRole(principal, org);
+    // The aide is the primary contact, not the principal.
+    await seedGift({
+      amount: "750000.00",
+      dateReceived: "2023-09-01",
+      organizationId: org,
+      primaryContactPersonId: aide,
     });
 
-    it("credits an advisor on an org gift", async () => {
-      const advisor = await seedPerson("Advisor");
-      const org = await seedOrg("AdvisedFund");
-      await seedGift({
-        amount: "42000.00",
-        dateReceived: "2022-03-03",
-        organizationId: org,
-        advisorPersonId: advisor,
-      });
+    const detail = await getPerson(principal);
+    expect(detail.lifetimeGiving).toBe("750000.00");
+    expect(detail.mostRecentGiftDate).toBe("2023-09-01");
+  });
 
-      const detail = await getPerson(advisor);
-      expect(detail.lifetimeGiving).toBe("42000.00");
-      expect(detail.mostRecentGiftDate).toBe("2022-03-03");
+  it("credits an advisor on an org gift", async () => {
+    const advisor = await seedPerson("Advisor");
+    const org = await seedOrg("AdvisedFund");
+    await seedGift({
+      amount: "42000.00",
+      dateReceived: "2022-03-03",
+      organizationId: org,
+      advisorPersonId: advisor,
     });
 
-    it("counts a gift once when multiple signals overlap", async () => {
-      const person = await seedPerson("Overlap");
-      const org = await seedOrg("OverlapOrg");
-      await seedPrincipalRole(person, org);
-      // Same person is primary contact AND advisor AND a current principal.
-      await seedGift({
-        amount: "300000.00",
-        dateReceived: "2024-12-31",
-        organizationId: org,
-        primaryContactPersonId: person,
-        advisorPersonId: person,
-      });
+    const detail = await getPerson(advisor);
+    expect(detail.lifetimeGiving).toBe("42000.00");
+    expect(detail.mostRecentGiftDate).toBe("2022-03-03");
+  });
 
-      const detail = await getPerson(person);
-      expect(detail.lifetimeGiving).toBe("300000.00");
-      expect(detail.mostRecentGiftDate).toBe("2024-12-31");
+  it("counts a gift once when multiple signals overlap", async () => {
+    const person = await seedPerson("Overlap");
+    const org = await seedOrg("OverlapOrg");
+    await seedPrincipalRole(person, org);
+    // Same person is primary contact AND advisor AND a current principal.
+    await seedGift({
+      amount: "300000.00",
+      dateReceived: "2024-12-31",
+      organizationId: org,
+      primaryContactPersonId: person,
+      advisorPersonId: person,
     });
 
-    it("blends direct + household + org-credit into one number, last gift is the latest across all", async () => {
-      const person = await seedPerson("Blend");
-      const org = await seedOrg("BlendOrg");
-      const household = await seedHousehold("BlendHH");
-      await seedHouseholdMembership(person, household);
-      await seedGift({
-        amount: "100.00",
-        dateReceived: "2020-01-01",
-        individualGiverPersonId: person,
-      });
-      await seedGift({
-        amount: "200.00",
-        dateReceived: "2021-01-01",
-        householdId: household,
-      });
-      await seedGift({
-        amount: "5000.00",
-        dateReceived: "2026-02-02",
-        organizationId: org,
-        primaryContactPersonId: person,
-      });
+    const detail = await getPerson(person);
+    expect(detail.lifetimeGiving).toBe("300000.00");
+    expect(detail.mostRecentGiftDate).toBe("2024-12-31");
+  });
 
-      const detail = await getPerson(person);
-      expect(detail.lifetimeGiving).toBe("5300.00");
-      expect(detail.mostRecentGiftDate).toBe("2026-02-02");
-
-      const card = await getTopPriorityPerson(person);
-      expect(card?.lastGiftDate).toBe("2026-02-02");
-      expect(card?.lastGiftAmount).toBe("5000.00");
+  it("blends direct + household + org-credit into one number, last gift is the latest across all", async () => {
+    const person = await seedPerson("Blend");
+    const org = await seedOrg("BlendOrg");
+    const household = await seedHousehold("BlendHH");
+    await seedHouseholdMembership(person, household);
+    await seedGift({ amount: "100.00", dateReceived: "2020-01-01", individualGiverPersonId: person });
+    await seedGift({ amount: "200.00", dateReceived: "2021-01-01", householdId: household });
+    await seedGift({
+      amount: "5000.00",
+      dateReceived: "2026-02-02",
+      organizationId: org,
+      primaryContactPersonId: person,
     });
 
-    it("does not credit an org gift for a non-contact / non-principal / non-advisor person", async () => {
-      const stranger = await seedPerson("Stranger");
-      const org = await seedOrg("StrangerOrg");
-      await seedGift({
-        amount: "999.00",
-        dateReceived: "2024-05-05",
-        organizationId: org,
-      });
+    const detail = await getPerson(person);
+    expect(detail.lifetimeGiving).toBe("5300.00");
+    expect(detail.mostRecentGiftDate).toBe("2026-02-02");
 
-      const detail = await getPerson(stranger);
-      expect(detail.lifetimeGiving).toBe("0");
-      expect(detail.mostRecentGiftDate).toBeNull();
+    const card = await getTopPriorityPerson(person);
+    expect(card?.lastGiftDate).toBe("2026-02-02");
+    expect(card?.lastGiftAmount).toBe("5000.00");
+  });
+
+  it("does not credit an org gift for a non-contact / non-principal / non-advisor person", async () => {
+    const stranger = await seedPerson("Stranger");
+    const org = await seedOrg("StrangerOrg");
+    await seedGift({ amount: "999.00", dateReceived: "2024-05-05", organizationId: org });
+
+    const detail = await getPerson(stranger);
+    expect(detail.lifetimeGiving).toBe("0");
+    expect(detail.mostRecentGiftDate).toBeNull();
+  });
+
+  it("excludes archived org-credit gifts", async () => {
+    const person = await seedPerson("ArchiveCase");
+    const org = await seedOrg("ArchiveOrg");
+    await seedGift({
+      amount: "111.00",
+      dateReceived: "2024-04-04",
+      organizationId: org,
+      primaryContactPersonId: person,
+    });
+    await seedGift({
+      amount: "888.00",
+      dateReceived: "2025-05-05",
+      organizationId: org,
+      primaryContactPersonId: person,
+      archived: true,
     });
 
-    it("excludes archived org-credit gifts", async () => {
-      const person = await seedPerson("ArchiveCase");
-      const org = await seedOrg("ArchiveOrg");
-      await seedGift({
-        amount: "111.00",
-        dateReceived: "2024-04-04",
-        organizationId: org,
-        primaryContactPersonId: person,
-      });
-      await seedGift({
-        amount: "888.00",
-        dateReceived: "2025-05-05",
-        organizationId: org,
-        primaryContactPersonId: person,
-        archived: true,
-      });
+    const detail = await getPerson(person);
+    expect(detail.lifetimeGiving).toBe("111.00");
+    expect(detail.mostRecentGiftDate).toBe("2024-04-04");
+  });
 
-      const detail = await getPerson(person);
-      expect(detail.lifetimeGiving).toBe("111.00");
-      expect(detail.mostRecentGiftDate).toBe("2024-04-04");
-    });
+  it("a plain direct/household-only person is unchanged (no org credit applied)", async () => {
+    const person = await seedPerson("DirectOnly");
+    const household = await seedHousehold("DirectHH");
+    await seedHouseholdMembership(person, household);
+    await seedGift({ amount: "250.00", dateReceived: "2023-07-07", individualGiverPersonId: person });
+    await seedGift({ amount: "750.00", dateReceived: "2024-08-08", householdId: household });
 
-    it("a plain direct/household-only person is unchanged (no org credit applied)", async () => {
-      const person = await seedPerson("DirectOnly");
-      const household = await seedHousehold("DirectHH");
-      await seedHouseholdMembership(person, household);
-      await seedGift({
-        amount: "250.00",
-        dateReceived: "2023-07-07",
-        individualGiverPersonId: person,
-      });
-      await seedGift({
-        amount: "750.00",
-        dateReceived: "2024-08-08",
-        householdId: household,
-      });
-
-      const detail = await getPerson(person);
-      expect(detail.lifetimeGiving).toBe("1000.00");
-      expect(detail.mostRecentGiftDate).toBe("2024-08-08");
-    });
-  },
-);
+    const detail = await getPerson(person);
+    expect(detail.lifetimeGiving).toBe("1000.00");
+    expect(detail.mostRecentGiftDate).toBe("2024-08-08");
+  });
+});
