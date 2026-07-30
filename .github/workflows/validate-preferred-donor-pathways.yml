@@ -51,6 +51,7 @@ jobs:
         run: |
           python .agent/apply-preferred-donor-schema-api.py
           python .agent/apply-preferred-donor-ui-export-tests.py
+          python .agent/fix-preferred-donor-openapi.py
           pnpm --filter @workspace/api-spec run codegen
       - name: Format touched source
         run: |
