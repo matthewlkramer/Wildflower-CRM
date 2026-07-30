@@ -12,6 +12,22 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/wf_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +67,9 @@ jobs:
             artifacts/api-server/src/routes/organizations.ts \
             artifacts/api-server/src/routes/topPriorities.ts \
             artifacts/api-server/src/app.ts \
+            artifacts/api-server/src/__tests__/donor-routing.integration.test.ts \
+            artifacts/api-server/src/__tests__/people-org-soft-credit.integration.test.ts \
+            artifacts/api-server/src/__tests__/donor-routing-gift-trigger.integration.test.ts \
             artifacts/wildflower-crm/src/components/preferred-donor-card.tsx \
             .agents/memory/individual-org-soft-credit.md \
             docs/donor-attribution-phase-2.md
@@ -58,7 +77,23 @@ jobs:
       - run: pnpm run check:codegen
       - run: pnpm run check:api
       - run: pnpm run check:web
-      - run: pnpm run check:test-api-unit
+
+      - name: Prepare donor-attribution test database
+        run: |
+          PGPASSWORD=test psql -h localhost -U test -d postgres -v ON_ERROR_STOP=1 \
+            -c "CREATE DATABASE wf_test"
+          PGPASSWORD=test psql -h localhost -U test -d wf_test -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm"
+          (cd lib/db && pnpm exec drizzle-kit push --force --config ./drizzle.config.ts)
+          PGPASSWORD=test psql -h localhost -U test -d wf_test -v ON_ERROR_STOP=1 \
+            -f lib/db/migrations/0222_donor_attribution_phase_2.sql
+
+      - name: Run donor-attribution integration tests
+        run: |
+          pnpm --filter @workspace/api-server exec vitest run --project integration \
+            src/__tests__/donor-routing.integration.test.ts \
+            src/__tests__/people-org-soft-credit.integration.test.ts \
+            src/__tests__/donor-routing-gift-trigger.integration.test.ts
 
       - name: Remove one-time harness
         run: |
