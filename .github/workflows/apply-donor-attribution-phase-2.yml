@@ -45,17 +45,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Apply implementation
+      - name: Verify and apply implementation
         run: |
-          wc -c .github/scripts/donor-phase2.00 .github/scripts/donor-phase2.01 .github/scripts/donor-phase2.02
-          sha256sum .github/scripts/donor-phase2.00 .github/scripts/donor-phase2.01 .github/scripts/donor-phase2.02
-          test "$(sha256sum .github/scripts/donor-phase2.00 | cut -d' ' -f1)" = "d9b9b906701f9ebd807e8752c87972e0fc604f99757a36512336b12b3f8e5ca9"
-          test "$(sha256sum .github/scripts/donor-phase2.01 | cut -d' ' -f1)" = "a5836f956a45db729afee0f1571ecc354e125d0c28ceca905fd5970a68815468"
-          test "$(sha256sum .github/scripts/donor-phase2.02 | cut -d' ' -f1)" = "0d015c9f8063805de4f62e866a86151fb54b5530741bc183aab4a04230095651"
-          cat .github/scripts/donor-phase2.00 \
-              .github/scripts/donor-phase2.01 \
-              .github/scripts/donor-phase2.02 \
-            > /tmp/donor-phase2.b64
+          wc -c .github/scripts/donor-phase2.0{0,1,2,3,4,5,6}
+          sha256sum .github/scripts/donor-phase2.0{0,1,2,3,4,5,6}
+          test "$(sha256sum .github/scripts/donor-phase2.00 | cut -d' ' -f1)" = "706a81992ea83575645df6082e96bcdda9910848a9fded801074fd93d0999402"
+          test "$(sha256sum .github/scripts/donor-phase2.01 | cut -d' ' -f1)" = "9cc909e8d246f8c624e7ec3e867c136f62686c238e543ec1a8cd6304c8da4535"
+          test "$(sha256sum .github/scripts/donor-phase2.02 | cut -d' ' -f1)" = "3ed8578d97a25411b5195c908d3ccbb8d31a5dc9e695167c28e3d8622b15bc6a"
+          test "$(sha256sum .github/scripts/donor-phase2.03 | cut -d' ' -f1)" = "847d500a813e475d0f87849b492c2701df7778e16b9e90f124e8450e7c785f06"
+          test "$(sha256sum .github/scripts/donor-phase2.04 | cut -d' ' -f1)" = "500471726863edd9c37e98b29ef6d3339f1228fd302244ea8ca69638a0f343da"
+          test "$(sha256sum .github/scripts/donor-phase2.05 | cut -d' ' -f1)" = "dccf73a65d58951967c52025d654146611cf42787910636a19281511ac61c3d5"
+          test "$(sha256sum .github/scripts/donor-phase2.06 | cut -d' ' -f1)" = "04e1d8e75f366696272172346e7b277e382b37e6ce86cb9235c9f9319e28445b"
+          cat .github/scripts/donor-phase2.0{0,1,2,3,4,5,6} > /tmp/donor-phase2.b64
           base64 -d /tmp/donor-phase2.b64 > /tmp/donor-phase2.py.gz
           gzip -t /tmp/donor-phase2.py.gz
           gzip -d -c /tmp/donor-phase2.py.gz > /tmp/apply_donor_attribution_phase2.py
@@ -98,10 +99,25 @@ jobs:
 
       - name: Run donor-attribution integration tests
         run: |
-          pnpm --filter @workspace/api-server exec vitest run --project integration \
-            src/__tests__/donor-routing.integration.test.ts \
-            src/__tests__/people-org-soft-credit.integration.test.ts \
-            src/__tests__/donor-routing-gift-trigger.integration.test.ts
+          cat > artifacts/api-server/vitest.donor-attribution.config.ts <<'EOF'
+          import { defineConfig } from "vitest/config";
+
+          export default defineConfig({
+            test: {
+              pool: "forks",
+              maxWorkers: 1,
+              include: [
+                "src/__tests__/donor-routing.integration.test.ts",
+                "src/__tests__/people-org-soft-credit.integration.test.ts",
+                "src/__tests__/donor-routing-gift-trigger.integration.test.ts",
+              ],
+              testTimeout: 30_000,
+              hookTimeout: 30_000,
+            },
+          });
+          EOF
+          pnpm --filter @workspace/api-server exec vitest run \
+            --config vitest.donor-attribution.config.ts
 
       - name: Remove one-time harness
         run: |
@@ -110,8 +126,13 @@ jobs:
             .github/scripts/donor-phase2.00 \
             .github/scripts/donor-phase2.01 \
             .github/scripts/donor-phase2.02 \
+            .github/scripts/donor-phase2.03 \
+            .github/scripts/donor-phase2.04 \
+            .github/scripts/donor-phase2.05 \
+            .github/scripts/donor-phase2.06 \
             .github/run-donor-attribution-phase-2 \
-            .github/workflows/apply-donor-attribution-phase-2.yml
+            .github/workflows/apply-donor-attribution-phase-2.yml \
+            artifacts/api-server/vitest.donor-attribution.config.ts
 
       - name: Commit implementation
         run: |
