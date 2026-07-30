@@ -156,8 +156,8 @@ describe.skipIf(!HAS_DB)("gift donor-routing trigger", () => {
       thrown = error;
     }
     expect(thrown).toBeTruthy();
-    expect(
-      errorChainIncludes(thrown, "donor_routing_decision_required"),
-    ).toBe(true);
+    expect(errorChainIncludes(thrown, "donor_routing_decision_required")).toBe(
+      true,
+    );
   });
 });
