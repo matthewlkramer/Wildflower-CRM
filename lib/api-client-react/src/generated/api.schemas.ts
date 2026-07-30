@@ -10195,6 +10195,9 @@ export type ListGiftsAndPaymentsParams = {
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
  */
 includeArchived?: IncludeArchivedQueryParameter;
+/**
+ * Tokenized case-insensitive search: every whitespace-separated word must match the record name, donor display name (org / household / individual), or linked payment-intermediary name. Word order and connector words (e.g. 'and') don't matter.
+ */
 search?: string;
 /**
  * Presence filter on linked entities (`has` = any allocation, `blank` = none).

@@ -267,21 +267,29 @@ router.get(
       // individual giver). The donor tables are already left-joined below, and
       // the count query joins them too. Person name mirrors the
       // individualGiverPersonName expression in donorJoinSelect.
-      const term = `%${q.search}%`;
-      filters.push(
-        or(
-          ilike(giftsAndPayments.name, term),
-          ilike(organizations.name, term),
-          ilike(households.name, term),
-          sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
-          // Linked payment intermediary name (correlated EXISTS — no join).
-          sql`EXISTS (
-            SELECT 1 FROM payment_intermediaries pi
-            WHERE pi.id = ${giftsAndPayments.paymentIntermediaryId}
-              AND pi.name ILIKE ${term}
-          )`,
-        )!,
-      );
+      //
+      // Tokenized: each whitespace-separated word must match at least one of
+      // the searched fields (AND across words, OR across fields per word), so
+      // "Nancy Peretsman Bob Scully" finds the household "Nancy Peretsman and
+      // Bob Scully" even though the typed phrase is not a contiguous
+      // substring of any single field.
+      for (const word of q.search.split(/\s+/).filter(Boolean)) {
+        const term = `%${word}%`;
+        filters.push(
+          or(
+            ilike(giftsAndPayments.name, term),
+            ilike(organizations.name, term),
+            ilike(households.name, term),
+            sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
+            // Linked payment intermediary name (correlated EXISTS — no join).
+            sql`EXISTS (
+              SELECT 1 FROM payment_intermediaries pi
+              WHERE pi.id = ${giftsAndPayments.paymentIntermediaryId}
+                AND pi.name ILIKE ${term}
+            )`,
+          )!,
+        );
+      }
     }
     // Date-received window (inclusive) for the reconciler's amount/date search.
     if (q.dateAfter) filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));

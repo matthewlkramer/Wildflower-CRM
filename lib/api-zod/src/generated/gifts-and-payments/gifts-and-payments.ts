@@ -17,7 +17,7 @@ export const listGiftsAndPaymentsQueryPageDefault = 1;
 
 export const ListGiftsAndPaymentsQueryParams = zod.object({
   "includeArchived": zod.coerce.boolean().optional().describe('Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.'),
-  "search": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional().describe('Tokenized case-insensitive search: every whitespace-separated word must match the record name, donor display name (org \/ household \/ individual), or linked payment-intermediary name. Word order and connector words (e.g. \'and\') don\'t matter.'),
   "entitiesPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on linked entities (`has` = any allocation, `blank` = none).'),
   "usagesPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on display usages (`has` = any, `blank` = none).'),
   "grantYearsPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on grant years (`has` = any, `blank` = none).'),

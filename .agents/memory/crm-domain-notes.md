@@ -43,6 +43,7 @@ relevant to the task.
 - [Fundable projects page](fundable-projects-page.md) — management moved off Admin to /fundable-projects; timeframes+goal columns nullable; progress = sum gift_allocations.sub_amount per project.
 - [wildflower-crm activity feed scoping](wildflower-activity-feed-scoping.md) — keep notes/tasks scope separate from donor-relationship scope; API list filters AND together.
 - [Bulk-action by-id load gate](bulk-action-load-gate.md) — dialogs resolving selection by id must block submit until loaded==expectedCount (selection size), else partial subset silently runs.
+- [List search tokenization](list-search-tokenization.md) — gifts-and-payments `search` tokenizes on whitespace (AND words, OR fields); most other list `search` params are still contiguous-phrase ILIKE and miss "and"-connector household names.
 
 ## Tasks, intelligence, ingestion, admin
 
