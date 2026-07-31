@@ -3,6 +3,9 @@ name: Export repository for detail action implementation
 on:
   push:
     branches: [agent/detail-action-lifecycle]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: read
