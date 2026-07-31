@@ -24,6 +24,15 @@ for name in (
         f"let {name} = input.{name} ?? null;",
     )
 
+# writtenPledge is a temporary read-compatibility mirror, not a required
+# lifecycle input. Existing callers that do not carry the legacy field should
+# derive safely from the new commitment fields.
+replace_required(
+    stage_path,
+    "  writtenPledge: boolean | null;",
+    "  writtenPledge?: boolean | null;",
+)
+
 route_path = Path("artifacts/api-server/src/routes/opportunitiesAndPledges.ts")
 route = route_path.read_text()
 # writtenPledge is no longer part of generated request contracts or the bulk
