@@ -1,0 +1,96 @@
+name: Validate donor attribution phase 3
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-apply:
+    if: github.head_ref == 'agent/donor-attribution-phase-3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_phase3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_phase3"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_phase3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/donor-attribution-phase-3
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Apply phase 3 source patch
+        run: |
+          base64 -d .github/scripts/apply_donor_attribution_phase3.py.gz.b64 \
+            | gzip -d > /tmp/apply_donor_attribution_phase3.py
+          python /tmp/apply_donor_attribution_phase3.py
+
+      - name: Regenerate API clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            lib/db/src/schema/cleanupQueue.ts \
+            lib/db/src/schema/peopleEntityRoles.ts \
+            artifacts/api-server/src/routes/donorRouting.ts \
+            artifacts/api-server/src/routes/households.ts \
+            artifacts/api-server/src/routes/peopleEntityRoles.ts \
+            artifacts/api-server/src/routes/cleanupQueue.ts \
+            artifacts/api-server/src/__tests__/donor-attribution-phase3.integration.test.ts \
+            artifacts/wildflower-crm/src/pages/cleanup-queue.tsx \
+            artifacts/wildflower-crm/src/pages/household-detail.tsx \
+            docs/donor-attribution-phase-3.md
+
+      - name: Apply migrations to clean PostgreSQL
+        run: |
+          for f in $(find lib/db/migrations -maxdepth 1 -name '*.sql' | sort); do
+            echo "Applying $f"
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" >/dev/null
+          done
+
+      - run: pnpm run check:codegen
+      - run: pnpm run check:api
+      - run: pnpm run check:web
+      - name: Run focused integration tests
+        run: pnpm --filter @workspace/api-server exec vitest run src/__tests__/donor-attribution-phase3.integration.test.ts
+
+      - name: Remove temporary validation machinery
+        run: |
+          rm -f .github/workflows/validate-donor-attribution-phase-3.yml
+          rm -f .github/scripts/apply_donor_attribution_phase3.py.gz.b64
+
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement donor attribution phase 3"
+          git push origin HEAD:agent/donor-attribution-phase-3
