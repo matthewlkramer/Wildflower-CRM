@@ -1,4 +1,4 @@
-name: Inspect opportunity OpenAPI structural diff
+name: Clean opportunity lifecycle OpenAPI diff
 
 on:
   pull_request:
@@ -6,32 +6,59 @@ on:
     types: [opened, synchronize, reopened]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect:
+  clean-and-validate:
     if: github.head_ref == 'agent/opportunity-commitment-lifecycle'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_openapi_cleanup
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_openapi_cleanup"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_openapi_cleanup
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: opportunity-lifecycle-cleanup-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: agent/opportunity-commitment-lifecycle
           fetch-depth: 0
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
+
       - run: pnpm install --frozen-lockfile
-      - name: Print semantic differences from main
+
+      - name: Rebuild OpenAPI from main formatting and lifecycle semantics
         shell: bash
         run: |
-          cat > /tmp/openapi-structural-diff.cjs <<'NODE'
+          cat > /tmp/clean-opportunity-openapi.cjs <<'NODE'
           const fs = require('fs');
           const path = require('path');
           const { execFileSync } = require('child_process');
+          const { isDeepStrictEqual } = require('util');
+
           const yamlPackage = execFileSync(
             'bash',
             ['-lc', "find node_modules/.pnpm -path '*/node_modules/yaml/package.json' | head -n 1"],
@@ -39,34 +66,154 @@ jobs:
           ).trim();
           if (!yamlPackage) throw new Error('Could not locate yaml package');
           const YAML = require(path.resolve(path.dirname(yamlPackage)));
+
+          const target = 'lib/api-spec/openapi.yaml';
           const baseText = execFileSync(
             'git',
-            ['show', 'origin/main:lib/api-spec/openapi.yaml'],
+            ['show', `origin/main:${target}`],
             { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
           );
-          const currentText = fs.readFileSync('lib/api-spec/openapi.yaml', 'utf8');
-          const base = YAML.parse(baseText);
+          const currentText = fs.readFileSync(target, 'utf8');
           const current = YAML.parse(currentText);
-          const changes = [];
-          const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-          function walk(a, b, parts) {
-            if (same(a, b)) return;
-            const aObj = a !== null && typeof a === 'object';
-            const bObj = b !== null && typeof b === 'object';
-            if (!aObj || !bObj || Array.isArray(a) || Array.isArray(b)) {
-              changes.push({ path: parts.join('.'), before: a, after: b });
-              return;
+          const doc = YAML.parseDocument(baseText, {
+            keepSourceTokens: true,
+            prettyErrors: true,
+            strict: true,
+          });
+          if (doc.errors.length) {
+            throw new Error(doc.errors.map((error) => error.message).join('\n'));
+          }
+
+          const get = (object, parts) =>
+            parts.reduce(
+              (value, part) =>
+                value == null || !Object.prototype.hasOwnProperty.call(value, part)
+                  ? undefined
+                  : value[part],
+              object,
+            );
+
+          const setPaths = [
+            ['components', 'schemas', 'FinalizePledgeBody'],
+            ['components', 'schemas', 'OpportunityCommitmentPath'],
+            ['components', 'schemas', 'OpportunityCommitmentResult'],
+            ['components', 'schemas', 'OpportunityOutcomeType'],
+            ['components', 'schemas', 'RecordVerbalCommitmentBody'],
+            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'commitmentPath'],
+            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'outcomeType'],
+            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'pledgeCommittedAt'],
+            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'verbalCommitmentAt'],
+            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'writtenPledge'],
+            ['components', 'schemas', 'OpportunityStage', 'description'],
+            ['components', 'schemas', 'OpportunityStatus', 'description'],
+            ['components', 'schemas', 'ReconciliationOutcome', 'description'],
+            ['components', 'schemas', 'ReconciliationOutcome', 'enum'],
+            ['components', 'schemas', 'RevertGiftToOpportunityBody', 'properties', 'asPledge', 'description'],
+            ['paths', '/opportunities-and-pledges/{id}/finalize-pledge'],
+            ['paths', '/opportunities-and-pledges/{id}/record-verbal-commitment'],
+          ];
+          const deletePaths = [
+            ['components', 'schemas', 'BulkUpdateOpportunitiesPatch', 'properties', 'writtenPledge'],
+            ['components', 'schemas', 'CreateOpportunityOrPledgeBody', 'properties', 'writtenPledge'],
+            ['components', 'schemas', 'UpdateOpportunityOrPledgeBody', 'properties', 'writtenPledge'],
+          ];
+
+          for (const parts of setPaths) {
+            const value = get(current, parts);
+            if (value === undefined) {
+              throw new Error(`Current OpenAPI is missing ${parts.join('.')}`);
             }
-            const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-            for (const key of [...keys].sort()) walk(a[key], b[key], [...parts, key]);
+            doc.setIn(parts, value);
           }
-          walk(base, current, []);
-          console.log(`STRUCTURAL_CHANGE_COUNT=${changes.length}`);
-          for (const change of changes) {
-            console.log(`\nPATH ${change.path}`);
-            console.log(`BEFORE ${JSON.stringify(change.before)}`);
-            console.log(`AFTER  ${JSON.stringify(change.after)}`);
+          for (const parts of deletePaths) {
+            if (get(current, parts) !== undefined) {
+              throw new Error(`Current OpenAPI still contains ${parts.join('.')}`);
+            }
+            if (!doc.deleteIn(parts)) {
+              throw new Error(`Base OpenAPI is missing deletable ${parts.join('.')}`);
+            }
           }
-          process.exit(1);
+
+          const cleanedText = doc.toString({ lineWidth: 0 });
+          const cleaned = YAML.parse(cleanedText);
+          if (!isDeepStrictEqual(cleaned, current)) {
+            const differences = [];
+            const walk = (before, after, parts) => {
+              if (isDeepStrictEqual(before, after)) return;
+              const beforeObject = before !== null && typeof before === 'object';
+              const afterObject = after !== null && typeof after === 'object';
+              if (
+                !beforeObject ||
+                !afterObject ||
+                Array.isArray(before) ||
+                Array.isArray(after)
+              ) {
+                differences.push(parts.join('.'));
+                return;
+              }
+              const keys = new Set([
+                ...Object.keys(before),
+                ...Object.keys(after),
+              ]);
+              for (const key of keys) walk(before[key], after[key], [...parts, key]);
+            };
+            walk(current, cleaned, []);
+            throw new Error(
+              `Cleaned OpenAPI changed semantics at: ${differences.slice(0, 30).join(', ')}`,
+            );
+          }
+          fs.writeFileSync(target, cleanedText);
           NODE
-          node /tmp/openapi-structural-diff.cjs
+          node /tmp/clean-opportunity-openapi.cjs
+
+      - name: Require a focused OpenAPI diff
+        shell: bash
+        run: |
+          stats=$(git diff --numstat origin/main -- lib/api-spec/openapi.yaml)
+          echo "$stats"
+          read -r additions deletions _ <<< "$stats"
+          test -n "$additions"
+          test "$additions" != "-"
+          test "$deletions" != "-"
+          total=$((additions + deletions))
+          echo "OpenAPI changed lines: $total"
+          if [ "$total" -gt 800 ]; then
+            echo "OpenAPI cleanup still contains excessive formatting churn." >&2
+            exit 1
+          fi
+
+      - name: Establish schema and rehearse migration 0224
+        run: |
+          pnpm --filter @workspace/db run push-force
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0224_opportunity_commitment_lifecycle.sql
+
+      - name: Regenerate API clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - run: pnpm run check:codegen
+      - run: pnpm run check:api
+      - run: pnpm run check:web
+
+      - name: Run focused lifecycle and correction tests
+        run: |
+          pnpm --filter @workspace/api-server exec vitest run \
+            src/__tests__/derive-opp-fields.test.ts \
+            src/__tests__/create-gift-overrides.integration.test.ts \
+            src/__tests__/reconciliation-approve.integration.test.ts \
+            src/__tests__/audit-close-resolution.integration.test.ts \
+            src/__tests__/gift-revert-to-opportunity.integration.test.ts \
+            src/__tests__/opportunity-commitment-reconstruction.integration.test.ts
+
+      - name: Verify final diff and remove cleanup workflow
+        shell: bash
+        run: |
+          git diff --check
+          rm -f .github/workflows/inspect-opportunity-openapi-diff.yml
+
+      - name: Commit cleaned validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Clean opportunity lifecycle API contract"
+          git push origin HEAD:agent/opportunity-commitment-lifecycle
