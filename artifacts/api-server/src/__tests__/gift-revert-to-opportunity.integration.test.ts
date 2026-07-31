@@ -61,6 +61,17 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clerk/express")>();
+  return {
+    ...actual,
+    clerkMiddleware:
+      () =>
+      (_req: unknown, _res: unknown, next: () => void): void =>
+        next(),
+  };
+});
+
 type Db = typeof import("@workspace/db");
 let db: Db["db"];
 let schema: {
@@ -68,6 +79,7 @@ let schema: {
   organizations: Db["organizations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
+  pledgeExpectedPayments: Db["pledgeExpectedPayments"];
   giftsAndPayments: Db["giftsAndPayments"];
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
@@ -111,6 +123,7 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
+    pledgeExpectedPayments: dbMod.pledgeExpectedPayments,
     giftsAndPayments: dbMod.giftsAndPayments,
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
@@ -137,6 +150,9 @@ beforeAll(async () => {
     name: `GiftRevert existing pledge ${RUN}`,
     organizationId: ORG_ID,
     stage: "verbal_confirmation",
+    commitmentPath: "verbal_pledge",
+    verbalCommitmentAt: "2099-04-01",
+    pledgeCommittedAt: "2099-04-01",
     writtenPledge: true,
     awardedAmount: "400.00",
   });
@@ -247,14 +263,10 @@ afterAll(async () => {
     .where(eqFn(schema.stripeStagedCharges.id, CHARGE_STRIPE));
   await db
     .delete(schema.bulkOperations)
-    .where(
-      arrayContainsFn(schema.bulkOperations.targetIds, [GIFT_PLAIN]),
-    );
+    .where(arrayContainsFn(schema.bulkOperations.targetIds, [GIFT_PLAIN]));
   await db
     .delete(schema.bulkOperations)
-    .where(
-      arrayContainsFn(schema.bulkOperations.targetIds, [GIFT_PLEDGED]),
-    );
+    .where(arrayContainsFn(schema.bulkOperations.targetIds, [GIFT_PLEDGED]));
   await db
     .delete(schema.giftAllocations)
     .where(likeFn(schema.giftAllocations.id, `${RUN}%`));
@@ -262,6 +274,14 @@ afterAll(async () => {
     .delete(schema.giftsAndPayments)
     .where(likeFn(schema.giftsAndPayments.id, `${RUN}%`));
   if (mintedOppIds.length) {
+    await db
+      .delete(schema.pledgeExpectedPayments)
+      .where(
+        inArrayFn(
+          schema.pledgeExpectedPayments.pledgeOrOpportunityId,
+          mintedOppIds,
+        ),
+      );
     await db
       .delete(schema.pledgeAllocations)
       .where(
@@ -274,7 +294,9 @@ afterAll(async () => {
   await db
     .delete(schema.opportunitiesAndPledges)
     .where(eqFn(schema.opportunitiesAndPledges.id, OPP_EXISTING));
-  await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
+  await db
+    .delete(schema.organizations)
+    .where(eqFn(schema.organizations.id, ORG_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, ADMIN_ID));
 }, 60_000);
 
@@ -321,7 +343,7 @@ describe.skipIf(!HAS_DB)("gift revert-to-opportunity", () => {
     expect(ga.length).toBe(2);
   });
 
-  it("asPledge=true mints a WRITTEN pledge whose derived status is 'pledge'", async () => {
+  it("asPledge=true reconstructs a finalized verbal pledge and schedule", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const { status, json } = await revert(GIFT_PLEDGED, {
       asPledge: true,
@@ -334,11 +356,20 @@ describe.skipIf(!HAS_DB)("gift revert-to-opportunity", () => {
       .where(
         eqFn(schema.opportunitiesAndPledges.id, json.opportunityId as string),
       );
+    expect(opp.commitmentPath).toBe("verbal_pledge");
+    expect(opp.verbalCommitmentAt).toBe("2099-05-02");
+    expect(opp.pledgeCommittedAt).toBe("2099-05-02");
     expect(opp.writtenPledge).toBe(true);
-    // Derivation promotes a won pledge's funnel stage to terminal 'complete'.
-    expect(opp.stage).toBe("complete");
-    expect(opp.status).toBe("pledge"); // derived from the writtenPledge latch
+    expect(opp.stage).toBe("verbal_confirmation");
+    expect(opp.status).toBe("pledge");
     expect(opp.name).toBe(`GiftRevert as pledge ${RUN}`);
+    const expected = await db
+      .select()
+      .from(schema.pledgeExpectedPayments)
+      .where(eqFn(schema.pledgeExpectedPayments.pledgeOrOpportunityId, opp.id));
+    expect(expected).toHaveLength(1);
+    expect(expected[0]?.expectedDate).toBe("2099-05-02");
+    expect(expected[0]?.amount).toBe("250.00");
   });
 
   it("404s on an unknown gift", async () => {

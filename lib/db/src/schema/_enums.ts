@@ -205,6 +205,15 @@ export const opportunityTypeEnum = pgEnum("opportunity_type", [
   "open_application",
 ]);
 
+// What the donor has verbally committed will happen next. This is distinct
+// from the actual outcome: a written/verbal pledge becomes an actual pledge
+// only when pledge_committed_at is set; a gift becomes actual only when money
+// is linked.
+export const opportunityCommitmentPathEnum = pgEnum(
+  "opportunity_commitment_path",
+  ["gift", "written_pledge", "verbal_pledge"],
+);
+
 // Pure cultivation funnel. Stage is now SEPARATE from outcome: it tracks how
 // far the conversation has progressed, and reads `complete` (terminal) once the
 // opp is WON (written pledge or paid) — auto-driven server-side, never for

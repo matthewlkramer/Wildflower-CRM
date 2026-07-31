@@ -122,7 +122,10 @@ export async function copyPledgeAllocationsToGift(
       drawn: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
     })
     .from(giftAllocations)
-    .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+    .innerJoin(
+      giftsAndPayments,
+      eq(giftsAndPayments.id, giftAllocations.giftId),
+    )
     .where(
       and(
         inArray(
@@ -134,7 +137,9 @@ export async function copyPledgeAllocationsToGift(
       ),
     )
     .groupBy(giftAllocations.sourcePledgeAllocationId);
-  const drawnById = new Map(drawnRows.map((r) => [r.sourceId, Number(r.drawn)]));
+  const drawnById = new Map(
+    drawnRows.map((r) => [r.sourceId, Number(r.drawn)]),
+  );
 
   const remainingOf = (a: (typeof allocs)[number]) =>
     Math.max(0, Number(a.subAmount ?? 0) - (drawnById.get(a.id) ?? 0));
@@ -152,10 +157,17 @@ export async function copyPledgeAllocationsToGift(
     ? withRemaining.filter((a) => a.grantYear === giftFy)
     : [];
   const chosen =
-    fyMatched.length > 0 ? fyMatched : withRemaining.length > 0 ? withRemaining : allocs;
+    fyMatched.length > 0
+      ? fyMatched
+      : withRemaining.length > 0
+        ? withRemaining
+        : allocs;
 
   // Weight by remaining plan when any remains; otherwise by original amounts.
-  const weightOf = withRemaining.length > 0 ? remainingOf : (a: (typeof allocs)[number]) => Number(a.subAmount ?? 0);
+  const weightOf =
+    withRemaining.length > 0
+      ? remainingOf
+      : (a: (typeof allocs)[number]) => Number(a.subAmount ?? 0);
   const totalWeight = chosen.reduce((acc, a) => acc + weightOf(a), 0);
   const giftNum = Number(giftAmount ?? 0);
   const willScale = totalWeight > 0 && Number.isFinite(giftNum) && giftNum > 0;
@@ -168,7 +180,9 @@ export async function copyPledgeAllocationsToGift(
         // Last line absorbs the remainder so the copy sums to the gift exactly.
         subAmount = (giftNum - running).toFixed(2);
       } else {
-        const scaled = Number(((weightOf(a) / totalWeight) * giftNum).toFixed(2));
+        const scaled = Number(
+          ((weightOf(a) / totalWeight) * giftNum).toFixed(2),
+        );
         running += scaled;
         subAmount = scaled.toFixed(2);
       }
@@ -243,11 +257,14 @@ export async function lockAndValidatePledgeForPayment(
         "This pledge is marked lost or dormant — reopen it before recording a payment against it.",
     });
   }
-  if (opp.writtenPledge !== true) {
+  if (
+    opp.pledgeCommittedAt == null &&
+    !(opp.commitmentPath == null && opp.writtenPledge === true)
+  ) {
     throw new ReconcileAbort(409, {
       error: "not_a_pledge",
       message:
-        "Payments can only be recorded against a written pledge. This opportunity has not been latched as a pledge.",
+        "Payments can only be recorded against a finalized written or verbal pledge.",
     });
   }
   return opp;
@@ -272,8 +289,6 @@ export interface MintGiftInTxArgs {
   evidenceAmount: string | null;
   /** Optional payment-intermediary override from the request body. */
   paymentIntermediaryId: string | null;
-  /** Latch the opportunity into a pledge (open-only → written_commitment). */
-  convert: boolean;
   /** The create-* outcome, echoed into the audit metadata. */
   outcome: string;
   /** App user id stamped as the confirmer / mint owner. */
@@ -315,7 +330,6 @@ export async function mintGiftInTx(
     opportunityId,
     evidenceAmount,
     paymentIntermediaryId,
-    convert,
     outcome,
     userId,
     auditReq,
@@ -332,25 +346,9 @@ export async function mintGiftInTx(
     );
   }
 
-  // convert: latch the opportunity into a pledge by setting the writtenPledge
-  // outcome flag (the user-driven lifecycle input). Cultivation stage is a pure
-  // funnel now and is NOT touched here; status + stage→complete are DERIVED
-  // post-commit by applyDerivedOppFields — never written by hand (invariant #3).
-  // Preserve a real (positive) awarded amount; only when it's missing fall back
-  // to the evidence amount so a single-payment commitment derives to cash_in
-  // instead of staying $0.
-  if (convert && opp) {
-    const existingAwarded = Number(opp.awardedAmount ?? 0);
-    const evNum = Number(evidenceAmount ?? 0);
-    const awardedAmount =
-      !(existingAwarded > 0) && Number.isFinite(evNum) && evNum > 0
-        ? evidenceAmount
-        : opp.awardedAmount;
-    await tx
-      .update(opportunitiesAndPledges)
-      .set({ writtenPledge: true, awardedAmount, updatedAt: new Date() })
-      .where(eq(opportunitiesAndPledges.id, opp.id));
-  }
+  // The opportunity's lifecycle is not rewritten here. If it was already a
+  // finalized pledge, this gift is a pledge payment; otherwise the arriving
+  // money is a direct gift produced by the opportunity.
 
   // Mint the gift HEADER. The amount is the FINAL amount, stamped at insert from
   // the chosen evidence (single XOR pointer); no prior human figure exists, so
@@ -954,7 +952,11 @@ export async function linkGiftInTx(
       opportunityId: opp?.id ?? null,
       outcome: "link_existing_gift",
       ...(donorSwitching
-        ? { switchedGiftDonor: true, fromDonor: donorOf(gift), toDonor: effectiveGiftDonor }
+        ? {
+            switchedGiftDonor: true,
+            fromDonor: donorOf(gift),
+            toDonor: effectiveGiftDonor,
+          }
         : {}),
       ...(switchedStripeSource && oldStripeCharge
         ? {
@@ -991,7 +993,8 @@ export async function linkGiftInTx(
     // The gift this payment was moved OFF of (own-application move), so the
     // caller can recompute ITS QuickBooks tie status too — it just lost its only
     // QB evidence (likely → `missing`). Null when no move happened.
-    movedFromGiftId: movedOwnApplication && oldAppliedGift ? oldAppliedGift.id : null,
+    movedFromGiftId:
+      movedOwnApplication && oldAppliedGift ? oldAppliedGift.id : null,
     rederiveGiftIds,
   };
 }

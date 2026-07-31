@@ -314,23 +314,15 @@ export const OrganizationType = {
 } as const;
 
 /**
- * Lifecycle status of an opportunity/pledge row. FULLY CALCULATED and
-read-only — never set this directly. Derived server-side from the
-writtenPledge outcome flag + payments + lossType on every write:
-  lossType set                              → status = lossType
-  else fully paid (paid ≥ awarded)          → cash_in
-  else writtenPledge = true                 → pledge
-  else                                      → open
-Values:
-  open    — actively in the funnel, not yet committed
-  pledge  — funder has committed but not fully paid; UI labels this
-            "Waiting for payment" (stored value stays `pledge`)
-  cash_in — fully paid (sum of non-archived payments ≥ awarded)
-  dormant — paused (mirrors lossType='dormant')
-  lost    — declined/withdrawn (mirrors lossType='lost')
-To mark a row dormant/lost, set the `lossType` field instead. The
-commitment outcome is the writtenPledge flag — cultivation `stage` no
-longer feeds status.
+ * Read-only lifecycle status derived from lossType, pledgeCommittedAt,
+linked money, awarded amount, and the disbursement model:
+  lossType set                         → dormant or lost
+  finalized pledge, not fully collected → pledge
+  fully collected pledge               → cash_in
+  direct gift fully received            → cash_in
+  otherwise                             → open
+A pledge exists only when pledgeCommittedAt is populated. The deprecated
+writtenPledge field is a read-only compatibility mirror.
 
  */
 export type OpportunityStatus = typeof OpportunityStatus[keyof typeof OpportunityStatus];
@@ -373,15 +365,11 @@ export const OpportunityType = {
 } as const;
 
 /**
- * Cultivation funnel stage — a PURE pipeline position, fully separate from
-the commitment outcome (writtenPledge) and the calculated status. Active
-funnel: cold_lead → warm_lead → in_conversation → convince →
-probable_renewal → verbal_confirmation → complete (terminal: won).
-`complete` is set automatically when an opp is won (status pledge|cash_in)
-and reverted off a stale `complete` when no longer won.
-DEPRECATED (retained for historical rows, never written going forward):
-conditional_commitment, written_commitment, cash_in — the commitment
-outcome now lives on the writtenPledge flag, not the stage.
+ * Cultivation funnel position, separate from commitment and actual outcome.
+Active stages end at verbal_confirmation. Pledge finalization and payment
+do not overwrite the recorded stage. conditional_commitment,
+written_commitment, cash_in, and complete remain only for historical API
+compatibility and are normalized to verbal_confirmation by migration 0224.
 
  */
 export type OpportunityStage = typeof OpportunityStage[keyof typeof OpportunityStage];
@@ -1974,6 +1962,54 @@ export interface UpdateAddressBody {
   householdId?: string | null;
 }
 
+/**
+ * The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
+ */
+export type OpportunityCommitmentPath = typeof OpportunityCommitmentPath[keyof typeof OpportunityCommitmentPath];
+
+
+export const OpportunityCommitmentPath = {
+  gift: 'gift',
+  written_pledge: 'written_pledge',
+  verbal_pledge: 'verbal_pledge',
+} as const;
+
+/**
+ * Actual positive outcome, derived from pledge finalization or received money.
+ */
+export type OpportunityOutcomeType = typeof OpportunityOutcomeType[keyof typeof OpportunityOutcomeType];
+
+
+export const OpportunityOutcomeType = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
+export interface RecordVerbalCommitmentBody {
+  commitmentPath: OpportunityCommitmentPath;
+  verbalCommitmentAt: string;
+  /** @pattern ^[0-9]+(\.[0-9]{1,2})?$ */
+  confirmedAmount: string;
+  expectedDate?: string | null;
+}
+
+export interface FinalizePledgeBody {
+  pledgeCommittedAt: string;
+}
+
+export interface OpportunityCommitmentResult {
+  id: string;
+  commitmentPath?: OpportunityCommitmentPath | null;
+  verbalCommitmentAt?: string | null;
+  pledgeCommittedAt?: string | null;
+  outcomeType?: OpportunityOutcomeType | null;
+  status?: OpportunityStatus | null;
+  stage?: OpportunityStage | null;
+  awardedAmount?: string | null;
+  paidAmount: string;
+  promptForReportingDeadlines?: boolean | null;
+}
+
 export interface OpportunityOrPledge {
   id: string;
   name?: string | null;
@@ -2022,7 +2058,18 @@ export interface OpportunityOrPledge {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  writtenPledge: boolean;
+  /** The positive outcome the donor verbally confirmed; not itself an actual pledge or gift. */
+  readonly commitmentPath?: OpportunityCommitmentPath | null;
+  readonly verbalCommitmentAt?: string | null;
+  /** Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money. */
+  readonly pledgeCommittedAt?: string | null;
+  /** Actual positive outcome, derived from pledge finalization or received money. */
+  readonly outcomeType?: OpportunityOutcomeType | null;
+  /**
+   * Compatibility mirror of pledgeCommittedAt != null; never write directly.
+   * @deprecated
+   */
+  readonly writtenPledge: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -2339,7 +2386,6 @@ export interface CreateOpportunityOrPledgeBody {
   paymentDetails?: string;
   usageNotes?: string;
   copperPledgeId?: string;
-  writtenPledge?: boolean;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
   grantLetterUploadedAt?: string;
@@ -2371,7 +2417,6 @@ export interface UpdateOpportunityOrPledgeBody {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  writtenPledge?: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -4834,10 +4879,11 @@ export interface IncompleteGiftList {
 
 /**
  * What approving the card does.
-link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
-create_gift: human-mint a new gift from the QB evidence for the chosen donor.
-create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.
-convert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.
+link_existing_gift: tie the evidence to an existing gift; no new gift.
+create_gift: mint a new gift from evidence for the chosen donor.
+create_gift_from_opportunity: record arriving money from the selected
+opportunity. It is a pledge payment only when pledgeCommittedAt was set
+before the payment arrived; otherwise it is a direct gift outcome.
 
  */
 export type ReconciliationOutcome = typeof ReconciliationOutcome[keyof typeof ReconciliationOutcome];
@@ -4847,7 +4893,6 @@ export const ReconciliationOutcome = {
   link_existing_gift: 'link_existing_gift',
   create_gift: 'create_gift',
   create_gift_from_opportunity: 'create_gift_from_opportunity',
-  convert_to_pledge_and_first_payment: 'convert_to_pledge_and_first_payment',
 } as const;
 
 /**
@@ -9090,7 +9135,7 @@ export interface ResolveGiftOverpayBody {
  * Options for reverting a gift back into an opportunity. The new record inherits the gift's donor and amount; the gift's allocations are mirrored onto pledge_allocations and the gift is archived.
  */
 export interface RevertGiftToOpportunityBody {
-  /** When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity. */
+  /** When true, reconstruct a finalized verbal pledge with a payment schedule from the archived gift; otherwise create an open opportunity. */
   asPledge?: boolean;
   /** Name for the new opportunity/pledge. Defaults to the gift's name. */
   name?: string | null;
@@ -9320,7 +9365,6 @@ export interface BulkUpdateOpportunitiesPatch {
   lossType?: OpportunityLossType | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
-  writtenPledge?: boolean | null;
   /** Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt. */
   actualCompletionDate?: string | null;
   /** Projected close date on each opportunity. */

@@ -904,7 +904,7 @@ export const RevertGiftToOpportunityParams = zod.object({
 export const revertGiftToOpportunityBodyAsPledgeDefault = false;
 
 export const RevertGiftToOpportunityBody = zod.object({
-  "asPledge": zod.boolean().default(revertGiftToOpportunityBodyAsPledgeDefault).describe('When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity.'),
+  "asPledge": zod.boolean().default(revertGiftToOpportunityBodyAsPledgeDefault).describe('When true, reconstruct a finalized verbal pledge with a payment schedule from the archived gift; otherwise create an open opportunity.'),
   "name": zod.string().nullish().describe('Name for the new opportunity\/pledge. Defaults to the gift\'s name.')
 }).describe('Options for reverting a gift back into an opportunity. The new record inherits the gift\'s donor and amount; the gift\'s allocations are mirrored onto pledge_allocations and the gift is archived.')
 

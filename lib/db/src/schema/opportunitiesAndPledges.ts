@@ -15,6 +15,7 @@ import {
   opportunityLossTypeEnum,
   opportunityTypeEnum,
   opportunityStageEnum,
+  opportunityCommitmentPathEnum,
   opportunityConditionalEnum,
   opportunityConditionsMetEnum,
   loanOrGrantEnum,
@@ -80,194 +81,235 @@ import { households } from "./households";
 //               frozen snapshot of the opportunity-phase fields)
 //     IGNORED : awarded_amount, actual_completion_date, conditions_met
 //
-// `was_pledge` (boolean, sticky-true) records that this row was ever a
-// pledge, regardless of current status. Auto-flipped true when stage
-// reaches conditional/verbal/written, when a grant letter is uploaded,
-// or when a user manually checks the box. Never auto-flipped false.
+// Commitment lifecycle is explicit: commitmentPath + verbalCommitmentAt
+// record what the donor verbally confirmed; pledgeCommittedAt is the sole
+// boundary that establishes a pledge. writtenPledge is retained only as a
+// read-compatible mirror during migration of legacy readers.
 //
 // Partial indexes below match the two hot read paths: "open pipeline"
 // (filter by status='open', sorted by projected_close_date, often
 // scoped by organization) and "cash-in grants in a given period" (filter by
 // status='cash_in', sorted by actual_completion_date).
-export const opportunitiesAndPledges = pgTable("opportunities_and_pledges", {
-  id: text("id").primaryKey(),
-  name: text("name"),
-  // RESTRICT: the organization is the giver of record on this opportunity/pledge.
-  // Deleting them must explicitly clean up dependent rows first.
-  organizationId: text("organization_id").references(() => organizations.id, {
-    onDelete: "restrict",
-  }),
-  askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
-  awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
-  // Persisted derived rollup: SUM of linked non-archived gift amounts (gifts
-  // whose opportunity_id = this row). Recomputed by applyDerivedOppFields on
-  // every payment link/amount/archive mutation. Surfaced as the API
-  // `paidAmount` field and drives the cash_in status derivation (paid≥awarded).
-  paid: numeric("paid", { precision: 14, scale: 2 }).notNull().default("0"),
-  // Authoritative loan-vs-grant flag (see loanOrGrantEnum). User-settable on
-  // create/patch (defaults 'grant'); the single read source for dashboard /
-  // projections / goals / revenue coding.
-  loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
-  // ── Disbursement model (Task #788) ─────────────────────────────────────
-  // fixed_commitment (default): installments in pledge_expected_payments are
-  // the cash forecast; completes via paid >= awarded.
-  // cost_reimbursement: awarded_amount is the award CEILING; annual pledge
-  // allocations are the forecast; completes ONLY via the explicit Close-award
-  // action below. Backfilled from allocations carrying the retired
-  // conditional='reimbursable' value (migration 0151).
-  disbursementModel: disbursementModelEnum("disbursement_model")
-    .notNull()
-    .default("fixed_commitment"),
-  // Explicit award closure — the SECOND user-set lifecycle input alongside
-  // loss_type (replit.md invariant #3). Only meaningful for cost_reimbursement
-  // pledges: setting award_closed_at (+ reason) is what completes the award
-  // (status derives cash_in). Never auto-set; finance-permitted action only.
-  awardClosedAt: date("award_closed_at"),
-  awardCloseReason: awardCloseReasonEnum("award_close_reason"),
-  type: opportunityTypeEnum("type"),
-  conditional: opportunityConditionalEnum("conditional"),
-  conditions: text("conditions"),
-  // Tri-state: 'no' | 'partial' | 'yes'. Was a boolean (true→'yes', false→'no').
-  conditionsMet: opportunityConditionsMetEnum("conditions_met")
-    .default("no")
-    .notNull(),
-  // RESTRICT: the individual giver is part of the money-trail record.
-  individualGiverPersonId: text("individual_giver_person_id").references(
-    () => people.id,
-    { onDelete: "restrict" },
-  ),
-  // RESTRICT: a household giver (joint checking / joint card) is part of the
-  // money-trail record. Convention: exactly one of {organizationId,
-  // individualGiverPersonId, householdId} is set per row.
-  householdId: text("household_id").references(() => households.id, {
-    onDelete: "restrict",
-  }),
-  // SET NULL: an advisor is a soft relationship; if the person record is
-  // removed, the opportunity survives without an advisor pointer.
-  individualAdvisorPersonId: text("individual_advisor_person_id").references(
-    () => people.id,
-    { onDelete: "set null" },
-  ),
-  // Self-referential FK to the *original* opportunity that this row matches.
-  // Convention: the matching gift's match_id points at the original gift's id.
-  // SET NULL: removing the original shouldn't cascade-delete the match record.
-  matchId: text("match_id").references(
-    (): AnyPgColumn => opportunitiesAndPledges.id,
-    { onDelete: "set null" },
-  ),
-  // Audit-close WRITE-OFF (see gift-booking-lifecycle / audit-close model). When
-  // an audited (frozen) written pledge is under-paid and its money can no longer
-  // be collected, the original is NEVER touched — instead a brand-new offsetting
-  // pledge is created in the CURRENT OPEN fiscal year with is_write_off=true and
-  // NEGATIVE allocations summing to the uncollected remainder. This self-FK points
-  // that offsetting pledge back at the audited original.
-  //   * is_write_off — this row IS a write-off (excluded from open-pipeline ask,
-  //     committed, and win-probability analytics; surfaced as its own negative
-  //     "written off" line in goal/FY rollups).
-  //   * write_off_of_pledge_id — the audited original this write-off offsets. Its
-  //     PRESENCE (active, non-archived) is what makes the original read "resolved"
-  //     in the underpaid-pledge checklist, without mutating the original's numbers.
-  // RESTRICT: the audited original must not be deletable out from under its
-  // write-off. A pledge may accumulate MULTIPLE active write-offs over time (a
-  // partial write-off's own FY closes, then a further reduction books a second
-  // one); at most one EDITABLE (open-FY) write-off at a time, enforced
-  // app-level inside the write-off route's locked transaction (SELECT ... FOR
-  // UPDATE on the original), NOT by a unique index.
-  isWriteOff: boolean("is_write_off").default(false).notNull(),
-  writeOffOfPledgeId: text("write_off_of_pledge_id").references(
-    (): AnyPgColumn => opportunitiesAndPledges.id,
-    { onDelete: "restrict" },
-  ),
-  // FULLY CALCULATED — derived server-side from stage + payments +
-  // loss_type on every write (see applyDerivedOppFields). Not a
-  // user-writable field.
-  status: opportunityStatusEnum("status"),
-  // User-set override. Null while open/pledge/cash_in; 'dormant' or
-  // 'lost' pulls the row out of the funnel. When set, `status` mirrors
-  // it. The only settable half of the old status overload.
-  lossType: opportunityLossTypeEnum("loss_type"),
-  // RESTRICT + archive workflow on users (see users.archivedAt).
-  ownerUserId: text("owner_user_id").references(() => users.id, {
-    onDelete: "restrict",
-  }),
-  projectedCloseDate: date("projected_close_date"),
-  actualCompletionDate: date("actual_completion_date"),
-  winProbability: numeric("win_probability", { precision: 5, scale: 4 }),
-  stage: opportunityStageEnum("stage"),
-  lossReason: text("loss_reason"),
-  applicationDeadline: date("application_deadline"),
-  paymentDetails: text("payment_details"),
-  usageNotes: text("usage_notes"),
-  // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
-  // cross-reference back to the prior CRM.
-  copperPledgeId: text("copper_pledge_id"),
-  // Sticky-true commitment flag (renamed from was_pledge): the funder has
-  // made a written commitment. Latched true when a grant letter is uploaded,
-  // when a user explicitly marks the commitment, or (for legacy/imported
-  // rows) when the stage is a legacy commitment value. Never auto-flipped
-  // back to false. Drives the calculated `status` (→ 'pledge') and the
-  // Pledges page filter so historical pledges remain visible after payment.
-  writtenPledge: boolean("written_pledge").default(false).notNull(),
-  // Grant letter (foundation pledge documentation). Lives in object
-  // storage; only the URL is stored. Uploading flips written_pledge=true.
-  grantLetterUrl: text("grant_letter_url"),
-  grantLetterFilename: text("grant_letter_filename"),
-  // ISO-string mode so the OpenAPI-typed string flows through without
-  // coercion in route handlers; reads as the same ISO string the
-  // generated client expects.
-  grantLetterUploadedAt: timestamp("grant_letter_uploaded_at", { mode: "string" }),
-  // SET NULL: primary contact is a soft pointer.
-  primaryContactPersonId: text("primary_contact_person_id").references(
-    () => people.id,
-    { onDelete: "set null" },
-  ),
-  createdAtFromAirtable: timestamp("created_at_from_airtable"),
-  updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
-  // Soft-delete: non-null = archived (hidden from non-admins). Separate from
-  // the calculated `status` and the `lossType` override; never set by them.
-  archivedAt: timestamp("archived_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-}, (t) => [
-  index("opportunities_and_pledges_organization_id_idx").on(t.organizationId),
-  index("opportunities_and_pledges_individual_giver_person_id_idx").on(t.individualGiverPersonId),
-  index("opportunities_and_pledges_household_id_idx").on(t.householdId),
-  index("opportunities_and_pledges_individual_advisor_person_id_idx").on(t.individualAdvisorPersonId),
-  index("opportunities_and_pledges_match_id_idx").on(t.matchId),
-  // Lookup for a pledge's ACTIVE (non-archived) write-off children. Multiple
-  // actives are legal (see the write-off column comment); the one-EDITABLE-at-
-  // a-time rule is app-enforced in the write-off route's locked transaction.
-  index("opportunities_and_pledges_active_write_off_idx")
-    .on(t.writeOffOfPledgeId)
-    .where(sql`${t.writeOffOfPledgeId} IS NOT NULL AND ${t.archivedAt} IS NULL`),
-  index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
-  index("opportunities_and_pledges_primary_contact_person_id_idx").on(t.primaryContactPersonId),
-  index("opportunities_and_pledges_archived_at_idx").on(t.archivedAt),
-  // Partial indexes for the two phase-specific hot paths. See
-  // "Column validity by status" comment above.
-  index("opportunities_and_pledges_open_pipeline_idx")
-    .on(t.organizationId, t.projectedCloseDate)
-    .where(sql`${t.status} = 'open'`),
-  index("opportunities_and_pledges_cash_in_completed_idx")
-    .on(t.actualCompletionDate)
-    .where(sql`${t.status} = 'cash_in'`),
-  // Donor exclusivity: exactly one of organization / individual-giver / household.
-  check(
-    "opportunities_and_pledges_donor_xor",
-    sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
-  ),
-  // NOTE: previously had a `closed_requires_completion_date` CHECK that
-  // forced won/lost rows to carry an actualCompletionDate. Dropped to
-  // support data-cleanup workflows where the user is marking historical
-  // opps as won/lost in bulk and a real close date isn't always known
-  // (and inventing one — e.g. today — would be worse than null).
-  // The rule is now enforced at the API layer as a TRANSITION check
-  // (`validateOppCloseTransition` in @workspace/api-zod): a request that
-  // NEWLY closes a row (lossType set, or stage → complete) must supply/have
-  // an actualCompletionDate, while the ~244 legacy closed rows without dates
-  // stay fully editable. Do NOT reinstate the blind CHECK — it would reject
-  // any edit to those legacy rows.
-]);
+export const opportunitiesAndPledges = pgTable(
+  "opportunities_and_pledges",
+  {
+    id: text("id").primaryKey(),
+    name: text("name"),
+    // RESTRICT: the organization is the giver of record on this opportunity/pledge.
+    // Deleting them must explicitly clean up dependent rows first.
+    organizationId: text("organization_id").references(() => organizations.id, {
+      onDelete: "restrict",
+    }),
+    askAmount: numeric("ask_amount", { precision: 14, scale: 2 }),
+    awardedAmount: numeric("awarded_amount", { precision: 14, scale: 2 }),
+    // Persisted derived rollup: SUM of linked non-archived gift amounts (gifts
+    // whose opportunity_id = this row). Recomputed by applyDerivedOppFields on
+    // every payment link/amount/archive mutation. Surfaced as the API
+    // `paidAmount` field and drives the cash_in status derivation (paid≥awarded).
+    paid: numeric("paid", { precision: 14, scale: 2 }).notNull().default("0"),
+    // Authoritative loan-vs-grant flag (see loanOrGrantEnum). User-settable on
+    // create/patch (defaults 'grant'); the single read source for dashboard /
+    // projections / goals / revenue coding.
+    loanOrGrant: loanOrGrantEnum("loan_or_grant").notNull().default("grant"),
+    // ── Disbursement model (Task #788) ─────────────────────────────────────
+    // fixed_commitment (default): installments in pledge_expected_payments are
+    // the cash forecast; completes via paid >= awarded.
+    // cost_reimbursement: awarded_amount is the award CEILING; annual pledge
+    // allocations are the forecast; completes ONLY via the explicit Close-award
+    // action below. Backfilled from allocations carrying the retired
+    // conditional='reimbursable' value (migration 0151).
+    disbursementModel: disbursementModelEnum("disbursement_model")
+      .notNull()
+      .default("fixed_commitment"),
+    // Explicit award closure — the SECOND user-set lifecycle input alongside
+    // loss_type (replit.md invariant #3). Only meaningful for cost_reimbursement
+    // pledges: setting award_closed_at (+ reason) is what completes the award
+    // (status derives cash_in). Never auto-set; finance-permitted action only.
+    awardClosedAt: date("award_closed_at"),
+    awardCloseReason: awardCloseReasonEnum("award_close_reason"),
+    type: opportunityTypeEnum("type"),
+    conditional: opportunityConditionalEnum("conditional"),
+    conditions: text("conditions"),
+    // Tri-state: 'no' | 'partial' | 'yes'. Was a boolean (true→'yes', false→'no').
+    conditionsMet: opportunityConditionsMetEnum("conditions_met")
+      .default("no")
+      .notNull(),
+    // RESTRICT: the individual giver is part of the money-trail record.
+    individualGiverPersonId: text("individual_giver_person_id").references(
+      () => people.id,
+      { onDelete: "restrict" },
+    ),
+    // RESTRICT: a household giver (joint checking / joint card) is part of the
+    // money-trail record. Convention: exactly one of {organizationId,
+    // individualGiverPersonId, householdId} is set per row.
+    householdId: text("household_id").references(() => households.id, {
+      onDelete: "restrict",
+    }),
+    // SET NULL: an advisor is a soft relationship; if the person record is
+    // removed, the opportunity survives without an advisor pointer.
+    individualAdvisorPersonId: text("individual_advisor_person_id").references(
+      () => people.id,
+      { onDelete: "set null" },
+    ),
+    // Self-referential FK to the *original* opportunity that this row matches.
+    // Convention: the matching gift's match_id points at the original gift's id.
+    // SET NULL: removing the original shouldn't cascade-delete the match record.
+    matchId: text("match_id").references(
+      (): AnyPgColumn => opportunitiesAndPledges.id,
+      { onDelete: "set null" },
+    ),
+    // Audit-close WRITE-OFF (see gift-booking-lifecycle / audit-close model). When
+    // an audited (frozen) finalized pledge is under-paid and its money can no longer
+    // be collected, the original is NEVER touched — instead a brand-new offsetting
+    // pledge is created in the CURRENT OPEN fiscal year with is_write_off=true and
+    // NEGATIVE allocations summing to the uncollected remainder. This self-FK points
+    // that offsetting pledge back at the audited original.
+    //   * is_write_off — this row IS a write-off (excluded from open-pipeline ask,
+    //     committed, and win-probability analytics; surfaced as its own negative
+    //     "written off" line in goal/FY rollups).
+    //   * write_off_of_pledge_id — the audited original this write-off offsets. Its
+    //     PRESENCE (active, non-archived) is what makes the original read "resolved"
+    //     in the underpaid-pledge checklist, without mutating the original's numbers.
+    // RESTRICT: the audited original must not be deletable out from under its
+    // write-off. A pledge may accumulate MULTIPLE active write-offs over time (a
+    // partial write-off's own FY closes, then a further reduction books a second
+    // one); at most one EDITABLE (open-FY) write-off at a time, enforced
+    // app-level inside the write-off route's locked transaction (SELECT ... FOR
+    // UPDATE on the original), NOT by a unique index.
+    isWriteOff: boolean("is_write_off").default(false).notNull(),
+    writeOffOfPledgeId: text("write_off_of_pledge_id").references(
+      (): AnyPgColumn => opportunitiesAndPledges.id,
+      { onDelete: "restrict" },
+    ),
+    // FULLY CALCULATED — derived server-side from stage + payments +
+    // loss_type on every write (see applyDerivedOppFields). Not a
+    // user-writable field.
+    status: opportunityStatusEnum("status"),
+    // User-set override. Null while open/pledge/cash_in; 'dormant' or
+    // 'lost' pulls the row out of the funnel. When set, `status` mirrors
+    // it. The only settable half of the old status overload.
+    lossType: opportunityLossTypeEnum("loss_type"),
+    // RESTRICT + archive workflow on users (see users.archivedAt).
+    ownerUserId: text("owner_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    projectedCloseDate: date("projected_close_date"),
+    actualCompletionDate: date("actual_completion_date"),
+    winProbability: numeric("win_probability", { precision: 5, scale: 4 }),
+    stage: opportunityStageEnum("stage"),
+    // The positive outcome the donor verbally confirmed. This does not itself
+    // make the row a pledge or a gift.
+    commitmentPath: opportunityCommitmentPathEnum("commitment_path"),
+    // Date the donor verbally confirmed the expected outcome. Required whenever
+    // commitmentPath is populated.
+    verbalCommitmentAt: date("verbal_commitment_at"),
+    // Authoritative pledge boundary. Non-null means a real written or verbal
+    // pledge exists and may accept pledge payments.
+    pledgeCommittedAt: date("pledge_committed_at"),
+    lossReason: text("loss_reason"),
+    applicationDeadline: date("application_deadline"),
+    paymentDetails: text("payment_details"),
+    usageNotes: text("usage_notes"),
+    // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
+    // cross-reference back to the prior CRM.
+    copperPledgeId: text("copper_pledge_id"),
+    // Transitional read-compatible mirror for older reports/imports.
+    // New application writes never set this directly; applyDerivedOppFields
+    // mirrors pledgeCommittedAt != null. Remove after all legacy readers migrate.
+    writtenPledge: boolean("written_pledge").default(false).notNull(),
+    // Pledge document (historically named grant letter). Uploading the file
+    // does not establish a pledge; written pledges are finalized explicitly
+    // after the document and pledge plan are complete.
+    grantLetterUrl: text("grant_letter_url"),
+    grantLetterFilename: text("grant_letter_filename"),
+    // ISO-string mode so the OpenAPI-typed string flows through without
+    // coercion in route handlers; reads as the same ISO string the
+    // generated client expects.
+    grantLetterUploadedAt: timestamp("grant_letter_uploaded_at", {
+      mode: "string",
+    }),
+    // SET NULL: primary contact is a soft pointer.
+    primaryContactPersonId: text("primary_contact_person_id").references(
+      () => people.id,
+      { onDelete: "set null" },
+    ),
+    createdAtFromAirtable: timestamp("created_at_from_airtable"),
+    updatedAtFromAirtable: timestamp("updated_at_from_airtable"),
+    // Soft-delete: non-null = archived (hidden from non-admins). Separate from
+    // the calculated `status` and the `lossType` override; never set by them.
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("opportunities_and_pledges_organization_id_idx").on(t.organizationId),
+    index("opportunities_and_pledges_individual_giver_person_id_idx").on(
+      t.individualGiverPersonId,
+    ),
+    index("opportunities_and_pledges_household_id_idx").on(t.householdId),
+    index("opportunities_and_pledges_individual_advisor_person_id_idx").on(
+      t.individualAdvisorPersonId,
+    ),
+    index("opportunities_and_pledges_match_id_idx").on(t.matchId),
+    // Lookup for a pledge's ACTIVE (non-archived) write-off children. Multiple
+    // actives are legal (see the write-off column comment); the one-EDITABLE-at-
+    // a-time rule is app-enforced in the write-off route's locked transaction.
+    index("opportunities_and_pledges_active_write_off_idx")
+      .on(t.writeOffOfPledgeId)
+      .where(
+        sql`${t.writeOffOfPledgeId} IS NOT NULL AND ${t.archivedAt} IS NULL`,
+      ),
+    index("opportunities_and_pledges_owner_user_id_idx").on(t.ownerUserId),
+    index("opportunities_and_pledges_commitment_path_idx").on(t.commitmentPath),
+    index("opportunities_and_pledges_pledge_committed_at_idx").on(
+      t.pledgeCommittedAt,
+    ),
+    index("opportunities_and_pledges_primary_contact_person_id_idx").on(
+      t.primaryContactPersonId,
+    ),
+    index("opportunities_and_pledges_archived_at_idx").on(t.archivedAt),
+    // Partial indexes for the two phase-specific hot paths. See
+    // "Column validity by status" comment above.
+    index("opportunities_and_pledges_open_pipeline_idx")
+      .on(t.organizationId, t.projectedCloseDate)
+      .where(sql`${t.status} = 'open'`),
+    index("opportunities_and_pledges_cash_in_completed_idx")
+      .on(t.actualCompletionDate)
+      .where(sql`${t.status} = 'cash_in'`),
+    // Donor exclusivity: exactly one of organization / individual-giver / household.
+    check(
+      "opportunities_and_pledges_donor_xor",
+      sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
+    ),
+    check(
+      "opp_commitment_path_requires_date",
+      sql`(${t.commitmentPath} IS NULL AND ${t.verbalCommitmentAt} IS NULL)
+      OR (${t.commitmentPath} IS NOT NULL AND ${t.verbalCommitmentAt} IS NOT NULL)`,
+    ),
+    check(
+      "opp_pledge_commitment_path",
+      sql`${t.pledgeCommittedAt} IS NULL
+      OR ${t.commitmentPath} IN ('written_pledge', 'verbal_pledge')`,
+    ),
+    check(
+      "opp_written_pledge_requires_document",
+      sql`${t.pledgeCommittedAt} IS NULL
+      OR ${t.commitmentPath} <> 'written_pledge'
+      OR ${t.grantLetterUrl} IS NOT NULL`,
+    ),
+    // NOTE: previously had a `closed_requires_completion_date` CHECK that
+    // forced won/lost rows to carry an actualCompletionDate. Dropped to
+    // support data-cleanup workflows where the user is marking historical
+    // opps as won/lost in bulk and a real close date isn't always known
+    // (and inventing one — e.g. today — would be worse than null).
+    // The rule is now enforced at the API layer as a TRANSITION check
+    // (`validateOppCloseTransition` in @workspace/api-zod): a request that
+    // NEWLY closes a row (lossType set, or stage → complete) must supply/have
+    // an actualCompletionDate, while the ~244 legacy closed rows without dates
+    // stay fully editable. Do NOT reinstate the blind CHECK — it would reject
+    // any edit to those legacy rows.
+  ],
+);
 
 export type OpportunityOrPledge = typeof opportunitiesAndPledges.$inferSelect;
 export type NewOpportunityOrPledge =

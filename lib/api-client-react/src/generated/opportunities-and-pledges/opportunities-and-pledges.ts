@@ -26,14 +26,17 @@ import type {
   BulkUpdateResult,
   CloseAwardBody,
   CreateOpportunityOrPledgeBody,
+  FinalizePledgeBody,
   ForbiddenResponse,
   GiftOrPayment,
   ListOpportunitiesAndPledgesParams,
   MintGiftFromOpportunityBody,
   NotFoundResponse,
+  OpportunityCommitmentResult,
   OpportunityOrPledge,
   OpportunityOrPledgeDetail,
   OpportunityOrPledgeList,
+  RecordVerbalCommitmentBody,
   UpdateOpportunityOrPledgeBody,
   WriteOffPledgeBody
 } from '../api.schemas';
@@ -927,5 +930,147 @@ export const useMintGiftFromOpportunity = <TError = ErrorType<BadRequestResponse
         TContext
       > => {
       return useMutation(getMintGiftFromOpportunityMutationOptions(options));
+    }
+    /**
+ * @summary Record the donor's verbal confirmation of the expected positive outcome.
+ */
+export const getRecordVerbalCommitmentUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/record-verbal-commitment`
+}
+
+export const recordVerbalCommitment = async (id: string,
+    recordVerbalCommitmentBody: RecordVerbalCommitmentBody, options?: RequestInit): Promise<OpportunityCommitmentResult> => {
+  
+  return customFetch<OpportunityCommitmentResult>(getRecordVerbalCommitmentUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      recordVerbalCommitmentBody,)
+  }
+);}
+  
+
+
+
+export const getRecordVerbalCommitmentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVerbalCommitment>>, TError,{id: string;data: BodyType<RecordVerbalCommitmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordVerbalCommitment>>, TError,{id: string;data: BodyType<RecordVerbalCommitmentBody>}, TContext> => {
+
+const mutationKey = ['recordVerbalCommitment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordVerbalCommitment>>, {id: string;data: BodyType<RecordVerbalCommitmentBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  recordVerbalCommitment(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordVerbalCommitmentMutationResult = NonNullable<Awaited<ReturnType<typeof recordVerbalCommitment>>>
+    export type RecordVerbalCommitmentMutationBody = BodyType<RecordVerbalCommitmentBody>
+    export type RecordVerbalCommitmentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Record the donor's verbal confirmation of the expected positive outcome.
+ */
+export const useRecordVerbalCommitment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordVerbalCommitment>>, TError,{id: string;data: BodyType<RecordVerbalCommitmentBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordVerbalCommitment>>,
+        TError,
+        {id: string;data: BodyType<RecordVerbalCommitmentBody>},
+        TContext
+      > => {
+      return useMutation(getRecordVerbalCommitmentMutationOptions(options));
+    }
+    /**
+ * @summary Finalize a written or verbal pledge after validating its document, allocations, schedule, and conditions.
+ */
+export const getFinalizePledgeUrl = (id: string,) => {
+
+
+  
+
+  return `/api/opportunities-and-pledges/${id}/finalize-pledge`
+}
+
+export const finalizePledge = async (id: string,
+    finalizePledgeBody: FinalizePledgeBody, options?: RequestInit): Promise<OpportunityCommitmentResult> => {
+  
+  return customFetch<OpportunityCommitmentResult>(getFinalizePledgeUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      finalizePledgeBody,)
+  }
+);}
+  
+
+
+
+export const getFinalizePledgeMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePledge>>, TError,{id: string;data: BodyType<FinalizePledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof finalizePledge>>, TError,{id: string;data: BodyType<FinalizePledgeBody>}, TContext> => {
+
+const mutationKey = ['finalizePledge'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizePledge>>, {id: string;data: BodyType<FinalizePledgeBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  finalizePledge(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FinalizePledgeMutationResult = NonNullable<Awaited<ReturnType<typeof finalizePledge>>>
+    export type FinalizePledgeMutationBody = BodyType<FinalizePledgeBody>
+    export type FinalizePledgeMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Finalize a written or verbal pledge after validating its document, allocations, schedule, and conditions.
+ */
+export const useFinalizePledge = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePledge>>, TError,{id: string;data: BodyType<FinalizePledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof finalizePledge>>,
+        TError,
+        {id: string;data: BodyType<FinalizePledgeBody>},
+        TContext
+      > => {
+      return useMutation(getFinalizePledgeMutationOptions(options));
     }
     
