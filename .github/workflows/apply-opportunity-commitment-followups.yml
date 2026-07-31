@@ -74,6 +74,7 @@ jobs:
           python .github/scripts/apply_opportunity_commitment_followups.py
           python - <<'PY'
           from pathlib import Path
+          import re
 
           pledge_stage = Path("artifacts/api-server/src/lib/pledgeStage.ts")
           stage = pledge_stage.read_text()
@@ -90,23 +91,24 @@ jobs:
 
           gifts_path = Path("artifacts/api-server/src/routes/giftsAndPayments.ts")
           gifts = gifts_path.read_text()
-          first = "            pledgeId,\n            expectedDate:"
-          if gifts.count(first) != 2:
-              raise RuntimeError(
-                  f"Expected two pledge schedule inserts; found {gifts.count(first)}"
+          schedule_insert = re.compile(
+              r"(await tx\.insert\(pledgeExpectedPayments\)\.values\(\{\s*"
+              r"id: newId\(\),\s*)pledgeId(?::\s*([A-Za-z0-9_]+))?,(\s*expectedDate:)"
+          )
+
+          def replace_schedule_key(match: re.Match[str]) -> str:
+              target = match.group(2) or "pledgeId"
+              return (
+                  match.group(1)
+                  + f"pledgeOrOpportunityId: {target},"
+                  + match.group(3)
               )
-          gifts = gifts.replace(
-              first,
-              "            pledgeOrOpportunityId: pledgeId,\n            expectedDate:",
-          )
-          second = "          pledgeId: opportunityId,\n          expectedDate:"
-          if gifts.count(second) != 1:
-              raise RuntimeError("Could not locate reverted-gift schedule insert")
-          gifts = gifts.replace(
-              second,
-              "          pledgeOrOpportunityId: opportunityId,\n          expectedDate:",
-              1,
-          )
+
+          gifts, schedule_count = schedule_insert.subn(replace_schedule_key, gifts)
+          if schedule_count != 3:
+              raise RuntimeError(
+                  f"Expected three pledge schedule inserts; found {schedule_count}"
+              )
           gifts_path.write_text(gifts)
 
           for test_name in (
