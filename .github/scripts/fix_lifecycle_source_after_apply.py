@@ -212,3 +212,32 @@ for obsolete_symbol in (
         raise RuntimeError(f"Obsolete gift lifecycle symbol remains: {obsolete_symbol}")
 
 gift_path.write_text(gift)
+
+# HTTP route integration tests are intended to exercise the real Express route
+# handlers while replacing authentication with a seeded app user. Newer Clerk
+# middleware validates keys before the route-level requireAuth mock runs, which
+# turns every assertion into an unrelated 500. Preserve all other Clerk exports
+# but replace only clerkMiddleware with a pass-through in this test seam.
+test_path = Path(
+    "artifacts/api-server/src/__tests__/create-gift-overrides.integration.test.ts"
+)
+test = test_path.read_text()
+if 'vi.mock("@clerk/express"' not in test:
+    marker = "\nconst RUN = `mintovr_${Date.now()}`;"
+    if test.count(marker) != 1:
+        raise RuntimeError("Could not locate create-gift override test setup marker")
+    clerk_mock = '''
+
+vi.mock("@clerk/express", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clerk/express")>();
+  return {
+    ...actual,
+    clerkMiddleware:
+      () =>
+      (_req: unknown, _res: unknown, next: () => void): void =>
+        next(),
+  };
+});
+'''
+    test = test.replace(marker, clerk_mock + marker, 1)
+test_path.write_text(test)
