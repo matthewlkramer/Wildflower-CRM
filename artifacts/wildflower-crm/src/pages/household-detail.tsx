@@ -20,6 +20,7 @@ import {
 } from "@/components/linked-records";
 import { GivesThroughCard } from "@/components/gives-through-card";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
+import { GivingRelationshipCard } from "@/components/giving-relationship-card";
 import {
   RecordLayout,
   FieldCard,
@@ -310,6 +311,8 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
               </p>
             )}
           </RelatedCard>
+
+          <GivingRelationshipCard sourceKind="household" sourceId={household.id} />
 
           <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 

@@ -145,6 +145,23 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
   # ─── Preferred donor pathways ───────────────────────────────────────────────
+  /giving-relationships/{sourceKind}/{sourceId}:
+    get:
+      operationId: getGivingRelationship
+      tags: [donor-routing]
+      summary: Get a deduplicated giving relationship for a donor record.
+      description: >-
+        Returns donor-of-record giving, household or household-member giving,
+        current-principal organization giving, intermediary delivery totals, and
+        recent gifts. Intermediary totals overlap the relationship total and are
+        never treated as additional giving.
+      parameters:
+        - { name: sourceKind, in: path, required: true, schema: { $ref: "#/components/schemas/DonorRecordKind" } }
+        - { name: sourceId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/GivingRelationship" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /donor-routing/{sourceKind}/{sourceId}:
     get:
       operationId: getDonorRouting
@@ -6483,6 +6500,69 @@ components:
         priority:              { allOf: [ { $ref: "#/components/schemas/Priority" } ], nullable: true }
         anonymous:             { type: boolean }
 
+    # ─── Giving relationship views ─────────────────────────────────────────────
+    GivingRelationshipAttributionKind:
+      type: string
+      enum: [direct, household, household_member, principal_organization]
+    GivingRelationshipDonor:
+      type: object
+      required: [kind, id, name]
+      properties:
+        kind: { $ref: "#/components/schemas/DonorRecordKind" }
+        id:   { type: string }
+        name: { type: string }
+    GivingRelationshipBreakdown:
+      type: object
+      required: [kind, label, description, amount, giftCount]
+      properties:
+        kind:        { $ref: "#/components/schemas/GivingRelationshipAttributionKind" }
+        label:       { type: string }
+        description: { type: string }
+        amount:      { type: string, description: "Decimal amount as a string." }
+        giftCount:   { type: integer }
+    GivingRelationshipIntermediary:
+      type: object
+      required: [id, name]
+      properties:
+        id:   { type: string }
+        name: { type: string }
+    GivingRelationshipGift:
+      type: object
+      required: [id, amount, donor, attributionKind, attributionLabel]
+      properties:
+        id:                  { type: string }
+        name:                { type: string, nullable: true }
+        amount:              { type: string }
+        dateReceived:        { type: string, format: date, nullable: true }
+        paymentMethod:       { type: string, nullable: true }
+        donor:               { $ref: "#/components/schemas/GivingRelationshipDonor" }
+        paymentIntermediary: { allOf: [ { $ref: "#/components/schemas/GivingRelationshipIntermediary" } ], nullable: true }
+        attributionKind:     { $ref: "#/components/schemas/GivingRelationshipAttributionKind" }
+        attributionLabel:    { type: string }
+    GivingRelationshipLargestGift:
+      type: object
+      required: [id, amount]
+      properties:
+        id:           { type: string }
+        amount:       { type: string }
+        dateReceived: { type: string, format: date, nullable: true }
+    GivingRelationship:
+      type: object
+      required:
+        [source, requiresDecision, relationshipTotal, donorOfRecordTotal,
+         throughIntermediaryTotal, giftCount, breakdown, recentGifts]
+      properties:
+        source:                   { $ref: "#/components/schemas/GivingRelationshipDonor" }
+        resolvedDonor:            { allOf: [ { $ref: "#/components/schemas/GivingRelationshipDonor" } ], nullable: true }
+        requiresDecision:         { type: boolean }
+        relationshipTotal:        { type: string, description: "Each related gift counted once." }
+        donorOfRecordTotal:       { type: string, description: "Gifts recorded directly to this exact record." }
+        throughIntermediaryTotal: { type: string, description: "Overlapping delivery-method total; not additive." }
+        giftCount:                { type: integer }
+        mostRecentGiftDate:       { type: string, format: date, nullable: true }
+        largestGift:              { allOf: [ { $ref: "#/components/schemas/GivingRelationshipLargestGift" } ], nullable: true }
+        breakdown:                { type: array, items: { $ref: "#/components/schemas/GivingRelationshipBreakdown" } }
+        recentGifts:              { type: array, items: { $ref: "#/components/schemas/GivingRelationshipGift" } }
     # ─── Donor payment-intermediaries ("gives through") ─────────────────────────
     DonorPaymentIntermediary:
       type: object
