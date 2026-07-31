@@ -81,10 +81,10 @@ import { households } from "./households";
 //               frozen snapshot of the opportunity-phase fields)
 //     IGNORED : awarded_amount, actual_completion_date, conditions_met
 //
-// `was_pledge` (boolean, sticky-true) records that this row was ever a
-// pledge, regardless of current status. Auto-flipped true when stage
-// reaches conditional/verbal/written, when a grant letter is uploaded,
-// or when a user manually checks the box. Never auto-flipped false.
+// Commitment lifecycle is explicit: commitmentPath + verbalCommitmentAt
+// record what the donor verbally confirmed; pledgeCommittedAt is the sole
+// boundary that establishes a pledge. writtenPledge is retained only as a
+// read-compatible mirror during migration of legacy readers.
 //
 // Partial indexes below match the two hot read paths: "open pipeline"
 // (filter by status='open', sorted by projected_close_date, often
@@ -159,7 +159,7 @@ export const opportunitiesAndPledges = pgTable(
       { onDelete: "set null" },
     ),
     // Audit-close WRITE-OFF (see gift-booking-lifecycle / audit-close model). When
-    // an audited (frozen) written pledge is under-paid and its money can no longer
+    // an audited (frozen) finalized pledge is under-paid and its money can no longer
     // be collected, the original is NEVER touched — instead a brand-new offsetting
     // pledge is created in the CURRENT OPEN fiscal year with is_write_off=true and
     // NEGATIVE allocations summing to the uncollected remainder. This self-FK points
@@ -217,8 +217,9 @@ export const opportunitiesAndPledges = pgTable(
     // New application writes never set this directly; applyDerivedOppFields
     // mirrors pledgeCommittedAt != null. Remove after all legacy readers migrate.
     writtenPledge: boolean("written_pledge").default(false).notNull(),
-    // Grant letter (foundation pledge documentation). Lives in object
-    // storage; only the URL is stored. Uploading flips written_pledge=true.
+    // Pledge document (historically named grant letter). Uploading the file
+    // does not establish a pledge; written pledges are finalized explicitly
+    // after the document and pledge plan are complete.
     grantLetterUrl: text("grant_letter_url"),
     grantLetterFilename: text("grant_letter_filename"),
     // ISO-string mode so the OpenAPI-typed string flows through without

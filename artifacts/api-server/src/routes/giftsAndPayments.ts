@@ -7,6 +7,7 @@ import {
   stagedPayments,
   opportunitiesAndPledges,
   pledgeAllocations,
+  pledgeExpectedPayments,
   bulkOperations,
   organizations,
   households,
@@ -22,7 +23,23 @@ import {
   sourceLinks,
   type NewGiftAllocation,
 } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, getTableColumns, gte, ilike, isNotNull, isNull, lte, ne, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  ilike,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { getAppUser } from "../lib/appRequest";
 import { getViewer, type Viewer } from "../lib/identityVisibility";
 import {
@@ -199,9 +216,25 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { ObjectStorageService } from "../lib/objectStorage";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
-import { resolveGiftFreeze, resolveGiftFreezeById, respondFrozen } from "../lib/freezeGuard";
-import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
+import {
+  asyncHandler,
+  newId,
+  normalizeArrayQuery,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+  splitBlank,
+} from "../lib/helpers";
+import {
+  resolveGiftFreeze,
+  resolveGiftFreezeById,
+  respondFrozen,
+} from "../lib/freezeGuard";
+import {
+  getCurrentOpenFiscalYear,
+  todayInChicago,
+} from "../lib/governingFiscalYear";
 import {
   computeGiftSurplus,
   findActiveOverpayChildGiftId,
@@ -212,7 +245,12 @@ import {
 } from "../lib/giftAllocationSeed";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
+import {
+  activeOnlyUnlessAdmin,
+  archiveOne,
+  executeBulkArchive,
+  unarchiveOne,
+} from "../lib/archive";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { deriveGiftQbTieLiveExpr, type GiftQbTie } from "../lib/giftQbTie";
 import { requireFinance } from "../lib/financeGuard";
@@ -238,16 +276,34 @@ import { stagedStatusSql } from "../lib/derivedStatus";
 import { inArray } from "drizzle-orm";
 import { personDisplayNameSql } from "../lib/personNameSql";
 
-const GIFTS_ARRAY_PARAMS = ["type", "paymentMethod", "ownerUserId", "entityId", "fiscalYear", "fundableProjectId", "quickbooksTie", "restrictionLabels", "regionalRestrictionTypes", "otherRestrictionTypes", "timeRestrictionTypes", "campaignSlugs"] as const;
+const GIFTS_ARRAY_PARAMS = [
+  "type",
+  "paymentMethod",
+  "ownerUserId",
+  "entityId",
+  "fiscalYear",
+  "fundableProjectId",
+  "quickbooksTie",
+  "restrictionLabels",
+  "regionalRestrictionTypes",
+  "otherRestrictionTypes",
+  "timeRestrictionTypes",
+  "campaignSlugs",
+] as const;
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
+function respondInvariantFailure(
+  res: Response,
+  issues: InvariantIssue[],
+): void {
   res.status(400).json({
     error: "validation_error",
     message: "Request validation failed",
-    details: { issues: issues.map((i) => ({ path: [i.path], message: i.message })) },
+    details: {
+      issues: issues.map((i) => ({ path: [i.path], message: i.message })),
+    },
   });
 }
 
@@ -258,7 +314,11 @@ router.get(
       req.query as Record<string, unknown>,
       GIFTS_ARRAY_PARAMS,
     );
-    const q = parseOrBadRequest(ListGiftsAndPaymentsQueryParams, normalizedQuery, res);
+    const q = parseOrBadRequest(
+      ListGiftsAndPaymentsQueryParams,
+      normalizedQuery,
+      res,
+    );
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
@@ -292,15 +352,19 @@ router.get(
       }
     }
     // Date-received window (inclusive) for the reconciler's amount/date search.
-    if (q.dateAfter) filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));
-    if (q.dateBefore) filters.push(lte(giftsAndPayments.dateReceived, q.dateBefore));
+    if (q.dateAfter)
+      filters.push(gte(giftsAndPayments.dateReceived, q.dateAfter));
+    if (q.dateBefore)
+      filters.push(lte(giftsAndPayments.dateReceived, q.dateBefore));
     // Exact amount filter (major units) for the broad gift-search dialog —
     // numeric equality so "480" matches a stored "480.00". A non-numeric value
     // is silently ignored (never a 500).
     if (q.amount != null && q.amount !== "") {
       const amt = Number(q.amount);
       if (Number.isFinite(amt)) {
-        filters.push(sql`(${giftsAndPayments.amount})::numeric = ${amt}::numeric`);
+        filters.push(
+          sql`(${giftsAndPayments.amount})::numeric = ${amt}::numeric`,
+        );
       }
     }
     // Linked-to-QuickBooks filter — whether the gift has any QuickBooks
@@ -327,7 +391,9 @@ router.get(
         }
         if (wanted.size > 0) {
           const vals = [...wanted].map((v) => sql`${v}`);
-          filters.push(sql<boolean>`(${deriveGiftQbTieLiveExpr()}) IN (${sql.join(vals, sql`, `)})`);
+          filters.push(
+            sql<boolean>`(${deriveGiftQbTieLiveExpr()}) IN (${sql.join(vals, sql`, `)})`,
+          );
         }
       }
     }
@@ -343,11 +409,15 @@ router.get(
     // Donorbox-backed filter — keeps only gifts where a counted ledger row is
     // Donorbox-sourced directly or Stripe-sourced via a Donorbox donation.
     if (req.query.donorboxBacked === "true") {
-      filters.push(sql.raw(donorboxBackedExistsSql(`"gifts_and_payments"."id"`)));
+      filters.push(
+        sql.raw(donorboxBackedExistsSql(`"gifts_and_payments"."id"`)),
+      );
     }
     // Coding-form filter — keeps only gifts with an APPLIED coding_form_rows row.
     if (req.query.codingForm === "true") {
-      filters.push(sql`EXISTS (SELECT 1 FROM coding_form_rows cfr WHERE cfr.matched_gift_id = ${giftsAndPayments.id} AND cfr.status = 'applied')`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM coding_form_rows cfr WHERE cfr.matched_gift_id = ${giftsAndPayments.id} AND cfr.status = 'applied')`,
+      );
     }
     {
       const f = splitBlank(q.type as string[] | undefined);
@@ -355,24 +425,49 @@ router.get(
       // value filter uses the derived expression.
       if (f.values.length > 0) {
         const vals = (f.values as string[]).map((v) => sql`${v}`);
-        filters.push(sql<boolean>`(${deriveGiftTypeExpr()}) IN (${sql.join(vals, sql`, `)})`);
+        filters.push(
+          sql<boolean>`(${deriveGiftTypeExpr()}) IN (${sql.join(vals, sql`, `)})`,
+        );
       }
     }
-    if (q.organizationId) filters.push(eq(giftsAndPayments.organizationId, q.organizationId));
-    if (q.householdId) filters.push(eq(giftsAndPayments.householdId, q.householdId));
-    if (q.individualGiverPersonId) filters.push(eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId));
-    if (q.opportunityId) filters.push(eq(giftsAndPayments.opportunityId, q.opportunityId));
+    if (q.organizationId)
+      filters.push(eq(giftsAndPayments.organizationId, q.organizationId));
+    if (q.householdId)
+      filters.push(eq(giftsAndPayments.householdId, q.householdId));
+    if (q.individualGiverPersonId)
+      filters.push(
+        eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId),
+      );
+    if (q.opportunityId)
+      filters.push(eq(giftsAndPayments.opportunityId, q.opportunityId));
     {
       const f = splitBlank(q.paymentMethod as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.paymentMethod), inArray(giftsAndPayments.paymentMethod, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.paymentMethod));
-      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.paymentMethod, f.values as never[]));
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(giftsAndPayments.paymentMethod),
+            inArray(giftsAndPayments.paymentMethod, f.values as never[]),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(giftsAndPayments.paymentMethod));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(giftsAndPayments.paymentMethod, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.ownerUserId as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(giftsAndPayments.ownerUserId), inArray(giftsAndPayments.ownerUserId, f.values))!);
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(giftsAndPayments.ownerUserId),
+            inArray(giftsAndPayments.ownerUserId, f.values),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(giftsAndPayments.ownerUserId));
-      else if (f.values.length > 0) filters.push(inArray(giftsAndPayments.ownerUserId, f.values));
+      else if (f.values.length > 0)
+        filters.push(inArray(giftsAndPayments.ownerUserId, f.values));
     }
     // Entity filter — EXISTS on gift_allocations so we don't fan rows out
     // when a single gift has multiple allocations. Driven by the global
@@ -410,28 +505,48 @@ router.get(
     // Presence filters on computed rollup fields (has value vs blank).
     // Each mirrors the matching column expression in donorJoinSelect.
     if (q.entitiesPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`,
+      );
     } else if (q.entitiesPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.entityId} IS NOT NULL)`,
+      );
     }
     if (q.usagesPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`,
+      );
     } else if (q.usagesPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.displayUsage} IS NOT NULL)`,
+      );
     }
     if (q.grantYearsPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`,
+      );
     } else if (q.grantYearsPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.grantYear} IS NOT NULL)`,
+      );
     }
-    if (q.thankYouSentAtPresence === "has") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
-    else if (q.thankYouSentAtPresence === "blank") filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
-    if (q.dateReceivedPresence === "has") filters.push(sql`${giftsAndPayments.dateReceived} IS NOT NULL`);
-    else if (q.dateReceivedPresence === "blank") filters.push(sql`${giftsAndPayments.dateReceived} IS NULL`);
+    if (q.thankYouSentAtPresence === "has")
+      filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NOT NULL`);
+    else if (q.thankYouSentAtPresence === "blank")
+      filters.push(sql`${giftsAndPayments.thankYouSentAt} IS NULL`);
+    if (q.dateReceivedPresence === "has")
+      filters.push(sql`${giftsAndPayments.dateReceived} IS NOT NULL`);
+    else if (q.dateReceivedPresence === "blank")
+      filters.push(sql`${giftsAndPayments.dateReceived} IS NULL`);
     if (q.purposeVerbatimPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`,
+      );
     } else if (q.purposeVerbatimPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${giftAllocations.purposeVerbatim} IS NOT NULL)`,
+      );
     }
     {
       // Shared EXISTS predicate: mirrors the restrictionLabel SQL formula.
@@ -452,22 +567,34 @@ router.get(
     // Per-axis restriction type filters — each is an OR across allocations,
     // axes are AND-ed together.
     if (q.regionalRestrictionTypes && q.regionalRestrictionTypes.length > 0) {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.regionalRestrictionType, q.regionalRestrictionTypes as never[])})`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.regionalRestrictionType, q.regionalRestrictionTypes as never[])})`,
+      );
     }
     if (q.otherRestrictionTypes && q.otherRestrictionTypes.length > 0) {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.otherRestrictionType, q.otherRestrictionTypes as never[])})`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.otherRestrictionType, q.otherRestrictionTypes as never[])})`,
+      );
     }
     if (q.timeRestrictionTypes && q.timeRestrictionTypes.length > 0) {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.timeRestrictionType, q.timeRestrictionTypes as never[])})`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.timeRestrictionType, q.timeRestrictionTypes as never[])})`,
+      );
     }
     // Campaign filter — gifts whose campaign_slug is in the given set (OR).
     if (q.campaignSlugs && q.campaignSlugs.length > 0) {
-      filters.push(inArray(giftsAndPayments.campaignSlug, q.campaignSlugs as string[]));
+      filters.push(
+        inArray(giftsAndPayments.campaignSlug, q.campaignSlugs as string[]),
+      );
     }
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).
-    if (q.worklist) filters.push(...giftWorklistConds(q.worklist as GiftWorklist));
-    const archivedFilter = activeOnlyUnlessAdmin(req, giftsAndPayments.archivedAt);
+    if (q.worklist)
+      filters.push(...giftWorklistConds(q.worklist as GiftWorklist));
+    const archivedFilter = activeOnlyUnlessAdmin(
+      req,
+      giftsAndPayments.archivedAt,
+    );
     if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     // Sort order (default date_desc). Amount is a numeric text column, so cast
@@ -486,9 +613,15 @@ router.get(
       db
         .select(donorJoinSelect)
         .from(giftsAndPayments)
-        .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+        .leftJoin(
+          organizations,
+          eq(organizations.id, giftsAndPayments.organizationId),
+        )
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
-        .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+        .leftJoin(
+          people,
+          eq(people.id, giftsAndPayments.individualGiverPersonId),
+        )
         .where(where)
         .orderBy(...orderBy)
         .limit(limit)
@@ -496,9 +629,15 @@ router.get(
       db
         .select({ value: count() })
         .from(giftsAndPayments)
-        .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+        .leftJoin(
+          organizations,
+          eq(organizations.id, giftsAndPayments.organizationId),
+        )
         .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
-        .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+        .leftJoin(
+          people,
+          eq(people.id, giftsAndPayments.individualGiverPersonId),
+        )
         .where(where),
     ]);
     const viewer = getViewer(req);
@@ -506,7 +645,9 @@ router.get(
       const masked = maskGiftDonorRow(r, viewer);
       return {
         ...masked,
-        reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus as GiftQbTie),
+        reconciliationLanes: deriveGiftLanes(
+          masked.quickbooksTieStatus as GiftQbTie,
+        ),
       };
     });
     res.json({ data, pagination: { page, limit, total: Number(total) } });
@@ -517,13 +658,19 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
   const row = await db
     .select(donorJoinSelect)
     .from(giftsAndPayments)
-    .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+    .leftJoin(
+      organizations,
+      eq(organizations.id, giftsAndPayments.organizationId),
+    )
     .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
     .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
     .where(eq(giftsAndPayments.id, id))
     .then((r) => r[0]);
   if (!row) return null;
-  const allocations = await db.select().from(giftAllocations).where(eq(giftAllocations.giftId, id));
+  const allocations = await db
+    .select()
+    .from(giftAllocations)
+    .where(eq(giftAllocations.giftId, id));
   let thankYouAttachments: Array<{
     id: string;
     filename: string | null;
@@ -577,7 +724,9 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
     reimbursablePlaceholderWarning,
     flaggedForResearch,
   ] = await Promise.all([
-    db.transaction((tx) => computeGiftSurplus(tx, { id: row.id, amount: row.amount })),
+    db.transaction((tx) =>
+      computeGiftSurplus(tx, { id: row.id, amount: row.amount }),
+    ),
     findActiveOverpayChildGiftId(id),
     // Guardrail: warn when this gift is a full-award placeholder on a
     // reimbursable pledge with no settlement evidence (nudge to book real
@@ -588,7 +737,9 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
   ]);
   return {
     ...masked,
-    reconciliationLanes: deriveGiftLanes(masked.quickbooksTieStatus as GiftQbTie),
+    reconciliationLanes: deriveGiftLanes(
+      masked.quickbooksTieStatus as GiftQbTie,
+    ),
     reimbursablePlaceholderWarning,
     flaggedForResearch,
     allocations,
@@ -596,7 +747,9 @@ async function buildGiftDetail(id: string, viewer: Viewer) {
     donorbox: donorboxEnrichmentOrNull(donorboxRow),
     auditClose: {
       frozen: giftFreeze.frozen,
-      frozenFiscalYearLabel: giftFreeze.frozen ? giftFreeze.fiscalYearLabel : null,
+      frozenFiscalYearLabel: giftFreeze.frozen
+        ? giftFreeze.fiscalYearLabel
+        : null,
       overpaySurplus: Math.max(0, overpaySurplusRaw).toFixed(2),
       resolvedByGiftId,
     },
@@ -624,10 +777,21 @@ router.post(
       // audit-closed, or a re-date that would move it into a closed FY.
       freezeCheck: (existing, cleanPatch) =>
         resolveGiftFreeze(
-          (existing as Record<string, unknown>).dateReceived as string | null | undefined,
-          (cleanPatch as Record<string, unknown>).dateReceived as string | null | undefined,
+          (existing as Record<string, unknown>).dateReceived as
+            | string
+            | null
+            | undefined,
+          (cleanPatch as Record<string, unknown>).dateReceived as
+            | string
+            | null
+            | undefined,
         ),
-      allowedFields: ["ownerUserId", "loanOrGrant", "paymentMethod", "dateReceived"],
+      allowedFields: [
+        "ownerUserId",
+        "loanOrGrant",
+        "paymentMethod",
+        "dateReceived",
+      ],
       // Allocation-set reconciliation fields — managed via extraApply
       // rather than as columns on gifts_and_payments.
       virtualFields: [
@@ -676,7 +840,9 @@ router.post(
                   .map((r: { e: string | null }) => r.e)
                   .filter((e: string | null): e is string => !!e)
               : [];
-          for (const entityId of v.entityIds.filter((e) => !existing.includes(e))) {
+          for (const entityId of v.entityIds.filter(
+            (e) => !existing.includes(e),
+          )) {
             await tx.insert(giftAllocations).values({
               id: newId(),
               giftId: id,
@@ -724,7 +890,9 @@ router.post(
         // don't linger.
         if (v.intendedUsage) {
           const fundableProjectId =
-            v.intendedUsage === "project" ? (v.fundableProjectId ?? null) : null;
+            v.intendedUsage === "project"
+              ? (v.fundableProjectId ?? null)
+              : null;
           const existing = await tx
             .select({ id: giftAllocations.id })
             .from(giftAllocations)
@@ -755,7 +923,11 @@ router.post(
 router.post(
   "/gifts-and-payments",
   asyncHandler(async (req, res) => {
-    const body = parseOrBadRequest(CreateGiftOrPaymentBodyRefined, req.body, res);
+    const body = parseOrBadRequest(
+      CreateGiftOrPaymentBodyRefined,
+      req.body,
+      res,
+    );
     if (!body) return;
     // Evidence-only gift creation (Task #788): a manual gift pointed at ANY
     // pledge/opportunity is blocked — money arriving in QuickBooks mints the
@@ -913,7 +1085,9 @@ router.post(
         .insert(giftsAndPayments)
         .values({
           id: surplusGiftId,
-          name: original.name ? `Overpayment — ${original.name}` : "Overpayment",
+          name: original.name
+            ? `Overpayment — ${original.name}`
+            : "Overpayment",
           // Donor XOR: copy all three FKs (exactly one is non-null on the source).
           organizationId: original.organizationId,
           individualGiverPersonId: original.individualGiverPersonId,
@@ -1002,7 +1176,10 @@ router.patch(
 
     // Freeze guard: block edits to a gift whose governing FY is audit-closed, and
     // block moving date_received into a closed FY.
-    const freeze = await resolveGiftFreeze(existing.dateReceived, merged.dateReceived);
+    const freeze = await resolveGiftFreeze(
+      existing.dateReceived,
+      merged.dateReceived,
+    );
     if (freeze.frozen) return respondFrozen(res, freeze);
 
     // Request-level flag only (evidence-only escape hatch) — not a column.
@@ -1015,10 +1192,14 @@ router.patch(
     // Stamp the file-upload timestamps server-side: set to now when a URL is
     // provided, cleared to null when the URL is removed. Never client-settable.
     if (body.grantLetterUrl !== undefined) {
-      giftWrite.grantLetterUploadedAt = body.grantLetterUrl ? new Date().toISOString() : null;
+      giftWrite.grantLetterUploadedAt = body.grantLetterUrl
+        ? new Date().toISOString()
+        : null;
     }
     if (body.thankYouLetterUrl !== undefined) {
-      giftWrite.thankYouLetterUploadedAt = body.thankYouLetterUrl ? new Date().toISOString() : null;
+      giftWrite.thankYouLetterUploadedAt = body.thankYouLetterUrl
+        ? new Date().toISOString()
+        : null;
     }
     const [row] = await db
       .update(giftsAndPayments)
@@ -1032,7 +1213,15 @@ router.patch(
     // Revenue coding is no longer a persisted snapshot on the allocation
     // (Task #449) — it's derived on demand from the allocation's scope + the
     // gift donor/type, so a donor or gift-type change needs no allocation rewrite.
-    await auditUpdate(req, "gift", row.id, existing as Record<string, unknown>, row as Record<string, unknown>, Object.keys(body), "Updated gift");
+    await auditUpdate(
+      req,
+      "gift",
+      row.id,
+      existing as Record<string, unknown>,
+      row as Record<string, unknown>,
+      Object.keys(body),
+      "Updated gift",
+    );
     res.json(row);
   }),
 );
@@ -1091,7 +1280,8 @@ function donorKeyOf(r: {
   householdId: string | null;
 }): string {
   if (r.organizationId != null) return `org:${r.organizationId}`;
-  if (r.individualGiverPersonId != null) return `person:${r.individualGiverPersonId}`;
+  if (r.individualGiverPersonId != null)
+    return `person:${r.individualGiverPersonId}`;
   if (r.householdId != null) return `household:${r.householdId}`;
   return "none";
 }
@@ -1123,7 +1313,8 @@ router.post(
     if (loserIds.length === 0) {
       res.status(400).json({
         error: "validation_error",
-        message: "mergeIds must contain at least one gift distinct from primaryId",
+        message:
+          "mergeIds must contain at least one gift distinct from primaryId",
       });
       return;
     }
@@ -1152,7 +1343,10 @@ router.post(
         return {
           ok: false,
           status: 400,
-          json: { error: "validation_error", message: "primary gift not found" },
+          json: {
+            error: "validation_error",
+            message: "primary gift not found",
+          },
         };
       }
       const missing = loserIds.filter((id) => !byId.has(id));
@@ -1223,7 +1417,11 @@ router.post(
       // BEFORE any other write so a genuinely unrepresentable link shape (a
       // staged-payment split, or two+ Stripe/Donorbox charges landing on one
       // gift) 409s with a clean, no-op rollback instead of a half-applied merge.
-      const absorb = await absorbGiftEvidenceIntoSurvivor(tx, primaryId, loserIds);
+      const absorb = await absorbGiftEvidenceIntoSurvivor(
+        tx,
+        primaryId,
+        loserIds,
+      );
       if (absorb.collision) {
         const detail =
           absorb.collision.kind === "split_link"
@@ -1289,24 +1487,35 @@ router.post(
           id: newId(),
           actorUserId: actor.id,
           entity: "gifts-and-payments/merge",
-          fields: ["amount", "organizationId", "individualGiverPersonId", "householdId"],
+          fields: [
+            "amount",
+            "organizationId",
+            "individualGiverPersonId",
+            "householdId",
+          ],
           targetIds: allIds,
           succeededIds: allIds,
           failedIds: [],
         });
       }
 
-      return { ok: true, pledges: [...pledges], donorOrgId: donor.organizationId };
+      return {
+        ok: true,
+        pledges: [...pledges],
+        donorOrgId: donor.organizationId,
+      };
     });
 
     if (!outcome.ok) {
-      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      if ("invariant" in outcome)
+        return respondInvariantFailure(res, outcome.invariant);
       res.status(outcome.status).json(outcome.json);
       return;
     }
 
     await applyDerivedOppFieldsMany(...outcome.pledges);
-    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    if (outcome.donorOrgId)
+      enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ primaryId, mergedIds: loserIds });
   }),
 );
@@ -1336,7 +1545,12 @@ router.post(
       }
     }
     if (giftIds.length === 0) {
-      res.status(400).json({ error: "validation_error", message: "giftIds must not be empty" });
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: "giftIds must not be empty",
+        });
       return;
     }
 
@@ -1406,8 +1620,14 @@ router.post(
           .select({
             id: opportunitiesAndPledges.id,
             organizationId: opportunitiesAndPledges.organizationId,
-            individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
+            individualGiverPersonId:
+              opportunitiesAndPledges.individualGiverPersonId,
             householdId: opportunitiesAndPledges.householdId,
+            commitmentPath: opportunitiesAndPledges.commitmentPath,
+            pledgeCommittedAt: opportunitiesAndPledges.pledgeCommittedAt,
+            writtenPledge: opportunitiesAndPledges.writtenPledge,
+            archivedAt: opportunitiesAndPledges.archivedAt,
+            lossType: opportunitiesAndPledges.lossType,
           })
           .from(opportunitiesAndPledges)
           .where(eq(opportunitiesAndPledges.id, body.pledgeId))
@@ -1417,7 +1637,35 @@ router.post(
           return {
             ok: false,
             status: 409,
-            json: { error: "pledge_not_found", message: "Target pledge not found." },
+            json: {
+              error: "pledge_not_found",
+              message: "Target pledge not found.",
+            },
+          };
+        }
+        const finalizedPledge =
+          pledge.pledgeCommittedAt != null ||
+          (pledge.commitmentPath == null && pledge.writtenPledge === true);
+        if (!finalizedPledge) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "not_finalized_pledge",
+              message:
+                "Finalize this written or verbal pledge before attaching payments to it.",
+            },
+          };
+        }
+        if (pledge.archivedAt != null || pledge.lossType != null) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "pledge_not_active",
+              message:
+                "Restore or reopen this pledge before attaching payments to it.",
+            },
           };
         }
         // Every selected gift must belong to the pledge's donor — otherwise a
@@ -1475,6 +1723,11 @@ router.post(
         pledgeId = newId();
         created = true;
 
+        const commitmentDate =
+          gifts
+            .map((g) => g.dateReceived)
+            .filter((date): date is string => date != null)
+            .sort()[0] ?? todayInChicago();
         await tx.insert(opportunitiesAndPledges).values({
           id: pledgeId,
           name: body.name ?? null,
@@ -1482,15 +1735,16 @@ router.post(
           individualGiverPersonId: donor.individualGiverPersonId,
           householdId: donor.householdId,
           awardedAmount: summedAmount,
-          // Cultivation stage is a pure funnel now; the commitment outcome is the
-          // writtenPledge latch. applyDerivedOppFieldsMany below advances stage to
-          // `complete` (won) and derives status/paid — never written by hand.
           stage: "verbal_confirmation",
+          commitmentPath: "verbal_pledge",
+          verbalCommitmentAt: commitmentDate,
+          pledgeCommittedAt: commitmentDate,
           writtenPledge: true,
-          // Inherit loan-vs-grant from the source gift(s) so loan-fund money
-          // doesn't create a grant pledge; if any source gift is loan the
-          // pledge is loan.
-          loanOrGrant: gifts.some((g) => g.loanOrGrant === "loan") ? "loan" : "grant",
+          // This correction reconstructs a historical pledge from received
+          // gifts. Without a pledge document, it is explicitly a verbal pledge.
+          loanOrGrant: gifts.some((g) => g.loanOrGrant === "loan")
+            ? "loan"
+            : "grant",
         });
         // Minimal allocation so the pledge satisfies the "at least one
         // allocation" expectation; carries the full summed amount.
@@ -1498,7 +1752,17 @@ router.post(
           id: newId(),
           pledgeOrOpportunityId: pledgeId,
           subAmount: summedAmount,
+          status: "committed",
         });
+        for (const gift of gifts) {
+          if (Number(gift.amount ?? 0) <= 0) continue;
+          await tx.insert(pledgeExpectedPayments).values({
+            id: newId(),
+            pledgeOrOpportunityId: pledgeId,
+            expectedDate: gift.dateReceived ?? commitmentDate,
+            amount: gift.amount,
+          });
+        }
       }
       pledges.add(pledgeId);
 
@@ -1523,7 +1787,8 @@ router.post(
     });
 
     if (!outcome.ok) {
-      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      if ("invariant" in outcome)
+        return respondInvariantFailure(res, outcome.invariant);
       res.status(outcome.status).json(outcome.json);
       return;
     }
@@ -1558,13 +1823,22 @@ router.post(
   "/gifts-and-payments/:id/split-into-pledge",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const body = parseOrBadRequest(SplitGiftIntoPledgeBody, req.body ?? {}, res);
+    const body = parseOrBadRequest(
+      SplitGiftIntoPledgeBody,
+      req.body ?? {},
+      res,
+    );
     if (!body) return;
 
     const actor = getAppUser(req);
 
     type Outcome =
-      | { ok: true; pledgeId: string; giftIds: string[]; donorOrgId: string | null }
+      | {
+          ok: true;
+          pledgeId: string;
+          giftIds: string[];
+          donorOrgId: string | null;
+        }
       | { ok: false; status: number; json: Record<string, unknown> }
       | { ok: false; invariant: InvariantIssue[] };
 
@@ -1576,13 +1850,20 @@ router.post(
         .where(eq(giftsAndPayments.id, id))
         .for("update");
       if (!gift) {
-        return { ok: false, status: 404, json: { error: "not_found", message: "Gift not found." } };
+        return {
+          ok: false,
+          status: 404,
+          json: { error: "not_found", message: "Gift not found." },
+        };
       }
       if (gift.archivedAt != null) {
         return {
           ok: false,
           status: 409,
-          json: { error: "gift_archived", message: "Restore this gift before splitting it." },
+          json: {
+            error: "gift_archived",
+            message: "Restore this gift before splitting it.",
+          },
         };
       }
       if (gift.opportunityId != null) {
@@ -1591,7 +1872,8 @@ router.post(
           status: 409,
           json: {
             error: "gift_already_on_pledge",
-            message: "This gift already pays a pledge. Detach it before splitting.",
+            message:
+              "This gift already pays a pledge. Detach it before splitting.",
           },
         };
       }
@@ -1641,13 +1923,15 @@ router.post(
           status: 400,
           json: {
             error: "not_enough_allocations",
-            message: "A gift needs at least two allocations to split into a pledge.",
+            message:
+              "A gift needs at least two allocations to split into a pledge.",
           },
         };
       }
 
       // Cents-based arithmetic so float drift never breaks the reconciliation.
-      const toCents = (v: string | null): number => Math.round(Number(v ?? 0) * 100);
+      const toCents = (v: string | null): number =>
+        Math.round(Number(v ?? 0) * 100);
       const giftCents = toCents(gift.amount);
       let allocCents = 0;
       for (const a of allocs) {
@@ -1686,8 +1970,9 @@ router.post(
       const oppIssues = validateOppInvariants(donor);
       if (oppIssues.length) return { ok: false, invariant: oppIssues };
 
-      // 1. Create the pledge: awarded = gift amount, donor inherited.
+      // 1. Reconstruct a finalized verbal pledge from the received gift.
       const pledgeId = newId();
+      const commitmentDate = gift.dateReceived ?? todayInChicago();
       await tx.insert(opportunitiesAndPledges).values({
         id: pledgeId,
         name: body.name ?? gift.name ?? null,
@@ -1695,10 +1980,10 @@ router.post(
         individualGiverPersonId: donor.individualGiverPersonId,
         householdId: donor.householdId,
         awardedAmount: gift.amount,
-        // Cultivation stage is a pure funnel now; the commitment outcome is the
-        // writtenPledge latch. Derived fields (status/stage→complete/paid) are
-        // recomputed afterward — never written by hand (invariant #3).
         stage: "verbal_confirmation",
+        commitmentPath: "verbal_pledge",
+        verbalCommitmentAt: commitmentDate,
+        pledgeCommittedAt: commitmentDate,
         writtenPledge: true,
         // Inherit loan-vs-grant from the source gift so a loan-fund gift
         // doesn't create a grant pledge.
@@ -1732,6 +2017,15 @@ router.post(
           // so the goal-analytics exclusion survives a gift→pledge split.
           reimbursementType: a.reimbursementType,
           status: "committed",
+        });
+      }
+
+      for (const allocation of allocs) {
+        await tx.insert(pledgeExpectedPayments).values({
+          id: newId(),
+          pledgeOrOpportunityId: pledgeId,
+          expectedDate: gift.dateReceived ?? commitmentDate,
+          amount: allocation.subAmount,
         });
       }
 
@@ -1801,14 +2095,20 @@ router.post(
     });
 
     if (!outcome.ok) {
-      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      if ("invariant" in outcome)
+        return respondInvariantFailure(res, outcome.invariant);
       res.status(outcome.status).json(outcome.json);
       return;
     }
 
     await applyDerivedOppFieldsMany(outcome.pledgeId);
-    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
-    res.json({ pledgeId: outcome.pledgeId, giftIds: outcome.giftIds, created: true });
+    if (outcome.donorOrgId)
+      enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    res.json({
+      pledgeId: outcome.pledgeId,
+      giftIds: outcome.giftIds,
+      created: true,
+    });
   }),
 );
 
@@ -1818,13 +2118,17 @@ router.post(
 // Treats the gift as money that did NOT actually land. Unlike split-into-pledge
 // (which keeps the gift as a payment), this mints a fresh opportunity from the
 // gift, mirrors its allocations onto pledge_allocations, and ARCHIVES the gift
-// (non-destructive). asPledge=true → a written PLEDGE; false → an open
+// (non-destructive). asPledge=true → a finalized VERBAL pledge; false → an open
 // opportunity back in the pipeline. Derived opp fields recomputed afterward.
 router.post(
   "/gifts-and-payments/:id/revert-to-opportunity",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const body = parseOrBadRequest(RevertGiftToOpportunityBody, req.body ?? {}, res);
+    const body = parseOrBadRequest(
+      RevertGiftToOpportunityBody,
+      req.body ?? {},
+      res,
+    );
     if (!body) return;
     const asPledge = body.asPledge ?? false;
 
@@ -1843,13 +2147,20 @@ router.post(
         .where(eq(giftsAndPayments.id, id))
         .for("update");
       if (!gift) {
-        return { ok: false, status: 404, json: { error: "not_found", message: "Gift not found." } };
+        return {
+          ok: false,
+          status: 404,
+          json: { error: "not_found", message: "Gift not found." },
+        };
       }
       if (gift.archivedAt != null) {
         return {
           ok: false,
           status: 409,
-          json: { error: "gift_archived", message: "Restore this gift before reverting it." },
+          json: {
+            error: "gift_archived",
+            message: "Restore this gift before reverting it.",
+          },
         };
       }
       if (gift.opportunityId != null) {
@@ -1858,7 +2169,8 @@ router.post(
           status: 409,
           json: {
             error: "gift_already_on_pledge",
-            message: "This gift already pays a pledge. Detach it before reverting.",
+            message:
+              "This gift already pays a pledge. Detach it before reverting.",
           },
         };
       }
@@ -1881,7 +2193,9 @@ router.post(
         .from(paymentUnits)
         .where(eq(paymentUnits.giftId, id));
       if (countedLinks.length) {
-        const sources = [...new Set(countedLinks.map((l) => l.evidenceSource))].sort();
+        const sources = [
+          ...new Set(countedLinks.map((l) => l.evidenceSource)),
+        ].sort();
         return {
           ok: false,
           status: 409,
@@ -1911,11 +2225,11 @@ router.post(
       const oppIssues = validateOppInvariants(donor);
       if (oppIssues.length) return { ok: false, invariant: oppIssues };
 
-      // 1. Mint the opportunity / pledge. Awarded = gift amount, donor inherited.
-      // Cultivation stage is a pure funnel; the commitment outcome is the
-      // writtenPledge latch. Derived fields (status/stage) are recomputed
-      // afterward — never written by hand (invariant #3).
+      // 1. Mint the opportunity. When the correction explicitly asks for a
+      // pledge, reconstruct a finalized verbal pledge and its expected payment;
+      // a written pledge cannot be asserted without a document.
       const opportunityId = newId();
+      const commitmentDate = gift.dateReceived ?? todayInChicago();
       await tx.insert(opportunitiesAndPledges).values({
         id: opportunityId,
         name: body.name ?? gift.name ?? null,
@@ -1924,7 +2238,14 @@ router.post(
         householdId: donor.householdId,
         awardedAmount: gift.amount,
         stage: asPledge ? "verbal_confirmation" : "in_conversation",
-        writtenPledge: asPledge,
+        ...(asPledge
+          ? {
+              commitmentPath: "verbal_pledge" as const,
+              verbalCommitmentAt: commitmentDate,
+              pledgeCommittedAt: commitmentDate,
+              writtenPledge: true,
+            }
+          : {}),
         // Inherit loan-vs-grant from the source gift.
         loanOrGrant: gift.loanOrGrant,
       });
@@ -1951,6 +2272,15 @@ router.post(
         });
       }
 
+      if (asPledge && Number(gift.amount ?? 0) > 0) {
+        await tx.insert(pledgeExpectedPayments).values({
+          id: newId(),
+          pledgeOrOpportunityId: opportunityId,
+          expectedDate: gift.dateReceived ?? commitmentDate,
+          amount: gift.amount,
+        });
+      }
+
       // 3. Archive the source gift (non-destructive — the gift and its
       // allocations are retained, soft-deleted).
       await tx
@@ -1974,14 +2304,16 @@ router.post(
     });
 
     if (!outcome.ok) {
-      if ("invariant" in outcome) return respondInvariantFailure(res, outcome.invariant);
+      if ("invariant" in outcome)
+        return respondInvariantFailure(res, outcome.invariant);
       res.status(outcome.status).json(outcome.json);
       return;
     }
 
     // Recompute the new opportunity's derived status/stage (never written by hand).
     await applyDerivedOppFieldsMany(outcome.opportunityId);
-    if (outcome.donorOrgId) enqueueDonorSignal({ organizationId: outcome.donorOrgId });
+    if (outcome.donorOrgId)
+      enqueueDonorSignal({ organizationId: outcome.donorOrgId });
     res.json({ opportunityId: outcome.opportunityId, asPledge });
   }),
 );
@@ -2003,7 +2335,8 @@ function isDocumentMime(mime: string | null): boolean {
   if (m === "application/msword") return true;
   if (m === "application/vnd.ms-excel") return true;
   if (m === "application/vnd.ms-powerpoint") return true;
-  if (m.startsWith("application/vnd.openxmlformats-officedocument")) return true;
+  if (m.startsWith("application/vnd.openxmlformats-officedocument"))
+    return true;
   if (m.startsWith("application/vnd.oasis.opendocument")) return true;
   return false;
 }
@@ -2045,11 +2378,14 @@ router.get(
     const contactRows = await db
       .selectDistinct({ email: sql<string>`lower(${emails.email})` })
       .from(emails)
-      .innerJoin(peopleEntityRoles, and(
-        eq(peopleEntityRoles.personId, emails.personId),
-        eq(peopleEntityRoles.current, "current"),
-        eq(peopleEntityRoles.organizationId, gift.organizationId!),
-      ));
+      .innerJoin(
+        peopleEntityRoles,
+        and(
+          eq(peopleEntityRoles.personId, emails.personId),
+          eq(peopleEntityRoles.current, "current"),
+          eq(peopleEntityRoles.organizationId, gift.organizationId!),
+        ),
+      );
     const contactEmails = contactRows.map((r) => r.email).filter(Boolean);
     if (contactEmails.length === 0) return res.json({ data: [] });
 
@@ -2067,12 +2403,14 @@ router.get(
         snippet: emailMessages.snippet,
       })
       .from(emailMessages)
-      .where(and(
-        eq(emailMessages.mailboxUserId, user.id),
-        eq(emailMessages.direction, "sent"),
-        gte(emailMessages.sentAt, winStart),
-        lte(emailMessages.sentAt, winEnd),
-      ))
+      .where(
+        and(
+          eq(emailMessages.mailboxUserId, user.id),
+          eq(emailMessages.direction, "sent"),
+          gte(emailMessages.sentAt, winStart),
+          lte(emailMessages.sentAt, winEnd),
+        ),
+      )
       .orderBy(desc(emailMessages.sentAt))
       .limit(200);
 
@@ -2094,7 +2432,10 @@ router.get(
     const docCountByMsg = new Map<string, number>();
     for (const a of atts) {
       if (isDocumentMime(a.mimeType)) {
-        docCountByMsg.set(a.emailMessageId, (docCountByMsg.get(a.emailMessageId) ?? 0) + 1);
+        docCountByMsg.set(
+          a.emailMessageId,
+          (docCountByMsg.get(a.emailMessageId) ?? 0) + 1,
+        );
       }
     }
 
@@ -2102,7 +2443,8 @@ router.get(
       const docCount = docCountByMsg.get(m.id) ?? 0;
       const subjectMatch = !!m.subject && /\bthank/i.test(m.subject);
       const dateMatch = gift.dateReceived
-        ? Math.abs(m.sentAt.getTime() - giftDate.getTime()) <= 30 * 24 * 60 * 60 * 1000
+        ? Math.abs(m.sentAt.getTime() - giftDate.getTime()) <=
+          30 * 24 * 60 * 60 * 1000
         : false;
       return {
         emailMessageId: m.id,
@@ -2140,10 +2482,12 @@ router.post(
     const msg = await db
       .select({ id: emailMessages.id, sentAt: emailMessages.sentAt })
       .from(emailMessages)
-      .where(and(
-        eq(emailMessages.id, emailMessageId),
-        eq(emailMessages.mailboxUserId, user.id),
-      ))
+      .where(
+        and(
+          eq(emailMessages.id, emailMessageId),
+          eq(emailMessages.mailboxUserId, user.id),
+        ),
+      )
       .then((r) => r[0]);
     if (!msg) return notFound(res, "email message");
 
@@ -2377,7 +2721,9 @@ router.get(
         giftId: gift.id,
         name: gift.name,
         quickbooksTieStatus: gift.quickbooksTieStatus,
-        reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus as GiftQbTie),
+        reconciliationLanes: deriveGiftLanes(
+          gift.quickbooksTieStatus as GiftQbTie,
+        ),
         offBooks: true,
         auditExcluded: true,
         amount: gift.amount,
@@ -2464,7 +2810,10 @@ router.get(
         eq(stagedPayments.id, paymentUnits.sourceStagedPaymentId),
       )
       .where(
-        and(eq(paymentUnits.giftId, id), ne(paymentUnits.kind, "stripe_charge")),
+        and(
+          eq(paymentUnits.giftId, id),
+          ne(paymentUnits.kind, "stripe_charge"),
+        ),
       );
 
     const quickbooksRecords = ledgerRows.map((r) => ({
@@ -2524,10 +2873,7 @@ router.get(
       paymentUnitId: null,
       unitKind: null,
       stagedPaymentId: r.stagedPaymentId,
-      linkType: "matched" as
-        | "matched"
-        | "created"
-        | "split",
+      linkType: "matched" as "matched" | "created" | "split",
       realmId: r.realmId,
       qbEntityType: r.qbEntityType,
       qbEntityId: r.qbEntityId,
@@ -2566,7 +2912,10 @@ router.get(
           eq(sourceLinks.stripeChargeId, stripeStagedCharges.id),
         ),
       )
-      .innerJoin(stagedPayments, eq(stagedPayments.id, sourceLinks.qbStagedPaymentId))
+      .innerJoin(
+        stagedPayments,
+        eq(stagedPayments.id, sourceLinks.qbStagedPaymentId),
+      )
       .where(
         sql`EXISTS (
           SELECT 1 FROM payment_units pu
@@ -2593,7 +2942,9 @@ router.get(
       giftId: gift.id,
       name: gift.name,
       quickbooksTieStatus: gift.quickbooksTieStatus,
-      reconciliationLanes: deriveGiftLanes(gift.quickbooksTieStatus as GiftQbTie),
+      reconciliationLanes: deriveGiftLanes(
+        gift.quickbooksTieStatus as GiftQbTie,
+      ),
       offBooks: gift.offBooks,
       auditExcluded: gift.offBooks,
       amount: gift.amount,

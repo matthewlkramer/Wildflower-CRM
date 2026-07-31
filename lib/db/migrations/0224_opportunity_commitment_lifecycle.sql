@@ -52,18 +52,10 @@ WITH gift_outcomes AS (
   GROUP BY opportunity_id
 )
 UPDATE opportunities_and_pledges o
-SET
-  commitment_path = 'gift'::opportunity_commitment_path,
-  verbal_commitment_at = COALESCE(
-    o.verbal_commitment_at,
-    g.first_payment_date,
-    o.actual_completion_date,
-    o.created_at::date
-  ),
-  actual_completion_date = COALESCE(
-    o.actual_completion_date,
-    g.first_payment_date
-  )
+SET actual_completion_date = COALESCE(
+  o.actual_completion_date,
+  g.first_payment_date
+)
 FROM gift_outcomes g
 WHERE g.opportunity_id = o.id
   AND g.total_paid > 0
@@ -72,16 +64,11 @@ WHERE g.opportunity_id = o.id
 UPDATE opportunities_and_pledges
 SET stage = 'verbal_confirmation'
 WHERE stage IN (
-    'complete',
-    'cash_in',
-    'written_commitment',
-    'conditional_commitment'
-  )
-  AND (
-    commitment_path IS NOT NULL
-    OR pledge_committed_at IS NOT NULL
-    OR paid > 0
-  );
+  'complete',
+  'cash_in',
+  'written_commitment',
+  'conditional_commitment'
+);
 
 UPDATE opportunities_and_pledges
 SET written_pledge = (pledge_committed_at IS NOT NULL);

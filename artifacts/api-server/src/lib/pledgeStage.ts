@@ -173,30 +173,20 @@ export interface DeriveOutput {
 }
 
 /**
- * Pure derivation of (status, stage, writtenPledge) from current row state +
- * total paid against the opportunity. Mirrors applyDerivedOppFields so it can
- * be unit-tested without the DB.
+ * Pure derivation of lifecycle outputs from the stored cultivation facts and
+ * linked money.
  *
- *   written_pledge: sticky-true. Latches ONLY on a grant letter (and only
- *     while the money is not already fully in) or an explicit set. Receiving
- *     payment (cash-in) and legacy commitment stages never latch it. Never
- *     auto-cleared.
- *
- *   status (FULLY CALCULATED):
- *     loss_type set                                  → loss_type (dormant|lost)
- *     else "fully collected" (see below)             → 'cash_in'
- *     else written_pledge                            → 'pledge' (UI: "Waiting for payment")
- *     else                                           → 'open'
- *
- *   "fully collected" depends on the disbursement model (Task #788):
- *     fixed_commitment  → paid >= awarded > 0 (payment-driven, unchanged)
- *     cost_reimbursement → award_closed_at IS NOT NULL (explicit Close-award
- *       action only — paid >= ceiling NEVER completes a reimbursement award)
- *
- *   stage (pure funnel): a WON row (status pledge/cash_in) reads 'complete';
- *     a non-won row keeps its funnel stage. A stale 'complete' on a non-won
- *     row is reverted to the pre-win funnel stage (win-reversal safety) so a
- *     later loss/dormant never shows "Complete".
+ * - `pledgeCommittedAt` is the authoritative pledge boundary. The legacy
+ *   `writtenPledge` boolean is accepted only as a temporary import fallback and
+ *   is emitted as a read-compatible mirror.
+ * - Money without a finalized pledge is an actual gift outcome. It does not
+ *   manufacture `commitmentPath` or `verbalCommitmentAt`; those fields exist
+ *   only when a fundraiser recorded the preceding verbal commitment.
+ * - Cultivation `stage` is preserved. Deprecated outcome-like stages are
+ *   normalized to `verbal_confirmation`, but pledge finalization and payment do
+ *   not overwrite the funnel history.
+ * - Fixed pledges complete when paid >= awarded. Cost-reimbursement awards
+ *   complete only through the explicit award-close action.
  */
 export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const paidNum = Number(input.paidAmount ?? 0);
@@ -217,11 +207,10 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const isPledge = pledgeCommittedAt != null || legacyPledge;
 
   if (!isPledge && hasPayment) {
-    commitmentPath = "gift";
-    verbalCommitmentAt =
-      verbalCommitmentAt ?? input.firstPaymentDate ?? actualCompletionDate;
+    // Money establishes an actual gift outcome. A prior verbal commitment is a
+    // separate historical fact and must not be invented from the payment date.
     actualCompletionDate =
-      actualCompletionDate ?? input.firstPaymentDate ?? verbalCommitmentAt;
+      actualCompletionDate ?? input.firstPaymentDate ?? null;
   }
 
   const isCostReimbursement = input.disbursementModel === "cost_reimbursement";
@@ -242,24 +231,14 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
     status = "open";
   }
 
-  const hadLifecycle =
-    input.commitmentPath != null ||
-    input.pledgeCommittedAt != null ||
-    input.verbalCommitmentAt != null;
   const legacyOutcomeStage =
     input.stage === "complete" ||
     input.stage === "cash_in" ||
     input.stage === "written_commitment" ||
     input.stage === "conditional_commitment";
-  const stage = hadLifecycle
-    ? legacyOutcomeStage
-      ? LEGACY_COMPLETE_STAGE
-      : input.stage
-    : status === "pledge" || status === "cash_in"
-      ? "complete"
-      : input.stage === "complete"
-        ? LEGACY_COMPLETE_STAGE
-        : input.stage;
+  // Stage records cultivation progress, not the outcome. Normalize imported
+  // outcome-like legacy stages once, then preserve the real funnel position.
+  const stage = legacyOutcomeStage ? LEGACY_COMPLETE_STAGE : input.stage;
 
   return {
     status,
@@ -279,7 +258,7 @@ export function deriveOppFields(input: DeriveInput): DeriveOutput {
  * writes when a derived field actually changes.
  *
  * Run after any mutation that touches stage, awardedAmount, lossType,
- * conditional, written_pledge, grantLetterUrl, or after a payment is recorded /
+ * commitment lifecycle fields, grant documentation, or after a payment is recorded /
  * archived / re-pointed against this opportunity.
  */
 export async function applyDerivedOppFields(

@@ -116,15 +116,17 @@ describe("deriveOppFields commitment lifecycle", () => {
     });
   });
 
-  it("infers a gift outcome when money arrives with no commitment path", () => {
+  it("records a surprise gift outcome without inventing a verbal commitment", () => {
     const result = deriveOppFields({
       ...base,
       paidAmount: 500,
       awardedAmount: 0,
       firstPaymentDate: "2026-07-25",
     });
-    expect(result.commitmentPath).toBe("gift");
+    expect(result.commitmentPath).toBeNull();
+    expect(result.verbalCommitmentAt).toBeNull();
     expect(result.status).toBe("cash_in");
+    expect(result.stage).toBe("in_conversation");
     expect(result.actualCompletionDate).toBe("2026-07-25");
   });
 

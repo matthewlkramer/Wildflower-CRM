@@ -72,21 +72,14 @@ type MintBody = Partial<DonorXor> & {
 
 interface MintOpts {
   /** The create-* outcome being applied; echoed back in the response + audit. */
-  outcome:
-    | "create_gift"
-    | "create_gift_from_opportunity"
-    | "convert_to_pledge_and_first_payment";
+  outcome: "create_gift" | "create_gift_from_opportunity";
   /** Require + lock an opportunity, and DERIVE the gift donor from it. */
   requireOpportunity: boolean;
-  /** Latch the opportunity into a pledge (open-only → commitment stage). */
-  convert: boolean;
-  /** Value of the response `createdPledge` flag. */
-  createdPledge: boolean;
 }
 
 /**
- * Shared in-tx mint path for the three create-* approve outcomes (create_gift,
- * create_gift_from_opportunity, convert_to_pledge_and_first_payment). Minting is
+ * Shared in-tx mint path for the two create-* approve outcomes (create_gift
+ * and create_gift_from_opportunity). Minting is
  * HUMAN-ONLY; the QB staged row OWNS the mint (createdGiftId, not auto-applied →
  * protected from casual revert, exactly like the manual create-gift route). A
  * selected Stripe charge supplies the precise GROSS and stays matchedGiftId-linked
@@ -101,10 +94,9 @@ interface MintOpts {
  *   - create_gift_from_opportunity: a one-time PAYMENT against an existing
  *     opportunity/pledge — donor DERIVED from the opp; gift.opportunityId set;
  *     the opp derives to cash_in when fully paid. Stage is left untouched.
- *   - convert_to_pledge_and_first_payment: latch an OPEN opportunity into a pledge
- *     (stage → written_commitment; was_pledge + status DERIVED post-commit) AND
- *     book the first payment. Rejected when the opp is archived or already a
- *     pledge/closed (use create_gift_from_opportunity for those).
+ * An unfinalized opportunity always produces a direct gift. A payment is treated
+ * as a pledge payment only when the selected record was finalized previously
+ * through the pledge workflow.
  */
 async function mintGiftFromEvidence(
   req: Request,
@@ -119,7 +111,9 @@ async function mintGiftFromEvidence(
   // opportunityId for every outcome, so a stray/stale id on a plain create_gift
   // must NOT silently lock that opp, hijack the donor away from the validated body
   // donor, attach the payment (opportunityId), or re-derive the opp.
-  const opportunityId = opts.requireOpportunity ? (body.opportunityId ?? null) : null;
+  const opportunityId = opts.requireOpportunity
+    ? (body.opportunityId ?? null)
+    : null;
   if (opts.requireOpportunity && !opportunityId) {
     res.status(400).json({
       error: "validation_error",
@@ -330,35 +324,6 @@ async function mintGiftFromEvidence(
         }
       }
 
-      // convert_to_pledge_and_first_payment is an OPEN→pledge transition: refuse
-      // archived opps and opps already latched into a pledge / closed (use
-      // create_gift_from_opportunity to book a payment against an existing pledge).
-      if (opts.convert && opp) {
-        if (opp.archivedAt != null) {
-          throw new ApproveAbort(409, {
-            error: "opportunity_archived",
-            message: "Restore this opportunity before converting it to a pledge.",
-          });
-        }
-        const alreadyPledgeLike =
-          opp.writtenPledge === true ||
-          // Won/closed: redesigned wins land at stage 'complete' / status
-          // 'cash_in'; legacy rows may still carry deprecated commitment stages.
-          opp.stage === "complete" ||
-          opp.status === "cash_in" ||
-          opp.stage === "conditional_commitment" ||
-          opp.stage === "written_commitment" ||
-          opp.stage === "cash_in" ||
-          opp.lossType != null;
-        if (alreadyPledgeLike) {
-          throw new ApproveAbort(409, {
-            error: "already_pledge",
-            message:
-              "This opportunity is already a pledge or closed. Use create_gift_from_opportunity to book a payment against it.",
-          });
-        }
-      }
-
       let charge: typeof stripeStagedCharges.$inferSelect | null = null;
       if (stripeChargeId) {
         charge =
@@ -433,24 +398,6 @@ async function mintGiftFromEvidence(
             message:
               "Restore this opportunity before recording a payment against it.",
           });
-        }
-        // convert: latch the OPEN opportunity into a pledge exactly like the
-        // QB-anchored mint (writtenPledge is the user-driven lifecycle input;
-        // was_pledge/status/stage→complete DERIVE post-commit — invariant #3).
-        // Preserve a real (positive) awarded amount; only when missing fall
-        // back to the charge GROSS so a single-payment commitment derives to
-        // cash_in instead of staying $0.
-        if (opts.convert && opp) {
-          const existingAwarded = Number(opp.awardedAmount ?? 0);
-          const evNum = Number(charge.grossAmount ?? 0);
-          const awardedAmount =
-            !(existingAwarded > 0) && Number.isFinite(evNum) && evNum > 0
-              ? charge.grossAmount
-              : opp.awardedAmount;
-          await tx
-            .update(opportunitiesAndPledges)
-            .set({ writtenPledge: true, awardedAmount, updatedAt: new Date() })
-            .where(eq(opportunitiesAndPledges.id, opp.id));
         }
         await createGiftFromChargeInTx(tx, {
           newGiftId,
@@ -553,7 +500,6 @@ async function mintGiftFromEvidence(
         opportunityId,
         evidenceAmount,
         paymentIntermediaryId: body.paymentIntermediaryId ?? null,
-        convert: opts.convert,
         outcome: opts.outcome,
         userId: user.id,
         auditReq: req,
@@ -583,9 +529,8 @@ async function mintGiftFromEvidence(
     throw e;
   }
 
-  // Re-derive the opportunity from the committed gift amounts (the new payment, or
-  // the latched pledge, shifts its derived status/paid totals + latches
-  // was_pledge). Runs outside the tx on its own connection.
+  // Re-derive the opportunity from committed gift amounts. This updates paid
+  // and the actual gift/pledge outcome without changing commitment history.
   if (opportunityId) {
     await applyDerivedOppFieldsMany(opportunityId);
   }
@@ -597,7 +542,7 @@ async function mintGiftFromEvidence(
     giftId: newGiftId,
     opportunityId: opportunityId ?? null,
     createdGift: true,
-    createdPledge: opts.createdPledge,
+    createdPledge: false,
   });
 }
 
@@ -617,8 +562,8 @@ async function mintGiftFromEvidence(
 // precise GROSS and stays matchedGiftId-linked (revert un-sources the amount,
 // never deletes the human mint). Either way the gift is the single source of
 // truth; its FINAL amount is the Stripe GROSS when a charge is selected, else the
-// QB staged amount. The opportunity outcomes (create_gift_from_opportunity /
-// convert_to_pledge_and_first_payment) are added in E5.
+// QB staged amount. An opportunity target either receives a payment on an
+// already-finalized pledge or produces a direct gift.
 router.post(
   "/reconciliation/cards/:stagedPaymentId/approve",
   asyncHandler(async (req, res) => {
@@ -645,16 +590,13 @@ router.post(
     // are one physical gift are combined against one gift with
     // POST /staged-payments/multi-match instead of group-approving here.
 
-    // The three create-* outcomes all MINT a new gift from the QB evidence
-    // (human-only); they share one in-tx helper. link_existing_gift falls through
-    // to the linker below. create_gift uses the human-chosen body donor; the two
-    // opportunity outcomes derive the donor from the chosen opp.
+    // The two create-* outcomes MINT a new gift from the QB evidence and
+    // share one in-tx helper. create_gift uses the chosen body donor;
+    // create_gift_from_opportunity derives the donor from the selected record.
     if (body.outcome === "create_gift") {
       await mintGiftFromEvidence(req, res, user, stagedPaymentId, body, {
         outcome: "create_gift",
         requireOpportunity: false,
-        convert: false,
-        createdPledge: false,
       });
       return;
     }
@@ -662,17 +604,6 @@ router.post(
       await mintGiftFromEvidence(req, res, user, stagedPaymentId, body, {
         outcome: "create_gift_from_opportunity",
         requireOpportunity: true,
-        convert: false,
-        createdPledge: false,
-      });
-      return;
-    }
-    if (body.outcome === "convert_to_pledge_and_first_payment") {
-      await mintGiftFromEvidence(req, res, user, stagedPaymentId, body, {
-        outcome: "convert_to_pledge_and_first_payment",
-        requireOpportunity: true,
-        convert: true,
-        createdPledge: true,
       });
       return;
     }
@@ -866,17 +797,13 @@ router.post(
         // concurrent cross-displacement — Postgres aborts one txn (retryable),
         // acceptable for this manual admin action (mirrors #546's charge lock).
         const incumbentPaymentId = await tx
-          .execute<{ incumbent_id: string | null }>(
-            sql`SELECT ${qbLedgerPaymentIdForGiftExcludingPayment(
-              sql`${giftId}`,
-              sql`${stagedPaymentId}`,
-            )} AS incumbent_id`,
-          )
+          .execute<{
+            incumbent_id: string | null;
+          }>(sql`SELECT ${qbLedgerPaymentIdForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)} AS incumbent_id`)
           .then((r) => r.rows[0]?.incumbent_id ?? null);
         const displaceLinkedPayment = body.displaceLinkedPayment === true;
-        let incumbentStagedPayment:
-          | typeof stagedPayments.$inferSelect
-          | null = null;
+        let incumbentStagedPayment: typeof stagedPayments.$inferSelect | null =
+          null;
         if (incumbentPaymentId) {
           incumbentStagedPayment =
             (await tx
@@ -905,12 +832,9 @@ router.post(
         // concurrent cross-moves — Postgres aborts one txn (retryable),
         // acceptable for this manual admin action (mirrors the incumbent lock).
         const ownAppliedGiftId = await tx
-          .execute<{ applied_gift_id: string | null }>(
-            sql`SELECT ${qbLedgerGiftIdForPaymentExcludingGift(
-              sql`${stagedPaymentId}`,
-              sql`${giftId}`,
-            )} AS applied_gift_id`,
-          )
+          .execute<{
+            applied_gift_id: string | null;
+          }>(sql`SELECT ${qbLedgerGiftIdForPaymentExcludingGift(sql`${stagedPaymentId}`, sql`${giftId}`)} AS applied_gift_id`)
           .then((r) => r.rows[0]?.applied_gift_id ?? null);
         const moveOwnApplication = body.moveOwnApplication === true;
         let oldAppliedGift: typeof giftsAndPayments.$inferSelect | null = null;
@@ -1058,7 +982,8 @@ router.post(
         // queue. Only meaningful when a new charge is selected and it differs.
         //
         // finalAmountStripeChargeId is @deprecated; read from the ledger instead.
-        let oldStripeCharge: typeof stripeStagedCharges.$inferSelect | null = null;
+        let oldStripeCharge: typeof stripeStagedCharges.$inferSelect | null =
+          null;
         const currentChargeId = await giftCountedStripeChargeId(tx, giftId);
         const switchingStripeSource =
           !!charge && !!currentChargeId && currentChargeId !== charge.id;

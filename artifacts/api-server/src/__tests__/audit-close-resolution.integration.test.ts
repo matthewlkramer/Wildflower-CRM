@@ -55,6 +55,17 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clerk/express")>();
+  return {
+    ...actual,
+    clerkMiddleware:
+      () =>
+      (_req: unknown, _res: unknown, next: () => void): void =>
+        next(),
+  };
+});
+
 // ── 1. Pure helper: proRataNegativeShares ──────────────────────────────────
 describe("proRataNegativeShares", () => {
   /** Sum of the returned share strings, in integer cents. */
@@ -63,7 +74,10 @@ describe("proRataNegativeShares", () => {
   }
 
   it("splits an even remainder into equal negative shares", () => {
-    expect(proRataNegativeShares([100, 100], 100)).toEqual(["-50.00", "-50.00"]);
+    expect(proRataNegativeShares([100, 100], 100)).toEqual([
+      "-50.00",
+      "-50.00",
+    ]);
   });
 
   it("splits proportionally to the weights", () => {
@@ -181,7 +195,14 @@ async function seedPledge(opts: {
     id,
     name: `Audit-close pledge ${id}`,
     organizationId: ORG_ID,
-    writtenPledge: opts.writtenPledge ?? false,
+    ...(opts.writtenPledge
+      ? {
+          commitmentPath: "verbal_pledge" as const,
+          verbalCommitmentAt: opts.actualCompletionDate ?? todayChicago(),
+          pledgeCommittedAt: opts.actualCompletionDate ?? todayChicago(),
+          writtenPledge: true,
+        }
+      : { writtenPledge: false }),
     isWriteOff: opts.isWriteOff ?? false,
     actualCompletionDate: opts.actualCompletionDate ?? null,
     awardedAmount: opts.awardedAmount ?? null,
@@ -190,7 +211,10 @@ async function seedPledge(opts: {
   return id;
 }
 
-async function seedPledgeAlloc(pledgeId: string, subAmount: string): Promise<void> {
+async function seedPledgeAlloc(
+  pledgeId: string,
+  subAmount: string,
+): Promise<void> {
   await db.insert(schema.pledgeAllocations).values({
     id: nextId("palloc"),
     pledgeOrOpportunityId: pledgeId,
@@ -273,12 +297,15 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  if (server)
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   const allOppIds = [...baseOppIds, ...childOppIds];
   if (allOppIds.length) {
     await db
       .delete(schema.pledgeAllocations)
-      .where(inArrayFn(schema.pledgeAllocations.pledgeOrOpportunityId, allOppIds));
+      .where(
+        inArrayFn(schema.pledgeAllocations.pledgeOrOpportunityId, allOppIds),
+      );
   }
   if (giftIds.length) {
     // Overpay children first (self-FK restrict), then the rest.
@@ -302,222 +329,256 @@ afterAll(async () => {
   await db
     .delete(schema.fiscalYears)
     .where(inArrayFn(schema.fiscalYears.id, [CLOSED_FY_ID, OPEN_FY_ID]));
-  await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
+  await db
+    .delete(schema.organizations)
+    .where(eqFn(schema.organizations.id, ORG_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
 }, 60_000);
 
 beforeEach(() => {
-  if (!HAS_DB) console.warn("[audit-close-resolution] skipped: no live DATABASE_URL");
+  if (!HAS_DB)
+    console.warn("[audit-close-resolution] skipped: no live DATABASE_URL");
 });
 
-describe.skipIf(!HAS_DB)("POST /opportunities-and-pledges/:id/write-off", () => {
-  it("404s for an unknown pledge", async () => {
-    const res = await api(`/api/opportunities-and-pledges/${RUN}_missing/write-off`);
-    expect(res.status).toBe(404);
-  });
-
-  it("409 invalid_write_off_target when the target is itself a write-off", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      isWriteOff: true,
-      actualCompletionDate: CLOSED_DATE,
+describe.skipIf(!HAS_DB)(
+  "POST /opportunities-and-pledges/:id/write-off",
+  () => {
+    it("404s for an unknown pledge", async () => {
+      const res = await api(
+        `/api/opportunities-and-pledges/${RUN}_missing/write-off`,
+      );
+      expect(res.status).toBe(404);
     });
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("invalid_write_off_target");
-  });
 
-  it("409 invalid_write_off_target when the target is not a written pledge", async () => {
-    const id = await seedPledge({
-      writtenPledge: false,
-      actualCompletionDate: CLOSED_DATE,
-    });
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("invalid_write_off_target");
-  });
-
-  it("409 fiscal_year_not_closed when the pledge's FY is still open", async () => {
-    // No actual_completion_date → no governing FY → not frozen.
-    const id = await seedPledge({ writtenPledge: true, actualCompletionDate: null });
-    await seedPledgeAlloc(id, "1000.00");
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("fiscal_year_not_closed");
-  });
-
-  it("409 nothing_to_write_off when the pledge is fully paid", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
-    });
-    await seedPledgeAlloc(id, "500.00");
-    await seedGift({ amount: "500.00", opportunityId: id });
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("nothing_to_write_off");
-  });
-
-  it("books a negative offsetting write-off pledge and never mutates the original", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
-      awardedAmount: "1000.00",
-    });
-    await seedPledgeAlloc(id, "1000.00");
-    await seedGift({ amount: "600.00", opportunityId: id }); // paid 600 of 1000
-
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      reason: "audit-close shortfall",
-    });
-    expect(res.status).toBe(201);
-    const writeOff = res.json;
-    childOppIds.push(writeOff.id);
-
-    expect(writeOff.id).not.toBe(id);
-    expect(writeOff.writeOffOfPledgeId).toBe(id);
-    expect(writeOff.isWriteOff).toBe(true);
-    expect(writeOff.writtenPledge).toBe(true);
-    expect(Number(writeOff.awardedAmount)).toBe(-400);
-
-    // The write-off carries a negative allocation summing to the remainder.
-    const woAllocs = await db
-      .select()
-      .from(schema.pledgeAllocations)
-      .where(eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, writeOff.id));
-    const woSum = woAllocs.reduce(
-      (acc, a) => acc + Math.round(Number(a.subAmount ?? 0) * 100),
-      0,
-    );
-    expect(woSum).toBe(-40000);
-
-    // The audited original is untouched.
-    const [orig] = await db
-      .select()
-      .from(schema.opportunitiesAndPledges)
-      .where(eqFn(schema.opportunitiesAndPledges.id, id));
-    expect(orig.isWriteOff).toBe(false);
-    expect(orig.writtenPledge).toBe(true);
-    expect(Number(orig.awardedAmount)).toBe(1000);
-    expect(String(orig.actualCompletionDate)).toContain("1990-12-01");
-
-    // A second write-off is rejected while the first is still editable
-    // (its own FY is open, so it can be corrected in place instead).
-    const dup = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(dup.status).toBe(409);
-    expect(dup.json.error).toBe("editable_write_off_exists");
-    expect(dup.json.details?.writeOffPledgeId).toBe(writeOff.id);
-  });
-
-  it("400 invalid_amount for a malformed or non-positive amount", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
-    });
-    await seedPledgeAlloc(id, "500.00");
-
-    for (const amount of ["abc", "-5.00", "0.00", "1.234"]) {
-      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-        amount,
+    it("409 invalid_write_off_target when the target is itself a write-off", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        isWriteOff: true,
+        actualCompletionDate: CLOSED_DATE,
       });
-      expect(res.status).toBe(400);
-      expect(res.json.error).toBe("invalid_amount");
-    }
-  });
-
-  it("books a PARTIAL write-off at the user-chosen amount", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("invalid_write_off_target");
     });
-    await seedPledgeAlloc(id, "1000.00");
-    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
 
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "150.00",
-      reason: "partial shortfall",
+    it("409 invalid_write_off_target when the target is not a finalized pledge", async () => {
+      const id = await seedPledge({
+        writtenPledge: false,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("invalid_write_off_target");
     });
-    expect(res.status).toBe(201);
-    childOppIds.push(res.json.id);
-    expect(Number(res.json.awardedAmount)).toBe(-150);
 
-    const woAllocs = await db
-      .select()
-      .from(schema.pledgeAllocations)
-      .where(eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, res.json.id));
-    const woSum = woAllocs.reduce(
-      (acc, a) => acc + Math.round(Number(a.subAmount ?? 0) * 100),
-      0,
-    );
-    expect(woSum).toBe(-15000);
-  });
-
-  it("409 amount_exceeds_remainder above the cap, with the cap in details.maxAmount", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
+    it("409 fiscal_year_not_closed when the pledge's FY is still open", async () => {
+      // No actual_completion_date → no governing FY → not frozen.
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: null,
+      });
+      await seedPledgeAlloc(id, "1000.00");
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("fiscal_year_not_closed");
     });
-    await seedPledgeAlloc(id, "1000.00");
-    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
 
-    const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "400.01",
+    it("409 nothing_to_write_off when the pledge is fully paid", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      await seedPledgeAlloc(id, "500.00");
+      await seedGift({ amount: "500.00", opportunityId: id });
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("nothing_to_write_off");
     });
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("amount_exceeds_remainder");
-    expect(res.json.details?.maxAmount).toBe("400.00");
-  });
 
-  it("allows a SECOND write-off once the first is frozen, capped at the NET remainder", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
+    it("books a negative offsetting write-off pledge and never mutates the original", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+        awardedAmount: "1000.00",
+      });
+      await seedPledgeAlloc(id, "1000.00");
+      await seedGift({ amount: "600.00", opportunityId: id }); // paid 600 of 1000
+
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+        reason: "audit-close shortfall",
+      });
+      expect(res.status).toBe(201);
+      const writeOff = res.json;
+      childOppIds.push(writeOff.id);
+
+      expect(writeOff.id).not.toBe(id);
+      expect(writeOff.writeOffOfPledgeId).toBe(id);
+      expect(writeOff.isWriteOff).toBe(true);
+      expect(writeOff.commitmentPath).toBe("verbal_pledge");
+      expect(writeOff.pledgeCommittedAt).toBe(todayChicago());
+      expect(writeOff.writtenPledge).toBe(true);
+      expect(writeOff.writtenPledge).toBe(true);
+      expect(Number(writeOff.awardedAmount)).toBe(-400);
+
+      // The write-off carries a negative allocation summing to the remainder.
+      const woAllocs = await db
+        .select()
+        .from(schema.pledgeAllocations)
+        .where(
+          eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, writeOff.id),
+        );
+      const woSum = woAllocs.reduce(
+        (acc, a) => acc + Math.round(Number(a.subAmount ?? 0) * 100),
+        0,
+      );
+      expect(woSum).toBe(-40000);
+
+      // The audited original is untouched.
+      const [orig] = await db
+        .select()
+        .from(schema.opportunitiesAndPledges)
+        .where(eqFn(schema.opportunitiesAndPledges.id, id));
+      expect(orig.isWriteOff).toBe(false);
+      expect(orig.writtenPledge).toBe(true);
+      expect(Number(orig.awardedAmount)).toBe(1000);
+      expect(String(orig.actualCompletionDate)).toContain("1990-12-01");
+
+      // A second write-off is rejected while the first is still editable
+      // (its own FY is open, so it can be corrected in place instead).
+      const dup = await api(`/api/opportunities-and-pledges/${id}/write-off`);
+      expect(dup.status).toBe(409);
+      expect(dup.json.error).toBe("editable_write_off_exists");
+      expect(dup.json.details?.writeOffPledgeId).toBe(writeOff.id);
     });
-    await seedPledgeAlloc(id, "1000.00");
-    await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
 
-    // First (partial) write-off: 100 of the 400.
-    const first = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "100.00",
+    it("400 invalid_amount for a malformed or non-positive amount", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      await seedPledgeAlloc(id, "500.00");
+
+      for (const amount of ["abc", "-5.00", "0.00", "1.234"]) {
+        const res = await api(
+          `/api/opportunities-and-pledges/${id}/write-off`,
+          {
+            amount,
+          },
+        );
+        expect(res.status).toBe(400);
+        expect(res.json.error).toBe("invalid_amount");
+      }
     });
-    expect(first.status).toBe(201);
-    childOppIds.push(first.json.id);
 
-    // Blocked while the first is still editable (open FY).
-    const blocked = await api(`/api/opportunities-and-pledges/${id}/write-off`);
-    expect(blocked.status).toBe(409);
-    expect(blocked.json.error).toBe("editable_write_off_exists");
-    expect(blocked.json.details?.writeOffPledgeId).toBe(first.json.id);
+    it("books a PARTIAL write-off at the user-chosen amount", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      await seedPledgeAlloc(id, "1000.00");
+      await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
 
-    // Freeze the first write-off (date it into the audit-closed FY) — as if a
-    // later audit closed the FY it was booked into.
-    await db
-      .update(schema.opportunitiesAndPledges)
-      .set({ actualCompletionDate: CLOSED_DATE })
-      .where(eqFn(schema.opportunitiesAndPledges.id, first.json.id));
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+        amount: "150.00",
+        reason: "partial shortfall",
+      });
+      expect(res.status).toBe(201);
+      childOppIds.push(res.json.id);
+      expect(Number(res.json.awardedAmount)).toBe(-150);
 
-    // The cap now NETS OUT the frozen prior write-off: 1000 - 600 - 100 = 300.
-    const overCap = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "300.01",
+      const woAllocs = await db
+        .select()
+        .from(schema.pledgeAllocations)
+        .where(
+          eqFn(schema.pledgeAllocations.pledgeOrOpportunityId, res.json.id),
+        );
+      const woSum = woAllocs.reduce(
+        (acc, a) => acc + Math.round(Number(a.subAmount ?? 0) * 100),
+        0,
+      );
+      expect(woSum).toBe(-15000);
     });
-    expect(overCap.status).toBe(409);
-    expect(overCap.json.error).toBe("amount_exceeds_remainder");
-    expect(overCap.json.details?.maxAmount).toBe("300.00");
 
-    // A second write-off for the remaining net balance books cleanly.
-    const second = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "300.00",
+    it("409 amount_exceeds_remainder above the cap, with the cap in details.maxAmount", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      await seedPledgeAlloc(id, "1000.00");
+      await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
+
+      const res = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
+        amount: "400.01",
+      });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("amount_exceeds_remainder");
+      expect(res.json.details?.maxAmount).toBe("400.00");
     });
-    expect(second.status).toBe(201);
-    childOppIds.push(second.json.id);
-    expect(Number(second.json.awardedAmount)).toBe(-300);
-    expect(second.json.writeOffOfPledgeId).toBe(id);
-  });
-});
+
+    it("allows a SECOND write-off once the first is frozen, capped at the NET remainder", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      await seedPledgeAlloc(id, "1000.00");
+      await seedGift({ amount: "600.00", opportunityId: id }); // remainder 400
+
+      // First (partial) write-off: 100 of the 400.
+      const first = await api(
+        `/api/opportunities-and-pledges/${id}/write-off`,
+        {
+          amount: "100.00",
+        },
+      );
+      expect(first.status).toBe(201);
+      childOppIds.push(first.json.id);
+
+      // Blocked while the first is still editable (open FY).
+      const blocked = await api(
+        `/api/opportunities-and-pledges/${id}/write-off`,
+      );
+      expect(blocked.status).toBe(409);
+      expect(blocked.json.error).toBe("editable_write_off_exists");
+      expect(blocked.json.details?.writeOffPledgeId).toBe(first.json.id);
+
+      // Freeze the first write-off (date it into the audit-closed FY) — as if a
+      // later audit closed the FY it was booked into.
+      await db
+        .update(schema.opportunitiesAndPledges)
+        .set({ actualCompletionDate: CLOSED_DATE })
+        .where(eqFn(schema.opportunitiesAndPledges.id, first.json.id));
+
+      // The cap now NETS OUT the frozen prior write-off: 1000 - 600 - 100 = 300.
+      const overCap = await api(
+        `/api/opportunities-and-pledges/${id}/write-off`,
+        {
+          amount: "300.01",
+        },
+      );
+      expect(overCap.status).toBe(409);
+      expect(overCap.json.error).toBe("amount_exceeds_remainder");
+      expect(overCap.json.details?.maxAmount).toBe("300.00");
+
+      // A second write-off for the remaining net balance books cleanly.
+      const second = await api(
+        `/api/opportunities-and-pledges/${id}/write-off`,
+        {
+          amount: "300.00",
+        },
+      );
+      expect(second.status).toBe(201);
+      childOppIds.push(second.json.id);
+      expect(Number(second.json.awardedAmount)).toBe(-300);
+      expect(second.json.writeOffOfPledgeId).toBe(id);
+    });
+  },
+);
 
 describe.skipIf(!HAS_DB)("POST /gifts-and-payments/:id/resolve-overpay", () => {
   it("404s for an unknown gift", async () => {
-    const res = await api(`/api/gifts-and-payments/${RUN}_missing/resolve-overpay`);
+    const res = await api(
+      `/api/gifts-and-payments/${RUN}_missing/resolve-overpay`,
+    );
     expect(res.status).toBe(404);
   });
 
@@ -555,108 +616,123 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/:id/resolve-overpay", () => {
 // canonical formula (pledgeCapacity.ts: committed + writtenOff − paid, cents-
 // rounded, archived write-off children excluded). This asserts the two routes
 // actually agree for the same pledge — including after a partial write-off.
-describe.skipIf(!HAS_DB)("write-off cap and pre-close checklist agree on capacity", () => {
-  async function checklistPledge(
-    pledgeId: string,
-  ): Promise<{ remainder: string } | undefined> {
-    const res = await fetch(
-      `${baseUrl}/api/fiscal-years/${CLOSED_FY_ID}/pre-close-checklist`,
-    );
-    expect(res.status).toBe(200);
-    const json = (await res.json()) as {
-      samplePledges: { id: string; remainder: string }[];
-    };
-    return json.samplePledges.find((p) => p.id === pledgeId);
-  }
+describe.skipIf(!HAS_DB)(
+  "write-off cap and pre-close checklist agree on capacity",
+  () => {
+    async function checklistPledge(
+      pledgeId: string,
+    ): Promise<{ remainder: string } | undefined> {
+      const res = await fetch(
+        `${baseUrl}/api/fiscal-years/${CLOSED_FY_ID}/pre-close-checklist`,
+      );
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as {
+        samplePledges: { id: string; remainder: string }[];
+      };
+      return json.samplePledges.find((p) => p.id === pledgeId);
+    }
 
-  /** The write-off route's enforced cap, read via its 409 details.maxAmount. */
-  async function writeOffCap(pledgeId: string): Promise<string> {
-    const res = await api(`/api/opportunities-and-pledges/${pledgeId}/write-off`, {
-      amount: "9999999.00",
+    /** The write-off route's enforced cap, read via its 409 details.maxAmount. */
+    async function writeOffCap(pledgeId: string): Promise<string> {
+      const res = await api(
+        `/api/opportunities-and-pledges/${pledgeId}/write-off`,
+        {
+          amount: "9999999.00",
+        },
+      );
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("amount_exceeds_remainder");
+      return res.json.details?.maxAmount as string;
+    }
+
+    it("returns the identical cents-rounded remainder from both routes", async () => {
+      const id = await seedPledge({
+        writtenPledge: true,
+        actualCompletionDate: CLOSED_DATE,
+      });
+      // Odd-cent amounts exercise the cents-rounding edge: 1000.33 − 600.66.
+      await seedPledgeAlloc(id, "1000.33");
+      await seedGift({ amount: "600.66", opportunityId: id });
+      // The checklist reads the PERSISTED `paid` rollup (API-created gifts keep
+      // it in sync via applyDerivedOppFields; raw test seeds don't) — stamp it
+      // to mirror the seeded gift, exactly as production writes would.
+      await db
+        .update(schema.opportunitiesAndPledges)
+        .set({ paid: "600.66" })
+        .where(eqFn(schema.opportunitiesAndPledges.id, id));
+
+      expect(await writeOffCap(id)).toBe("399.67");
+      expect((await checklistPledge(id))?.remainder).toBe("399.67");
+
+      // A partial write-off shrinks BOTH figures in lockstep.
+      const partial = await api(
+        `/api/opportunities-and-pledges/${id}/write-off`,
+        {
+          amount: "100.00",
+        },
+      );
+      expect(partial.status).toBe(201);
+      childOppIds.push(partial.json.id);
+      // Freeze the first write-off so the route allows sizing a second one
+      // (the cap 409 still reports the NET remainder either way).
+      await db
+        .update(schema.opportunitiesAndPledges)
+        .set({ actualCompletionDate: CLOSED_DATE })
+        .where(eqFn(schema.opportunitiesAndPledges.id, partial.json.id));
+
+      expect(await writeOffCap(id)).toBe("299.67");
+      expect((await checklistPledge(id))?.remainder).toBe("299.67");
     });
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("amount_exceeds_remainder");
-    return res.json.details?.maxAmount as string;
-  }
-
-  it("returns the identical cents-rounded remainder from both routes", async () => {
-    const id = await seedPledge({
-      writtenPledge: true,
-      actualCompletionDate: CLOSED_DATE,
-    });
-    // Odd-cent amounts exercise the cents-rounding edge: 1000.33 − 600.66.
-    await seedPledgeAlloc(id, "1000.33");
-    await seedGift({ amount: "600.66", opportunityId: id });
-    // The checklist reads the PERSISTED `paid` rollup (API-created gifts keep
-    // it in sync via applyDerivedOppFields; raw test seeds don't) — stamp it
-    // to mirror the seeded gift, exactly as production writes would.
-    await db
-      .update(schema.opportunitiesAndPledges)
-      .set({ paid: "600.66" })
-      .where(eqFn(schema.opportunitiesAndPledges.id, id));
-
-    expect(await writeOffCap(id)).toBe("399.67");
-    expect((await checklistPledge(id))?.remainder).toBe("399.67");
-
-    // A partial write-off shrinks BOTH figures in lockstep.
-    const partial = await api(`/api/opportunities-and-pledges/${id}/write-off`, {
-      amount: "100.00",
-    });
-    expect(partial.status).toBe(201);
-    childOppIds.push(partial.json.id);
-    // Freeze the first write-off so the route allows sizing a second one
-    // (the cap 409 still reports the NET remainder either way).
-    await db
-      .update(schema.opportunitiesAndPledges)
-      .set({ actualCompletionDate: CLOSED_DATE })
-      .where(eqFn(schema.opportunitiesAndPledges.id, partial.json.id));
-
-    expect(await writeOffCap(id)).toBe("299.67");
-    expect((await checklistPledge(id))?.remainder).toBe("299.67");
-  });
-});
+  },
+);
 
 // A surplus gift minted to resolve an overpayment (overpay_of_gift_id set) has no
 // counted accounting evidence, so it is stamped quickbooks_tie_status='missing' by
 // default. It is the RESOLUTION, not a new problem, and has no resolution path of
 // its own — the pre-close checklist for the FY it lands in must NOT re-flag it.
-describe.skipIf(!HAS_DB)("pre-close checklist excludes overpay-resolution children", () => {
-  async function checklist(fiscalYearId: string): Promise<{
-    giftsUnresolved: number;
-    sampleGifts: { id: string }[];
-  }> {
-    const res = await fetch(
-      `${baseUrl}/api/fiscal-years/${fiscalYearId}/pre-close-checklist`,
-    );
-    expect(res.status).toBe(200);
-    return (await res.json()) as {
+describe.skipIf(!HAS_DB)(
+  "pre-close checklist excludes overpay-resolution children",
+  () => {
+    async function checklist(fiscalYearId: string): Promise<{
       giftsUnresolved: number;
       sampleGifts: { id: string }[];
-    };
-  }
+    }> {
+      const res = await fetch(
+        `${baseUrl}/api/fiscal-years/${fiscalYearId}/pre-close-checklist`,
+      );
+      expect(res.status).toBe(200);
+      return (await res.json()) as {
+        giftsUnresolved: number;
+        sampleGifts: { id: string }[];
+      };
+    }
 
-  it("counts a normal unresolved gift but not a surplus (overpay child) gift", async () => {
-    const today = todayChicago();
-    // Baseline unresolved count for the OPEN FY (fresh each run — absorbs any
-    // gifts prior tests booked into today's window, so the delta stays exact).
-    const baseline = (await checklist(OPEN_FY_ID)).giftsUnresolved;
+    it("counts a normal unresolved gift but not a surplus (overpay child) gift", async () => {
+      const today = todayChicago();
+      // Baseline unresolved count for the OPEN FY (fresh each run — absorbs any
+      // gifts prior tests booked into today's window, so the delta stays exact).
+      const baseline = (await checklist(OPEN_FY_ID)).giftsUnresolved;
 
-    // A normal unresolved gift dated in the open FY (default tie='missing').
-    const normalId = await seedGift({ amount: "50.00", dateReceived: today });
-    // An original gift plus its surplus overpay child, the child also dated in
-    // the open FY. The child defaults to 'missing' but must be excluded.
-    const originalId = await seedGift({ amount: "100.00", dateReceived: CLOSED_DATE });
-    const surplusChildId = await seedGift({
-      amount: "20.00",
-      dateReceived: today,
-      overpayOfGiftId: originalId,
+      // A normal unresolved gift dated in the open FY (default tie='missing').
+      const normalId = await seedGift({ amount: "50.00", dateReceived: today });
+      // An original gift plus its surplus overpay child, the child also dated in
+      // the open FY. The child defaults to 'missing' but must be excluded.
+      const originalId = await seedGift({
+        amount: "100.00",
+        dateReceived: CLOSED_DATE,
+      });
+      const surplusChildId = await seedGift({
+        amount: "20.00",
+        dateReceived: today,
+        overpayOfGiftId: originalId,
+      });
+
+      const after = await checklist(OPEN_FY_ID);
+      // Exactly one net addition (the normal gift); the surplus child is excluded.
+      expect(after.giftsUnresolved).toBe(baseline + 1);
+      const sampleIds = after.sampleGifts.map((g) => g.id);
+      expect(sampleIds).toContain(normalId);
+      expect(sampleIds).not.toContain(surplusChildId);
     });
-
-    const after = await checklist(OPEN_FY_ID);
-    // Exactly one net addition (the normal gift); the surplus child is excluded.
-    expect(after.giftsUnresolved).toBe(baseline + 1);
-    const sampleIds = after.sampleGifts.map((g) => g.id);
-    expect(sampleIds).toContain(normalId);
-    expect(sampleIds).not.toContain(surplusChildId);
-  });
-});
+  },
+);

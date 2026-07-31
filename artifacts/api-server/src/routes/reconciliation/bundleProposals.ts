@@ -10,7 +10,12 @@ import {
   paymentUnits,
 } from "@workspace/db/schema";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { asyncHandler, notFound, parseOrBadRequest, newId } from "../../lib/helpers";
+import {
+  asyncHandler,
+  notFound,
+  parseOrBadRequest,
+  newId,
+} from "../../lib/helpers";
 import {
   recordPayoutQbSettlement,
   settledDepositIdForPayout,
@@ -200,7 +205,11 @@ router.post(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const body = parseOrBadRequest(AssembleReconciliationBundleBody, req.body, res);
+    const body = parseOrBadRequest(
+      AssembleReconciliationBundleBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     const viewer = getViewer(req);
 
@@ -404,7 +413,8 @@ router.post(
     if (updated.length === 0) {
       res.status(409).json({
         error: "revision_conflict",
-        message: "This bundle changed while you were editing. Reload and retry.",
+        message:
+          "This bundle changed while you were editing. Reload and retry.",
       });
       return;
     }
@@ -692,7 +702,6 @@ router.post(
                 opportunityId: null,
                 evidenceAmount: row.gift.mintDraft?.amount ?? row.amount,
                 paymentIntermediaryId: dp.paymentIntermediaryId ?? null,
-                convert: false,
                 outcome: "bundle_mint",
                 userId,
                 auditReq: req,

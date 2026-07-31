@@ -1070,7 +1070,7 @@ router.post(
 );
 
 // Write off some or all of the uncollected remainder of an audited (frozen),
-// under-paid written pledge. The audited original is NEVER mutated — a
+// under-paid finalized pledge. The audited original is NEVER mutated — a
 // write-off is a NEW negative offsetting pledge booked in the current open FY
 // (see the audit-close model). The amount is the caller's choice, capped at
 // the remainder NET of prior active write-offs (omitted = the full net
@@ -1139,10 +1139,14 @@ router.post(
             "This record is itself a write-off and cannot be written off.",
         });
       }
-      if (!original.writtenPledge) {
+      const finalizedPledge =
+        original.pledgeCommittedAt != null ||
+        (original.commitmentPath == null && original.writtenPledge === true);
+      if (!finalizedPledge) {
         return fail(409, {
           error: "invalid_write_off_target",
-          message: "Only a written pledge can be written off.",
+          message:
+            "Only a finalized written or verbal pledge can be written off.",
         });
       }
 
@@ -1224,6 +1228,11 @@ router.post(
         amount,
       );
 
+      const recognitionDate = todayInChicago();
+      const writeOffCommitmentPath =
+        original.commitmentPath === "written_pledge" && original.grantLetterUrl
+          ? "written_pledge"
+          : "verbal_pledge";
       await tx.insert(opportunitiesAndPledges).values({
         id: writeOffId,
         name: original.name ? `Write-off — ${original.name}` : "Write-off",
@@ -1231,13 +1240,27 @@ router.post(
         organizationId: original.organizationId,
         individualGiverPersonId: original.individualGiverPersonId,
         householdId: original.householdId,
+        stage: "verbal_confirmation",
+        commitmentPath: writeOffCommitmentPath,
+        verbalCommitmentAt:
+          original.verbalCommitmentAt ??
+          original.pledgeCommittedAt ??
+          recognitionDate,
+        pledgeCommittedAt: recognitionDate,
         writtenPledge: true,
+        ...(writeOffCommitmentPath === "written_pledge"
+          ? {
+              grantLetterUrl: original.grantLetterUrl,
+              grantLetterFilename: original.grantLetterFilename,
+              grantLetterUploadedAt: original.grantLetterUploadedAt,
+            }
+          : {}),
         isWriteOff: true,
         writeOffOfPledgeId: id,
         awardedAmount: (-amount).toFixed(2),
         // Recognised today, which falls inside the open FY window — keeps the
         // write-off itself governed by an open (mutable) FY.
-        actualCompletionDate: todayInChicago(),
+        actualCompletionDate: recognitionDate,
         loanOrGrant: original.loanOrGrant,
         usageNotes: body.reason ?? null,
       });
@@ -1268,9 +1291,8 @@ router.post(
       if (f.status === 404) return notFound(res, "opportunity");
       return res.status(f.status).json(f.body);
     }
-    // Derive status/stage/win_probability on the new write-off. writtenPledge is
-    // sticky-true (never cleared) so it derives as status='pledge'; the negative
-    // awarded amount keeps it out of cash_in (which needs awarded > 0).
+    // Derive status/win probability on the finalized correction pledge. The
+    // negative awarded amount keeps it out of cash_in (which needs awarded > 0).
     await applyDerivedOppFields(writeOffId);
     const final = await db
       .select(oppHeaderColumns)
