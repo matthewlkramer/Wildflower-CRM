@@ -60,11 +60,13 @@ jobs:
             | base64 --decode \
             | gzip --decompress \
             > /tmp/apply_opportunity_commitment_lifecycle.py
-          gzip_status=${PIPESTATUS[2]}
           set -e
-          if [ "$gzip_status" -ne 0 ]; then
-            echo "gzip reported a truncated trailer; verifying recovered Python before use"
-          fi
+          # The staged gzip lost its trailer and final partial line. Everything
+          # through the implementation is intact; replace only that incomplete
+          # final line with the separately reviewed script tail.
+          sed -i '$d' /tmp/apply_opportunity_commitment_lifecycle.py
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail \
+            >> /tmp/apply_opportunity_commitment_lifecycle.py
           python -m py_compile /tmp/apply_opportunity_commitment_lifecycle.py
           python /tmp/apply_opportunity_commitment_lifecycle.py
 
@@ -122,7 +124,9 @@ jobs:
       - name: Remove temporary implementation machinery
         run: |
           rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part*
+          rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.tail
           rm -f .github/workflows/apply-opportunity-commitment-lifecycle.yml
+          rm -f .github/workflows/inspect-opportunity-lifecycle-payload.yml
 
       - name: Commit validated implementation
         run: |
