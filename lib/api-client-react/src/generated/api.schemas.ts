@@ -1985,6 +1985,31 @@ export const OpportunityOutcomeType = {
   pledge: 'pledge',
 } as const;
 
+export interface RecordVerbalCommitmentBody {
+  commitmentPath: OpportunityCommitmentPath;
+  verbalCommitmentAt: string;
+  /** @pattern ^[0-9]+(\.[0-9]{1,2})?$ */
+  confirmedAmount: string;
+  expectedDate?: string | null;
+}
+
+export interface FinalizePledgeBody {
+  pledgeCommittedAt: string;
+}
+
+export interface OpportunityCommitmentResult {
+  id: string;
+  commitmentPath?: OpportunityCommitmentPath | null;
+  verbalCommitmentAt?: string | null;
+  pledgeCommittedAt?: string | null;
+  outcomeType?: OpportunityOutcomeType | null;
+  status?: OpportunityStatus | null;
+  stage?: OpportunityStage | null;
+  awardedAmount?: string | null;
+  paidAmount: string;
+  promptForReportingDeadlines?: boolean | null;
+}
+
 export interface OpportunityOrPledge {
   id: string;
   name?: string | null;
@@ -2028,6 +2053,11 @@ export interface OpportunityOrPledge {
   actualCompletionDate?: string | null;
   winProbability?: string | null;
   stage?: OpportunityStage | null;
+  lossReason?: string | null;
+  applicationDeadline?: string | null;
+  paymentDetails?: string | null;
+  usageNotes?: string | null;
+  copperPledgeId?: string | null;
   /** The positive outcome the donor verbally confirmed; not itself an actual pledge or gift. */
   readonly commitmentPath?: OpportunityCommitmentPath | null;
   readonly verbalCommitmentAt?: string | null;
@@ -2035,11 +2065,6 @@ export interface OpportunityOrPledge {
   readonly pledgeCommittedAt?: string | null;
   /** Actual positive outcome, derived from pledge finalization or received money. */
   readonly outcomeType?: OpportunityOutcomeType | null;
-  lossReason?: string | null;
-  applicationDeadline?: string | null;
-  paymentDetails?: string | null;
-  usageNotes?: string | null;
-  copperPledgeId?: string | null;
   /**
    * Compatibility mirror of pledgeCommittedAt != null; never write directly.
    * @deprecated
@@ -9086,31 +9111,6 @@ export interface WriteOffPledgeBody {
   reason?: string | null;
   /** Dollar amount (major units, 2dp) of pledge commitment to write off. Independent of any payment actually received. Must be > 0 and <= the pledge's uncollected remainder net of prior active write-offs; omitted/null writes off that full net balance. */
   amount?: string | null;
-}
-
-export interface RecordVerbalCommitmentBody {
-  commitmentPath: OpportunityCommitmentPath;
-  verbalCommitmentAt: string;
-  /** @pattern ^[0-9]+(\.[0-9]{1,2})?$ */
-  confirmedAmount: string;
-  expectedDate?: string | null;
-}
-
-export interface FinalizePledgeBody {
-  pledgeCommittedAt: string;
-}
-
-export interface OpportunityCommitmentResult {
-  id: string;
-  commitmentPath?: OpportunityCommitmentPath | null;
-  verbalCommitmentAt?: string | null;
-  pledgeCommittedAt?: string | null;
-  outcomeType?: OpportunityOutcomeType | null;
-  status?: OpportunityStatus | null;
-  stage?: OpportunityStage | null;
-  awardedAmount?: string | null;
-  paidAmount: string;
-  promptForReportingDeadlines?: boolean | null;
 }
 
 /**
