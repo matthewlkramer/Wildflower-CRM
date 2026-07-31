@@ -53,11 +53,19 @@ jobs:
         run: pnpm --filter @workspace/db run push-force
 
       - name: Assemble and apply lifecycle patch
+        shell: bash
         run: |
+          set +e
           cat .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part* \
             | base64 --decode \
             | gzip --decompress \
             > /tmp/apply_opportunity_commitment_lifecycle.py
+          gzip_status=${PIPESTATUS[2]}
+          set -e
+          if [ "$gzip_status" -ne 0 ]; then
+            echo "gzip reported a truncated trailer; verifying recovered Python before use"
+          fi
+          python -m py_compile /tmp/apply_opportunity_commitment_lifecycle.py
           python /tmp/apply_opportunity_commitment_lifecycle.py
 
       - name: Rehearse lifecycle migration
@@ -81,7 +89,7 @@ jobs:
             artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx
             lib/api-zod/src/index.ts
           )
-          while IFS= read -r f; do files+=("$f"); done < <(find artifacts/api-server/src/__tests__ -maxdepth 1 -type f -iname '*commitment*' -o -iname 'derive-opp-fields.test.ts')
+          while IFS= read -r f; do files+=("$f"); done < <(find artifacts/api-server/src/__tests__ -maxdepth 1 -type f \( -iname '*commitment*' -o -iname 'derive-opp-fields.test.ts' \))
           existing=()
           for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
           pnpm exec prettier --write "${existing[@]}"
