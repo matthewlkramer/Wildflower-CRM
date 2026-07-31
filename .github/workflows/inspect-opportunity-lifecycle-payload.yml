@@ -16,7 +16,14 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/opportunity-commitment-lifecycle
-      - name: Recover and print OpenAPI patch section
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Apply recovered patch and inspect generated enum declarations
         shell: bash
         run: |
           set +e
@@ -27,8 +34,12 @@ jobs:
           set -e
           sed -i '$d' /tmp/apply.py
           cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail >> /tmp/apply.py
-          echo "--- SCRIPT 1030-1125 ---"
-          nl -ba /tmp/apply.py | sed -n '1030,1125p'
-          echo "--- CURRENT OPENAPI writtenPledge CONTEXT ---"
-          grep -n -B 8 -A 12 'writtenPledge:' lib/api-spec/openapi.yaml | head -n 120 || true
+          python .github/scripts/fix_lifecycle_payload_openapi_patch.py /tmp/apply.py
+          python -m py_compile /tmp/apply.py
+          python /tmp/apply.py
+          echo "--- OPENAPI ENUM CONTEXT ---"
+          grep -n -B 8 -A 24 'OpportunityCommitmentPath' lib/api-spec/openapi.yaml | head -n 160 || true
+          pnpm --filter @workspace/api-spec run codegen
+          echo "--- GENERATED DECLARATIONS ---"
+          grep -n -B 4 -A 10 'OpportunityCommitmentPath\|OpportunityOutcomeType' lib/api-client-react/src/generated/api.schemas.ts | head -n 240 || true
           exit 1
