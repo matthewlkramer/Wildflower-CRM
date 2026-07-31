@@ -82,7 +82,6 @@ jobs:
       - name: Format changed source and tests
         run: |
           pnpm exec prettier --write \
-            lib/db/migrations/0224_opportunity_commitment_lifecycle.sql \
             lib/db/src/schema/opportunitiesAndPledges.ts \
             lib/api-spec/openapi.yaml \
             artifacts/api-server/src/lib/pledgeStage.ts \
