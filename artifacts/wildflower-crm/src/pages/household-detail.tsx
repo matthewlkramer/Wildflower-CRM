@@ -312,10 +312,7 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
             )}
           </RelatedCard>
 
-          <GivingRelationshipCard
-            sourceKind="household"
-            sourceId={household.id}
-          />
+          <GivingRelationshipCard sourceKind="household" sourceId={household.id} />
 
           <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 
