@@ -1,0 +1,24 @@
+name: Export repository for detail action implementation
+
+on:
+  push:
+    branches: [agent/detail-action-lifecycle]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/detail-action-lifecycle
+      - name: Create source archive
+        run: |
+          tar --exclude=.git -czf /tmp/wildflower-crm-source.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wildflower-crm-source
+          path: /tmp/wildflower-crm-source.tar.gz
+          retention-days: 1
