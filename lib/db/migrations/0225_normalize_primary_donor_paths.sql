@@ -2,16 +2,20 @@ BEGIN;
 
 -- Primary donor paths apply consistently to gifts, opportunities, and pledges.
 --
--- This migration does four things:
---   1. Applies preferred donor routing to every newly inserted opportunity/pledge,
---      matching the existing gift insert behavior.
---   2. Records the approved canonical pathways for the Peretsman/Scully and
---      Avi/Sandra Nash clusters.
---   3. Normalizes every historical gift and opportunity/pledge in those clusters
---      to the approved canonical donor, including archived records.
---   4. Audits every CRM donor change while preserving amounts, dates, allocation
---      rows, intermediaries, opportunity links, payment applications, source
---      links, QuickBooks evidence, Stripe evidence, and Donorbox evidence.
+-- This migration:
+--   1. applies preferred donor routing to every newly inserted opportunity or
+--      pledge, matching the existing gift-insert behavior;
+--   2. records the approved canonical pathways for the Peretsman/Scully and
+--      Avi/Sandra Nash clusters;
+--   3. normalizes every historical gift, opportunity, and pledge in those
+--      clusters, including archived records; and
+--   4. audits every CRM donor change without changing amounts, dates,
+--      allocations, schedules, conditions, intermediaries, linked records,
+--      payment applications, source links, or accounting evidence.
+--
+-- The production-specific route seeds are conditional, so this migration also
+-- runs safely in development and test databases where these donor records do
+-- not exist.
 
 CREATE OR REPLACE FUNCTION apply_preferred_donor_to_new_opportunity()
 RETURNS trigger
@@ -108,9 +112,15 @@ BEGIN
     END IF;
   END LOOP;
 
-  NEW.organization_id := CASE WHEN current_kind = 'organization' THEN current_id ELSE NULL END;
-  NEW.individual_giver_person_id := CASE WHEN current_kind = 'individual' THEN current_id ELSE NULL END;
-  NEW.household_id := CASE WHEN current_kind = 'household' THEN current_id ELSE NULL END;
+  NEW.organization_id := CASE
+    WHEN current_kind = 'organization' THEN current_id ELSE NULL
+  END;
+  NEW.individual_giver_person_id := CASE
+    WHEN current_kind = 'individual' THEN current_id ELSE NULL
+  END;
+  NEW.household_id := CASE
+    WHEN current_kind = 'household' THEN current_id ELSE NULL
+  END;
 
   RETURN NEW;
 END;
@@ -123,7 +133,7 @@ BEFORE INSERT ON opportunities_and_pledges
 FOR EACH ROW
 EXECUTE FUNCTION apply_preferred_donor_to_new_opportunity();
 
--- Keep each individual on the authoritative primary household path.
+-- Authoritative primary households for the two approved donor clusters.
 UPDATE people
 SET primary_household_id = 'recIJTPGCH2DtgplA', updated_at = now()
 WHERE id IN ('recEo8nqWp6DxB5tU', 'recwTfTiygjGC8lyw')
@@ -134,12 +144,17 @@ SET primary_household_id = 'rec673AHumJJiIPSy', updated_at = now()
 WHERE id IN ('recjOa1ezzMRJmfP7', 'rechFxTLLlbH9c3m6')
   AND primary_household_id IS DISTINCT FROM 'rec673AHumJJiIPSy';
 
--- Nancy previously pointed directly to the fund. Remove that one-hop override
--- so both Nancy and Bob follow the same explicit path:
--- individual -> primary household -> Scully Peretsman Fund.
+-- Individuals use the shared household path. Remove any one-off individual
+-- override so the cluster has one understandable route.
 DELETE FROM donor_routing_preferences
-WHERE source_person_id = 'recEo8nqWp6DxB5tU';
+WHERE source_person_id IN (
+  'recEo8nqWp6DxB5tU',
+  'recwTfTiygjGC8lyw',
+  'recjOa1ezzMRJmfP7',
+  'rechFxTLLlbH9c3m6'
+);
 
+-- Peretsman/Scully: household -> Scully Peretsman Fund.
 INSERT INTO donor_routing_preferences (
   id,
   source_kind,
@@ -147,19 +162,25 @@ INSERT INTO donor_routing_preferences (
   mode,
   target_kind,
   target_organization_id,
+  updated_by_user_id,
   created_at,
   updated_at
 )
-VALUES (
+SELECT
   'drp_peretsman_scully_household_fund',
   'household',
-  'recIJTPGCH2DtgplA',
+  h.id,
   'target',
   'organization',
-  'recEnJihmxpxL6Mes',
+  o.id,
+  NULL,
   now(),
   now()
-)
+FROM households h
+JOIN organizations o ON o.id = 'recEnJihmxpxL6Mes'
+WHERE h.id = 'recIJTPGCH2DtgplA'
+  AND h.archived_at IS NULL
+  AND o.archived_at IS NULL
 ON CONFLICT (source_household_id) WHERE source_household_id IS NOT NULL
 DO UPDATE SET
   source_kind = 'household',
@@ -171,8 +192,39 @@ DO UPDATE SET
   updated_by_user_id = NULL,
   updated_at = now();
 
--- Every Avi/Sandra Nash record resolves to the household. The household itself
--- has no explicit preference and therefore remains the endpoint.
+-- The fund is the explicit endpoint of the Peretsman/Scully path.
+INSERT INTO donor_routing_preferences (
+  id,
+  source_kind,
+  source_organization_id,
+  mode,
+  updated_by_user_id,
+  created_at,
+  updated_at
+)
+SELECT
+  'drp_scully_peretsman_fund_self',
+  'organization',
+  o.id,
+  'self',
+  NULL,
+  now(),
+  now()
+FROM organizations o
+WHERE o.id = 'recEnJihmxpxL6Mes'
+  AND o.archived_at IS NULL
+ON CONFLICT (source_organization_id) WHERE source_organization_id IS NOT NULL
+DO UPDATE SET
+  source_kind = 'organization',
+  mode = 'self',
+  target_kind = NULL,
+  target_person_id = NULL,
+  target_household_id = NULL,
+  target_organization_id = NULL,
+  updated_by_user_id = NULL,
+  updated_at = now();
+
+-- Nash: Indira Foundation -> Avi and Sandra Nash household.
 INSERT INTO donor_routing_preferences (
   id,
   source_kind,
@@ -180,19 +232,25 @@ INSERT INTO donor_routing_preferences (
   mode,
   target_kind,
   target_household_id,
+  updated_by_user_id,
   created_at,
   updated_at
 )
-VALUES (
+SELECT
   'drp_indira_foundation_nash_household',
   'organization',
-  'recR28K8Twq5uV8Q0',
+  o.id,
   'target',
   'household',
-  'rec673AHumJJiIPSy',
+  h.id,
+  NULL,
   now(),
   now()
-)
+FROM organizations o
+JOIN households h ON h.id = 'rec673AHumJJiIPSy'
+WHERE o.id = 'recR28K8Twq5uV8Q0'
+  AND o.archived_at IS NULL
+  AND h.archived_at IS NULL
 ON CONFLICT (source_organization_id) WHERE source_organization_id IS NOT NULL
 DO UPDATE SET
   source_kind = 'organization',
@@ -200,6 +258,38 @@ DO UPDATE SET
   target_kind = 'household',
   target_person_id = NULL,
   target_household_id = excluded.target_household_id,
+  target_organization_id = NULL,
+  updated_by_user_id = NULL,
+  updated_at = now();
+
+-- The household is the explicit endpoint of the Nash path.
+INSERT INTO donor_routing_preferences (
+  id,
+  source_kind,
+  source_household_id,
+  mode,
+  updated_by_user_id,
+  created_at,
+  updated_at
+)
+SELECT
+  'drp_nash_household_self',
+  'household',
+  h.id,
+  'self',
+  NULL,
+  now(),
+  now()
+FROM households h
+WHERE h.id = 'rec673AHumJJiIPSy'
+  AND h.archived_at IS NULL
+ON CONFLICT (source_household_id) WHERE source_household_id IS NOT NULL
+DO UPDATE SET
+  source_kind = 'household',
+  mode = 'self',
+  target_kind = NULL,
+  target_person_id = NULL,
+  target_household_id = NULL,
   target_organization_id = NULL,
   updated_by_user_id = NULL,
   updated_at = now();
@@ -225,6 +315,25 @@ INSERT INTO donor_cluster_map VALUES
   ('Avi/Sandra Nash', 'organization', 'recR28K8Twq5uV8Q0', 'Indira Foundation', 'household', 'rec673AHumJJiIPSy', 'Avi and Sandra Nash'),
   ('Avi/Sandra Nash', 'household', 'rec673AHumJJiIPSy', 'Avi and Sandra Nash', 'household', 'rec673AHumJJiIPSy', 'Avi and Sandra Nash');
 
+-- Remove map rows whose source or target record is absent. This makes the
+-- production-specific normalization harmless in other databases.
+DELETE FROM donor_cluster_map m
+WHERE NOT (
+  CASE m.source_kind
+    WHEN 'individual' THEN EXISTS (SELECT 1 FROM people p WHERE p.id = m.source_id)
+    WHEN 'household' THEN EXISTS (SELECT 1 FROM households h WHERE h.id = m.source_id)
+    WHEN 'organization' THEN EXISTS (SELECT 1 FROM organizations o WHERE o.id = m.source_id)
+    ELSE false
+  END
+) OR NOT (
+  CASE m.target_kind
+    WHEN 'individual' THEN EXISTS (SELECT 1 FROM people p WHERE p.id = m.target_id)
+    WHEN 'household' THEN EXISTS (SELECT 1 FROM households h WHERE h.id = m.target_id)
+    WHEN 'organization' THEN EXISTS (SELECT 1 FROM organizations o WHERE o.id = m.target_id)
+    ELSE false
+  END
+);
+
 CREATE TEMP TABLE donor_cluster_gift_changes ON COMMIT DROP AS
 SELECT
   g.id,
@@ -245,7 +354,8 @@ JOIN donor_cluster_map m ON
   (m.source_kind = 'organization' AND g.organization_id = m.source_id)
   OR (m.source_kind = 'individual' AND g.individual_giver_person_id = m.source_id)
   OR (m.source_kind = 'household' AND g.household_id = m.source_id)
-WHERE (m.source_kind, m.source_id) IS DISTINCT FROM (m.target_kind, m.target_id);
+WHERE (m.source_kind, m.source_id)
+  IS DISTINCT FROM (m.target_kind, m.target_id);
 
 INSERT INTO audit_log (
   id,
@@ -285,8 +395,12 @@ SELECT
   jsonb_build_object(
     'source', 'normalize_primary_donor_paths_0225',
     'cluster', cluster_name,
-    'fromDonor', jsonb_build_object('kind', source_kind, 'id', source_id, 'name', source_name),
-    'toDonor', jsonb_build_object('kind', target_kind, 'id', target_id, 'name', target_name),
+    'fromDonor', jsonb_build_object(
+      'kind', source_kind, 'id', source_id, 'name', source_name
+    ),
+    'toDonor', jsonb_build_object(
+      'kind', target_kind, 'id', target_id, 'name', target_name
+    ),
     'accountingEvidenceChanged', false,
     'amountChanged', false,
     'dateChanged', false,
@@ -300,9 +414,15 @@ ON CONFLICT (id) DO NOTHING;
 
 UPDATE gifts_and_payments g
 SET
-  organization_id = CASE WHEN c.target_kind = 'organization' THEN c.target_id ELSE NULL END,
-  individual_giver_person_id = CASE WHEN c.target_kind = 'individual' THEN c.target_id ELSE NULL END,
-  household_id = CASE WHEN c.target_kind = 'household' THEN c.target_id ELSE NULL END,
+  organization_id = CASE
+    WHEN c.target_kind = 'organization' THEN c.target_id ELSE NULL
+  END,
+  individual_giver_person_id = CASE
+    WHEN c.target_kind = 'individual' THEN c.target_id ELSE NULL
+  END,
+  household_id = CASE
+    WHEN c.target_kind = 'household' THEN c.target_id ELSE NULL
+  END,
   updated_at = now()
 FROM donor_cluster_gift_changes c
 WHERE g.id = c.id;
@@ -327,7 +447,8 @@ JOIN donor_cluster_map m ON
   (m.source_kind = 'organization' AND o.organization_id = m.source_id)
   OR (m.source_kind = 'individual' AND o.individual_giver_person_id = m.source_id)
   OR (m.source_kind = 'household' AND o.household_id = m.source_id)
-WHERE (m.source_kind, m.source_id) IS DISTINCT FROM (m.target_kind, m.target_id);
+WHERE (m.source_kind, m.source_id)
+  IS DISTINCT FROM (m.target_kind, m.target_id);
 
 INSERT INTO audit_log (
   id,
@@ -344,10 +465,11 @@ SELECT
   'audit_donor_cluster_0225_opp_' || id,
   NULL,
   'update',
-  'opportunity',
+  CASE WHEN pledge_committed_at IS NOT NULL THEN 'pledge' ELSE 'opportunity' END,
   id,
   CASE
-    WHEN pledge_committed_at IS NOT NULL THEN 'Normalized historical pledge to the primary donor path'
+    WHEN pledge_committed_at IS NOT NULL
+      THEN 'Normalized historical pledge to the primary donor path'
     ELSE 'Normalized historical opportunity to the primary donor path'
   END,
   jsonb_build_array(
@@ -370,10 +492,16 @@ SELECT
   jsonb_build_object(
     'source', 'normalize_primary_donor_paths_0225',
     'cluster', cluster_name,
-    'recordLifecycle', CASE WHEN pledge_committed_at IS NOT NULL THEN 'pledge' ELSE 'opportunity' END,
+    'recordLifecycle', CASE
+      WHEN pledge_committed_at IS NOT NULL THEN 'pledge' ELSE 'opportunity'
+    END,
     'statusPreserved', status,
-    'fromDonor', jsonb_build_object('kind', source_kind, 'id', source_id, 'name', source_name),
-    'toDonor', jsonb_build_object('kind', target_kind, 'id', target_id, 'name', target_name),
+    'fromDonor', jsonb_build_object(
+      'kind', source_kind, 'id', source_id, 'name', source_name
+    ),
+    'toDonor', jsonb_build_object(
+      'kind', target_kind, 'id', target_id, 'name', target_name
+    ),
     'amountsChanged', false,
     'allocationsChanged', false,
     'conditionsChanged', false,
@@ -386,19 +514,26 @@ ON CONFLICT (id) DO NOTHING;
 
 UPDATE opportunities_and_pledges o
 SET
-  organization_id = CASE WHEN c.target_kind = 'organization' THEN c.target_id ELSE NULL END,
-  individual_giver_person_id = CASE WHEN c.target_kind = 'individual' THEN c.target_id ELSE NULL END,
-  household_id = CASE WHEN c.target_kind = 'household' THEN c.target_id ELSE NULL END,
+  organization_id = CASE
+    WHEN c.target_kind = 'organization' THEN c.target_id ELSE NULL
+  END,
+  individual_giver_person_id = CASE
+    WHEN c.target_kind = 'individual' THEN c.target_id ELSE NULL
+  END,
+  household_id = CASE
+    WHEN c.target_kind = 'household' THEN c.target_id ELSE NULL
+  END,
   updated_at = now()
 FROM donor_cluster_opportunity_changes c
 WHERE o.id = c.id;
 
--- Any phase-3 gift-donor proposals for these records are now satisfied or stale.
+-- Any phase-3 gift-donor proposal for a changed gift is now satisfied.
 UPDATE cleanup_queue cq
 SET
   status = 'resolved',
-  note = cq.note || E'\nResolved by migration 0225: the record was normalized to its approved primary donor path.',
-  resolved_at = COALESCE(cq.resolved_at, now()),
+  note = coalesce(cq.note, '') ||
+    E'\nResolved by migration 0225: the gift was normalized to its approved primary donor path.',
+  resolved_at = coalesce(cq.resolved_at, now()),
   updated_at = now()
 WHERE cq.status = 'open'
   AND cq.target_type = 'gift'
@@ -408,6 +543,47 @@ WHERE cq.status = 'open'
     FROM donor_cluster_gift_changes c
     WHERE c.id = cq.target_id
   );
+
+-- One durable route decision per cluster, inserted only when the production
+-- canonical record exists.
+INSERT INTO audit_log (
+  id,
+  actor_user_id,
+  action,
+  entity_type,
+  entity_id,
+  summary,
+  metadata,
+  created_at
+)
+SELECT
+  'audit_donor_route_0225_peretsman_scully',
+  NULL,
+  'update',
+  'organization',
+  o.id,
+  'Set the Peretsman/Scully primary donor path to Scully Peretsman Fund',
+  jsonb_build_object(
+    'source', 'normalize_primary_donor_paths_0225',
+    'canonicalDonor', jsonb_build_object(
+      'kind', 'organization', 'id', o.id, 'name', o.name
+    ),
+    'path', jsonb_build_array(
+      jsonb_build_object(
+        'kind', 'individual', 'id', 'recEo8nqWp6DxB5tU', 'name', 'Nancy Peretsman'
+      ),
+      jsonb_build_object(
+        'kind', 'household', 'id', 'recIJTPGCH2DtgplA', 'name', 'Nancy Peretsman and Bob Scully'
+      ),
+      jsonb_build_object(
+        'kind', 'organization', 'id', o.id, 'name', o.name
+      )
+    )
+  ),
+  now()
+FROM organizations o
+WHERE o.id = 'recEnJihmxpxL6Mes'
+ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO audit_log (
   id,
@@ -419,39 +595,30 @@ INSERT INTO audit_log (
   metadata,
   created_at
 )
-VALUES
-  (
-    'audit_donor_route_0225_peretsman_household',
-    NULL,
-    'update',
-    'household',
-    'recIJTPGCH2DtgplA',
-    'Set primary donor path to Scully Peretsman Fund',
-    jsonb_build_object(
-      'source', 'normalize_primary_donor_paths_0225',
-      'route', jsonb_build_array(
-        jsonb_build_object('kind', 'household', 'id', 'recIJTPGCH2DtgplA', 'name', 'Nancy Peretsman and Bob Scully'),
-        jsonb_build_object('kind', 'organization', 'id', 'recEnJihmxpxL6Mes', 'name', 'Scully Peretsman Fund')
-      )
+SELECT
+  'audit_donor_route_0225_nash',
+  NULL,
+  'update',
+  'household',
+  h.id,
+  'Set the Nash primary donor path to the Avi and Sandra Nash household',
+  jsonb_build_object(
+    'source', 'normalize_primary_donor_paths_0225',
+    'canonicalDonor', jsonb_build_object(
+      'kind', 'household', 'id', h.id, 'name', h.name
     ),
-    now()
+    'path', jsonb_build_array(
+      jsonb_build_object(
+        'kind', 'organization', 'id', 'recR28K8Twq5uV8Q0', 'name', 'Indira Foundation'
+      ),
+      jsonb_build_object(
+        'kind', 'household', 'id', h.id, 'name', h.name
+      )
+    )
   ),
-  (
-    'audit_donor_route_0225_indira_household',
-    NULL,
-    'update',
-    'organization',
-    'recR28K8Twq5uV8Q0',
-    'Set primary donor path to Avi and Sandra Nash household',
-    jsonb_build_object(
-      'source', 'normalize_primary_donor_paths_0225',
-      'route', jsonb_build_array(
-        jsonb_build_object('kind', 'organization', 'id', 'recR28K8Twq5uV8Q0', 'name', 'Indira Foundation'),
-        jsonb_build_object('kind', 'household', 'id', 'rec673AHumJJiIPSy', 'name', 'Avi and Sandra Nash')
-      )
-    ),
-    now()
-  )
+  now()
+FROM households h
+WHERE h.id = 'rec673AHumJJiIPSy'
 ON CONFLICT (id) DO NOTHING;
 
 COMMIT;
