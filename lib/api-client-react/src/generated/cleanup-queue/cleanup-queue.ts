@@ -20,10 +20,12 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApplyHighConfidenceCleanupProposalsResult,
   BadRequestResponse,
   CleanupItem,
   CleanupItemList,
   FlagForResearchBody,
+  ForbiddenResponse,
   ListCleanupQueueParams,
   NotFoundResponse,
   UpdateCleanupItemBody
@@ -191,6 +193,144 @@ export const useFlagForResearch = <TError = ErrorType<BadRequestResponse>,
         TContext
       > => {
       return useMutation(getFlagForResearchMutationOptions(options));
+    }
+    /**
+ * @summary Admin-only. Apply every still-open high-confidence structured cleanup proposal.
+ */
+export const getApplyHighConfidenceCleanupProposalsUrl = () => {
+
+
+  
+
+  return `/api/cleanup-queue/apply-high-confidence`
+}
+
+export const applyHighConfidenceCleanupProposals = async ( options?: RequestInit): Promise<ApplyHighConfidenceCleanupProposalsResult> => {
+  
+  return customFetch<ApplyHighConfidenceCleanupProposalsResult>(getApplyHighConfidenceCleanupProposalsUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getApplyHighConfidenceCleanupProposalsMutationOptions = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>, TError,void, TContext> => {
+
+const mutationKey = ['applyHighConfidenceCleanupProposals'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>, void> = () => {
+          
+
+          return  applyHighConfidenceCleanupProposals(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyHighConfidenceCleanupProposalsMutationResult = NonNullable<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>>
+    
+    export type ApplyHighConfidenceCleanupProposalsMutationError = ErrorType<ForbiddenResponse>
+
+    /**
+ * @summary Admin-only. Apply every still-open high-confidence structured cleanup proposal.
+ */
+export const useApplyHighConfidenceCleanupProposals = <TError = ErrorType<ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getApplyHighConfidenceCleanupProposalsMutationOptions(options));
+    }
+    /**
+ * @summary Admin-only. Apply this structured donor-attribution proposal and resolve the cleanup item.
+ */
+export const getApplyCleanupProposalUrl = (id: string,) => {
+
+
+  
+
+  return `/api/cleanup-queue/${id}/apply-proposal`
+}
+
+export const applyCleanupProposal = async (id: string, options?: RequestInit): Promise<CleanupItem> => {
+  
+  return customFetch<CleanupItem>(getApplyCleanupProposalUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getApplyCleanupProposalMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyCleanupProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyCleanupProposal>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['applyCleanupProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyCleanupProposal>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  applyCleanupProposal(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyCleanupProposalMutationResult = NonNullable<Awaited<ReturnType<typeof applyCleanupProposal>>>
+    
+    export type ApplyCleanupProposalMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Admin-only. Apply this structured donor-attribution proposal and resolve the cleanup item.
+ */
+export const useApplyCleanupProposal = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyCleanupProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyCleanupProposal>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getApplyCleanupProposalMutationOptions(options));
     }
     /**
  * @summary Update the cleanup item's shared working note. Any signed-in team member may edit it.

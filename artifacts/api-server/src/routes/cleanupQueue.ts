@@ -1,13 +1,20 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { db } from "@workspace/db";
 import {
   cleanupQueue,
+  donorPaymentIntermediaries,
+  giftsAndPayments,
+  households,
   opportunitiesAndPledges,
+  organizations,
+  paymentIntermediaries,
+  people,
   sourceLinks,
   stagedPayments,
   users,
+  type CleanupProposal,
 } from "@workspace/db/schema";
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
 import {
   FlagForResearchBody,
   ListCleanupQueueQueryParams,
@@ -17,48 +24,132 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import {
   asyncHandler,
+  newId,
   notFound,
   paramId,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
-
-// Cleanup queue — records flagged as needing manual data cleanup that can't be
-// auto-fixed (e.g. conditional-commitment pledges whose conditional aspect
-// should be moved into the conditions field with a non-conditional stage).
-//
-// Each row links a target record (targetType + targetId) to a human-readable
-// note. A fundraiser works the queue and either resolves (record fixed) or
-// dismisses (false flag) each item; both drop the item out of the default view.
-// Not admin-gated — fundraisers use it directly.
+import { requireAdmin } from "../lib/archive";
+import { recordAudit } from "../lib/audit";
+import {
+  donorKey,
+  loadDonorNode,
+  resolveDonorRouting,
+  type DonorRef,
+  type SqlExecutor,
+} from "../lib/donorRouting";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-// Human-readable owner label: display name, then first+last, then email.
-const userNameExpr = sql<string | null>`COALESCE(
-  NULLIF(${users.displayName}, ''),
-  NULLIF(TRIM(CONCAT_WS(' ', ${users.firstName}, ${users.lastName})), ''),
-  ${users.email}
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+const userNameSql = (
+  column:
+    | typeof cleanupQueue.flaggedByUserId
+    | typeof cleanupQueue.resolvedByUserId,
+) => sql<string | null>`(
+  SELECT COALESCE(
+    NULLIF(u.display_name, ''),
+    NULLIF(TRIM(CONCAT_WS(' ', u.first_name, u.last_name)), ''),
+    u.email
+  )
+  FROM users u
+  WHERE u.id = ${column}
+  LIMIT 1
 )`;
 
-type CleanupRow = typeof cleanupQueue.$inferSelect & {
-  targetName: string | null;
-  flaggedByUserName: string | null;
-  resolvedByUserName: string | null;
+const CLEANUP_TARGET_ID = sql.raw(`"cleanup_queue"."target_id"`);
+const CLEANUP_TARGET_TYPE = sql.raw(`"cleanup_queue"."target_type"`);
+
+const targetNameSql = sql<string | null>`COALESCE(
+  (
+    SELECT oap.name
+    FROM opportunities_and_pledges oap
+    WHERE oap.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} IN ('pledge', 'opportunity')
+  ),
+  (
+    SELECT sp.payer_name
+    FROM staged_payments sp
+    WHERE sp.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'staged_payment'
+  ),
+  (
+    SELECT sp.payer_name
+    FROM source_links sl
+    JOIN staged_payments sp ON sp.id = sl.qb_staged_payment_id
+    WHERE sl.link_type = 'payout_qb_settlement'
+      AND sl.stripe_payout_id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'stripe_payout'
+    LIMIT 1
+  ),
+  (
+    SELECT COALESCE(NULLIF(TRIM(g.name), ''), 'Gift ' || g.id)
+    FROM gifts_and_payments g
+    WHERE g.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'gift'
+  ),
+  (
+    SELECT CASE WHEN p.anonymous THEN 'Anonymous' ELSE COALESCE(
+      NULLIF(TRIM(p.full_name), ''),
+      NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
+      p.id
+    ) END
+    FROM people p
+    WHERE p.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'person'
+  ),
+  (
+    SELECT h.name
+    FROM households h
+    WHERE h.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'household'
+  ),
+  (
+    SELECT CASE WHEN o.anonymous THEN 'Anonymous' ELSE o.name END
+    FROM organizations o
+    WHERE o.id = ${CLEANUP_TARGET_ID}
+      AND ${CLEANUP_TARGET_TYPE} = 'organization'
+  )
+)`;
+
+const cleanupSelect = {
+  id: cleanupQueue.id,
+  targetType: cleanupQueue.targetType,
+  targetId: cleanupQueue.targetId,
+  targetName: targetNameSql.as("target_name"),
+  reasonCode: cleanupQueue.reasonCode,
+  note: cleanupQueue.note,
+  proposalKind: cleanupQueue.proposalKind,
+  proposalConfidence: cleanupQueue.proposalConfidence,
+  proposedChanges: cleanupQueue.proposedChanges,
+  flaggedByUserId: cleanupQueue.flaggedByUserId,
+  flaggedByUserName: userNameSql(cleanupQueue.flaggedByUserId).as(
+    "flagged_by_user_name",
+  ),
+  status: cleanupQueue.status,
+  flaggedAt: cleanupQueue.flaggedAt,
+  resolvedAt: cleanupQueue.resolvedAt,
+  resolvedByUserId: cleanupQueue.resolvedByUserId,
+  resolvedByUserName: userNameSql(cleanupQueue.resolvedByUserId).as(
+    "resolved_by_user_name",
+  ),
+  createdAt: cleanupQueue.createdAt,
+  updatedAt: cleanupQueue.updatedAt,
 };
 
-function serialize(row: CleanupRow) {
+type CleanupSelected = Awaited<ReturnType<typeof loadCleanupItem>>;
+
+function serialize(row: NonNullable<CleanupSelected>) {
   return {
-    id: row.id,
-    targetType: row.targetType,
-    targetId: row.targetId,
-    targetName: row.targetName,
-    reasonCode: row.reasonCode,
-    note: row.note,
+    ...row,
+    proposalKind: row.proposalKind ?? null,
+    proposalConfidence: row.proposalConfidence ?? null,
+    proposedChanges: row.proposedChanges ?? null,
     flaggedByUserId: row.flaggedByUserId ?? null,
     flaggedByUserName: row.flaggedByUserName ?? null,
-    status: row.status,
     flaggedAt: row.flaggedAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     resolvedByUserId: row.resolvedByUserId ?? null,
@@ -66,6 +157,293 @@ function serialize(row: CleanupRow) {
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+async function loadCleanupItem(id: string) {
+  return db
+    .select(cleanupSelect)
+    .from(cleanupQueue)
+    .where(eq(cleanupQueue.id, id))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+}
+
+class ProposalError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+function donorRef(value: unknown): DonorRef | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { kind?: unknown; id?: unknown };
+  if (
+    (candidate.kind === "individual" ||
+      candidate.kind === "household" ||
+      candidate.kind === "organization") &&
+    typeof candidate.id === "string" &&
+    candidate.id.length > 0
+  ) {
+    return { kind: candidate.kind, id: candidate.id };
+  }
+  return null;
+}
+
+function donorColumns(ref: DonorRef) {
+  return {
+    organizationId: ref.kind === "organization" ? ref.id : null,
+    individualGiverPersonId: ref.kind === "individual" ? ref.id : null,
+    householdId: ref.kind === "household" ? ref.id : null,
+  };
+}
+
+function giftDonor(gift: {
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+}): DonorRef | null {
+  if (gift.organizationId)
+    return { kind: "organization", id: gift.organizationId };
+  if (gift.individualGiverPersonId)
+    return { kind: "individual", id: gift.individualGiverPersonId };
+  if (gift.householdId) return { kind: "household", id: gift.householdId };
+  return null;
+}
+
+function donorWhere(ref: DonorRef) {
+  return ref.kind === "organization"
+    ? eq(donorPaymentIntermediaries.organizationId, ref.id)
+    : ref.kind === "individual"
+      ? eq(donorPaymentIntermediaries.individualGiverPersonId, ref.id)
+      : eq(donorPaymentIntermediaries.householdId, ref.id);
+}
+
+async function applyDefaultIntermediary(
+  tx: Tx,
+  donor: DonorRef,
+  paymentIntermediaryId: string,
+) {
+  const node = await loadDonorNode(tx as unknown as SqlExecutor, donor);
+  if (!node || node.archived)
+    throw new ProposalError(
+      409,
+      "proposal_target_unavailable",
+      "The donor is missing or archived.",
+    );
+  const [pi] = await tx
+    .select({
+      id: paymentIntermediaries.id,
+      archivedAt: paymentIntermediaries.archivedAt,
+    })
+    .from(paymentIntermediaries)
+    .where(eq(paymentIntermediaries.id, paymentIntermediaryId))
+    .limit(1);
+  if (!pi || pi.archivedAt)
+    throw new ProposalError(
+      409,
+      "proposal_target_unavailable",
+      "The payment intermediary is missing or archived.",
+    );
+
+  await tx
+    .update(donorPaymentIntermediaries)
+    .set({ isDefault: false, updatedAt: new Date() })
+    .where(
+      and(donorWhere(donor), eq(donorPaymentIntermediaries.isDefault, true)),
+    );
+  const [existing] = await tx
+    .select({ id: donorPaymentIntermediaries.id })
+    .from(donorPaymentIntermediaries)
+    .where(
+      and(
+        donorWhere(donor),
+        eq(
+          donorPaymentIntermediaries.paymentIntermediaryId,
+          paymentIntermediaryId,
+        ),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    await tx
+      .update(donorPaymentIntermediaries)
+      .set({ isDefault: true, updatedAt: new Date() })
+      .where(eq(donorPaymentIntermediaries.id, existing.id));
+  } else {
+    await tx.insert(donorPaymentIntermediaries).values({
+      id: newId(),
+      ...donorColumns(donor),
+      paymentIntermediaryId,
+      isDefault: true,
+    });
+  }
+}
+
+async function applyProposal(id: string, req: Request) {
+  await db.transaction(async (tx) => {
+    const [item] = await tx
+      .select()
+      .from(cleanupQueue)
+      .where(eq(cleanupQueue.id, id))
+      .for("update")
+      .limit(1);
+    if (!item)
+      throw new ProposalError(404, "not_found", "Cleanup item not found.");
+    if (item.status !== "open")
+      throw new ProposalError(
+        409,
+        "proposal_not_open",
+        "This proposal is no longer open.",
+      );
+    const proposal = item.proposedChanges as CleanupProposal | null;
+    if (!item.proposalKind || !proposal)
+      throw new ProposalError(
+        409,
+        "proposal_missing",
+        "This cleanup item has no applicable proposal.",
+      );
+
+    if (item.proposalKind === "gift_donor") {
+      const to = donorRef(proposal.toDonor);
+      const expectedFrom = donorRef(proposal.fromDonor);
+      if (!to)
+        throw new ProposalError(
+          409,
+          "proposal_invalid",
+          "The proposed donor is invalid.",
+        );
+      const [gift] = await tx
+        .select({
+          id: giftsAndPayments.id,
+          organizationId: giftsAndPayments.organizationId,
+          individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+          householdId: giftsAndPayments.householdId,
+          paymentIntermediaryId: giftsAndPayments.paymentIntermediaryId,
+        })
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.id, item.targetId))
+        .for("update")
+        .limit(1);
+      if (!gift)
+        throw new ProposalError(
+          404,
+          "gift_not_found",
+          "The gift no longer exists.",
+        );
+      const before = giftDonor(gift);
+      if (!before)
+        throw new ProposalError(
+          409,
+          "proposal_stale",
+          "The gift no longer has one donor of record.",
+        );
+      if (expectedFrom && donorKey(expectedFrom) !== donorKey(before))
+        throw new ProposalError(
+          409,
+          "proposal_stale",
+          "The gift donor changed after this proposal was created.",
+        );
+
+      const resolution = await resolveDonorRouting(
+        to,
+        tx as unknown as SqlExecutor,
+      );
+      if (resolution.requiresDecision || !resolution.resolved)
+        throw new ProposalError(
+          409,
+          "proposal_requires_decision",
+          "The proposed pathway now requires a donor decision.",
+        );
+      const resolved: DonorRef = {
+        kind: resolution.resolved.kind,
+        id: resolution.resolved.id,
+      };
+      await tx
+        .update(giftsAndPayments)
+        .set({ ...donorColumns(resolved), updatedAt: new Date() })
+        .where(eq(giftsAndPayments.id, gift.id));
+      await recordAudit(tx, req, {
+        action: "update",
+        entityType: "gift",
+        entityId: gift.id,
+        summary: "Applied historical donor-attribution proposal",
+        changes: [
+          {
+            field: "organizationId",
+            from: gift.organizationId,
+            to: donorColumns(resolved).organizationId,
+          },
+          {
+            field: "individualGiverPersonId",
+            from: gift.individualGiverPersonId,
+            to: donorColumns(resolved).individualGiverPersonId,
+          },
+          {
+            field: "householdId",
+            from: gift.householdId,
+            to: donorColumns(resolved).householdId,
+          },
+        ],
+        metadata: {
+          cleanupItemId: item.id,
+          proposal,
+          paymentIntermediaryIdPreserved: gift.paymentIntermediaryId,
+          accountingEvidenceChanged: false,
+        },
+      });
+    } else if (item.proposalKind === "default_intermediary") {
+      const donor = donorRef(proposal.donor);
+      const intermediary = proposal.paymentIntermediary;
+      if (!donor || !intermediary?.id)
+        throw new ProposalError(
+          409,
+          "proposal_invalid",
+          "The proposed default intermediary is invalid.",
+        );
+      await applyDefaultIntermediary(tx, donor, intermediary.id);
+      await recordAudit(tx, req, {
+        action: "update",
+        entityType: donor.kind === "individual" ? "person" : donor.kind,
+        entityId: donor.id,
+        summary: "Applied default payment-intermediary proposal",
+        metadata: { cleanupItemId: item.id, proposal },
+      });
+    } else {
+      throw new ProposalError(
+        409,
+        "proposal_invalid",
+        "Unsupported proposal type.",
+      );
+    }
+
+    await tx
+      .update(cleanupQueue)
+      .set({
+        status: "resolved",
+        resolvedAt: new Date(),
+        resolvedByUserId: getAppUser(req)?.id ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(cleanupQueue.id, item.id));
+  });
+  return loadCleanupItem(id);
+}
+
+function respondProposalError(
+  res: Parameters<typeof notFound>[0],
+  error: unknown,
+) {
+  if (error instanceof ProposalError) {
+    res
+      .status(error.status)
+      .json({ error: error.code, message: error.message });
+    return true;
+  }
+  return false;
 }
 
 router.get(
@@ -77,105 +455,43 @@ router.get(
       res,
     );
     if (!params) return;
-
     const { limit, page, offset } = parsePagination(params);
-    // Default view is open items only; an explicit status reveals the rest.
-    const status = params.status ?? "open";
-    const where = eq(cleanupQueue.status, status);
-
+    const filters: SQL[] = [eq(cleanupQueue.status, params.status ?? "open")];
+    if (params.proposalKind)
+      filters.push(eq(cleanupQueue.proposalKind, params.proposalKind));
+    if (params.reasonCode)
+      filters.push(eq(cleanupQueue.reasonCode, params.reasonCode));
+    const where = and(...filters)!;
     const [rows, totalRows] = await Promise.all([
       db
-        .select({
-          id: cleanupQueue.id,
-          targetType: cleanupQueue.targetType,
-          targetId: cleanupQueue.targetId,
-          reasonCode: cleanupQueue.reasonCode,
-          note: cleanupQueue.note,
-          flaggedByUserId: cleanupQueue.flaggedByUserId,
-          status: cleanupQueue.status,
-          flaggedAt: cleanupQueue.flaggedAt,
-          resolvedAt: cleanupQueue.resolvedAt,
-          resolvedByUserId: cleanupQueue.resolvedByUserId,
-          createdAt: cleanupQueue.createdAt,
-          updatedAt: cleanupQueue.updatedAt,
-          // Resolve the target's display name: opportunity/pledge → its name,
-          // staged_payment → the QB payer name, stripe_payout → the payer name of
-          // its tied deposit (if any). Other target types fall back to null.
-          targetName: sql<string | null>`COALESCE(
-            (
-              SELECT ${opportunitiesAndPledges.name}
-              FROM ${opportunitiesAndPledges}
-              WHERE ${opportunitiesAndPledges.id} = ${cleanupQueue.targetId}
-                AND ${cleanupQueue.targetType} IN ('pledge', 'opportunity')
-            ),
-            (
-              SELECT ${stagedPayments.payerName}
-              FROM ${stagedPayments}
-              WHERE ${stagedPayments.id} = ${cleanupQueue.targetId}
-                AND ${cleanupQueue.targetType} = 'staged_payment'
-            ),
-            (
-              SELECT ${stagedPayments.payerName}
-              FROM ${sourceLinks}
-              JOIN ${stagedPayments}
-                ON ${stagedPayments.id} = ${sourceLinks.qbStagedPaymentId}
-              WHERE ${sourceLinks.linkType} = 'payout_qb_settlement'
-                AND ${sourceLinks.stripePayoutId} = ${cleanupQueue.targetId}
-                AND ${cleanupQueue.targetType} = 'stripe_payout'
-              LIMIT 1
-            )
-          )`,
-          flaggedByUserName: sql<string | null>`(
-            SELECT COALESCE(
-              NULLIF(flagged_user.display_name, ''),
-              NULLIF(TRIM(CONCAT_WS(' ', flagged_user.first_name, flagged_user.last_name)), ''),
-              flagged_user.email
-            )
-            FROM users flagged_user
-            WHERE flagged_user.id = ${cleanupQueue.flaggedByUserId}
-            LIMIT 1
-          )`,
-          resolvedByUserName: userNameExpr,
-        })
+        .select(cleanupSelect)
         .from(cleanupQueue)
-        .leftJoin(users, eq(users.id, cleanupQueue.resolvedByUserId))
         .where(where)
         .orderBy(desc(cleanupQueue.flaggedAt))
         .limit(limit)
         .offset(offset),
       db.select({ c: count() }).from(cleanupQueue).where(where),
     ]);
-
     res.json({
-      data: rows.map((r) => serialize(r as CleanupRow)),
+      data: rows.map((row) => serialize(row)),
       pagination: { page, limit, total: Number(totalRows[0]?.c ?? 0) },
     });
   }),
 );
 
-// Flag a record for research — append it to the queue with
-// reason_code='needs_research'. Idempotent against the
-// (target_type, target_id, reason_code) unique key: re-flagging an already
-// flagged record (regardless of its status) returns the existing item rather
-// than minting a duplicate. The deterministic id ('cleanup_nr_' || targetId)
-// mirrors the hand-applied seed (migration 0077) so app-created and seeded rows
-// share one PK scheme.
 router.post(
   "/cleanup-queue",
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(FlagForResearchBody, req.body, res);
     if (!body) return;
-
     const reasonCode = "needs_research";
-    const actor = getAppUser(req);
     const note = body.note.trim();
-    if (note.length === 0) {
+    if (!note) {
       res
         .status(400)
         .json({ error: "bad_request", message: "A note is required." });
       return;
     }
-
     const inserted = await db
       .insert(cleanupQueue)
       .values({
@@ -184,7 +500,7 @@ router.post(
         targetId: body.targetId,
         reasonCode,
         note,
-        flaggedByUserId: actor?.id ?? null,
+        flaggedByUserId: getAppUser(req)?.id ?? null,
         status: "open",
       })
       .onConflictDoNothing({
@@ -194,44 +510,76 @@ router.post(
           cleanupQueue.reasonCode,
         ],
       })
-      .returning();
-
-    if (inserted[0]) {
-      const enriched = await enrich(inserted);
-      res.status(201).json(serialize(enriched[0]!));
+      .returning({ id: cleanupQueue.id });
+    const id =
+      inserted[0]?.id ??
+      (
+        await db
+          .select({ id: cleanupQueue.id })
+          .from(cleanupQueue)
+          .where(
+            and(
+              eq(cleanupQueue.targetType, body.targetType),
+              eq(cleanupQueue.targetId, body.targetId),
+              eq(cleanupQueue.reasonCode, reasonCode),
+            ),
+          )
+          .limit(1)
+      )[0]?.id;
+    if (!id) {
+      res
+        .status(409)
+        .json({ error: "conflict", message: "Could not flag this record." });
       return;
     }
-
-    // Already flagged — surface the existing item (no duplicate created).
-    const existing = await db
-      .select()
-      .from(cleanupQueue)
-      .where(
-        and(
-          eq(cleanupQueue.targetType, body.targetType),
-          eq(cleanupQueue.targetId, body.targetId),
-          eq(cleanupQueue.reasonCode, reasonCode),
-        ),
-      )
-      .limit(1);
-
-    if (existing[0]) {
-      const enriched = await enrich(existing);
-      res.status(200).json(serialize(enriched[0]!));
-      return;
-    }
-
-    // Extremely unlikely: conflict reported but row not found (race). Treat as
-    // a transient failure.
-    res
-      .status(409)
-      .json({ error: "conflict", message: "Could not flag this record." });
+    const row = await loadCleanupItem(id);
+    res.status(inserted[0] ? 201 : 200).json(row ? serialize(row) : null);
   }),
 );
 
-// The note is intentionally editable in every status. Resolved and dismissed
-// cards remain useful as a durable exchange between the person who flagged the
-// issue and the person who investigated it.
+// Static path is intentionally declared before /:id handlers.
+router.post(
+  "/cleanup-queue/apply-high-confidence",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const ids = await db
+      .select({ id: cleanupQueue.id })
+      .from(cleanupQueue)
+      .where(
+        and(
+          eq(cleanupQueue.status, "open"),
+          eq(cleanupQueue.proposalConfidence, "high"),
+        ),
+      )
+      .then((rows) => rows.map((row) => row.id));
+    const items = [];
+    let skipped = 0;
+    for (const id of ids) {
+      try {
+        const row = await applyProposal(id, req);
+        if (row) items.push(serialize(row));
+      } catch {
+        skipped += 1;
+      }
+    }
+    res.json({ applied: items.length, skipped, items });
+  }),
+);
+
+router.post(
+  "/cleanup-queue/:id/apply-proposal",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    try {
+      const row = await applyProposal(paramId(req), req);
+      if (!row) return notFound(res, "cleanup item");
+      res.json(serialize(row));
+    } catch (error) {
+      if (!respondProposalError(res, error)) throw error;
+    }
+  }),
+);
+
 router.patch(
   "/cleanup-queue/:id",
   asyncHandler(async (req, res) => {
@@ -240,34 +588,27 @@ router.patch(
     if (!body) return;
     const note = body.note.trim();
     if (!note) {
-      res.status(400).json({
-        error: "bad_request",
-        message: "A cleanup note is required.",
-      });
+      res
+        .status(400)
+        .json({ error: "bad_request", message: "A cleanup note is required." });
       return;
     }
-
     const updated = await db
       .update(cleanupQueue)
       .set({ note, updatedAt: new Date() })
       .where(eq(cleanupQueue.id, id))
-      .returning();
-    if (!updated[0]) {
-      notFound(res, "cleanup item");
-      return;
-    }
-    const enriched = await enrich(updated);
-    res.json(serialize(enriched[0]!));
+      .returning({ id: cleanupQueue.id });
+    if (!updated[0]) return notFound(res, "cleanup item");
+    const row = await loadCleanupItem(id);
+    res.json(row ? serialize(row) : null);
   }),
 );
 
-// Shared open → terminal transition. Guards status='open' in the UPDATE WHERE so
-// concurrent resolve/dismiss can't both win; 0 rows ⇒ 404 (gone) or 409 (taken).
 async function transition(
   id: string,
   to: "resolved" | "dismissed",
   userId: string | null,
-): Promise<{ row: CleanupRow | null; conflict: boolean }> {
+) {
   const updated = await db
     .update(cleanupQueue)
     .set({
@@ -277,124 +618,14 @@ async function transition(
       updatedAt: new Date(),
     })
     .where(and(eq(cleanupQueue.id, id), eq(cleanupQueue.status, "open")))
-    .returning();
-
-  if (updated[0]) {
-    const enriched = await enrich([updated[0]]);
-    return { row: enriched[0] ?? null, conflict: false };
-  }
-
-  // No row updated: either the item doesn't exist (404) or it's not open (409).
-  const existing = await db
+    .returning({ id: cleanupQueue.id });
+  if (updated[0]) return { row: await loadCleanupItem(id), conflict: false };
+  const exists = await db
     .select({ id: cleanupQueue.id })
     .from(cleanupQueue)
     .where(eq(cleanupQueue.id, id))
     .limit(1);
-  return { row: null, conflict: existing.length > 0 };
-}
-
-async function enrich(
-  rows: (typeof cleanupQueue.$inferSelect)[],
-): Promise<CleanupRow[]> {
-  if (rows.length === 0) return [];
-  const oppIds = [
-    ...new Set(
-      rows
-        .filter(
-          (r) => r.targetType === "pledge" || r.targetType === "opportunity",
-        )
-        .map((r) => r.targetId),
-    ),
-  ];
-  const stagedIds = [
-    ...new Set(
-      rows
-        .filter((r) => r.targetType === "staged_payment")
-        .map((r) => r.targetId),
-    ),
-  ];
-  const payoutIds = [
-    ...new Set(
-      rows
-        .filter((r) => r.targetType === "stripe_payout")
-        .map((r) => r.targetId),
-    ),
-  ];
-  const userIds = [
-    ...new Set(
-      rows
-        .flatMap((r) => [r.flaggedByUserId, r.resolvedByUserId])
-        .filter(Boolean) as string[],
-    ),
-  ];
-
-  const [oppRows, stagedRows, payoutRows, userRows] = await Promise.all([
-    oppIds.length > 0
-      ? db
-          .select({
-            id: opportunitiesAndPledges.id,
-            name: opportunitiesAndPledges.name,
-          })
-          .from(opportunitiesAndPledges)
-          .where(inArray(opportunitiesAndPledges.id, oppIds))
-      : Promise.resolve([]),
-    stagedIds.length > 0
-      ? db
-          .select({
-            id: stagedPayments.id,
-            name: stagedPayments.payerName,
-          })
-          .from(stagedPayments)
-          .where(inArray(stagedPayments.id, stagedIds))
-      : Promise.resolve([]),
-    payoutIds.length > 0
-      ? db
-          .select({
-            id: sourceLinks.stripePayoutId,
-            name: stagedPayments.payerName,
-          })
-          .from(sourceLinks)
-          .innerJoin(
-            stagedPayments,
-            eq(stagedPayments.id, sourceLinks.qbStagedPaymentId),
-          )
-          .where(
-            and(
-              eq(sourceLinks.linkType, "payout_qb_settlement"),
-              inArray(sourceLinks.stripePayoutId, payoutIds),
-            ),
-          )
-      : Promise.resolve([]),
-    userIds.length > 0
-      ? db
-          .select({ id: users.id, name: userNameExpr })
-          .from(users)
-          .where(inArray(users.id, userIds))
-      : Promise.resolve([]),
-  ]);
-
-  const oppMap = new Map(oppRows.map((o) => [o.id, o.name]));
-  const stagedMap = new Map(stagedRows.map((s) => [s.id, s.name]));
-  const payoutMap = new Map(payoutRows.map((p) => [p.id, p.name]));
-  const userMap = new Map(userRows.map((u) => [u.id, u.name]));
-
-  return rows.map((r) => ({
-    ...r,
-    targetName:
-      r.targetType === "pledge" || r.targetType === "opportunity"
-        ? (oppMap.get(r.targetId) ?? null)
-        : r.targetType === "staged_payment"
-          ? (stagedMap.get(r.targetId) ?? null)
-          : r.targetType === "stripe_payout"
-            ? (payoutMap.get(r.targetId) ?? null)
-            : null,
-    flaggedByUserName: r.flaggedByUserId
-      ? (userMap.get(r.flaggedByUserId) ?? null)
-      : null,
-    resolvedByUserName: r.resolvedByUserId
-      ? (userMap.get(r.resolvedByUserId) ?? null)
-      : null,
-  }));
+  return { row: null, conflict: exists.length > 0 };
 }
 
 function makeTransitionHandler(to: "resolved" | "dismissed") {
@@ -410,10 +641,9 @@ function makeTransitionHandler(to: "resolved" | "dismissed") {
       return;
     }
     if (conflict) {
-      res.status(409).json({
-        error: "conflict",
-        message: "This item is no longer open.",
-      });
+      res
+        .status(409)
+        .json({ error: "conflict", message: "This item is no longer open." });
       return;
     }
     notFound(res, "cleanup item");

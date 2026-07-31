@@ -20,6 +20,8 @@ export const listCleanupQueueQueryPageDefault = 1;
 
 export const ListCleanupQueueQueryParams = zod.object({
   "status": zod.enum(['open', 'resolved', 'dismissed']).optional().describe('Filter by status. Omit to get open items only.'),
+  "proposalKind": zod.enum(['gift_donor', 'default_intermediary']).optional(),
+  "reasonCode": zod.coerce.string().optional(),
   "limit": zod.coerce.number().min(1).max(listCleanupQueueQueryLimitMax).default(listCleanupQueueQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listCleanupQueueQueryPageDefault)
 })
@@ -32,6 +34,31 @@ export const ListCleanupQueueResponse = zod.object({
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
   "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
   "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
   "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
@@ -69,6 +96,131 @@ export const FlagForResearchResponse = zod.object({
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
   "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
+  "status": zod.enum(['open', 'resolved', 'dismissed']),
+  "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
+  "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
+  "resolvedByUserId": zod.string().nullish(),
+  "resolvedByUserName": zod.string().nullish().describe('Display name of the user who resolved\/dismissed the item.'),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+})
+
+/**
+ * @summary Admin-only. Apply every still-open high-confidence structured cleanup proposal.
+ */
+export const ApplyHighConfidenceCleanupProposalsResponse = zod.object({
+  "applied": zod.number(),
+  "skipped": zod.number(),
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "targetType": zod.string().describe('Kind of record this item targets (e.g. \'pledge\', \'opportunity\', \'organization\', \'person\', \'gift\').'),
+  "targetId": zod.string().describe('Id of the targeted record.'),
+  "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
+  "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
+  "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
+  "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
+  "status": zod.enum(['open', 'resolved', 'dismissed']),
+  "flaggedAt": zod.string().describe('ISO timestamp the record was flagged for cleanup.'),
+  "resolvedAt": zod.string().nullish().describe('ISO timestamp the item was resolved or dismissed.'),
+  "resolvedByUserId": zod.string().nullish(),
+  "resolvedByUserName": zod.string().nullish().describe('Display name of the user who resolved\/dismissed the item.'),
+  "createdAt": zod.string(),
+  "updatedAt": zod.string()
+}))
+})
+
+/**
+ * @summary Admin-only. Apply this structured donor-attribution proposal and resolve the cleanup item.
+ */
+export const ApplyCleanupProposalParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ApplyCleanupProposalResponse = zod.object({
+  "id": zod.string(),
+  "targetType": zod.string().describe('Kind of record this item targets (e.g. \'pledge\', \'opportunity\', \'organization\', \'person\', \'gift\').'),
+  "targetId": zod.string().describe('Id of the targeted record.'),
+  "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
+  "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
+  "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
   "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
   "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
@@ -102,6 +254,31 @@ export const UpdateCleanupItemResponse = zod.object({
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
   "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
   "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
   "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
@@ -127,6 +304,31 @@ export const ResolveCleanupItemResponse = zod.object({
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
   "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
   "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
   "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
@@ -152,6 +354,31 @@ export const DismissCleanupItemResponse = zod.object({
   "targetName": zod.string().nullish().describe('Resolved display name of the target record (when known).'),
   "reasonCode": zod.string().describe('Machine-readable category of the flag.'),
   "note": zod.string().describe('Shared working text describing the issue and team updates.'),
+  "proposalKind": zod.union([zod.enum(['gift_donor', 'default_intermediary']),zod.null()]),
+  "proposalConfidence": zod.union([zod.enum(['high', 'medium', 'low']),zod.null()]),
+  "proposedChanges": zod.union([zod.object({
+  "fromDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "toDonor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "donor": zod.union([zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string().nullish()
+}),zod.null()]).optional(),
+  "paymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.string().nullish()
+}),zod.null()]).optional(),
+  "rationale": zod.string().nullish()
+}),zod.null()]),
   "flaggedByUserId": zod.string().nullable().describe('User who originally flagged the item; null for system-seeded historical rows.'),
   "flaggedByUserName": zod.string().nullable().describe('Display name of the user who originally flagged the item; null for system-seeded historical rows.'),
   "status": zod.enum(['open', 'resolved', 'dismissed']),
