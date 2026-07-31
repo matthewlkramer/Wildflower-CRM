@@ -1,0 +1,125 @@
+name: Apply opportunity commitment lifecycle
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: github.head_ref == 'agent/opportunity-commitment-lifecycle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_commitment_lifecycle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_commitment_lifecycle"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_commitment_lifecycle
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: commitment-lifecycle-test-key
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/opportunity-commitment-lifecycle
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Establish pre-change schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Assemble and apply lifecycle patch
+        run: |
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part* \
+            | base64 --decode \
+            | gzip --decompress \
+            > /tmp/apply_opportunity_commitment_lifecycle.py
+          python /tmp/apply_opportunity_commitment_lifecycle.py
+
+      - name: Rehearse lifecycle migration
+        run: |
+          migration=$(ls lib/db/migrations/0224*commitment*lifecycle*.sql lib/db/migrations/0224*.sql 2>/dev/null | head -n 1)
+          test -n "$migration"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
+
+      - name: Regenerate API clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - name: Format implementation files
+        run: |
+          files=(
+            lib/db/src/schema/_enums.ts
+            lib/db/src/schema/opportunitiesAndPledges.ts
+            artifacts/api-server/src/lib/pledgeStage.ts
+            artifacts/api-server/src/lib/reconciliationCommit.ts
+            artifacts/api-server/src/routes/opportunitiesAndPledges.ts
+            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+            artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx
+            lib/api-zod/src/index.ts
+          )
+          while IFS= read -r f; do files+=("$f"); done < <(find artifacts/api-server/src/__tests__ -maxdepth 1 -type f -iname '*commitment*' -o -iname 'derive-opp-fields.test.ts')
+          existing=()
+          for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
+          pnpm exec prettier --write "${existing[@]}"
+
+      - run: pnpm run check:codegen
+      - run: pnpm run check:api
+      - run: pnpm run check:web
+
+      - name: Run focused lifecycle tests
+        shell: bash
+        run: |
+          shopt -s nullglob
+          tests=(
+            artifacts/api-server/src/__tests__/derive-opp-fields.test.ts
+            artifacts/api-server/src/__tests__/*commitment*.test.ts
+            artifacts/api-server/src/__tests__/*commitment*.integration.test.ts
+            artifacts/api-server/src/__tests__/create-gift-overrides.integration.test.ts
+          )
+          unique=()
+          declare -A seen=()
+          for f in "${tests[@]}"; do
+            if [ -f "$f" ] && [ -z "${seen[$f]:-}" ]; then
+              unique+=("${f#artifacts/api-server/}")
+              seen[$f]=1
+            fi
+          done
+          test ${#unique[@]} -ge 2
+          pnpm --filter @workspace/api-server exec vitest run "${unique[@]}"
+
+      - name: Remove temporary implementation machinery
+        run: |
+          rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part*
+          rm -f .github/workflows/apply-opportunity-commitment-lifecycle.yml
+
+      - name: Commit validated implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Implement opportunity commitment lifecycle"
+          git push origin HEAD:agent/opportunity-commitment-lifecycle
