@@ -56,13 +56,22 @@ jobs:
           python /tmp/apply_donor_attribution_phase3.py
           python - <<'PY'
           from pathlib import Path
-          path = Path('lib/api-spec/openapi.yaml')
-          text = path.read_text()
+
+          spec = Path('lib/api-spec/openapi.yaml')
+          text = spec.read_text()
           text = text.replace(
               '"409": { description: Proposal is stale, unavailable, or no longer open. }',
               '"409": { description: "Proposal is stale, unavailable, or no longer open." }',
           )
-          path.write_text(text)
+          spec.write_text(text)
+
+          migration = Path('lib/db/migrations/0223_donor_attribution_phase_3.sql')
+          sql = migration.read_text().strip()
+          if not sql.startswith('BEGIN;'):
+              sql = 'BEGIN;\n\n' + sql
+          if not sql.endswith('COMMIT;'):
+              sql = sql + '\n\nCOMMIT;'
+          migration.write_text(sql + '\n')
           PY
 
       - name: Regenerate API clients
