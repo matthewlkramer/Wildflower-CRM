@@ -54,6 +54,7 @@ import { GivesThroughCard } from "@/components/gives-through-card";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { GivingRelationshipCard } from "@/components/giving-relationship-card";
 import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -929,6 +930,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       right={
         <>
           <PinnedMediaCard personId={person.id} />
+          <GivingRelationshipCard sourceKind="individual" sourceId={person.id} />
           <GivingPipelineCard scope={{ individualGiverPersonId: person.id }} />
 
           <PeopleCard person={person} />

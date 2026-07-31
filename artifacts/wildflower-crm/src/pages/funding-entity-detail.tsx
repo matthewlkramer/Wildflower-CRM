@@ -29,6 +29,7 @@ import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { GivingRelationshipCard } from "@/components/giving-relationship-card";
 import { OrganizationRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -1002,6 +1003,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       right={
         <>
           <PinnedMediaCard organizationId={org.id} />
+          <GivingRelationshipCard sourceKind="organization" sourceId={org.id} />
           <GivingPipelineCard scope={{ organizationId: org.id }} />
 
           <RelatedCard

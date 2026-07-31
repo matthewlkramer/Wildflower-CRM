@@ -23,6 +23,7 @@ import type {
   BadRequestResponse,
   DonorRecordKind,
   DonorRoutingSettings,
+  GivingRelationship,
   NotFoundResponse,
   UpdateDonorRoutingBody
 } from '../api.schemas';
@@ -36,6 +37,86 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
+
+/**
+ * Returns donor-of-record giving, household or household-member giving, current-principal organization giving, intermediary delivery totals, and recent gifts. Intermediary totals overlap the relationship total and are never treated as additional giving.
+ * @summary Get a deduplicated giving relationship for a donor record.
+ */
+export const getGetGivingRelationshipUrl = (sourceKind: DonorRecordKind,
+    sourceId: string,) => {
+
+
+  
+
+  return `/api/giving-relationships/${sourceKind}/${sourceId}`
+}
+
+export const getGivingRelationship = async (sourceKind: DonorRecordKind,
+    sourceId: string, options?: RequestInit): Promise<GivingRelationship> => {
+  
+  return customFetch<GivingRelationship>(getGetGivingRelationshipUrl(sourceKind,sourceId),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetGivingRelationshipQueryKey = (sourceKind: DonorRecordKind,
+    sourceId: string,) => {
+    return [
+    `/api/giving-relationships/${sourceKind}/${sourceId}`
+    ] as const;
+    }
+
+    
+export const getGetGivingRelationshipQueryOptions = <TData = Awaited<ReturnType<typeof getGivingRelationship>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(sourceKind: DonorRecordKind,
+    sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGivingRelationshipQueryKey(sourceKind,sourceId);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGivingRelationship>>> = ({ signal }) => getGivingRelationship(sourceKind,sourceId, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(sourceKind && sourceId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGivingRelationshipQueryResult = NonNullable<Awaited<ReturnType<typeof getGivingRelationship>>>
+export type GetGivingRelationshipQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary Get a deduplicated giving relationship for a donor record.
+ */
+
+export function useGetGivingRelationship<TData = Awaited<ReturnType<typeof getGivingRelationship>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ sourceKind: DonorRecordKind,
+    sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGivingRelationshipQueryOptions(sourceKind,sourceId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 
 
 

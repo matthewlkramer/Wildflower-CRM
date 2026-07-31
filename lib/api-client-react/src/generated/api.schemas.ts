@@ -1539,6 +1539,80 @@ export interface UpdateOrganizationBody {
   anonymous?: boolean;
 }
 
+export type GivingRelationshipAttributionKind = typeof GivingRelationshipAttributionKind[keyof typeof GivingRelationshipAttributionKind];
+
+
+export const GivingRelationshipAttributionKind = {
+  direct: 'direct',
+  household: 'household',
+  household_member: 'household_member',
+  principal_organization: 'principal_organization',
+} as const;
+
+export type DonorRecordKind = typeof DonorRecordKind[keyof typeof DonorRecordKind];
+
+
+export const DonorRecordKind = {
+  individual: 'individual',
+  household: 'household',
+  organization: 'organization',
+} as const;
+
+export interface GivingRelationshipDonor {
+  kind: DonorRecordKind;
+  id: string;
+  name: string;
+}
+
+export interface GivingRelationshipBreakdown {
+  kind: GivingRelationshipAttributionKind;
+  label: string;
+  description: string;
+  /** Decimal amount as a string. */
+  amount: string;
+  giftCount: number;
+}
+
+export interface GivingRelationshipIntermediary {
+  id: string;
+  name: string;
+}
+
+export interface GivingRelationshipGift {
+  id: string;
+  name?: string | null;
+  amount: string;
+  dateReceived?: string | null;
+  paymentMethod?: string | null;
+  donor: GivingRelationshipDonor;
+  paymentIntermediary?: GivingRelationshipIntermediary | null;
+  attributionKind: GivingRelationshipAttributionKind;
+  attributionLabel: string;
+}
+
+export interface GivingRelationshipLargestGift {
+  id: string;
+  amount: string;
+  dateReceived?: string | null;
+}
+
+export interface GivingRelationship {
+  source: GivingRelationshipDonor;
+  resolvedDonor?: GivingRelationshipDonor | null;
+  requiresDecision: boolean;
+  /** Each related gift counted once. */
+  relationshipTotal: string;
+  /** Gifts recorded directly to this exact record. */
+  donorOfRecordTotal: string;
+  /** Overlapping delivery-method total; not additive. */
+  throughIntermediaryTotal: string;
+  giftCount: number;
+  mostRecentGiftDate?: string | null;
+  largestGift?: GivingRelationshipLargestGift | null;
+  breakdown: GivingRelationshipBreakdown[];
+  recentGifts: GivingRelationshipGift[];
+}
+
 export interface PaymentIntermediary {
   id: string;
   name: string;
@@ -6813,15 +6887,6 @@ export interface SplitGiftAcrossStripeChargesResult {
   feeAmount: string;
   giftName?: string | null;
 }
-
-export type DonorRecordKind = typeof DonorRecordKind[keyof typeof DonorRecordKind];
-
-
-export const DonorRecordKind = {
-  individual: 'individual',
-  household: 'household',
-  organization: 'organization',
-} as const;
 
 export type DonorRoutingMode = typeof DonorRoutingMode[keyof typeof DonorRoutingMode];
 
