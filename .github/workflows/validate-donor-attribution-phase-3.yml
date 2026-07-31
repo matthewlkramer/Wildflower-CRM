@@ -48,8 +48,8 @@ jobs:
 
       - name: Apply phase 3 source patch
         run: |
-          base64 -d .github/scripts/apply_donor_attribution_phase3.py.gz.b64 \
-            | gzip -d > /tmp/apply_donor_attribution_phase3.py
+          cat .github/scripts/apply_donor_attribution_phase3.py.gz.b64.part* > /tmp/phase3.b64
+          base64 -d /tmp/phase3.b64 | gzip -d > /tmp/apply_donor_attribution_phase3.py
           python /tmp/apply_donor_attribution_phase3.py
 
       - name: Regenerate API clients
@@ -85,7 +85,7 @@ jobs:
       - name: Remove temporary validation machinery
         run: |
           rm -f .github/workflows/validate-donor-attribution-phase-3.yml
-          rm -f .github/scripts/apply_donor_attribution_phase3.py.gz.b64
+          rm -f .github/scripts/apply_donor_attribution_phase3.py.gz.b64.part*
 
       - name: Commit validated implementation
         run: |
