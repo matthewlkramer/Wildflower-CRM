@@ -1,0 +1,262 @@
+name: Validate primary donor lifecycle normalization
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/normalize-donor-clusters-all-lifecycle'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_donor_lifecycle
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_donor_lifecycle"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_donor_lifecycle
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: donor-lifecycle-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/normalize-donor-clusters-all-lifecycle
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Establish current schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Seed production-shaped donor clusters
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO households (id, name) VALUES
+            ('recIJTPGCH2DtgplA', 'Nancy Peretsman and Bob Scully'),
+            ('rec673AHumJJiIPSy', 'Avi and Sandra Nash');
+
+          INSERT INTO organizations (id, name) VALUES
+            ('recEnJihmxpxL6Mes', 'Scully Peretsman Fund'),
+            ('recR28K8Twq5uV8Q0', 'Indira Foundation');
+
+          INSERT INTO people (
+            id, full_name, first_name, last_name, primary_household_id
+          ) VALUES
+            ('recEo8nqWp6DxB5tU', 'Nancy Peretsman', 'Nancy', 'Peretsman', 'recIJTPGCH2DtgplA'),
+            ('recwTfTiygjGC8lyw', 'Bob Scully', 'Bob', 'Scully', 'recIJTPGCH2DtgplA'),
+            ('recjOa1ezzMRJmfP7', 'Avi Nash', 'Avi', 'Nash', 'rec673AHumJJiIPSy'),
+            ('rechFxTLLlbH9c3m6', 'Sandra Nash', 'Sandra', 'Nash', 'rec673AHumJJiIPSy');
+
+          INSERT INTO donor_routing_preferences (
+            id, source_kind, source_person_id, mode, target_kind,
+            target_organization_id
+          ) VALUES (
+            'test_nancy_direct', 'individual', 'recEo8nqWp6DxB5tU',
+            'target', 'organization', 'recEnJihmxpxL6Mes'
+          );
+
+          INSERT INTO gifts_and_payments (
+            id, name, amount, date_received, household_id, archived_at
+          ) VALUES
+            ('test_peretsman_household_gift', 'Peretsman household gift', 100, '2024-01-01', 'recIJTPGCH2DtgplA', NULL),
+            ('test_peretsman_archived_gift', 'Archived Peretsman gift', 50, '2020-01-01', 'recIJTPGCH2DtgplA', now());
+
+          INSERT INTO gifts_and_payments (
+            id, name, amount, date_received, organization_id, archived_at
+          ) VALUES
+            ('test_nash_org_gift', 'Indira gift', 200, '2024-02-01', 'recR28K8Twq5uV8Q0', NULL),
+            ('test_nash_archived_gift', 'Archived Indira gift', 75, '2020-02-01', 'recR28K8Twq5uV8Q0', now());
+
+          INSERT INTO opportunities_and_pledges (
+            id, name, household_id, status
+          ) VALUES
+            ('test_peretsman_opportunity', 'Peretsman opportunity', 'recIJTPGCH2DtgplA', 'open');
+
+          INSERT INTO opportunities_and_pledges (
+            id, name, organization_id, status, commitment_path,
+            verbal_commitment_at, pledge_committed_at, archived_at
+          ) VALUES
+            ('test_nash_pledge', 'Nash pledge', 'recR28K8Twq5uV8Q0', 'pledge', 'verbal_pledge', '2024-03-01', '2024-03-01', NULL),
+            ('test_nash_archived_opportunity', 'Archived Nash opportunity', 'recR28K8Twq5uV8Q0', 'open', NULL, NULL, NULL, now());
+          SQL
+
+      - name: Rehearse migration 0225
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0225_normalize_primary_donor_paths.sql
+
+      - name: Verify historical normalization and stored routes
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DO $$
+          DECLARE n integer;
+          BEGIN
+            SELECT count(*) INTO n
+            FROM gifts_and_payments
+            WHERE id IN ('test_peretsman_household_gift', 'test_peretsman_archived_gift')
+              AND organization_id = 'recEnJihmxpxL6Mes'
+              AND household_id IS NULL
+              AND individual_giver_person_id IS NULL;
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'Peretsman gift normalization failed: %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM gifts_and_payments
+            WHERE id IN ('test_nash_org_gift', 'test_nash_archived_gift')
+              AND household_id = 'rec673AHumJJiIPSy'
+              AND organization_id IS NULL
+              AND individual_giver_person_id IS NULL;
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'Nash gift normalization failed: %', n;
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM opportunities_and_pledges
+            WHERE id = 'test_peretsman_opportunity'
+              AND organization_id = 'recEnJihmxpxL6Mes'
+              AND household_id IS NULL;
+            IF n <> 1 THEN
+              RAISE EXCEPTION 'Peretsman opportunity normalization failed';
+            END IF;
+
+            SELECT count(*) INTO n
+            FROM opportunities_and_pledges
+            WHERE id IN ('test_nash_pledge', 'test_nash_archived_opportunity')
+              AND household_id = 'rec673AHumJJiIPSy'
+              AND organization_id IS NULL;
+            IF n <> 2 THEN
+              RAISE EXCEPTION 'Nash opportunity/pledge normalization failed: %', n;
+            END IF;
+
+            IF EXISTS (
+              SELECT 1 FROM donor_routing_preferences
+              WHERE source_person_id = 'recEo8nqWp6DxB5tU'
+            ) THEN
+              RAISE EXCEPTION 'Nancy direct route was not retired';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM donor_routing_preferences
+              WHERE source_household_id = 'recIJTPGCH2DtgplA'
+                AND mode = 'target'
+                AND target_organization_id = 'recEnJihmxpxL6Mes'
+            ) THEN
+              RAISE EXCEPTION 'Peretsman household route missing';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM donor_routing_preferences
+              WHERE source_organization_id = 'recR28K8Twq5uV8Q0'
+                AND mode = 'target'
+                AND target_household_id = 'rec673AHumJJiIPSy'
+            ) THEN
+              RAISE EXCEPTION 'Indira Foundation route missing';
+            END IF;
+          END $$;
+          SQL
+
+      - name: Verify future opportunities and pledges follow the route
+        shell: bash
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO opportunities_and_pledges (
+            id, name, individual_giver_person_id, status
+          ) VALUES (
+            'test_new_nancy_opportunity', 'New Nancy opportunity',
+            'recEo8nqWp6DxB5tU', 'open'
+          );
+
+          INSERT INTO opportunities_and_pledges (
+            id, name, organization_id, status
+          ) VALUES (
+            'test_new_indira_opportunity', 'New Indira opportunity',
+            'recR28K8Twq5uV8Q0', 'open'
+          );
+
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM opportunities_and_pledges
+              WHERE id = 'test_new_nancy_opportunity'
+                AND organization_id = 'recEnJihmxpxL6Mes'
+                AND household_id IS NULL
+                AND individual_giver_person_id IS NULL
+            ) THEN
+              RAISE EXCEPTION 'New Nancy opportunity did not follow route';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM opportunities_and_pledges
+              WHERE id = 'test_new_indira_opportunity'
+                AND household_id = 'rec673AHumJJiIPSy'
+                AND organization_id IS NULL
+                AND individual_giver_person_id IS NULL
+            ) THEN
+              RAISE EXCEPTION 'New Indira opportunity did not follow route';
+            END IF;
+
+            IF (SELECT count(*) FROM audit_log WHERE id LIKE 'audit_donor_cluster_0225_%') < 8 THEN
+              RAISE EXCEPTION 'Expected row-level normalization audit entries';
+            END IF;
+          END $$;
+          SQL
+
+      - name: Type-check exporter and API
+        run: |
+          pnpm --filter @workspace/scripts run typecheck
+          pnpm run check:api
+
+      - name: Verify expanded confidential export
+        shell: bash
+        run: |
+          DONOR_ATTRIBUTION_EXPORT_PATH=/tmp/donor-lifecycle.json.gz \
+            pnpm --filter @workspace/scripts run export:donor-attribution
+          python - <<'PY'
+          import gzip
+          import json
+
+          with gzip.open('/tmp/donor-lifecycle.json.gz', 'rt', encoding='utf-8') as f:
+              data = json.load(f)
+          rows = data.get('opportunitiesAndPledges')
+          if not isinstance(rows, list):
+              raise SystemExit('opportunitiesAndPledges is missing from export')
+          ids = {row['id'] for row in rows}
+          required = {
+              'test_peretsman_opportunity',
+              'test_nash_pledge',
+              'test_nash_archived_opportunity',
+              'test_new_nancy_opportunity',
+              'test_new_indira_opportunity',
+          }
+          missing = required - ids
+          if missing:
+              raise SystemExit(f'Expanded export is missing: {sorted(missing)}')
+          PY
+
+      - run: git diff --check
