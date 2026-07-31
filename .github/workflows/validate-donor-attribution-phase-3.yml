@@ -46,6 +46,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Establish Phase 2 schema
+        run: pnpm --filter @workspace/db run push-force
+
       - name: Apply phase 3 source patch
         run: |
           cat .github/scripts/apply_donor_attribution_phase3.py.gz.b64.part* > /tmp/phase3.b64
@@ -79,12 +82,8 @@ jobs:
             artifacts/wildflower-crm/src/pages/household-detail.tsx \
             docs/donor-attribution-phase-3.md
 
-      - name: Apply migrations to clean PostgreSQL
-        run: |
-          for f in $(find lib/db/migrations -maxdepth 1 -name '*.sql' | sort); do
-            echo "Applying $f"
-            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" >/dev/null
-          done
+      - name: Rehearse Phase 3 migration
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0223_donor_attribution_phase_3.sql
 
       - run: pnpm run check:codegen
       - run: pnpm run check:api
