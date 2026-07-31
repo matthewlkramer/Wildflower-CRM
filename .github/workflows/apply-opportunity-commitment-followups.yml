@@ -54,7 +54,24 @@ jobs:
         run: pnpm --filter @workspace/db run push-force
 
       - name: Apply lifecycle follow-up patch
-        run: python .github/scripts/apply_opportunity_commitment_followups.py
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path(".github/scripts/apply_opportunity_commitment_followups.py")
+          source = path.read_text()
+          brittle = '''replace_exact(
+              recon_commit,
+              "    // The opp outcomes tie the gift to the\\n  // opportunity via opportunityId so the pledge derives cash_in when fully paid.\\n",
+              "    // The opportunity outcome ties the gift to the source record. A finalized\\n  // pledge derives paid/cash-in; an unfinalized opportunity records a direct gift.\\n",
+          )
+          '''
+          if brittle not in source:
+              raise RuntimeError("Could not locate the obsolete reconciliation comment edit")
+          path.write_text(source.replace(brittle, "", 1))
+          PY
+          python .github/scripts/apply_opportunity_commitment_followups.py
 
       - name: Rehearse migration 0224
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0224_opportunity_commitment_lifecycle.sql
