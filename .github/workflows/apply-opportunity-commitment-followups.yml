@@ -72,6 +72,67 @@ jobs:
           path.write_text(source.replace(brittle, "", 1))
           PY
           python .github/scripts/apply_opportunity_commitment_followups.py
+          python - <<'PY'
+          from pathlib import Path
+
+          pledge_stage = Path("artifacts/api-server/src/lib/pledgeStage.ts")
+          stage = pledge_stage.read_text()
+          old = "actualCompletionDate = actualCompletionDate ?? input.firstPaymentDate;"
+          if stage.count(old) != 1:
+              raise RuntimeError("Could not locate direct-gift completion-date assignment")
+          pledge_stage.write_text(
+              stage.replace(
+                  old,
+                  "actualCompletionDate = actualCompletionDate ?? input.firstPaymentDate ?? null;",
+                  1,
+              )
+          )
+
+          gifts_path = Path("artifacts/api-server/src/routes/giftsAndPayments.ts")
+          gifts = gifts_path.read_text()
+          first = "            pledgeId,\n            expectedDate:"
+          if gifts.count(first) != 2:
+              raise RuntimeError(
+                  f"Expected two pledge schedule inserts; found {gifts.count(first)}"
+              )
+          gifts = gifts.replace(
+              first,
+              "            pledgeOrOpportunityId: pledgeId,\n            expectedDate:",
+          )
+          second = "          pledgeId: opportunityId,\n          expectedDate:"
+          if gifts.count(second) != 1:
+              raise RuntimeError("Could not locate reverted-gift schedule insert")
+          gifts = gifts.replace(
+              second,
+              "          pledgeOrOpportunityId: opportunityId,\n          expectedDate:",
+              1,
+          )
+          gifts_path.write_text(gifts)
+
+          for test_name in (
+              "artifacts/api-server/src/__tests__/gift-revert-to-opportunity.integration.test.ts",
+              "artifacts/api-server/src/__tests__/opportunity-commitment-reconstruction.integration.test.ts",
+          ):
+              test_path = Path(test_name)
+              test = test_path.read_text()
+              if ".pledgeExpectedPayments.pledgeId" not in test:
+                  raise RuntimeError(f"Expected old schedule key in {test_name}")
+              test_path.write_text(
+                  test.replace(
+                      ".pledgeExpectedPayments.pledgeId",
+                      ".pledgeExpectedPayments.pledgeOrOpportunityId",
+                  )
+              )
+
+          bundle_path = Path(
+              "artifacts/api-server/src/routes/reconciliation/bundleProposals.ts"
+          )
+          bundle = bundle_path.read_text()
+          old_convert = "                convert: false,\n"
+          if bundle.count(old_convert) != 1:
+              raise RuntimeError("Could not locate bundle mint compatibility flag")
+          bundle_path.write_text(bundle.replace(old_convert, "", 1))
+          PY
 
       - name: Rehearse migration 0224
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0224_opportunity_commitment_lifecycle.sql
@@ -87,6 +148,7 @@ jobs:
             artifacts/api-server/src/lib/pledgeStage.ts \
             artifacts/api-server/src/lib/reconciliationCommit.ts \
             artifacts/api-server/src/routes/reconciliation/approve.ts \
+            artifacts/api-server/src/routes/reconciliation/bundleProposals.ts \
             artifacts/api-server/src/routes/opportunitiesAndPledges.ts \
             artifacts/api-server/src/routes/giftsAndPayments.ts \
             artifacts/wildflower-crm/src/lib/reconciliation.ts \
