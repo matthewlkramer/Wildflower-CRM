@@ -25,7 +25,9 @@
 -- gift id and is NOT to be re-derived in code. Note: gift zOej0Fb5thKhbxQ72zQHO
 -- has been renamed "Saint Paul & Minnesota Foundation" since 0085 was written,
 -- but its donor org is "Scholler Foundation (of Saint Paul & MN Foundation)" —
--- same gift, same ratified PA-restricted booking.
+-- same gift, same ratified PA-restricted booking. The owner is unsure the
+-- record is right, so step 3 also flags it needs_research (booking stands
+-- until the research says otherwise).
 --
 --   A. Black Wildflowers Fund — other (usage) axis donor_restricted.
 --   B. Wildflower Foundation, geographically restricted — regional axis
@@ -106,7 +108,7 @@ FROM (
     -- ── B. Wildflower Foundation — regional axis donor_restricted, region set ──
     ('5H1YAARiAhP6PrHPZU3lV', 'wildflower_foundation', 'donor_restricted', 'unrestricted', 'unrestricted', ARRAY['united_states__puerto_rico']::text[],  NULL), -- $30,000 Fundación Banco Popular → PR
     ('HuUdtQ2ll6fKPjhO8TwCo', 'wildflower_foundation', 'donor_restricted', 'unrestricted', 'unrestricted', ARRAY['united_states__minnesota']::text[],    NULL), -- $20,000 Sauer Family Foundation → MN
-    ('zOej0Fb5thKhbxQ72zQHO', 'wildflower_foundation', 'donor_restricted', 'unrestricted', 'unrestricted', ARRAY['united_states__pennsylvania']::text[], NULL), -- $5,000 Scholler Foundation (of Saint Paul & MN Foundation) → PA
+    ('zOej0Fb5thKhbxQ72zQHO', 'wildflower_foundation', 'donor_restricted', 'unrestricted', 'unrestricted', ARRAY['united_states__pennsylvania']::text[], NULL), -- $5,000 Scholler Foundation (of Saint Paul & MN Foundation) → PA (flagged for research in step 3)
     ('h6aekQnUjy9OuiiC3d03z', 'wildflower_foundation', 'donor_restricted', 'unrestricted', 'unrestricted', ARRAY['united_states__california']::text[],   NULL), -- $184 Alia Peera → CA (flagged for research in step 3)
 
     -- ── C. Wildflower Foundation — designated to a specific school ────────────
@@ -168,14 +170,22 @@ SELECT 'em_0224_latania_scott', 'scott.latania7@gmail.com', '5P8Z3pGo-0bxZege5U7
    );
 
 -- ══════════════════════════════════════════════════════════════════════════
--- Step 3: flag the Alia Peera $184 gift for research.
+-- Step 3: flag two gifts for research.
 --
--- Booked above as a CA-restricted Foundation gift that counts toward goal, but
--- QB shows only a bare "Payment" to Other Revenue in the CA hub with no memo,
--- so a human should confirm whether it is a real donation or a reimbursement
--- correction. cleanup_queue has NO unique constraint on the natural key, so
--- the guard is a NOT EXISTS on (target_type, target_id, reason_code) — an item
--- a human has already resolved/dismissed is never resurrected.
+-- 3a. Alia Peera $184: booked above as a CA-restricted Foundation gift that
+--     counts toward goal, but QB shows only a bare "Payment" to Other Revenue
+--     in the CA hub with no memo, so a human should confirm whether it is a
+--     real donation or a reimbursement correction.
+-- 3b. Saint Paul & MN / Scholler $5,000 (zOej0Fb5thKhbxQ72zQHO): the gift was
+--     renamed "Saint Paul & Minnesota Foundation" but its donor of record is
+--     "Scholler Foundation (of Saint Paul & MN Foundation)". The owner does
+--     not think the record is right but is unsure what the fix is; the
+--     ratified PA-restricted booking is applied above and stands until the
+--     research resolves it.
+--
+-- cleanup_queue has NO unique constraint on the natural key, so the guard is
+-- a NOT EXISTS on (target_type, target_id, reason_code) — an item a human has
+-- already resolved/dismissed is never resurrected.
 -- ══════════════════════════════════════════════════════════════════════════
 INSERT INTO cleanup_queue (
   id, target_type, target_id, reason_code, note, status, flagged_at, created_at, updated_at
@@ -195,6 +205,24 @@ WHERE NOT EXISTS (
      AND reason_code = 'needs_research'
 );
 
+INSERT INTO cleanup_queue (
+  id, target_type, target_id, reason_code, note, status, flagged_at, created_at, updated_at
+)
+SELECT
+  'cleanup_nr_zOej0Fb5thKhbxQ72zQHO',
+  'gift',
+  'zOej0Fb5thKhbxQ72zQHO',
+  'needs_research',
+  'Gift is named "Saint Paul & Minnesota Foundation" but the donor of record is "Scholler Foundation (of Saint Paul & MN Foundation)" — the owner does not believe this record is right but is unsure what the fix is. Research the true donor/grantor relationship (was this a Scholler grant administered by Saint Paul & MN Foundation, or the reverse?) and confirm the $5,000 Pennsylvania-restricted booking. The ratified PA booking is applied and stands until resolved.',
+  'open',
+  now(), now(), now()
+WHERE NOT EXISTS (
+  SELECT 1 FROM cleanup_queue
+   WHERE target_type = 'gift'
+     AND target_id = 'zOej0Fb5thKhbxQ72zQHO'
+     AND reason_code = 'needs_research'
+);
+
 -- ══════════════════════════════════════════════════════════════════════════
 -- Post-state verification (verify by STATE, not clean exit).
 -- ══════════════════════════════════════════════════════════════════════════
@@ -207,6 +235,7 @@ DECLARE
   latania_ok       int;  -- LaTania person now named
   latania_email    int;  -- LaTania email attached
   alia_flagged     int;  -- Alia research item present (any status)
+  scholler_flagged int;  -- Saint Paul & MN / Scholler research item present (any status)
 BEGIN
   SELECT count(*) INTO n_orphans
     FROM gifts_and_payments g
@@ -226,9 +255,13 @@ BEGIN
     FROM cleanup_queue
    WHERE target_type = 'gift' AND target_id = 'h6aekQnUjy9OuiiC3d03z'
      AND reason_code = 'needs_research';
+  SELECT count(*) INTO scholler_flagged
+    FROM cleanup_queue
+   WHERE target_type = 'gift' AND target_id = 'zOej0Fb5thKhbxQ72zQHO'
+     AND reason_code = 'needs_research';
 
-  RAISE NOTICE '0224 RESULT: orphan gifts remaining = % (expect 0) | allocations seeded = % (expect 26 on first apply) | BWF = % (expect 3) | Foundation = % (expect 23) | LaTania named = % (expect 1) | LaTania email = % (expect 1) | Alia flagged = % (expect 1)',
-    n_orphans, n_seeded, n_bwf, n_wf, latania_ok, latania_email, alia_flagged;
+  RAISE NOTICE '0224 RESULT: orphan gifts remaining = % (expect 0) | allocations seeded = % (expect 26 on first apply) | BWF = % (expect 3) | Foundation = % (expect 23) | LaTania named = % (expect 1) | LaTania email = % (expect 1) | Alia flagged = % (expect 1) | Scholler flagged = % (expect 1)',
+    n_orphans, n_seeded, n_bwf, n_wf, latania_ok, latania_email, alia_flagged, scholler_flagged;
 
   IF n_orphans <> 0 THEN
     RAISE WARNING '0224: expected 0 active gifts with zero allocations, found % — investigate before considering this applied', n_orphans;

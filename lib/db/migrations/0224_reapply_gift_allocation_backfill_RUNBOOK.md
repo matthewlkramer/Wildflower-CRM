@@ -28,6 +28,8 @@ Erica Cantoni $17.80 gift the user hit is one of the orphans this file fixes.
 - Gift `zOej0Fb5thKhbxQ72zQHO` was renamed "Saint Paul & Minnesota Foundation"
   since 0085 was written, but its donor org is "Scholler Foundation (of Saint
   Paul & MN Foundation)" — same gift, the ratified PA-restricted booking stands.
+  The owner does not believe the record is right but is unsure of the fix, so
+  step 3 also flags this gift `needs_research` in the cleanup queue.
 - Reference data re-verified in prod: entities `black_wildflowers_fund` +
   `wildflower_foundation`; regions PR/MN/CA/CO (PA via 0085-era check); schools
   `rec4k51mmfjrlBfEM` + `recigTQqe0ppRlzcz`; every computed fiscal year
@@ -60,7 +62,7 @@ Expected on first apply (re-run to confirm the no-op):
 
 - orphan gifts remaining = **0**
 - allocations seeded (`ga_0224_%`) = **26** (BWF 3, Foundation 23)
-- LaTania named = 1, LaTania email = 1, Alia flagged = 1
+- LaTania named = 1, LaTania email = 1, Alia flagged = 1, Scholler flagged = 1
 
 Independent re-check:
 
@@ -78,6 +80,7 @@ Reviewed data backfill — no automatic rollback. To undo (only if booked wrong)
 ```sql
 DELETE FROM gift_allocations WHERE id LIKE 'ga_0224_%';
 -- optionally: DELETE FROM emails WHERE id = 'em_0224_latania_scott';
---             DELETE FROM cleanup_queue WHERE id = 'cleanup_nr_h6aekQnUjy9OuiiC3d03z';
+--             DELETE FROM cleanup_queue WHERE id IN
+--               ('cleanup_nr_h6aekQnUjy9OuiiC3d03z', 'cleanup_nr_zOej0Fb5thKhbxQ72zQHO');
 -- (the people name-fix is left in place; re-null only if truly required)
 ```
