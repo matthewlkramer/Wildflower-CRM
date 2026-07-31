@@ -91,6 +91,68 @@ jobs:
               'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId) =>',
               'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId | typeof cleanupQueue.resolvedByUserId) =>',
           )
+          target_name = '''const CLEANUP_TARGET_ID = sql.raw(`"cleanup_queue"."target_id"`);
+          const CLEANUP_TARGET_TYPE = sql.raw(`"cleanup_queue"."target_type"`);
+
+          const targetNameSql = sql<string | null>`COALESCE(
+            (
+              SELECT oap.name
+              FROM opportunities_and_pledges oap
+              WHERE oap.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} IN ('pledge', 'opportunity')
+            ),
+            (
+              SELECT sp.payer_name
+              FROM staged_payments sp
+              WHERE sp.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'staged_payment'
+            ),
+            (
+              SELECT sp.payer_name
+              FROM source_links sl
+              JOIN staged_payments sp ON sp.id = sl.qb_staged_payment_id
+              WHERE sl.link_type = 'payout_qb_settlement'
+                AND sl.stripe_payout_id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'stripe_payout'
+              LIMIT 1
+            ),
+            (
+              SELECT COALESCE(NULLIF(TRIM(g.name), ''), 'Gift ' || g.id)
+              FROM gifts_and_payments g
+              WHERE g.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'gift'
+            ),
+            (
+              SELECT CASE WHEN p.anonymous THEN 'Anonymous' ELSE COALESCE(
+                NULLIF(TRIM(p.full_name), ''),
+                NULLIF(TRIM(CONCAT_WS(' ', p.first_name, p.last_name)), ''),
+                p.id
+              ) END
+              FROM people p
+              WHERE p.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'person'
+            ),
+            (
+              SELECT h.name
+              FROM households h
+              WHERE h.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'household'
+            ),
+            (
+              SELECT CASE WHEN o.anonymous THEN 'Anonymous' ELSE o.name END
+              FROM organizations o
+              WHERE o.id = ${CLEANUP_TARGET_ID}
+                AND ${CLEANUP_TARGET_TYPE} = 'organization'
+            )
+          )`;'''
+          source, count = re.subn(
+              r'(?ms)^const targetNameSql = .*?(?=^const cleanupSelect =)',
+              target_name + '\n\n',
+              source,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError('cleanup target-name projection not found')
           cleanup_route.write_text(source)
 
           household_route = Path('artifacts/api-server/src/routes/households.ts')
