@@ -6,9 +6,8 @@ import {
   households,
   paymentIntermediaries,
   people,
-  peopleEntityRoles,
 } from "@workspace/db/schema";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   GetDonorRoutingParams,
   UpdateDonorRoutingBody,
@@ -175,56 +174,6 @@ async function syncPrimaryHousehold(
     .update(people)
     .set({ primaryHouseholdId: householdId, updatedAt: new Date() })
     .where(eq(people.id, personId));
-
-  if (!householdId) {
-    await tx
-      .update(peopleEntityRoles)
-      .set({ current: "past", updatedAt: new Date() })
-      .where(
-        and(
-          eq(peopleEntityRoles.personId, personId),
-          eq(peopleEntityRoles.entityType, "household"),
-          eq(peopleEntityRoles.current, "current"),
-        ),
-      );
-    return;
-  }
-
-  await tx
-    .update(peopleEntityRoles)
-    .set({ current: "past", updatedAt: new Date() })
-    .where(
-      and(
-        eq(peopleEntityRoles.personId, personId),
-        eq(peopleEntityRoles.entityType, "household"),
-        eq(peopleEntityRoles.current, "current"),
-        ne(peopleEntityRoles.householdId, householdId),
-      ),
-    );
-  const [existing] = await tx
-    .select()
-    .from(peopleEntityRoles)
-    .where(
-      and(
-        eq(peopleEntityRoles.personId, personId),
-        eq(peopleEntityRoles.householdId, householdId),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    await tx
-      .update(peopleEntityRoles)
-      .set({ current: "current", updatedAt: new Date() })
-      .where(eq(peopleEntityRoles.id, existing.id));
-  } else {
-    await tx.insert(peopleEntityRoles).values({
-      id: newId(),
-      personId,
-      entityType: "household",
-      householdId,
-      current: "current",
-    });
-  }
 }
 
 async function setDefaultIntermediary(

@@ -1,12 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import {
-  households,
-  people,
-  peopleEntityRoles,
-  emails,
-  addresses,
-} from "@workspace/db/schema";
+import { households, people, emails, addresses } from "@workspace/db/schema";
 import {
   and,
   asc,
@@ -40,20 +34,12 @@ import {
   archiveOne,
   unarchiveOne,
 } from "../lib/archive";
-import {
-  peopleEntityRolesQuery,
-  maskPeopleEntityRoles,
-} from "../lib/peopleRolesSelect";
-import { getViewer } from "../lib/identityVisibility";
+import { getViewer, maskName } from "../lib/identityVisibility";
+import { personDisplayNameSql } from "../lib/personNameSql";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
-// Per-row related-giving aggregates. A household receives credit for:
-// 1. gifts recorded directly to the household;
-// 2. gifts recorded to people whose primary household is this household; and
-// 3. gifts from organizations where one of those current members is a current
-//    principal. Archived gifts are excluded from every path.
 const HOUSEHOLDS_ID = sql.raw(`"households"."id"`);
 const householdGiftWhere = sql`(
   archived_at IS NULL AND (
@@ -90,6 +76,35 @@ const householdsListSelect = {
   )`.as("open_opportunity_count"),
 };
 
+const householdMemberSelect = {
+  id: sql<string>`'primary_household:' || ${people.id}`.as("id"),
+  personId: people.id,
+  entityType: sql<"household">`'household'`.as("entity_type"),
+  organizationId: sql<string | null>`NULL::text`.as("organization_id"),
+  paymentIntermediaryId: sql<string | null>`NULL::text`.as(
+    "payment_intermediary_id",
+  ),
+  householdId: people.primaryHouseholdId,
+  connection: sql<string | null>`NULL::text`.as("connection"),
+  notes: sql<string | null>`NULL::text`.as("notes"),
+  externalTitleOrRole: sql<string | null>`NULL::text`.as(
+    "external_title_or_role",
+  ),
+  current: sql<"current">`'current'`.as("current"),
+  primaryContact: sql<boolean>`false`.as("primary_contact"),
+  createdAt: people.createdAt,
+  updatedAt: people.updatedAt,
+  personName: personDisplayNameSql(people).as("person_name"),
+  personEmail: sql<string | null>`(
+    SELECT e.email FROM emails e
+    WHERE e.person_id = ${people.id}
+    ORDER BY e.is_preferred DESC, e.created_at ASC
+    LIMIT 1
+  )`.as("person_email"),
+  personAnonymous: people.anonymous,
+  personOwnerUserId: people.ownerUserId,
+};
+
 router.get(
   "/households",
   asyncHandler(async (req, res) => {
@@ -98,7 +113,6 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.search) filters.push(ilike(households.name, `%${q.search}%`));
-    // See parseBoolQuery — bypass the buggy generated zod boolean coercion.
     const active = parseBoolQuery(req, "active");
     if (active !== undefined) filters.push(eq(households.active, active));
     const archivedFilter = activeOnlyUnlessAdmin(req, households.archivedAt);
@@ -128,14 +142,29 @@ router.get(
       .where(eq(households.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "household");
-    const [people, emailRows, addressRows] = await Promise.all([
-      peopleEntityRolesQuery().where(eq(peopleEntityRoles.householdId, id)),
+    const [memberRows, emailRows, addressRows] = await Promise.all([
+      db
+        .select(householdMemberSelect)
+        .from(people)
+        .where(eq(people.primaryHouseholdId, id))
+        .orderBy(asc(people.lastName), asc(people.firstName)),
       db.select().from(emails).where(eq(emails.householdId, id)),
       db.select().from(addresses).where(eq(addresses.householdId, id)),
     ]);
+    const viewer = getViewer(req);
+    const members = memberRows.map(
+      ({ personAnonymous, personOwnerUserId, ...member }) => ({
+        ...member,
+        personName: maskName(
+          member.personName,
+          { anonymous: personAnonymous, ownerUserId: personOwnerUserId },
+          viewer,
+        ),
+      }),
+    );
     res.json({
       ...row,
-      people: maskPeopleEntityRoles(people, getViewer(req)),
+      people: members,
       emails: emailRows,
       addresses: addressRows,
     });

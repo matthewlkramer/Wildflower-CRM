@@ -1,4 +1,11 @@
-import { check, index, pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+import {
+  check,
+  index,
+  pgTable,
+  text,
+  timestamp,
+  boolean,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import {
   entityRoleTypeEnum,
@@ -50,9 +57,14 @@ export const peopleEntityRoles = pgTable(
     // Backs the soft-credit "current principal of this org" lookup used by the
     // people-route and dashboard lifetime-giving / last-gift rollups (correlated
     // subquery filtering by person_id + connection).
-    index("people_entity_roles_person_id_connection_idx").on(t.personId, t.connection),
+    index("people_entity_roles_person_id_connection_idx").on(
+      t.personId,
+      t.connection,
+    ),
     index("people_entity_roles_organization_id_idx").on(t.organizationId),
-    index("people_entity_roles_payment_intermediary_id_idx").on(t.paymentIntermediaryId),
+    index("people_entity_roles_payment_intermediary_id_idx").on(
+      t.paymentIntermediaryId,
+    ),
     index("people_entity_roles_household_id_idx").on(t.householdId),
     // Discriminator alignment: entity_type names which of the 3 entity FKs
     // must be populated; the other two must be NULL.
@@ -61,8 +73,11 @@ export const peopleEntityRoles = pgTable(
       sql`
         (${t.entityType} = 'organization' AND ${t.organizationId} IS NOT NULL AND ${t.paymentIntermediaryId} IS NULL AND ${t.householdId} IS NULL)
         OR (${t.entityType} = 'payment_intermediary' AND ${t.paymentIntermediaryId} IS NOT NULL AND ${t.organizationId} IS NULL AND ${t.householdId} IS NULL)
-        OR (${t.entityType} = 'household' AND ${t.householdId} IS NOT NULL AND ${t.organizationId} IS NULL AND ${t.paymentIntermediaryId} IS NULL)
       `,
+    ),
+    check(
+      "per_household_membership_retired",
+      sql`${t.entityType} <> 'household' AND ${t.householdId} IS NULL`,
     ),
   ],
 );

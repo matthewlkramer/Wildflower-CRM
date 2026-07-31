@@ -6881,6 +6881,37 @@ export const CleanupQueueStatus = {
   dismissed: 'dismissed',
 } as const;
 
+export type CleanupProposalKind = typeof CleanupProposalKind[keyof typeof CleanupProposalKind];
+
+
+export const CleanupProposalKind = {
+  gift_donor: 'gift_donor',
+  default_intermediary: 'default_intermediary',
+} as const;
+
+export type CleanupProposalConfidence = typeof CleanupProposalConfidence[keyof typeof CleanupProposalConfidence];
+
+
+export const CleanupProposalConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface CleanupProposalDonorRef {
+  kind: DonorRecordKind;
+  id: string;
+  name?: string | null;
+}
+
+export interface CleanupProposal {
+  fromDonor?: CleanupProposalDonorRef | null;
+  toDonor?: CleanupProposalDonorRef | null;
+  donor?: CleanupProposalDonorRef | null;
+  paymentIntermediary?: DonorRoutingIntermediaryReference | null;
+  rationale?: string | null;
+}
+
 export interface CleanupItem {
   id: string;
   /** Kind of record this item targets (e.g. 'pledge', 'opportunity', 'organization', 'person', 'gift'). */
@@ -6893,6 +6924,9 @@ export interface CleanupItem {
   reasonCode: string;
   /** Shared working text describing the issue and team updates. */
   note: string;
+  proposalKind: CleanupProposalKind | null;
+  proposalConfidence: CleanupProposalConfidence | null;
+  proposedChanges: CleanupProposal | null;
   /** User who originally flagged the item; null for system-seeded historical rows. */
   flaggedByUserId: string | null;
   /** Display name of the user who originally flagged the item; null for system-seeded historical rows. */
@@ -6912,6 +6946,12 @@ export interface CleanupItem {
 export interface CleanupItemList {
   data: CleanupItem[];
   pagination: Pagination;
+}
+
+export interface ApplyHighConfidenceCleanupProposalsResult {
+  applied: number;
+  skipped: number;
+  items: CleanupItem[];
 }
 
 /**
@@ -9495,6 +9535,8 @@ export type ListCleanupQueueParams = {
  * Filter by status. Omit to get open items only.
  */
 status?: CleanupQueueStatus;
+proposalKind?: CleanupProposalKind;
+reasonCode?: string;
 /**
  * @minimum 1
  * @maximum 10000
