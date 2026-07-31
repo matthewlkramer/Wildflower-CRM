@@ -1594,7 +1594,7 @@ paths:
       tags: [opportunities-and-pledges]
       parameters:
         - { $ref: "#/components/parameters/IncludeArchivedQuery" }
-        - { name: search, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string }, description: "Tokenized case-insensitive search: every whitespace-separated word must match the record name or donor display name (org / household / individual). Word order and connector words (e.g. 'and') don't matter." }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.
         - { name: paidPresence, in: query, required: false, description: "Rollup presence filter on paid amount (`has` = >0, `blank` = none).", schema: { type: string, enum: [has, blank] } }

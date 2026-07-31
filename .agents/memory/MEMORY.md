@@ -37,7 +37,7 @@ code/docs and update or archive the stale memory.
 ## Delivery, database, and verification
 
 - [Scoped validation checks](scoped-validation-checks.md) — fast per-package + changed-scope checks; codegen CHECK is non-mutating (concurrency-safe), but the regen SCRIPT mutates — run it alone.
-- [Dedicated vitest test DB](dedicated-test-db.md) — api-server vitest auto-provisions <devdb>_test (never dev); push only into an EMPTY recreated schema; mirrors entities/regions/fiscal_years.
+- [Dedicated vitest test DB](dedicated-test-db.md) — auto-provisions <devdb>_test; push never creates triggers/functions → PROGRAM_MIGRATIONS list; bank-spine 40P01 deadlock is a known rerun-once flake.
 - [Test-data hygiene](test-data-hygiene.md) — dev DB pollution patterns after killed runs: Test Dev/Admin e2e users, 2099-dated reconciliation seeds, dupspec phone constants.
 - [Publish diffs the dev DB, not code](publish-diffs-dev-database.md) — stale dev DB → destructive reverts + skipped additive creates (→500); reconcile dev forward then re-publish; prod NEVER gets CREATE EXTENSION ([extensions](publish-flow-extensions.md)).
 - [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column; fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).

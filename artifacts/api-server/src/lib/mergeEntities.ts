@@ -87,6 +87,8 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donorbox_donations", col: "organization_id" },
   { table: "quickbooks_handling_rules", col: "target_organization_id" },
   { table: "grant_leads", col: "target_organization_id" },
+  { table: "donor_routing_preferences", col: "source_organization_id" },
+  { table: "donor_routing_preferences", col: "target_organization_id" },
 ];
 
 const ORGANIZATION_ARRAY_REFS: ReadonlyArray<MergeRef> = [
@@ -119,6 +121,8 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "staged_payments", col: "individual_giver_person_id" },
   { table: "stripe_staged_charges", col: "individual_giver_person_id" },
   { table: "donorbox_donations", col: "individual_giver_person_id" },
+  { table: "donor_routing_preferences", col: "source_person_id" },
+  { table: "donor_routing_preferences", col: "target_person_id" },
 ];
 
 const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
@@ -429,12 +433,66 @@ export async function mergeEntity(
       .set({ ...(setObj as any), updatedAt: new Date() })
       .where(inArray(cfg.table.id, [primaryId]));
 
+    // 1.5 donor_routing_preferences allows at most ONE explicit preference
+    //     per source donor (partial unique index per source kind). Before
+    //     the generic FK repoint below, collapse the preferences owned by
+    //     the primary + losers down to a single survivor — the primary's
+    //     own preference wins, otherwise the most recently updated — so
+    //     repointing the survivor's source can never hit the unique index.
+    const routingSourceCol =
+      cfg.kind === "organizations"
+        ? "source_organization_id"
+        : "source_person_id";
+    await tx.execute(sql`
+      DELETE FROM donor_routing_preferences
+      WHERE id IN (
+        SELECT id FROM (
+          SELECT id, row_number() OVER (
+            ORDER BY (${ident(routingSourceCol)} = ${primaryId}) DESC,
+                     updated_at DESC, id
+          ) AS rn
+          FROM donor_routing_preferences
+          WHERE ${ident(routingSourceCol)} = ANY(${idArray(allIds)})
+        ) ranked
+        WHERE rn > 1
+      )
+    `);
+
     // 2. Re-point direct FK references loser -> primary.
     for (const ref of cfg.fkRefs) {
       await tx.execute(sql`
         UPDATE ${ident(ref.table)}
         SET ${ident(ref.col)} = ${primaryId}
         WHERE ${ident(ref.col)} = ANY(${idArray(loserIds)})
+      `);
+    }
+
+    // 2.5 After repointing, a routing preference can point at its own
+    //     source (e.g. the primary routed to a loser, or a loser routed to
+    //     the primary). "Route to yourself" IS the explicit self mode —
+    //     rewrite it so the gift-insert routing trigger never sees a
+    //     one-hop cycle. Known residual: MULTI-hop cycles a merge can
+    //     complete (P→X and X→loser becoming P→X→P) are not normalized
+    //     here — such data encoded a real pre-merge cycle through the
+    //     duplicate, and the routing trigger raises `donor_routing_cycle`
+    //     loudly at gift time instead of silently corrupting routing.
+    {
+      const routingTargetCol =
+        cfg.kind === "organizations"
+          ? "target_organization_id"
+          : "target_person_id";
+      const routingKind =
+        cfg.kind === "organizations" ? "organization" : "individual";
+      await tx.execute(sql`
+        UPDATE donor_routing_preferences
+        SET mode = 'self', target_kind = NULL,
+            target_person_id = NULL, target_household_id = NULL,
+            target_organization_id = NULL, updated_at = now()
+        WHERE mode = 'target'
+          AND source_kind = ${routingKind}
+          AND target_kind = ${routingKind}
+          AND ${ident(routingSourceCol)} = ${primaryId}
+          AND ${ident(routingTargetCol)} = ${primaryId}
       `);
     }
 

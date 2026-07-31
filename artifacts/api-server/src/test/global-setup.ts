@@ -45,6 +45,15 @@ const REQUIRED_EXTENSIONS = ["pg_trgm"];
 // ever grow FKs to each other (today they don't).
 const REFERENCE_TABLES = ["entities", "regions", "fiscal_years"];
 
+// Migration files that define database PROGRAMS (functions + triggers).
+// drizzle-kit push only materializes tables/indexes/constraints from the
+// schema files — it never creates functions or triggers, so anything defined
+// only in a migration silently vanishes whenever the test schema is
+// recreated (the donor-routing trigger tests fail exactly that way). Each
+// listed file must be idempotent (CREATE OR REPLACE / DROP ... IF EXISTS,
+// guarded seeds) — they are re-applied on EVERY setup run, warm or cold.
+const PROGRAM_MIGRATIONS = ["0222_donor_attribution_phase_2.sql"];
+
 function schemaHash(): string {
   const hash = createHash("sha256");
   const files = readdirSync(schemaDir)
@@ -184,6 +193,17 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         if ((res.rowCount ?? 0) > 0) {
           console.log(`[test-db] mirrored ${res.rowCount} rows into ${table}`);
         }
+      }
+
+      // Install migration-defined functions/triggers (drizzle push never
+      // creates them). Idempotent files, applied every run so a schema
+      // recreate can never leave the test DB without prod-parity triggers.
+      for (const file of PROGRAM_MIGRATIONS) {
+        const sqlText = readFileSync(
+          path.join(dbPackageDir, "migrations", file),
+          "utf8",
+        );
+        await test.query(sqlText);
       }
 
       // Teardown safety net for the shared test DB: a concurrently running

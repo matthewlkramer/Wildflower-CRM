@@ -203,15 +203,23 @@ router.get(
       // individual giver). The donor tables are already left-joined below, and
       // the count query joins them too. Person name mirrors the
       // individualGiverPersonName expression in donorJoinSelect.
-      const term = `%${q.search}%`;
-      filters.push(
-        or(
-          ilike(opportunitiesAndPledges.name, term),
-          ilike(organizations.name, term),
-          ilike(households.name, term),
-          sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
-        )!,
-      );
+      //
+      // Tokenized (mirrors listGiftsAndPayments): each whitespace-separated
+      // word must match at least one of the searched fields (AND across
+      // words, OR across fields per word), so "fy26 peretsman" finds
+      // "FY26 Nancy Peretsman $200,000" even though the typed phrase is not
+      // a contiguous substring of any single field.
+      for (const word of q.search.split(/\s+/).filter(Boolean)) {
+        const term = `%${word}%`;
+        filters.push(
+          or(
+            ilike(opportunitiesAndPledges.name, term),
+            ilike(organizations.name, term),
+            ilike(households.name, term),
+            sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
+          )!,
+        );
+      }
     }
     {
       const f = splitBlank(q.status as string[] | undefined);

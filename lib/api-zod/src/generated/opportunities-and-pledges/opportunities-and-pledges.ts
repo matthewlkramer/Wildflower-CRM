@@ -17,7 +17,7 @@ export const listOpportunitiesAndPledgesQueryPageDefault = 1;
 
 export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   "includeArchived": zod.coerce.boolean().optional().describe('Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.'),
-  "search": zod.coerce.string().optional(),
+  "search": zod.coerce.string().optional().describe('Tokenized case-insensitive search: every whitespace-separated word must match the record name or donor display name (org \/ household \/ individual). Word order and connector words (e.g. \'and\') don\'t matter.'),
   "paidPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on paid amount (`has` = >0, `blank` = none).'),
   "coveredFysPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on covered fiscal years (`has` = any, `blank` = none).'),
   "entitiesPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on linked entities (`has` = any allocation, `blank` = none).'),

@@ -25,8 +25,12 @@ const RUN = `giftsearchtok_${Date.now()}`;
 const ADMIN_ID = `${RUN}_admin`;
 const HH_ID = `${RUN}_hh`;
 const GIFT_ID = `${RUN}_gift`;
+const OPP_ID = `${RUN}_opp`;
 // The connector word "and" is exactly what the typed search omits.
 const HH_NAME = `Alicia ${RUN} and Roberto Cul${RUN}`;
+// Mirrors the second real-world regression: "FY26 Nancy Peretsman $200,000"
+// not found by "fy26 peretsman" (intervening first name breaks the phrase).
+const OPP_NAME = `FY99 Alicia Cul${RUN} $200,000`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -49,6 +53,7 @@ let schema: {
   users: Db["users"];
   households: Db["households"];
   giftsAndPayments: Db["giftsAndPayments"];
+  opportunitiesAndPledges: Db["opportunitiesAndPledges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -57,6 +62,17 @@ let baseUrl = "";
 async function search(term: string): Promise<Array<Record<string, unknown>>> {
   const res = await fetch(
     `${baseUrl}/api/gifts-and-payments?search=${encodeURIComponent(term)}&limit=25`,
+  );
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+  return body.data;
+}
+
+async function searchOpps(
+  term: string,
+): Promise<Array<Record<string, unknown>>> {
+  const res = await fetch(
+    `${baseUrl}/api/opportunities-and-pledges?search=${encodeURIComponent(term)}&limit=25`,
   );
   expect(res.status).toBe(200);
   const body = (await res.json()) as { data: Array<Record<string, unknown>> };
@@ -72,6 +88,7 @@ beforeAll(async () => {
     users: dbMod.users,
     households: dbMod.households,
     giftsAndPayments: dbMod.giftsAndPayments,
+    opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
   };
   eqFn = drizzle.eq;
 
@@ -90,6 +107,11 @@ beforeAll(async () => {
     amount: "100.00",
     dateReceived: "2099-01-08",
   });
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id: OPP_ID,
+    name: OPP_NAME,
+    householdId: HH_ID,
+  });
 
   auth.current = { id: ADMIN_ID, role: "admin" };
   const { default: app } = await import("../app");
@@ -107,6 +129,9 @@ afterAll(async () => {
   await db
     .delete(schema.giftsAndPayments)
     .where(eqFn(schema.giftsAndPayments.id, GIFT_ID));
+  await db
+    .delete(schema.opportunitiesAndPledges)
+    .where(eqFn(schema.opportunitiesAndPledges.id, OPP_ID));
   await db.delete(schema.households).where(eqFn(schema.households.id, HH_ID));
   await db.delete(schema.users).where(eqFn(schema.users.id, ADMIN_ID));
 }, 60_000);
@@ -137,5 +162,26 @@ describe.skipIf(!HAS_DB)("tokenized gift search", () => {
   it("a word may match the gift name while another matches the donor", async () => {
     const rows = await search(`Tokenized-search Roberto`);
     expect(rows.map((r) => r.id)).toContain(GIFT_ID);
+  });
+});
+
+describe.skipIf(!HAS_DB)("tokenized opportunity/pledge search", () => {
+  it("finds a pledge when words skip the intervening first name", async () => {
+    // "FY99 Cul<run>" is NOT a contiguous substring of
+    // "FY99 Alicia Cul<run> $200,000" — only tokenized matching finds it.
+    const rows = await searchOpps(`FY99 Cul${RUN}`);
+    expect(rows.map((r) => r.id)).toContain(OPP_ID);
+  });
+
+  it("a word may match the pledge name while another matches the household", async () => {
+    // "Roberto" appears only in the household name, "FY99" only in the
+    // pledge name.
+    const rows = await searchOpps(`FY99 Roberto Cul${RUN}`);
+    expect(rows.map((r) => r.id)).toContain(OPP_ID);
+  });
+
+  it("requires EVERY word to match (AND across words)", async () => {
+    const rows = await searchOpps(`FY99 Cul${RUN} zebrafish`);
+    expect(rows.map((r) => r.id)).not.toContain(OPP_ID);
   });
 });

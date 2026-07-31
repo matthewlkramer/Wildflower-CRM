@@ -28,6 +28,14 @@ Isolation + 6-fork parallelism took the full suite 384s → ~100s with 0 flakes.
   `test_meta.schema_stamp` (or dropping the test DB).
 - `pg_trgm` must be created in the test DB before push (drizzle creates trgm
   indexes but never extensions).
+- **push never creates functions or triggers** — anything defined only in a
+  `lib/db/migrations/*.sql` file (e.g. the donor-routing gift-insert trigger)
+  silently vanishes whenever the schema is recreated, and trigger-dependent
+  tests fail with "trigger did not fire" symptoms. Fix: `PROGRAM_MIGRATIONS`
+  in global-setup lists idempotent migration files re-applied on EVERY run
+  (warm + cold). A new migration that adds a function/trigger must be added
+  to that list or its tests will pass locally (dev DB has it) and fail on a
+  fresh test schema.
 - Warm path TRUNCATEs all non-reference tables (clean slate each run; killed
   runs can't accumulate the 2099-band/dupspec-phone crowding leftovers), then
   re-mirrors reference tables `entities`, `regions`, `fiscal_years` from dev —
@@ -47,6 +55,17 @@ Isolation + 6-fork parallelism took the full suite 384s → ~100s with 0 flakes.
   6-way DB-bound parallelism).
 - Browser e2e still goes through the dev server → dev DB; dev-DB hygiene rules
   (test-data-hygiene.md) still apply to e2e, not to vitest anymore.
+
+## Known concurrency flake: bank-spine FK KEY SHARE deadlock
+
+`bank-spine-recompute.integration.test.ts` can fail with Postgres 40P01
+("deadlock detected ... FOR KEY SHARE ... stripe_staged_charges") when a
+parallel suite's recompute inserts `payment_units` rows referencing an
+overlapping set of charges in a different order (the INSERT..SELECT has no
+ORDER BY, so FK parent locks are taken in arbitrary order). It is
+pre-existing, unrelated to whatever diff is under test, and passes on rerun —
+re-run once before diagnosing. A deterministic fix would be ORDER BY sc.id in
+the recompute INSERT..SELECTs.
 
 ## No DDL in parallel test files
 
