@@ -54,6 +54,7 @@ import { GivesThroughCard } from "@/components/gives-through-card";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { GivingRelationshipCard } from "@/components/giving-relationship-card";
 import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -153,7 +154,11 @@ const PRIORITY_OPTIONS = [
 ] as const satisfies ReadonlyArray<InlineSelectOption<Priority>>;
 import { useToast } from "@/hooks/use-toast";
 import { personDisplayName } from "@/lib/person";
-import { canSeeIdentity, canManageIdentity, ANONYMOUS_LABEL } from "@/lib/visibility";
+import {
+  canSeeIdentity,
+  canManageIdentity,
+  ANONYMOUS_LABEL,
+} from "@/lib/visibility";
 import { Badge } from "@/components/ui/badge";
 import { NeedsResearchBadge } from "@/components/needs-research-badge";
 import { PriorityTooltip } from "@/components/priority-tooltip";
@@ -208,7 +213,10 @@ export default function IndividualDetail() {
   if (isError || !data) {
     return (
       <div className="space-y-4">
-        <Link href="/individuals" className="text-sm text-primary hover:underline">
+        <Link
+          href="/individuals"
+          className="text-sm text-primary hover:underline"
+        >
           ← Back to individuals
         </Link>
         <div className="text-sm text-destructive">
@@ -236,7 +244,9 @@ function PersonView({ person }: { person: PersonDetail }) {
     mutation: {
       onSuccess: async () => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetPersonQueryKey(person.id) }),
+          queryClient.invalidateQueries({
+            queryKey: getGetPersonQueryKey(person.id),
+          }),
           queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() }),
         ]);
         toast({ title: "Person updated" });
@@ -254,7 +264,9 @@ function PersonView({ person }: { person: PersonDetail }) {
   const archive = useArchivePerson({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+        await queryClient.invalidateQueries({
+          queryKey: getListPeopleQueryKey(),
+        });
         toast({ title: "Person archived" });
         navigate("/individuals");
       },
@@ -329,8 +341,10 @@ function PersonView({ person }: { person: PersonDetail }) {
         </div>
       ))}
     </div>
+  ) : canSeeName ? (
+    personDisplayName(person)
   ) : (
-    canSeeName ? personDisplayName(person) : ANONYMOUS_LABEL
+    ANONYMOUS_LABEL
   );
 
   const actions = editingName ? (
@@ -525,79 +539,87 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ enthusiasm: next })}
                 />
               </AttributeBadges>
-            <div className="space-y-1">
-              <Row label="Owner">
-                <InlineEditUserPicker
-                  testIdBase="person-owner-header"
-                  value={person.ownerUserId ?? null}
-                  display={ownerDisplay}
-                  onSave={(next) => patch({ ownerUserId: next })}
-                />
-              </Row>
-              <Row label="Pronouns">
-                <InlineEditSelect label="Pronouns" testIdBase="person-pronouns"
-                  value={person.pronouns ?? null} options={PRONOUNS_OPTIONS}
-                  display={formatEnum(person.pronouns)}
-                  onSave={(next) => patch({ pronouns: next })} />
-              </Row>
-              <Row label="Status">
-                <InlineEditBoolean
-                  label="Deceased"
-                  testIdBase="person-deceased"
-                  value={person.deceased ?? null}
-                  trueLabel="Deceased"
-                  falseLabel="Living"
-                  allowNull={false}
-                  display={
-                    person.deceased == null
-                      ? "—"
-                      : person.deceased
-                        ? <Badge variant="outline">Deceased</Badge>
-                        : "Living"
-                  }
-                  onSave={(next) => patch({ deceased: next ?? false })}
-                />
-              </Row>
-              {canManageIdentity(person, viewer) && (
-                <Row label="Anonymous">
-                  <InlineEditBoolean
-                    label="Anonymous"
-                    testIdBase="person-anonymous"
-                    value={person.anonymous}
-                    trueLabel="Anonymous"
-                    falseLabel="Visible"
-                    allowNull={false}
-                    display={person.anonymous ? "Yes" : "No"}
-                    onSave={(next) => patch({ anonymous: next ?? false })}
+              <div className="space-y-1">
+                <Row label="Owner">
+                  <InlineEditUserPicker
+                    testIdBase="person-owner-header"
+                    value={person.ownerUserId ?? null}
+                    display={ownerDisplay}
+                    onSave={(next) => patch({ ownerUserId: next })}
                   />
                 </Row>
-              )}
-              <Row label="Home region">
-                <InlineEditRegionPicker testIdBase="person-region"
-                  label="Home region"
-                  value={person.currentHomeRegionId ?? null}
-                  onSave={(next) => patch({ currentHomeRegionId: next })} />
-              </Row>
-              <Row label="Children at WF">
-                <InlineEditText
-                  label="Children at WF"
-                  testIdBase="person-children-at-wf"
-                  value={person.childrenAtWf ?? null}
-                  placeholder="e.g. 2"
-                  display={person.childrenAtWf ?? "—"}
-                  onSave={(next) => patch({ childrenAtWf: next })}
-                />
-              </Row>
-              <Row label="Net worth">
-                <InlineEditCurrency
-                  label="Net worth"
-                  testIdBase="person-net-worth"
-                  value={person.netWorth ?? null}
-                  display={formatCurrency(person.netWorth)}
-                  onSave={(next) => patch({ netWorth: next })}
-                />
-              </Row>
-            </div>
+                <Row label="Pronouns">
+                  <InlineEditSelect
+                    label="Pronouns"
+                    testIdBase="person-pronouns"
+                    value={person.pronouns ?? null}
+                    options={PRONOUNS_OPTIONS}
+                    display={formatEnum(person.pronouns)}
+                    onSave={(next) => patch({ pronouns: next })}
+                  />
+                </Row>
+                <Row label="Status">
+                  <InlineEditBoolean
+                    label="Deceased"
+                    testIdBase="person-deceased"
+                    value={person.deceased ?? null}
+                    trueLabel="Deceased"
+                    falseLabel="Living"
+                    allowNull={false}
+                    display={
+                      person.deceased == null ? (
+                        "—"
+                      ) : person.deceased ? (
+                        <Badge variant="outline">Deceased</Badge>
+                      ) : (
+                        "Living"
+                      )
+                    }
+                    onSave={(next) => patch({ deceased: next ?? false })}
+                  />
+                </Row>
+                {canManageIdentity(person, viewer) && (
+                  <Row label="Anonymous">
+                    <InlineEditBoolean
+                      label="Anonymous"
+                      testIdBase="person-anonymous"
+                      value={person.anonymous}
+                      trueLabel="Anonymous"
+                      falseLabel="Visible"
+                      allowNull={false}
+                      display={person.anonymous ? "Yes" : "No"}
+                      onSave={(next) => patch({ anonymous: next ?? false })}
+                    />
+                  </Row>
+                )}
+                <Row label="Home region">
+                  <InlineEditRegionPicker
+                    testIdBase="person-region"
+                    label="Home region"
+                    value={person.currentHomeRegionId ?? null}
+                    onSave={(next) => patch({ currentHomeRegionId: next })}
+                  />
+                </Row>
+                <Row label="Children at WF">
+                  <InlineEditText
+                    label="Children at WF"
+                    testIdBase="person-children-at-wf"
+                    value={person.childrenAtWf ?? null}
+                    placeholder="e.g. 2"
+                    display={person.childrenAtWf ?? "—"}
+                    onSave={(next) => patch({ childrenAtWf: next })}
+                  />
+                </Row>
+                <Row label="Net worth">
+                  <InlineEditCurrency
+                    label="Net worth"
+                    testIdBase="person-net-worth"
+                    value={person.netWorth ?? null}
+                    display={formatCurrency(person.netWorth)}
+                    onSave={(next) => patch({ netWorth: next })}
+                  />
+                </Row>
+              </div>
               {/* Quick-access links only — the underlying fields stay editable
                   in the Web card below. */}
               <ContactIconRow
@@ -724,20 +746,32 @@ function PersonView({ person }: { person: PersonDetail }) {
           >
             <div className="space-y-1">
               <Row label="Website">
-                <InlineEditText label="Website" testIdBase="person-website"
-                  value={person.website ?? null} placeholder="https://…"
+                <InlineEditText
+                  label="Website"
+                  testIdBase="person-website"
+                  value={person.website ?? null}
+                  placeholder="https://…"
                   display={
                     person.website ? (
-                      <a href={person.website} target="_blank" rel="noreferrer"
-                        className="text-primary hover:underline break-all">
+                      <a
+                        href={person.website}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
                         {person.website}
                       </a>
-                    ) : "—"
+                    ) : (
+                      "—"
+                    )
                   }
-                  onSave={(next) => patch({ website: next })} />
+                  onSave={(next) => patch({ website: next })}
+                />
               </Row>
               <Row label="LinkedIn">
-                <InlineEditText label="LinkedIn" testIdBase="person-linkedin"
+                <InlineEditText
+                  label="LinkedIn"
+                  testIdBase="person-linkedin"
                   value={person.linkedin ?? null}
                   display={
                     person.linkedin ? (
@@ -753,10 +787,13 @@ function PersonView({ person }: { person: PersonDetail }) {
                       "—"
                     )
                   }
-                  onSave={(next) => patch({ linkedin: next })} />
+                  onSave={(next) => patch({ linkedin: next })}
+                />
               </Row>
               <Row label="X">
-                <InlineEditText label="X" testIdBase="person-x"
+                <InlineEditText
+                  label="X"
+                  testIdBase="person-x"
                   value={person.x ?? null}
                   display={
                     person.x ? (
@@ -772,10 +809,13 @@ function PersonView({ person }: { person: PersonDetail }) {
                       "—"
                     )
                   }
-                  onSave={(next) => patch({ x: next })} />
+                  onSave={(next) => patch({ x: next })}
+                />
               </Row>
               <Row label="Facebook">
-                <InlineEditText label="Facebook" testIdBase="person-facebook"
+                <InlineEditText
+                  label="Facebook"
+                  testIdBase="person-facebook"
                   value={person.facebook ?? null}
                   display={
                     person.facebook ? (
@@ -791,10 +831,13 @@ function PersonView({ person }: { person: PersonDetail }) {
                       "—"
                     )
                   }
-                  onSave={(next) => patch({ facebook: next })} />
+                  onSave={(next) => patch({ facebook: next })}
+                />
               </Row>
               <Row label="Instagram">
-                <InlineEditText label="Instagram" testIdBase="person-instagram"
+                <InlineEditText
+                  label="Instagram"
+                  testIdBase="person-instagram"
                   value={person.instagram ?? null}
                   display={
                     person.instagram ? (
@@ -810,12 +853,17 @@ function PersonView({ person }: { person: PersonDetail }) {
                       "—"
                     )
                   }
-                  onSave={(next) => patch({ instagram: next })} />
+                  onSave={(next) => patch({ instagram: next })}
+                />
               </Row>
               <Row label="Meeting link">
-                <InlineEditText label="Meeting link" testIdBase="person-meeting-link"
-                  value={person.meetingLink ?? null} display={person.meetingLink ?? "—"}
-                  onSave={(next) => patch({ meetingLink: next })} />
+                <InlineEditText
+                  label="Meeting link"
+                  testIdBase="person-meeting-link"
+                  value={person.meetingLink ?? null}
+                  display={person.meetingLink ?? "—"}
+                  onSave={(next) => patch({ meetingLink: next })}
+                />
               </Row>
             </div>
           </FieldCard>
@@ -833,7 +881,9 @@ function PersonView({ person }: { person: PersonDetail }) {
                 />
               </Row>
               <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">Details</div>
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  Details
+                </div>
                 <InlineEditTextarea
                   label="Details"
                   testIdBase="person-details"
@@ -841,7 +891,9 @@ function PersonView({ person }: { person: PersonDetail }) {
                   placeholder="Add details…"
                   display={
                     person.details ? (
-                      <p className="whitespace-pre-wrap text-left">{person.details}</p>
+                      <p className="whitespace-pre-wrap text-left">
+                        {person.details}
+                      </p>
                     ) : (
                       <span className="text-muted-foreground">—</span>
                     )
@@ -894,41 +946,61 @@ function PersonView({ person }: { person: PersonDetail }) {
                         ? "Yes"
                         : "No"
                   }
-                  onSave={(next) => patch({ unsubscribedToNewsletter: next ?? false })}
+                  onSave={(next) =>
+                    patch({ unsubscribedToNewsletter: next ?? false })
+                  }
                 />
               </Row>
             </div>
           </FieldCard>
 
           <div className="px-1 text-xs text-muted-foreground">
-            Created {formatDate(person.createdAt)} • Updated {formatDate(person.updatedAt)}
+            Created {formatDate(person.createdAt)} • Updated{" "}
+            {formatDate(person.updatedAt)}
           </div>
         </>
       }
-      center={
-        (() => {
-          const householdRole = (person.roles ?? []).find(
-            (r) => r.entityType === "household" && r.householdId && r.current === "current",
-          );
-          const personDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = householdRole?.householdId
-            ? { householdIds: [householdRole.householdId] }
-            : {};
-          return (
-            <>
-              <PersonRelationshipSummaryCard personId={person.id} />
-              <TasksPanel personId={person.id} defaultLinks={personDefaultLinks} />
-              <UnifiedActivityFeed
-                personId={person.id}
-                notesContext={{ personId: person.id, defaultLinks: personDefaultLinks }}
-                hideTasks
-              />
-            </>
-          );
-        })()
-      }
+      center={(() => {
+        const householdRole = (person.roles ?? []).find(
+          (r) =>
+            r.entityType === "household" &&
+            r.householdId &&
+            r.current === "current",
+        );
+        const personDefaultLinks: Partial<{
+          personIds: string[];
+          organizationIds: string[];
+          householdIds: string[];
+          opportunityIds: string[];
+          giftIds: string[];
+        }> = householdRole?.householdId
+          ? { householdIds: [householdRole.householdId] }
+          : {};
+        return (
+          <>
+            <PersonRelationshipSummaryCard personId={person.id} />
+            <TasksPanel
+              personId={person.id}
+              defaultLinks={personDefaultLinks}
+            />
+            <UnifiedActivityFeed
+              personId={person.id}
+              notesContext={{
+                personId: person.id,
+                defaultLinks: personDefaultLinks,
+              }}
+              hideTasks
+            />
+          </>
+        );
+      })()}
       right={
         <>
           <PinnedMediaCard personId={person.id} />
+          <GivingRelationshipCard
+            sourceKind="individual"
+            sourceId={person.id}
+          />
           <GivingPipelineCard scope={{ individualGiverPersonId: person.id }} />
 
           <PeopleCard person={person} />
@@ -1071,8 +1143,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   >();
   for (const r of roles) {
     if (r.entityType === "household") continue;
-    const entityId =
-      r.organizationId ?? r.paymentIntermediaryId ?? null;
+    const entityId = r.organizationId ?? r.paymentIntermediaryId ?? null;
     if (!entityId) continue;
     const key = `${r.entityType}:${entityId}`;
     const isCurrent = r.current === "current";
@@ -1177,9 +1248,7 @@ function HouseholdMembersSection({
       {otherMembers.map((m) => {
         const title = m.externalTitleOrRole ?? formatEnum(m.connection);
         const roleLine =
-          title && title !== "—"
-            ? `${title} · ${data.name}`
-            : data.name;
+          title && title !== "—" ? `${title} · ${data.name}` : data.name;
         return (
           <AffiliationRow
             key={m.id}
@@ -1210,7 +1279,6 @@ function HouseholdEditButton({ householdId }: { householdId: string }) {
     </Link>
   );
 }
-
 
 function ColleagueMembers({
   entityType,
@@ -1260,7 +1328,10 @@ function ColleagueMembers({
   const byPerson = new Map<string, (typeof people)[number]>();
   for (const m of people) {
     const existing = byPerson.get(m.personId);
-    if (!existing || (m.current === "current" && existing.current !== "current")) {
+    if (
+      !existing ||
+      (m.current === "current" && existing.current !== "current")
+    ) {
       byPerson.set(m.personId, m);
     }
   }
@@ -1303,7 +1374,13 @@ function ColleagueMembers({
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -1340,7 +1417,12 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
 
   const windowsQ = useListPersonSuppressionWindows(
     { personId },
-    { query: { queryKey: getListPersonSuppressionWindowsQueryKey({ personId }), staleTime: 30_000 } },
+    {
+      query: {
+        queryKey: getListPersonSuppressionWindowsQueryKey({ personId }),
+        staleTime: 30_000,
+      },
+    },
   );
 
   const [showAdd, setShowAdd] = useState(false);
@@ -1354,7 +1436,9 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
   const [editNoteDraft, setEditNoteDraft] = useState("");
 
   const invalidate = () =>
-    qc.invalidateQueries({ queryKey: getListPersonSuppressionWindowsQueryKey({ personId }) });
+    qc.invalidateQueries({
+      queryKey: getListPersonSuppressionWindowsQueryKey({ personId }),
+    });
 
   const createW = useCreatePersonSuppressionWindow({
     mutation: {
@@ -1429,7 +1513,8 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
       defaultOpen={windows.length > 0 || staffDefaultSuppressed}
     >
       <p className="text-xs text-muted-foreground mb-2">
-        Email/calendar sync skips this person&apos;s addresses during active windows.
+        Email/calendar sync skips this person&apos;s addresses during active
+        windows.
       </p>
       {staffDefaultSuppressed && (
         <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
@@ -1445,16 +1530,24 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : windows.length === 0 ? (
         staffDefaultSuppressed ? null : (
-          <p className="text-sm text-muted-foreground">No suppression windows.</p>
+          <p className="text-sm text-muted-foreground">
+            No suppression windows.
+          </p>
         )
       ) : (
         <ul className="space-y-2">
           {windows.map((w: PersonSuppressionWindow) =>
             isAdmin && editingId === w.id ? (
-              <li key={w.id} className="text-sm space-y-2" data-testid={`suppression-window-${w.id}`}>
+              <li
+                key={w.id}
+                className="text-sm space-y-2"
+                data-testid={`suppression-window-${w.id}`}
+              >
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs text-muted-foreground mb-0.5 block">From</label>
+                    <label className="text-xs text-muted-foreground mb-0.5 block">
+                      From
+                    </label>
                     <input
                       type="date"
                       className={inputCls}
@@ -1463,7 +1556,9 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-muted-foreground mb-0.5 block">Until</label>
+                    <label className="text-xs text-muted-foreground mb-0.5 block">
+                      Until
+                    </label>
                     <input
                       type="date"
                       className={inputCls}
@@ -1473,7 +1568,9 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-0.5 block">Notes</label>
+                  <label className="text-xs text-muted-foreground mb-0.5 block">
+                    Notes
+                  </label>
                   <input
                     type="text"
                     className={inputCls}
@@ -1519,7 +1616,9 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
                     {formatDateStr(w.startDate)} → {formatDateStr(w.endDate)}
                   </div>
                   {w.notes && (
-                    <div className="text-xs text-muted-foreground mt-0.5">{w.notes}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      {w.notes}
+                    </div>
                   )}
                 </div>
                 {isAdmin && (
@@ -1530,8 +1629,12 @@ function SuppressionWindowsCard({ personId }: { personId: string }) {
                       aria-label="Edit suppression window"
                       onClick={() => {
                         setEditingId(w.id);
-                        setEditFromDraft(w.startDate ? String(w.startDate).slice(0, 10) : "");
-                        setEditUntilDraft(w.endDate ? String(w.endDate).slice(0, 10) : "");
+                        setEditFromDraft(
+                          w.startDate ? String(w.startDate).slice(0, 10) : "",
+                        );
+                        setEditUntilDraft(
+                          w.endDate ? String(w.endDate).slice(0, 10) : "",
+                        );
                         setEditNoteDraft(w.notes ?? "");
                       }}
                     >

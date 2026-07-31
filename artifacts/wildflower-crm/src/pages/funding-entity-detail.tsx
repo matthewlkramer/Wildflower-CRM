@@ -17,18 +17,23 @@ import {
   type ConnectionStatus,
   type Enthusiasm,
   type StrategicAlignment,
-  
   type NumberOfEmployees,
   type CapacityRating,
   type Priority,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
-import { canSeeIdentity, canManageIdentity, displayOrganizationName, ANONYMOUS_LABEL } from "@/lib/visibility";
+import {
+  canSeeIdentity,
+  canManageIdentity,
+  displayOrganizationName,
+  ANONYMOUS_LABEL,
+} from "@/lib/visibility";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
+import { GivingRelationshipCard } from "@/components/giving-relationship-card";
 import { OrganizationRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -191,7 +196,9 @@ function PrimaryContactInfo({
 
   if (isLoading) {
     return (
-      <p className="text-xs text-muted-foreground py-1">Loading contact info…</p>
+      <p className="text-xs text-muted-foreground py-1">
+        Loading contact info…
+      </p>
     );
   }
 
@@ -199,7 +206,9 @@ function PrimaryContactInfo({
   const phones = person?.phoneNumbers ?? [];
   if (emails.length === 0 && phones.length === 0) {
     return (
-      <p className="text-xs text-muted-foreground py-1">No contact info on file.</p>
+      <p className="text-xs text-muted-foreground py-1">
+        No contact info on file.
+      </p>
     );
   }
 
@@ -214,7 +223,9 @@ function PrimaryContactInfo({
             {e.email}
           </a>
           {e.type ? (
-            <span className="text-xs text-muted-foreground capitalize">{e.type}</span>
+            <span className="text-xs text-muted-foreground capitalize">
+              {e.type}
+            </span>
           ) : null}
         </div>
       ))}
@@ -227,7 +238,9 @@ function PrimaryContactInfo({
             {p.phoneNumber}
           </a>
           {p.type ? (
-            <span className="text-xs text-muted-foreground capitalize">{p.type}</span>
+            <span className="text-xs text-muted-foreground capitalize">
+              {p.type}
+            </span>
           ) : null}
         </div>
       ))}
@@ -285,8 +298,12 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
     mutation: {
       onSuccess: async () => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetOrganizationQueryKey(org.id) }),
-          queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getGetOrganizationQueryKey(org.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListOrganizationsQueryKey(),
+          }),
         ]);
         toast({ title: "Organization updated" });
       },
@@ -303,7 +320,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
   const archive = useArchiveOrganization({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() });
+        await queryClient.invalidateQueries({
+          queryKey: getListOrganizationsQueryKey(),
+        });
         toast({ title: "Organization archived" });
         navigate("/organizations");
       },
@@ -637,7 +656,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     value={org.numberOfEmployees ?? null}
                     options={EMPLOYEES_OPTIONS}
                     display={
-                      EMPLOYEES_OPTIONS.find((o) => o.value === org.numberOfEmployees)?.label ?? "—"
+                      EMPLOYEES_OPTIONS.find(
+                        (o) => o.value === org.numberOfEmployees,
+                      )?.label ?? "—"
                     }
                     onSave={(next) => patch({ numberOfEmployees: next })}
                   />
@@ -657,11 +678,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     testIdBase="organization-makes-pris"
                     value={org.makesPris ?? null}
                     display={
-                      org.makesPris == null
-                        ? "—"
-                        : org.makesPris
-                          ? "Yes"
-                          : "No"
+                      org.makesPris == null ? "—" : org.makesPris ? "Yes" : "No"
                     }
                     onSave={(next) => patch({ makesPris: next })}
                   />
@@ -697,7 +714,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     placeholder="Add details…"
                     display={
                       org.details ? (
-                        <p className="whitespace-pre-wrap text-left">{org.details}</p>
+                        <p className="whitespace-pre-wrap text-left">
+                          {org.details}
+                        </p>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )
@@ -980,28 +999,37 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
           </div>
         </>
       }
-      center={
-        (() => {
-          const primaryContact = (org.people ?? []).find((p) => p.primaryContact);
-          const funderDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = primaryContact
-            ? { personIds: [primaryContact.personId] }
-            : {};
-          return (
-            <>
-              <OrganizationRelationshipSummaryCard organizationId={org.id} />
-              <TasksPanel organizationId={org.id} defaultLinks={funderDefaultLinks} />
-              <UnifiedActivityFeed
-                organizationId={org.id}
-                notesContext={{ organizationId: org.id, defaultLinks: funderDefaultLinks }}
-                hideTasks
-              />
-            </>
-          );
-        })()
-      }
+      center={(() => {
+        const primaryContact = (org.people ?? []).find((p) => p.primaryContact);
+        const funderDefaultLinks: Partial<{
+          personIds: string[];
+          organizationIds: string[];
+          householdIds: string[];
+          opportunityIds: string[];
+          giftIds: string[];
+        }> = primaryContact ? { personIds: [primaryContact.personId] } : {};
+        return (
+          <>
+            <OrganizationRelationshipSummaryCard organizationId={org.id} />
+            <TasksPanel
+              organizationId={org.id}
+              defaultLinks={funderDefaultLinks}
+            />
+            <UnifiedActivityFeed
+              organizationId={org.id}
+              notesContext={{
+                organizationId: org.id,
+                defaultLinks: funderDefaultLinks,
+              }}
+              hideTasks
+            />
+          </>
+        );
+      })()}
       right={
         <>
           <PinnedMediaCard organizationId={org.id} />
+          <GivingRelationshipCard sourceKind="organization" sourceId={org.id} />
           <GivingPipelineCard scope={{ organizationId: org.id }} />
 
           <RelatedCard
@@ -1029,7 +1057,10 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     [title, p.personEmail].filter(Boolean).join(" · ") ||
                     undefined;
                   return (
-                    <div key={p.id} data-testid={`row-organization-person-${p.id}`}>
+                    <div
+                      key={p.id}
+                      data-testid={`row-organization-person-${p.id}`}
+                    >
                       <AffiliationRow
                         name={p.personName ?? `Person ${p.personId}`}
                         href={`/individuals/${p.personId}`}
@@ -1060,11 +1091,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
   );
 }
 
-function RelatedOrganizationsCard({
-  org,
-}: {
-  org: OrganizationDetail;
-}) {
+function RelatedOrganizationsCard({ org }: { org: OrganizationDetail }) {
   const childParams: ListOrganizationsParams = {
     parentOrganizationId: org.id,
     limit: 100,
@@ -1093,8 +1120,9 @@ function RelatedOrganizationsCard({
   const hasInactive =
     allChildren.some(isInactiveOrg) ||
     (fullParent ? isInactiveOrg(fullParent) : false);
-  const children =
-    hideInactive ? allChildren.filter((c) => !isInactiveOrg(c)) : allChildren;
+  const children = hideInactive
+    ? allChildren.filter((c) => !isInactiveOrg(c))
+    : allChildren;
   const parent =
     fullParent && !(hideInactive && isInactiveOrg(fullParent))
       ? fullParent
@@ -1140,7 +1168,13 @@ function RelatedOrganizationsCard({
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>

@@ -9,6 +9,64 @@ import * as zod from 'zod';
 
 
 /**
+ * Returns donor-of-record giving, household or household-member giving, current-principal organization giving, intermediary delivery totals, and recent gifts. Intermediary totals overlap the relationship total and are never treated as additional giving.
+ * @summary Get a deduplicated giving relationship for a donor record.
+ */
+export const GetGivingRelationshipParams = zod.object({
+  "sourceKind": zod.enum(['individual', 'household', 'organization']),
+  "sourceId": zod.coerce.string()
+})
+
+export const GetGivingRelationshipResponse = zod.object({
+  "source": zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string()
+}),
+  "resolvedDonor": zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string()
+}).nullish(),
+  "requiresDecision": zod.boolean(),
+  "relationshipTotal": zod.string().describe('Each related gift counted once.'),
+  "donorOfRecordTotal": zod.string().describe('Gifts recorded directly to this exact record.'),
+  "throughIntermediaryTotal": zod.string().describe('Overlapping delivery-method total; not additive.'),
+  "giftCount": zod.number(),
+  "mostRecentGiftDate": zod.string().date().nullish(),
+  "largestGift": zod.object({
+  "id": zod.string(),
+  "amount": zod.string(),
+  "dateReceived": zod.string().date().nullish()
+}).nullish(),
+  "breakdown": zod.array(zod.object({
+  "kind": zod.enum(['direct', 'household', 'household_member', 'principal_organization']),
+  "label": zod.string(),
+  "description": zod.string(),
+  "amount": zod.string().describe('Decimal amount as a string.'),
+  "giftCount": zod.number()
+})),
+  "recentGifts": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "amount": zod.string(),
+  "dateReceived": zod.string().date().nullish(),
+  "paymentMethod": zod.string().nullish(),
+  "donor": zod.object({
+  "kind": zod.enum(['individual', 'household', 'organization']),
+  "id": zod.string(),
+  "name": zod.string()
+}),
+  "paymentIntermediary": zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}).nullish(),
+  "attributionKind": zod.enum(['direct', 'household', 'household_member', 'principal_organization']),
+  "attributionLabel": zod.string()
+}))
+})
+
+/**
  * @summary Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
  */
 export const GetDonorRoutingParams = zod.object({
