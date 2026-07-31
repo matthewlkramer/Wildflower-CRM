@@ -1,0 +1,72 @@
+name: Inspect opportunity OpenAPI structural diff
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'agent/opportunity-commitment-lifecycle'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/opportunity-commitment-lifecycle
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Print semantic differences from main
+        shell: bash
+        run: |
+          cat > /tmp/openapi-structural-diff.cjs <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const { execFileSync } = require('child_process');
+          const yamlPackage = execFileSync(
+            'bash',
+            ['-lc', "find node_modules/.pnpm -path '*/node_modules/yaml/package.json' | head -n 1"],
+            { encoding: 'utf8' },
+          ).trim();
+          if (!yamlPackage) throw new Error('Could not locate yaml package');
+          const YAML = require(path.dirname(yamlPackage));
+          const baseText = execFileSync(
+            'git',
+            ['show', 'origin/main:lib/api-spec/openapi.yaml'],
+            { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
+          );
+          const currentText = fs.readFileSync('lib/api-spec/openapi.yaml', 'utf8');
+          const base = YAML.parse(baseText);
+          const current = YAML.parse(currentText);
+          const changes = [];
+          const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+          function walk(a, b, parts) {
+            if (same(a, b)) return;
+            const aObj = a !== null && typeof a === 'object';
+            const bObj = b !== null && typeof b === 'object';
+            if (!aObj || !bObj || Array.isArray(a) || Array.isArray(b)) {
+              changes.push({ path: parts.join('.'), before: a, after: b });
+              return;
+            }
+            const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+            for (const key of [...keys].sort()) walk(a[key], b[key], [...parts, key]);
+          }
+          walk(base, current, []);
+          console.log(`STRUCTURAL_CHANGE_COUNT=${changes.length}`);
+          for (const change of changes) {
+            console.log(`\nPATH ${change.path}`);
+            console.log(`BEFORE ${JSON.stringify(change.before)}`);
+            console.log(`AFTER  ${JSON.stringify(change.after)}`);
+          }
+          process.exit(1);
+          NODE
+          node /tmp/openapi-structural-diff.cjs
