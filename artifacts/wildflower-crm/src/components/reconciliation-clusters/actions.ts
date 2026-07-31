@@ -47,7 +47,6 @@ export interface CreateGiftPrefill {
 /** Action callbacks the page wires to the real endpoints. */
 export interface ClusterActions {
   busy: boolean;
-  openLinkGift: (anchor: AnchorRef) => void;
   openCreateGift: (
     anchor: AnchorRef,
     preview: EvidencePreview,

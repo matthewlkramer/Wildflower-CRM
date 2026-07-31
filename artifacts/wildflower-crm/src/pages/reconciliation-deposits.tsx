@@ -1467,7 +1467,6 @@ export default function ReconciliationDepositsPage() {
   };
   const actions: DepositActions = {
     busy,
-    openLinkGift: setLinkGiftFor,
     openCreateGift: (anchor, preview, prefill) =>
       setCreateFor({ anchor, preview, prefill: prefill ?? null }),
     openLinkEvidence: (anchor, mode) => setLinkEvidenceFor({ anchor, mode }),

@@ -198,7 +198,6 @@ export interface DepositRowProps {
 
 const NOOP_ACTIONS: DepositActions = {
   busy: false,
-  openLinkGift: () => undefined,
   openCreateGift: () => undefined,
   openLinkEvidence: () => undefined,
   openColumnGiftSearch: () => undefined,
@@ -1653,8 +1652,9 @@ export function DepositRow({
                   <CardActionsMenu
                     items={[
                       {
-                        label: "Search and link gift…",
-                        onSelect: () => actions.openLinkGift(anchor),
+                        label: "Search and link gift or pledge…",
+                        onSelect: () =>
+                          actions.openLinkEvidence?.(anchor, "all"),
                       },
                       {
                         label: "Create standalone gift…",
@@ -1770,8 +1770,9 @@ export function DepositRow({
                   <CardActionsMenu
                     items={[
                       {
-                        label: "Search and link gift…",
-                        onSelect: () => actions.openLinkGift(anchor),
+                        label: "Search and link gift or pledge…",
+                        onSelect: () =>
+                          actions.openLinkEvidence?.(anchor, "all"),
                       },
                       {
                         label: "Create standalone gift…",
