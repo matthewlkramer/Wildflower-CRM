@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import sys
 
 path = Path(sys.argv[1])
@@ -30,4 +31,13 @@ text = text[: first.start()] + read_only_written + text[first.end() :]
 text = written_pattern.sub("", text)
 '''
 
-path.write_text(source[:start] + replacement + source[end:])
+source = source[:start] + replacement + source[end:]
+# Inline YAML maps split unquoted comma-containing descriptions into bogus
+# properties. Quote any 409 description in the staged endpoint block that
+# contains commas.
+source = re.sub(
+    r'(?m)^(\s+"409": \{ description: )([^"\n]*,[^"\n]*)( \})$',
+    lambda m: f'{m.group(1)}"{m.group(2)}"{m.group(3)}',
+    source,
+)
+path.write_text(source)
