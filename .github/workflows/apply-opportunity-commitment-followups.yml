@@ -141,7 +141,7 @@ jobs:
           page = recon_page.read_text()
           page, outcome_type_count = re.subn(
               r":\s*OutcomeChoice\b",
-              "",
+              ': "create_gift_from_opportunity"',
               page,
           )
           if outcome_type_count != 1:
