@@ -56,12 +56,22 @@ jobs:
           python /tmp/apply_donor_attribution_phase3.py
           python - <<'PY'
           from pathlib import Path
+          import re
 
           spec = Path('lib/api-spec/openapi.yaml')
           text = spec.read_text()
           text = text.replace(
               '"409": { description: Proposal is stale, unavailable, or no longer open. }',
               '"409": { description: "Proposal is stale, unavailable, or no longer open." }',
+          )
+          text = text.replace(
+              'items: { $ref: "#/components/schemas/HouseholdMember" }',
+              'items: { $ref: "#/components/schemas/PeopleEntityRole" }',
+          )
+          text = re.sub(
+              r'(?ms)^    HouseholdMember:\n.*?(?=^    HouseholdDetail:\n)',
+              '',
+              text,
           )
           spec.write_text(text)
 
@@ -73,13 +83,53 @@ jobs:
               sql = sql + '\n\nCOMMIT;'
           migration.write_text(sql + '\n')
 
-          route = Path('artifacts/api-server/src/routes/cleanupQueue.ts')
-          source = route.read_text()
+          cleanup_route = Path('artifacts/api-server/src/routes/cleanupQueue.ts')
+          source = cleanup_route.read_text()
           source = source.replace(
               'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId) =>',
               'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId | typeof cleanupQueue.resolvedByUserId) =>',
           )
-          route.write_text(source)
+          cleanup_route.write_text(source)
+
+          household_route = Path('artifacts/api-server/src/routes/households.ts')
+          source = household_route.read_text()
+          replacement = '''const householdMemberSelect = {
+            id: sql<string>`'primary_household:' || ${people.id}`.as("id"),
+            personId: people.id,
+            entityType: sql<"household">`'household'`.as("entity_type"),
+            organizationId: sql<string | null>`NULL::text`.as("organization_id"),
+            paymentIntermediaryId: sql<string | null>`NULL::text`.as(
+              "payment_intermediary_id",
+            ),
+            householdId: people.primaryHouseholdId,
+            connection: sql<string | null>`NULL::text`.as("connection"),
+            notes: sql<string | null>`NULL::text`.as("notes"),
+            externalTitleOrRole: sql<string | null>`NULL::text`.as(
+              "external_title_or_role",
+            ),
+            current: sql<"current">`'current'`.as("current"),
+            primaryContact: sql<boolean>`false`.as("primary_contact"),
+            createdAt: people.createdAt,
+            updatedAt: people.updatedAt,
+            personName: personDisplayNameSql(people).as("person_name"),
+            personEmail: sql<string | null>`(
+              SELECT e.email FROM emails e
+              WHERE e.person_id = ${people.id}
+              ORDER BY e.is_preferred DESC, e.created_at ASC
+              LIMIT 1
+            )`.as("person_email"),
+            personAnonymous: people.anonymous,
+            personOwnerUserId: people.ownerUserId,
+          };'''
+          source, count = re.subn(
+              r'(?ms)^const householdMemberSelect = \{.*?^\};',
+              replacement,
+              source,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError('household member projection not found')
+          household_route.write_text(source)
           PY
 
       - name: Regenerate API clients
