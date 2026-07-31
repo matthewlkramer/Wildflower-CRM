@@ -7,6 +7,8 @@ import {
   useUpdateCleanupItem,
   useResolveCleanupItem,
   useDismissCleanupItem,
+  useApplyCleanupProposal,
+  useApplyHighConfidenceCleanupProposals,
   type CleanupItem,
   type CleanupQueueStatus,
 } from "@workspace/api-client-react";
@@ -35,6 +37,10 @@ const REASON_LABEL: Record<string, string> = {
   conditional_commitment_stage: "Conditional commitment",
   needs_research: "Research needed",
   issues_to_address: "Issue to address",
+  donor_attribution_review: "Donor attribution",
+  donor_attribution_auto_normalized: "Donor normalized",
+  donor_intermediary_review: "Default intermediary",
+  primary_household_review: "Primary household",
 };
 
 function targetHref(type: string, id: string): string {
@@ -47,6 +53,8 @@ function targetHref(type: string, id: string): string {
       return `/organizations/${id}`;
     case "person":
       return `/individuals/${id}`;
+    case "household":
+      return `/households/${id}`;
     case "gift":
       return `/gifts/${id}`;
     case "staged_payment":
@@ -55,6 +63,21 @@ function targetHref(type: string, id: string): string {
     default:
       return `/pledges/${id}`;
   }
+}
+
+function proposalSummary(item: CleanupItem): string | null {
+  const proposal = item.proposedChanges;
+  if (!proposal) return null;
+  if (item.proposalKind === "gift_donor" && proposal.toDonor) {
+    return `Change donor to ${proposal.toDonor.name ?? `${proposal.toDonor.kind} ${proposal.toDonor.id}`}`;
+  }
+  if (
+    item.proposalKind === "default_intermediary" &&
+    proposal.paymentIntermediary
+  ) {
+    return `Set ${proposal.paymentIntermediary.name ?? proposal.paymentIntermediary.id} as default intermediary`;
+  }
+  return proposal.rationale ?? null;
 }
 
 export default function CleanupQueuePage() {
@@ -72,15 +95,22 @@ export default function CleanupQueuePage() {
   const updateMut = useUpdateCleanupItem();
   const resolveMut = useResolveCleanupItem();
   const dismissMut = useDismissCleanupItem();
+  const applyMut = useApplyCleanupProposal();
+  const bulkApplyMut = useApplyHighConfidenceCleanupProposals();
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: [CLEANUP_KEY_PREFIX] });
+  const pending =
+    updateMut.isPending ||
+    resolveMut.isPending ||
+    dismissMut.isPending ||
+    applyMut.isPending ||
+    bulkApplyMut.isPending;
 
   const startEditing = (item: CleanupItem) => {
     setEditingId(item.id);
     setDraftNote(item.note);
   };
-
   const cancelEditing = () => {
     setEditingId(null);
     setDraftNote("");
@@ -89,11 +119,7 @@ export default function CleanupQueuePage() {
   const handleSaveNote = (item: CleanupItem) => {
     const note = draftNote.trim();
     if (!note) {
-      toast({
-        title: "A note is required",
-        description: "Cleanup records cannot have an empty note.",
-        variant: "destructive",
-      });
+      toast({ title: "A note is required", variant: "destructive" });
       return;
     }
     updateMut.mutate(
@@ -115,20 +141,17 @@ export default function CleanupQueuePage() {
     );
   };
 
-  const handleResolve = (item: CleanupItem) => {
-    resolveMut.mutate(
+  const handleApply = (item: CleanupItem) => {
+    applyMut.mutate(
       { id: item.id },
       {
         onSuccess: () => {
           void invalidate();
-          toast({
-            title: "Resolved",
-            description: "This item has been cleared from the queue.",
-          });
+          toast({ title: "Proposal applied" });
         },
         onError: (err) =>
           toast({
-            title: "Couldn't resolve",
+            title: "Couldn't apply proposal",
             description:
               err instanceof Error ? err.message : "Something went wrong.",
             variant: "destructive",
@@ -137,20 +160,39 @@ export default function CleanupQueuePage() {
     );
   };
 
-  const handleDismiss = (item: CleanupItem) => {
-    dismissMut.mutate(
+  const handleBulkApply = () => {
+    bulkApplyMut.mutate(undefined, {
+      onSuccess: (result) => {
+        void invalidate();
+        toast({
+          title: `${result.applied} high-confidence proposal${result.applied === 1 ? "" : "s"} applied`,
+          description: result.skipped
+            ? `${result.skipped} skipped because the underlying record changed.`
+            : undefined,
+        });
+      },
+      onError: (err) =>
+        toast({
+          title: "Couldn't apply proposals",
+          description:
+            err instanceof Error ? err.message : "Something went wrong.",
+          variant: "destructive",
+        }),
+    });
+  };
+
+  const transition = (item: CleanupItem, action: "resolve" | "dismiss") => {
+    const mutation = action === "resolve" ? resolveMut : dismissMut;
+    mutation.mutate(
       { id: item.id },
       {
         onSuccess: () => {
           void invalidate();
-          toast({
-            title: "Dismissed",
-            description: "This item won't show in the open queue.",
-          });
+          toast({ title: action === "resolve" ? "Resolved" : "Dismissed" });
         },
         onError: (err) =>
           toast({
-            title: "Couldn't dismiss",
+            title: `Couldn't ${action}`,
             description:
               err instanceof Error ? err.message : "Something went wrong.",
             variant: "destructive",
@@ -160,8 +202,12 @@ export default function CleanupQueuePage() {
   };
 
   const items = data?.data ?? [];
-  const pending =
-    updateMut.isPending || resolveMut.isPending || dismissMut.isPending;
+  const highConfidenceCount = items.filter(
+    (item) =>
+      item.status === "open" &&
+      item.proposalConfidence === "high" &&
+      item.proposalKind,
+  ).length;
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -170,9 +216,9 @@ export default function CleanupQueuePage() {
           Cleanup Queue
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Records flagged for manual data cleanup. Edit the shared note to
-          exchange updates with other reviewers, then resolve the item — or
-          dismiss it if no change is needed.
+          Review data-cleanup items and structured donor-attribution proposals.
+          Applying an attribution proposal changes CRM donor fields or an
+          intermediary default; it never edits accounting evidence.
         </p>
       </div>
 
@@ -190,6 +236,17 @@ export default function CleanupQueuePage() {
             <SelectItem value="dismissed">Dismissed</SelectItem>
           </SelectContent>
         </Select>
+        {status === "open" && highConfidenceCount > 0 ? (
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={handleBulkApply}
+            data-testid="button-apply-high-confidence"
+          >
+            Apply {highConfidenceCount} high-confidence proposal
+            {highConfidenceCount === 1 ? "" : "s"}
+          </Button>
+        ) : null}
         {!isLoading && !isError ? (
           <span className="ml-auto text-sm text-muted-foreground">
             {items.length.toLocaleString()}{" "}
@@ -209,13 +266,14 @@ export default function CleanupQueuePage() {
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">
           {status === "open"
-            ? "Nothing to clean up. 🎉"
+            ? "Nothing to clean up."
             : `No ${STATUS_LABEL[status].toLowerCase()} items.`}
         </p>
       ) : (
         <div className="space-y-3">
           {items.map((item) => {
             const editing = editingId === item.id;
+            const summary = proposalSummary(item);
             return (
               <div
                 key={item.id}
@@ -226,6 +284,17 @@ export default function CleanupQueuePage() {
                   <Badge variant="secondary">
                     {REASON_LABEL[item.reasonCode] ?? item.reasonCode}
                   </Badge>
+                  {item.proposalConfidence ? (
+                    <Badge
+                      variant={
+                        item.proposalConfidence === "high"
+                          ? "default"
+                          : "outline"
+                      }
+                    >
+                      {item.proposalConfidence} confidence
+                    </Badge>
+                  ) : null}
                   {item.status !== "open" ? (
                     <Badge variant="outline">{STATUS_LABEL[item.status]}</Badge>
                   ) : null}
@@ -237,11 +306,22 @@ export default function CleanupQueuePage() {
 
                 <Link
                   href={targetHref(item.targetType, item.targetId)}
-                  className="font-medium text-primary underline-offset-2 hover:underline break-words"
-                  data-testid={`link-cleanup-target-${item.id}`}
+                  className="font-medium text-primary hover:underline break-words"
                 >
                   {item.targetName ?? `${item.targetType} ${item.targetId}`}
                 </Link>
+
+                {summary ? (
+                  <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                    <div className="font-medium">Proposed change</div>
+                    <div>{summary}</div>
+                    {item.proposedChanges?.rationale ? (
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {item.proposedChanges.rationale}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 {editing ? (
                   <div className="space-y-2">
@@ -250,22 +330,15 @@ export default function CleanupQueuePage() {
                       onChange={(event) => setDraftNote(event.target.value)}
                       rows={5}
                       disabled={updateMut.isPending}
-                      data-testid={`textarea-cleanup-note-${item.id}`}
                     />
                     <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={updateMut.isPending}
-                        onClick={cancelEditing}
-                      >
+                      <Button variant="ghost" size="sm" onClick={cancelEditing}>
                         Cancel
                       </Button>
                       <Button
                         size="sm"
-                        disabled={updateMut.isPending || !draftNote.trim()}
+                        disabled={!draftNote.trim()}
                         onClick={() => handleSaveNote(item)}
-                        data-testid={`button-save-note-${item.id}`}
                       >
                         Save note
                       </Button>
@@ -284,7 +357,6 @@ export default function CleanupQueuePage() {
                       size="sm"
                       disabled={pending}
                       onClick={() => startEditing(item)}
-                      data-testid={`button-edit-note-${item.id}`}
                     >
                       Edit note
                     </Button>
@@ -294,19 +366,28 @@ export default function CleanupQueuePage() {
                           variant="outline"
                           size="sm"
                           disabled={pending}
-                          onClick={() => handleDismiss(item)}
-                          data-testid={`button-dismiss-${item.id}`}
+                          onClick={() => transition(item, "dismiss")}
                         >
                           Dismiss
                         </Button>
-                        <Button
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => handleResolve(item)}
-                          data-testid={`button-resolve-${item.id}`}
-                        >
-                          Resolve
-                        </Button>
+                        {item.proposalKind && item.proposedChanges ? (
+                          <Button
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => handleApply(item)}
+                            data-testid={`button-apply-proposal-${item.id}`}
+                          >
+                            Apply proposal
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={pending}
+                            onClick={() => transition(item, "resolve")}
+                          >
+                            Resolve
+                          </Button>
+                        )}
                       </div>
                     ) : (
                       <p className="text-xs text-muted-foreground">

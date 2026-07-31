@@ -4,8 +4,34 @@ import {
   timestamp,
   index,
   uniqueIndex,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { cleanupQueueStatusEnum } from "./_enums";
+
+export type CleanupProposalKind = "gift_donor" | "default_intermediary";
+export type CleanupProposalConfidence = "high" | "medium" | "low";
+export type CleanupProposalDonorKind =
+  | "individual"
+  | "household"
+  | "organization";
+
+export interface CleanupProposalDonorRef {
+  kind: CleanupProposalDonorKind;
+  id: string;
+  name?: string | null;
+}
+
+export interface CleanupProposal {
+  fromDonor?: CleanupProposalDonorRef | null;
+  toDonor?: CleanupProposalDonorRef | null;
+  donor?: CleanupProposalDonorRef | null;
+  paymentIntermediary?: {
+    id: string;
+    name?: string | null;
+    type?: string | null;
+  } | null;
+  rationale?: string | null;
+}
 
 /**
  * Records flagged as needing manual data cleanup that can't be auto-fixed.
@@ -39,6 +65,12 @@ export const cleanupQueue = pgTable(
     // Human-readable shared working text. Team members may edit this note to
     // exchange updates about the cleanup item.
     note: text("note").notNull(),
+    // Optional structured proposal. Ordinary cleanup items leave these null.
+    proposalKind: text("proposal_kind").$type<CleanupProposalKind>(),
+    proposalConfidence: text(
+      "proposal_confidence",
+    ).$type<CleanupProposalConfidence>(),
+    proposedChanges: jsonb("proposed_changes").$type<CleanupProposal | null>(),
     // User who first created the flag. Historical migration-seeded rows remain
     // null and are presented as System.
     flaggedByUserId: text("flagged_by_user_id"),
@@ -58,6 +90,11 @@ export const cleanupQueue = pgTable(
       t.reasonCode,
     ),
     index("cleanup_queue_status_idx").on(t.status),
+    index("cleanup_queue_proposal_status_idx").on(
+      t.status,
+      t.proposalConfidence,
+      t.proposalKind,
+    ),
   ],
 );
 

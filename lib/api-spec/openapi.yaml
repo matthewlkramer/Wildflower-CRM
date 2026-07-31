@@ -184,6 +184,8 @@ paths:
         open items only; pass status to view resolved/dismissed items.
       parameters:
         - { name: status, in: query, schema: { $ref: "#/components/schemas/CleanupQueueStatus" }, description: "Filter by status. Omit to get open items only." }
+        - { name: proposalKind, in: query, schema: { $ref: "#/components/schemas/CleanupProposalKind" } }
+        - { name: reasonCode, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -204,6 +206,25 @@ paths:
         "200": { description: "Already flagged — returns the existing item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
         "201": { description: "Created a new cleanup item.", content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /cleanup-queue/apply-high-confidence:
+    post:
+      operationId: applyHighConfidenceCleanupProposals
+      tags: [cleanup-queue]
+      summary: Admin-only. Apply every still-open high-confidence structured cleanup proposal.
+      responses:
+        "200": { description: Applied, content: { application/json: { schema: { $ref: "#/components/schemas/ApplyHighConfidenceCleanupProposalsResult" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /cleanup-queue/{id}/apply-proposal:
+    post:
+      operationId: applyCleanupProposal
+      tags: [cleanup-queue]
+      summary: Admin-only. Apply this structured donor-attribution proposal and resolve the cleanup item.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      responses:
+        "200": { description: Applied, content: { application/json: { schema: { $ref: "#/components/schemas/CleanupItem" } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Proposal is stale, unavailable, or no longer open." }
   /cleanup-queue/{id}:
     patch:
       operationId: updateCleanupItem
@@ -10324,9 +10345,34 @@ components:
     CleanupQueueStatus:
       type: string
       enum: [open, resolved, dismissed]
+    CleanupProposalKind:
+      type: string
+      enum: [gift_donor, default_intermediary]
+    CleanupProposalConfidence:
+      type: string
+      enum: [high, medium, low]
+    CleanupProposalDonorRef:
+      type: object
+      required: [kind, id]
+      properties:
+        kind: { $ref: "#/components/schemas/DonorRecordKind" }
+        id: { type: string }
+        name: { type: string, nullable: true }
+    CleanupProposal:
+      type: object
+      properties:
+        fromDonor:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposalDonorRef" }, { type: "null" } ]
+        toDonor:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposalDonorRef" }, { type: "null" } ]
+        donor:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposalDonorRef" }, { type: "null" } ]
+        paymentIntermediary:
+          anyOf: [ { $ref: "#/components/schemas/DonorRoutingIntermediaryReference" }, { type: "null" } ]
+        rationale: { type: string, nullable: true }
     CleanupItem:
       type: object
-      required: [id, targetType, targetId, reasonCode, note, flaggedByUserId, flaggedByUserName, status, flaggedAt, createdAt, updatedAt]
+      required: [id, targetType, targetId, reasonCode, note, proposalKind, proposalConfidence, proposedChanges, flaggedByUserId, flaggedByUserName, status, flaggedAt, createdAt, updatedAt]
       properties:
         id:               { type: string }
         targetType:       { type: string, description: "Kind of record this item targets (e.g. 'pledge', 'opportunity', 'organization', 'person', 'gift')." }
@@ -10334,6 +10380,12 @@ components:
         targetName:       { type: string, nullable: true, description: "Resolved display name of the target record (when known)." }
         reasonCode:       { type: string, description: "Machine-readable category of the flag." }
         note:             { type: string, description: "Shared working text describing the issue and team updates." }
+        proposalKind:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposalKind" }, { type: "null" } ]
+        proposalConfidence:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposalConfidence" }, { type: "null" } ]
+        proposedChanges:
+          anyOf: [ { $ref: "#/components/schemas/CleanupProposal" }, { type: "null" } ]
         flaggedByUserId:  { type: string, nullable: true, description: "User who originally flagged the item; null for system-seeded historical rows." }
         flaggedByUserName: { type: string, nullable: true, description: "Display name of the user who originally flagged the item; null for system-seeded historical rows." }
         status:           { $ref: "#/components/schemas/CleanupQueueStatus" }
@@ -10349,6 +10401,13 @@ components:
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/CleanupItem" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    ApplyHighConfidenceCleanupProposalsResult:
+      type: object
+      required: [applied, skipped, items]
+      properties:
+        applied: { type: integer }
+        skipped: { type: integer }
+        items: { type: array, items: { $ref: "#/components/schemas/CleanupItem" } }
     FlagForResearchBody:
       type: object
       required: [targetType, targetId, note]

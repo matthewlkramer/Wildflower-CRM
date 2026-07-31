@@ -1,6 +1,6 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { people, peopleEntityRoles } from "@workspace/db/schema";
+import { peopleEntityRoles } from "@workspace/db/schema";
 import { and, count, desc, eq, ne, type SQL } from "drizzle-orm";
 import {
   ListPeopleEntityRolesQueryParams,
@@ -8,8 +8,18 @@ import {
   UpdatePeopleEntityRoleBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { peopleEntityRolesQuery, maskPeopleEntityRoles } from "../lib/peopleRolesSelect";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+} from "../lib/helpers";
+import {
+  peopleEntityRolesQuery,
+  maskPeopleEntityRoles,
+} from "../lib/peopleRolesSelect";
 import { getViewer } from "../lib/identityVisibility";
 
 const router: IRouter = Router();
@@ -17,49 +27,12 @@ router.use(requireAuth);
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-// Keep at most one primary contact per entity: when a role is marked primary,
-// demote any *other* primary role pointing at the same entity (organization,
-// household, or payment intermediary) inside the same transaction.
-async function syncPrimaryHousehold(
-  tx: Tx,
-  before: typeof peopleEntityRoles.$inferSelect | null,
-  after: typeof peopleEntityRoles.$inferSelect | null,
-) {
-  const active =
-    after?.entityType === "household" &&
-    after.householdId &&
-    after.current === "current"
-      ? after
-      : null;
-  if (active) {
-    await tx
-      .update(peopleEntityRoles)
-      .set({ current: "past", updatedAt: new Date() })
-      .where(
-        and(
-          eq(peopleEntityRoles.personId, active.personId),
-          eq(peopleEntityRoles.entityType, "household"),
-          eq(peopleEntityRoles.current, "current"),
-          ne(peopleEntityRoles.id, active.id),
-        ),
-      );
-    await tx
-      .update(people)
-      .set({ primaryHouseholdId: active.householdId, updatedAt: new Date() })
-      .where(eq(people.id, active.personId));
-    return;
-  }
-  if (before?.householdId && before.current === "current") {
-    await tx
-      .update(people)
-      .set({ primaryHouseholdId: null, updatedAt: new Date() })
-      .where(
-        and(
-          eq(people.id, before.personId),
-          eq(people.primaryHouseholdId, before.householdId),
-        ),
-      );
-  }
+function rejectHouseholdRole(res: Response) {
+  res.status(409).json({
+    error: "household_membership_retired",
+    message:
+      "Household membership is managed by the person's Primary household setting, not an affiliation role.",
+  });
 }
 
 async function demoteOtherPrimaries(
@@ -68,11 +41,9 @@ async function demoteOtherPrimaries(
 ) {
   const scope = row.organizationId
     ? eq(peopleEntityRoles.organizationId, row.organizationId)
-    : row.householdId
-      ? eq(peopleEntityRoles.householdId, row.householdId)
-      : row.paymentIntermediaryId
-        ? eq(peopleEntityRoles.paymentIntermediaryId, row.paymentIntermediaryId)
-        : null;
+    : row.paymentIntermediaryId
+      ? eq(peopleEntityRoles.paymentIntermediaryId, row.paymentIntermediaryId)
+      : null;
   if (!scope) return;
   await tx
     .update(peopleEntityRoles)
@@ -89,21 +60,38 @@ async function demoteOtherPrimaries(
 router.get(
   "/people-entity-roles",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListPeopleEntityRolesQueryParams, req.query, res);
+    const q = parseOrBadRequest(
+      ListPeopleEntityRolesQueryParams,
+      req.query,
+      res,
+    );
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.personId) filters.push(eq(peopleEntityRoles.personId, q.personId));
-    
-    if (q.organizationId) filters.push(eq(peopleEntityRoles.organizationId, q.organizationId));
-    if (q.paymentIntermediaryId) filters.push(eq(peopleEntityRoles.paymentIntermediaryId, q.paymentIntermediaryId));
-    if (q.householdId) filters.push(eq(peopleEntityRoles.householdId, q.householdId));
+    if (q.organizationId)
+      filters.push(eq(peopleEntityRoles.organizationId, q.organizationId));
+    if (q.paymentIntermediaryId)
+      filters.push(
+        eq(peopleEntityRoles.paymentIntermediaryId, q.paymentIntermediaryId),
+      );
+    // Retained in the API contract for backward compatibility. Phase 3 deletes
+    // all household-role rows, so this filter returns an empty list.
+    if (q.householdId)
+      filters.push(eq(peopleEntityRoles.householdId, q.householdId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      peopleEntityRolesQuery().where(where).orderBy(desc(peopleEntityRoles.createdAt)).limit(limit).offset(offset),
+      peopleEntityRolesQuery()
+        .where(where)
+        .orderBy(desc(peopleEntityRoles.createdAt))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(peopleEntityRoles).where(where),
     ]);
-    res.json({ data: maskPeopleEntityRoles(rows, getViewer(req)), pagination: { page, limit, total: Number(total) } });
+    res.json({
+      data: maskPeopleEntityRoles(rows, getViewer(req)),
+      pagination: { page, limit, total: Number(total) },
+    });
   }),
 );
 
@@ -112,13 +100,16 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(CreatePeopleEntityRoleBody, req.body, res);
     if (!body) return;
+    if (body.entityType === "household" || body.householdId) {
+      rejectHouseholdRole(res);
+      return;
+    }
     const row = await db.transaction(async (tx) => {
       const [created] = await tx
         .insert(peopleEntityRoles)
         .values({ id: newId(), ...body })
         .returning();
       if (created?.primaryContact) await demoteOtherPrimaries(tx, created);
-      if (created) await syncPrimaryHousehold(tx, null, created);
       return created;
     });
     res.status(201).json(row);
@@ -130,24 +121,24 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdatePeopleEntityRoleBody, req.body, res);
     if (!body) return;
+    const existing = await db
+      .select()
+      .from(peopleEntityRoles)
+      .where(eq(peopleEntityRoles.id, paramId(req)))
+      .limit(1)
+      .then((rows) => rows[0]);
+    if (!existing) return notFound(res, "role");
+    if (existing.entityType === "household" || body.householdId) {
+      rejectHouseholdRole(res);
+      return;
+    }
     const row = await db.transaction(async (tx) => {
-      const [before] = await tx
-        .select()
-        .from(peopleEntityRoles)
-        .where(eq(peopleEntityRoles.id, paramId(req)))
-        .limit(1);
       const [updated] = await tx
         .update(peopleEntityRoles)
         .set({ ...body, updatedAt: new Date() })
         .where(eq(peopleEntityRoles.id, paramId(req)))
         .returning();
-      // Demote whenever the row ends up primary (not just when the body sets
-      // it) so moving an already-primary role to another entity can't leave
-      // two primaries behind on the destination entity.
-      if (updated?.primaryContact) {
-        await demoteOtherPrimaries(tx, updated);
-      }
-      await syncPrimaryHousehold(tx, before ?? null, updated ?? null);
+      if (updated?.primaryContact) await demoteOtherPrimaries(tx, updated);
       return updated;
     });
     if (!row) return notFound(res, "role");
@@ -158,15 +149,9 @@ router.patch(
 router.delete(
   "/people-entity-roles/:id",
   asyncHandler(async (req, res) => {
-    await db.transaction(async (tx) => {
-      const [before] = await tx
-        .select()
-        .from(peopleEntityRoles)
-        .where(eq(peopleEntityRoles.id, paramId(req)))
-        .limit(1);
-      await tx.delete(peopleEntityRoles).where(eq(peopleEntityRoles.id, paramId(req)));
-      await syncPrimaryHousehold(tx, before ?? null, null);
-    });
+    await db
+      .delete(peopleEntityRoles)
+      .where(eq(peopleEntityRoles.id, paramId(req)));
     res.status(204).end();
   }),
 );
