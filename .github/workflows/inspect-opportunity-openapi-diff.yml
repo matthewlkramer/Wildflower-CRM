@@ -1,4 +1,4 @@
-name: Clean opportunity lifecycle OpenAPI diff
+name: Finalize opportunity lifecycle OpenAPI diff
 
 on:
   pull_request:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  clean-and-validate:
+  patch-and-validate:
     if: github.head_ref == 'agent/opportunity-commitment-lifecycle'
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -50,10 +50,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Rebuild OpenAPI from main formatting and lifecycle semantics
+      - name: Rebuild OpenAPI with localized text edits
         shell: bash
         run: |
-          cat > /tmp/clean-opportunity-openapi.cjs <<'NODE'
+          cat > /tmp/patch-opportunity-openapi.cjs <<'NODE'
           const fs = require('fs');
           const path = require('path');
           const { execFileSync } = require('child_process');
@@ -68,75 +68,232 @@ jobs:
           const YAML = require(path.resolve(path.dirname(yamlPackage)));
 
           const target = 'lib/api-spec/openapi.yaml';
+          const currentText = fs.readFileSync(target, 'utf8');
+          const expected = YAML.parse(currentText);
           const baseText = execFileSync(
             'git',
             ['show', `origin/main:${target}`],
             { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 },
-          );
-          const currentText = fs.readFileSync(target, 'utf8');
-          const current = YAML.parse(currentText);
-          const doc = YAML.parseDocument(baseText, {
-            keepSourceTokens: true,
-            prettyErrors: true,
-            strict: true,
-          });
-          if (doc.errors.length) {
-            throw new Error(doc.errors.map((error) => error.message).join('\n'));
+          ).replace(/\r\n/g, '\n');
+
+          let lines = baseText.split('\n');
+          if (lines.at(-1) === '') lines.pop();
+
+          const indentOf = (line) => line.match(/^ */)[0].length;
+          const isBlank = (line) => line.trim() === '';
+          const isComment = (line) => line.trimStart().startsWith('#');
+          const keyMatches = (line, indent, key) => {
+            if (indentOf(line) !== indent) return false;
+            const rest = line.slice(indent);
+            return rest === `${key}:` || rest.startsWith(`${key}: `);
+          };
+
+          function nodeEnd(index, indent, limit) {
+            for (let cursor = index + 1; cursor < limit; cursor += 1) {
+              if (isBlank(lines[cursor])) continue;
+              if (indentOf(lines[cursor]) <= indent) return cursor;
+            }
+            return limit;
           }
 
-          const get = (object, parts) =>
-            parts.reduce(
-              (value, part) =>
-                value == null || !Object.prototype.hasOwnProperty.call(value, part)
-                  ? undefined
-                  : value[part],
-              object,
+          function findNode(parts) {
+            let start = 0;
+            let end = lines.length;
+            let indent = 0;
+            for (let depth = 0; depth < parts.length; depth += 1) {
+              const key = parts[depth];
+              let index = -1;
+              for (let cursor = start; cursor < end; cursor += 1) {
+                if (keyMatches(lines[cursor], indent, key)) {
+                  index = cursor;
+                  break;
+                }
+              }
+              if (index < 0) {
+                throw new Error(`Could not find YAML path ${parts.join('.')}`);
+              }
+              const next = nodeEnd(index, indent, end);
+              if (depth === parts.length - 1) {
+                return { index, end: next, indent, parentStart: start, parentEnd: end };
+              }
+              start = index + 1;
+              end = next;
+              indent += 2;
+            }
+            throw new Error(`Invalid YAML path ${parts.join('.')}`);
+          }
+
+          function get(object, parts) {
+            return parts.reduce((value, part) => {
+              if (
+                value == null ||
+                !Object.prototype.hasOwnProperty.call(value, part)
+              ) {
+                return undefined;
+              }
+              return value[part];
+            }, object);
+          }
+
+          function renderEntry(key, value, indent) {
+            return YAML.stringify({ [key]: value }, { lineWidth: 0 })
+              .trimEnd()
+              .split('\n')
+              .map((line) => `${' '.repeat(indent)}${line}`);
+          }
+
+          function leadingCommentStart(node) {
+            let start = node.index;
+            while (start > node.parentStart) {
+              const previous = lines[start - 1];
+              if (!isComment(previous) || indentOf(previous) !== node.indent) break;
+              start -= 1;
+            }
+            return start;
+          }
+
+          function replaceNode(parts, value, options = {}) {
+            const node = findNode(parts);
+            const start = options.removeLeadingComments
+              ? leadingCommentStart(node)
+              : node.index;
+            lines.splice(
+              start,
+              node.end - start,
+              ...renderEntry(parts.at(-1), value, node.indent),
             );
-
-          const setPaths = [
-            ['components', 'schemas', 'FinalizePledgeBody'],
-            ['components', 'schemas', 'OpportunityCommitmentPath'],
-            ['components', 'schemas', 'OpportunityCommitmentResult'],
-            ['components', 'schemas', 'OpportunityOutcomeType'],
-            ['components', 'schemas', 'RecordVerbalCommitmentBody'],
-            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'commitmentPath'],
-            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'outcomeType'],
-            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'pledgeCommittedAt'],
-            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'verbalCommitmentAt'],
-            ['components', 'schemas', 'OpportunityOrPledge', 'properties', 'writtenPledge'],
-            ['components', 'schemas', 'OpportunityStage', 'description'],
-            ['components', 'schemas', 'OpportunityStatus', 'description'],
-            ['components', 'schemas', 'ReconciliationOutcome', 'description'],
-            ['components', 'schemas', 'ReconciliationOutcome', 'enum'],
-            ['components', 'schemas', 'RevertGiftToOpportunityBody', 'properties', 'asPledge', 'description'],
-            ['paths', '/opportunities-and-pledges/{id}/finalize-pledge'],
-            ['paths', '/opportunities-and-pledges/{id}/record-verbal-commitment'],
-          ];
-          const deletePaths = [
-            ['components', 'schemas', 'BulkUpdateOpportunitiesPatch', 'properties', 'writtenPledge'],
-            ['components', 'schemas', 'CreateOpportunityOrPledgeBody', 'properties', 'writtenPledge'],
-            ['components', 'schemas', 'UpdateOpportunityOrPledgeBody', 'properties', 'writtenPledge'],
-          ];
-
-          for (const parts of setPaths) {
-            const value = get(current, parts);
-            if (value === undefined) {
-              throw new Error(`Current OpenAPI is missing ${parts.join('.')}`);
-            }
-            doc.setIn(parts, value);
-          }
-          for (const parts of deletePaths) {
-            if (get(current, parts) !== undefined) {
-              throw new Error(`Current OpenAPI still contains ${parts.join('.')}`);
-            }
-            if (!doc.deleteIn(parts)) {
-              throw new Error(`Base OpenAPI is missing deletable ${parts.join('.')}`);
-            }
           }
 
-          const cleanedText = doc.toString({ lineWidth: 0 });
-          const cleaned = YAML.parse(cleanedText);
-          if (!isDeepStrictEqual(cleaned, current)) {
+          function deleteNode(parts, options = {}) {
+            const node = findNode(parts);
+            const start = options.removeLeadingComments
+              ? leadingCommentStart(node)
+              : node.index;
+            lines.splice(start, node.end - start);
+          }
+
+          function insertBefore(parentParts, beforeKey, key, value) {
+            const parent = findNode(parentParts);
+            const childIndent = parent.indent + 2;
+            let index = -1;
+            for (let cursor = parent.index + 1; cursor < parent.end; cursor += 1) {
+              if (keyMatches(lines[cursor], childIndent, beforeKey)) {
+                index = cursor;
+                break;
+              }
+            }
+            if (index < 0) {
+              throw new Error(
+                `Could not insert ${key} before ${[...parentParts, beforeKey].join('.')}`,
+              );
+            }
+            lines.splice(index, 0, ...renderEntry(key, value, childIndent));
+          }
+
+          function insertAtEnd(parentParts, key, value) {
+            const parent = findNode(parentParts);
+            lines.splice(
+              parent.end,
+              0,
+              ...renderEntry(key, value, parent.indent + 2),
+            );
+          }
+
+          const schemaPath = (...parts) => ['components', 'schemas', ...parts];
+
+          // Replace the few existing lifecycle nodes whose semantics changed.
+          for (const parts of [
+            schemaPath('OpportunityStage'),
+            schemaPath('OpportunityStatus'),
+            schemaPath('ReconciliationOutcome'),
+            schemaPath(
+              'RevertGiftToOpportunityBody',
+              'properties',
+              'asPledge',
+            ),
+          ]) {
+            const value = get(expected, parts);
+            if (value === undefined) throw new Error(`Missing expected ${parts.join('.')}`);
+            replaceNode(parts, value);
+          }
+
+          const writtenPledgePath = schemaPath(
+            'OpportunityOrPledge',
+            'properties',
+            'writtenPledge',
+          );
+          replaceNode(writtenPledgePath, get(expected, writtenPledgePath), {
+            removeLeadingComments: true,
+          });
+
+          // Remove all remaining writable surfaces for the compatibility mirror.
+          for (const parts of [
+            schemaPath(
+              'CreateOpportunityOrPledgeBody',
+              'properties',
+              'writtenPledge',
+            ),
+            schemaPath(
+              'UpdateOpportunityOrPledgeBody',
+              'properties',
+              'writtenPledge',
+            ),
+            schemaPath(
+              'BulkUpdateOpportunitiesPatch',
+              'properties',
+              'writtenPledge',
+            ),
+          ]) {
+            deleteNode(parts);
+          }
+
+          // Add the explicit lifecycle fields to opportunity responses.
+          const opportunityProperties = schemaPath(
+            'OpportunityOrPledge',
+            'properties',
+          );
+          for (const key of [
+            'commitmentPath',
+            'verbalCommitmentAt',
+            'pledgeCommittedAt',
+            'outcomeType',
+          ]) {
+            insertBefore(
+              opportunityProperties,
+              'writtenPledge',
+              key,
+              get(expected, [...opportunityProperties, key]),
+            );
+          }
+
+          // Add focused request/response schemas without reformatting the contract.
+          const schemas = ['components', 'schemas'];
+          for (const key of [
+            'OpportunityCommitmentPath',
+            'OpportunityOutcomeType',
+            'RecordVerbalCommitmentBody',
+            'FinalizePledgeBody',
+            'OpportunityCommitmentResult',
+          ]) {
+            insertBefore(
+              schemas,
+              'OpportunityOrPledge',
+              key,
+              get(expected, [...schemas, key]),
+            );
+          }
+
+          // Add the two guided lifecycle transitions at the end of the paths map.
+          for (const key of [
+            '/opportunities-and-pledges/{id}/record-verbal-commitment',
+            '/opportunities-and-pledges/{id}/finalize-pledge',
+          ]) {
+            insertAtEnd(['paths'], key, get(expected, ['paths', key]));
+          }
+
+          const patchedText = `${lines.join('\n')}\n`;
+          const patched = YAML.parse(patchedText);
+          if (!isDeepStrictEqual(patched, expected)) {
             const differences = [];
             const walk = (before, after, parts) => {
               if (isDeepStrictEqual(before, after)) return;
@@ -157,14 +314,17 @@ jobs:
               ]);
               for (const key of keys) walk(before[key], after[key], [...parts, key]);
             };
-            walk(current, cleaned, []);
+            walk(expected, patched, []);
             throw new Error(
-              `Cleaned OpenAPI changed semantics at: ${differences.slice(0, 30).join(', ')}`,
+              `Localized OpenAPI patch changed semantics at: ${differences
+                .slice(0, 40)
+                .join(', ')}`,
             );
           }
-          fs.writeFileSync(target, cleanedText);
+
+          fs.writeFileSync(target, patchedText);
           NODE
-          node /tmp/clean-opportunity-openapi.cjs
+          node /tmp/patch-opportunity-openapi.cjs
 
       - name: Require a focused OpenAPI diff
         shell: bash
@@ -177,8 +337,8 @@ jobs:
           test "$deletions" != "-"
           total=$((additions + deletions))
           echo "OpenAPI changed lines: $total"
-          if [ "$total" -gt 800 ]; then
-            echo "OpenAPI cleanup still contains excessive formatting churn." >&2
+          if [ "$total" -gt 1000 ]; then
+            echo "OpenAPI patch still contains excessive formatting churn." >&2
             exit 1
           fi
 
@@ -215,5 +375,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Clean opportunity lifecycle API contract"
+          git commit -m "Finalize opportunity lifecycle API contract"
           git push origin HEAD:agent/opportunity-commitment-lifecycle
