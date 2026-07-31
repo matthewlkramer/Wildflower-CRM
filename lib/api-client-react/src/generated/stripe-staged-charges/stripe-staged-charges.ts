@@ -24,10 +24,10 @@ import type {
   ExcludeStagedPaymentBody,
   ListStripePayoutReconciliationsParams,
   ListStripeStagedChargesParams,
-  MintGiftOverridesBody,
   NotFoundResponse,
   ResolveStagedPaymentBody,
   StagedGiftResponse,
+  StripeChargeCreateGiftBody,
   StripeChargeLinkGiftBody,
   StripePayoutReconciliationList,
   StripeStagedCharge,
@@ -333,7 +333,7 @@ export const useLinkStripeChargeToGift = <TError = ErrorType<BadRequestResponse 
       return useMutation(getLinkStripeChargeToGiftMutationOptions(options));
     }
     /**
- * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR), optionally booked as a payment on a pledge.
  */
 export const getCreateGiftFromStripeStagedChargeUrl = (id: string,) => {
 
@@ -344,7 +344,7 @@ export const getCreateGiftFromStripeStagedChargeUrl = (id: string,) => {
 }
 
 export const createGiftFromStripeStagedCharge = async (id: string,
-    mintGiftOverridesBody?: MintGiftOverridesBody, options?: RequestInit): Promise<StagedGiftResponse> => {
+    stripeChargeCreateGiftBody?: StripeChargeCreateGiftBody, options?: RequestInit): Promise<StagedGiftResponse> => {
   
   return customFetch<StagedGiftResponse>(getCreateGiftFromStripeStagedChargeUrl(id),
   {      
@@ -352,7 +352,7 @@ export const createGiftFromStripeStagedCharge = async (id: string,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
     body: JSON.stringify(
-      mintGiftOverridesBody,)
+      stripeChargeCreateGiftBody,)
   }
 );}
   
@@ -360,8 +360,8 @@ export const createGiftFromStripeStagedCharge = async (id: string,
 
 
 export const getCreateGiftFromStripeStagedChargeMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<StripeChargeCreateGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<StripeChargeCreateGiftBody>}, TContext> => {
 
 const mutationKey = ['createGiftFromStripeStagedCharge'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -373,7 +373,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, {id: string;data: BodyType<MintGiftOverridesBody>}> = (props) => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, {id: string;data: BodyType<StripeChargeCreateGiftBody>}> = (props) => {
           const {id,data} = props ?? {};
 
           return  createGiftFromStripeStagedCharge(id,data,requestOptions)
@@ -387,18 +387,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type CreateGiftFromStripeStagedChargeMutationResult = NonNullable<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>>
-    export type CreateGiftFromStripeStagedChargeMutationBody = BodyType<MintGiftOverridesBody>
+    export type CreateGiftFromStripeStagedChargeMutationBody = BodyType<StripeChargeCreateGiftBody>
     export type CreateGiftFromStripeStagedChargeMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
     /**
- * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR), optionally booked as a payment on a pledge.
  */
 export const useCreateGiftFromStripeStagedCharge = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<MintGiftOverridesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, TError,{id: string;data: BodyType<StripeChargeCreateGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>,
         TError,
-        {id: string;data: BodyType<MintGiftOverridesBody>},
+        {id: string;data: BodyType<StripeChargeCreateGiftBody>},
         TContext
       > => {
       return useMutation(getCreateGiftFromStripeStagedChargeMutationOptions(options));

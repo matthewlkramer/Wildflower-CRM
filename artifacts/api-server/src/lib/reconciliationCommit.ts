@@ -195,6 +195,64 @@ export async function copyPledgeAllocationsToGift(
   await tx.insert(giftAllocations).values(rows);
 }
 
+/**
+ * Lock + validate an opportunity as a LIVE WRITTEN PLEDGE a payment may book
+ * against (the payment-on-pledge mints on the unit and charge create-gift
+ * routes). One authority for the eligibility rule — both routes call this
+ * instead of copying the guard. Locks the opp FOR UPDATE so the donor snapshot
+ * and lifecycle inputs are stable for the rest of the transaction; the caller
+ * re-derives the opp post-commit (applyDerivedOppFieldsMany).
+ *
+ * Lock-order contract: acquire the opp lock BEFORE the Stripe-charge lock
+ * (matching approve.ts: staged → opp → charge) and AFTER a payment-unit lock
+ * (no other path locks unit + opp, so unit → opp cannot deadlock).
+ *
+ * Eligibility mirrors the staged create_gift_from_opportunity outcome:
+ * a written pledge (writtenPledge latched true), not archived, not lost or
+ * dormant. Fully-paid pledges stay eligible — parity with the staged flow;
+ * copyPledgeAllocationsToGift falls back to original weights when the plan is
+ * consumed. Throws a res-free ReconcileAbort (404 / opportunity_archived /
+ * pledge_lost / not_a_pledge) the route maps to its response.
+ */
+export async function lockAndValidatePledgeForPayment(
+  tx: Tx,
+  opportunityId: string,
+): Promise<typeof opportunitiesAndPledges.$inferSelect> {
+  const opp = await tx
+    .select()
+    .from(opportunitiesAndPledges)
+    .where(eq(opportunitiesAndPledges.id, opportunityId))
+    .for("update")
+    .then((r) => r[0]);
+  if (!opp) {
+    throw new ReconcileAbort(404, {
+      error: "not_found",
+      message: "opportunity not found",
+    });
+  }
+  if (opp.archivedAt != null) {
+    throw new ReconcileAbort(409, {
+      error: "opportunity_archived",
+      message: "Restore this pledge before recording a payment against it.",
+    });
+  }
+  if (opp.lossType != null) {
+    throw new ReconcileAbort(409, {
+      error: "pledge_lost",
+      message:
+        "This pledge is marked lost or dormant — reopen it before recording a payment against it.",
+    });
+  }
+  if (opp.writtenPledge !== true) {
+    throw new ReconcileAbort(409, {
+      error: "not_a_pledge",
+      message:
+        "Payments can only be recorded against a written pledge. This opportunity has not been latched as a pledge.",
+    });
+  }
+  return opp;
+}
+
 export interface MintGiftInTxArgs {
   /** Pre-allocated id for the gift being minted. */
   newGiftId: string;

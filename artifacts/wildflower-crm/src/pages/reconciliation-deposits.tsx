@@ -113,6 +113,7 @@ import {
 } from "@/components/reconciliation-deposits/gift-column-dialogs";
 import {
   buildGiftPlacementPlan,
+  extractPlacementTargets,
   GiftPlacementDialog,
   type GiftPlacementPlan,
   type GiftPlacementTarget,
@@ -263,6 +264,11 @@ export default function ReconciliationDepositsPage() {
     deposit: WorkbenchDeposit;
     gift: GiftOrPayment;
     plan: GiftPlacementPlan;
+  } | null>(null);
+  const [pledgePlacementFor, setPledgePlacementFor] = useState<{
+    deposit: WorkbenchDeposit;
+    opp: OpportunityOrPledge;
+    targets: GiftPlacementTarget[];
   } | null>(null);
   const [donorboxFor, setDonorboxFor] = useState<{
     anchor: AnchorRef;
@@ -1049,6 +1055,87 @@ export default function ReconciliationDepositsPage() {
     setGiftPlacementFor({ deposit, gift, plan });
   };
 
+  // One payment ⇒ one new gift/payment minted under the picked pledge. The
+  // server locks the pledge, re-checks it's still a live written pledge, and
+  // copies its allocation shape onto the new gift.
+  const mintPledgePaymentAt = async (
+    anchor: AnchorRef,
+    opp: OpportunityOrPledge,
+  ): Promise<boolean> => {
+    try {
+      if (anchor.kind === "charge") {
+        await createChargeGift.mutateAsync({
+          id: anchor.id,
+          data: { opportunityId: opp.id },
+        });
+      } else if (anchor.kind === "component") {
+        if (!anchor.paymentUnitId) {
+          toast({
+            title: "Not available for this payment",
+            description:
+              "This manual payment has no payment unit to mint a gift from — reload and try again.",
+            variant: "destructive",
+          });
+          return false;
+        }
+        await createUnitGift.mutateAsync({
+          id: anchor.paymentUnitId,
+          data: { opportunityId: opp.id },
+        });
+      } else {
+        const done = await approveStagedAgainst(
+          anchor.id,
+          { opp },
+          "create_gift_from_opportunity",
+        );
+        if (!done) return false;
+      }
+      invalidate();
+      toast({
+        title: "Payment recorded",
+        description: `“${anchor.label}” was booked as a payment on “${opp.name ?? "the selected pledge"}”.`,
+      });
+      return true;
+    } catch (err) {
+      toast({
+        title: "Couldn't record payment",
+        description: is409(err) ? apiErrorMessage(err) : errMessage(err),
+        variant: "destructive",
+      });
+      if (is409(err)) invalidate();
+      return false;
+    }
+  };
+
+  const handleColumnPledgePick = async (opp: OpportunityOrPledge) => {
+    const deposit = columnGiftFor;
+    if (!deposit) return;
+    const targets = extractPlacementTargets(deposit);
+    if (targets.length === 0) {
+      toast({
+        title: "No available payment",
+        description:
+          "Every payment on this row is already linked or unavailable.",
+      });
+      setColumnGiftFor(null);
+      return;
+    }
+    if (targets.length === 1) {
+      const done = await mintPledgePaymentAt(targets[0]!.anchor, opp);
+      if (done) setColumnGiftFor(null);
+      return;
+    }
+    setColumnGiftFor(null);
+    setPledgePlacementFor({ deposit, opp, targets });
+  };
+
+  const handlePlacePledgePayment = async (target: GiftPlacementTarget) => {
+    const placement = pledgePlacementFor;
+    if (!placement) return;
+    const done = await mintPledgePaymentAt(target.anchor, placement.opp);
+    if (done) setPledgePlacementFor(null);
+  };
+
   const handlePlaceGift = async (target: GiftPlacementTarget) => {
     const placement = giftPlacementFor;
     if (!placement) return;
@@ -1142,13 +1229,12 @@ export default function ReconciliationDepositsPage() {
     choice?: OutcomeChoice,
   ) => {
     const target = linkEvidenceFor;
-    if (!target || target.anchor.kind === "charge") return;
+    if (!target) return;
     if (target.anchor.kind !== "staged") {
-      toast({
-        title: "Not available",
-        description:
-          "Only QuickBooks-backed payments can be booked against an opportunity or pledge.",
-      });
+      // Charge/component anchors are pledge-only (the dialog blocks open
+      // opportunities): mint the gift directly under the picked pledge.
+      const done = await mintPledgePaymentAt(target.anchor, opp);
+      if (done) setLinkEvidenceFor(null);
       return;
     }
     // An OPEN opportunity has two booking outcomes — ask the human which one.
@@ -2038,15 +2124,16 @@ export default function ReconciliationDepositsPage() {
             : undefined
         }
       />
-      <GiftSearchDialog
+      <LinkEvidenceSearchDialog
         open={columnGiftFor != null}
         onOpenChange={(open) => {
           if (!open && !busy) setColumnGiftFor(null);
         }}
-        onPick={(gift) => void handleColumnGiftPick(gift)}
+        mode="all"
+        anchorKind="deposit"
         busy={busy}
-        title="Search and link gift"
-        description="Pick the CRM gift first. If this row contains several open payments, the next step will ask which payment it belongs to."
+        onPickGift={(gift) => void handleColumnGiftPick(gift)}
+        onPickOpp={(opp) => void handleColumnPledgePick(opp)}
       />
       <GiftPlacementDialog
         open={giftPlacementFor != null}
@@ -2058,6 +2145,31 @@ export default function ReconciliationDepositsPage() {
         busy={busy}
         onLink={(target) => void handlePlaceGift(target)}
         onSplit={() => void handleSplitGiftAcrossCharges()}
+      />
+      <GiftPlacementDialog
+        open={pledgePlacementFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setPledgePlacementFor(null);
+        }}
+        gift={null}
+        pledgeName={
+          pledgePlacementFor
+            ? (pledgePlacementFor.opp.name ?? pledgePlacementFor.opp.id)
+            : null
+        }
+        plan={
+          pledgePlacementFor
+            ? {
+                targets: pledgePlacementFor.targets,
+                uniqueExactMatchKey: null,
+                directTarget: null,
+                split: null,
+              }
+            : null
+        }
+        busy={busy}
+        onLink={(target) => void handlePlacePledgePayment(target)}
+        onSplit={() => undefined}
       />
       <GiftSearchDialog
         open={singlePaymentFor != null}

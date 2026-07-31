@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-07-23
+last_verified: 2026-07-31
 ---
 
 # Reconciliation Workbench Business Rules
@@ -340,6 +340,7 @@ If a row contains one refunded transaction and one live matched transaction, the
 | Match to existing CRM gift       | Unmatched, partial, or amount-mismatch states                      |
 | Match to QuickBooks evidence     | Unmatched, partial, or amount-mismatch states                      |
 | Create new CRM gift              | Unmatched transaction                                              |
+| Record as payment on pledge      | Unmatched transaction — any live payment evidence (see below)      |
 | Confirm proposed match           | System has proposed a match                                        |
 | Unmatch from CRM gift            | Any transaction with a CRM relationship                            |
 | Unmatch from QuickBooks evidence | Any transaction with an accounting relationship                    |
@@ -350,6 +351,23 @@ If a row contains one refunded transaction and one live matched transaction, the
 On the deposit-first surface, these actions apply to the individual
 component/payment unit. An excluded component stays in the Composition column
 with an **Excluded** badge so the gross→net→bank calculation remains visible.
+
+### Recording pledge payments (QB-first gating retired)
+
+Ratified 2026-07-31: recording a payment on a pledge is available from **any**
+live payment evidence — a QuickBooks staged row, a Stripe charge, or a manual
+bank component's payment unit. The former QB-first gate (pledge booking only
+from QuickBooks evidence) is retired: the QuickBooks entry is the **last** step
+of booking, transcribed by a human after the CRM gift exists, never a
+precondition for recording the payment.
+
+* Picking a pledge mints the CRM gift/payment under it: the donor comes from
+  the pledge, and allocations are copied from the pledge's remaining plan.
+* Only a live written pledge qualifies. An open opportunity must be converted
+  to a pledge first (the staged approve flow offers convert-and-book);
+  lost, dormant, and archived records never take money.
+* The gift-column row search covers gifts **and** open pledges; blocked picker
+  rows stay visible with the blocking reason (label-not-hide).
 
 ---
 

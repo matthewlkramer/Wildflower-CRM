@@ -45,7 +45,6 @@ const ORG_ID = `${RUN}_org`;
 const PERSON_INDIV_ID = `${RUN}_person_indiv`;
 const PERSON_HH_MEMBER_ID = `${RUN}_person_hhmember`;
 const HOUSEHOLD_ID = `${RUN}_household`;
-const ROLE_ID = `${RUN}_role`;
 const MSG_ID = `${RUN}_msg`;
 
 const ORG_EMAIL = `org-${RUN}@example-funder.org`;
@@ -69,7 +68,6 @@ let schema: {
   organizations: Db["organizations"];
   people: Db["people"];
   households: Db["households"];
-  peopleEntityRoles: Db["peopleEntityRoles"];
   emails: Db["emails"];
   emailMessages: Db["emailMessages"];
   emailProposals: Db["emailProposals"];
@@ -167,7 +165,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     people: dbMod.people,
     households: dbMod.households,
-    peopleEntityRoles: dbMod.peopleEntityRoles,
     emails: dbMod.emails,
     emailMessages: dbMod.emailMessages,
     emailProposals: dbMod.emailProposals,
@@ -197,14 +194,13 @@ beforeAll(async () => {
     name: `TY Detector Household ${RUN}`,
   });
   // Current household membership for the member person (exercises the
-  // emails → people_entity_roles household-join resolution path).
-  await db.insert(schema.peopleEntityRoles).values({
-    id: ROLE_ID,
-    personId: PERSON_HH_MEMBER_ID,
-    entityType: "household",
-    householdId: HOUSEHOLD_ID,
-    current: "current",
-  });
+  // emails → people.primary_household_id resolution path — the sole
+  // household-membership authority; household rows in people_entity_roles
+  // are retired).
+  await db
+    .update(schema.people)
+    .set({ primaryHouseholdId: HOUSEHOLD_ID })
+    .where(eqFn(schema.people.id, PERSON_HH_MEMBER_ID));
   // Recipient email rows: each is owned by exactly one entity (Donor XOR
   // at the email level). Org-level email, person email for the individual
   // donor, and person email for the household member.
@@ -262,8 +258,9 @@ afterAll(async () => {
       .delete(schema.emails)
       .where(likeFn(schema.emails.id, `${RUN}_email_%`));
     await db
-      .delete(schema.peopleEntityRoles)
-      .where(eqFn(schema.peopleEntityRoles.id, ROLE_ID));
+      .update(schema.people)
+      .set({ primaryHouseholdId: null })
+      .where(eqFn(schema.people.id, PERSON_HH_MEMBER_ID));
     await db
       .delete(schema.households)
       .where(eqFn(schema.households.id, HOUSEHOLD_ID));

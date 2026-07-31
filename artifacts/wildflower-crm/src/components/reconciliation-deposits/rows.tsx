@@ -184,10 +184,6 @@ function CardActionsMenu({
 
 const NO_GIFT_ANCHOR_REASON =
   "No unlinked payment evidence — resolve the deposit's composition first.";
-const CHARGE_PLEDGE_BLOCKED_REASON =
-  "No QuickBooks record backs this charge yet — Stripe money can only be linked to an existing gift.";
-const MANUAL_COMPONENT_QB_REASON =
-  "No QuickBooks record backs this manual payment yet — link an existing gift, or attach its QB record first (Search QuickBooks… on the payment).";
 const COMPONENT_NO_UNIT_REASON =
   "This payment has no decomposed payment unit to act on — reload and try again, or link an existing gift.";
 
@@ -1359,7 +1355,7 @@ export function DepositRow({
               <CardActionsMenu
                 items={[
                   {
-                    label: "Search and link gift…",
+                    label: "Search and link gift or pledge…",
                     onSelect: () => {
                       if (giftColumnAnchor)
                         actions.openColumnGiftSearch?.(deposit);
@@ -1389,18 +1385,15 @@ export function DepositRow({
                   {
                     label: "Record as payment on pledge…",
                     onSelect: () => {
-                      if (giftColumnAnchor?.kind === "staged")
+                      if (giftColumnAnchor && !giftColumnUnitless)
                         actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
                     },
-                    disabled:
-                      !giftColumnAnchor || giftColumnAnchor.kind !== "staged",
+                    disabled: !giftColumnAnchor || giftColumnUnitless,
                     disabledReason: !giftColumnAnchor
                       ? NO_GIFT_ANCHOR_REASON
-                      : giftColumnAnchor.kind === "charge"
-                        ? CHARGE_PLEDGE_BLOCKED_REASON
-                        : giftColumnAnchor.kind === "component"
-                          ? MANUAL_COMPONENT_QB_REASON
-                          : undefined,
+                      : giftColumnUnitless
+                        ? COMPONENT_NO_UNIT_REASON
+                        : undefined,
                   },
                   ...(giftColumnAnchor
                     ? [

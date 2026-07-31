@@ -281,7 +281,8 @@ export function LinkEvidenceSearchDialog({
   onOpenChange: (open: boolean) => void;
   /** "all" — gifts + opportunities/pledges; "pledges" — pledge-only. */
   mode: "all" | "pledges";
-  anchorKind: "charge" | "staged" | "component" | null;
+  /** "deposit" — row-level column-3 search (anchor picked after the pledge). */
+  anchorKind: "charge" | "staged" | "component" | "deposit" | null;
   busy: boolean;
   onPickGift: (gift: GiftOrPayment) => void;
   onPickOpp: (opp: OpportunityOrPledge) => void;
@@ -333,16 +334,22 @@ export function LinkEvidenceSearchDialog({
     },
   });
 
-  // Stripe money and manual bank payments can only pay an existing gift today
-  // — there's no QB record to book an approve-with-outcome against. Rows stay
-  // visible but disabled (label-not-hide) so the user sees WHY the path is
-  // blocked.
-  const oppBlockedReason =
-    anchorKind === "charge"
-      ? "No QuickBooks record backs this charge yet — Stripe money can only be linked to an existing gift."
-      : anchorKind === "component"
-        ? "No QuickBooks record backs this manual payment yet — it can only be linked to an existing gift. Attach its QB record first to book against an opportunity or pledge."
-        : null;
+  // Per-row eligibility (label-not-hide: blocked rows stay visible WITH the
+  // reason). Charge/component/deposit anchors mint the gift directly under a
+  // pledge — only a live written pledge qualifies. Staged anchors keep the
+  // approve-with-outcome flow, where an OPEN opportunity is also bookable
+  // (one-time gift or convert-to-pledge), but dead records never take money.
+  const pledgeOnly = anchorKind !== "staged";
+  const oppRowBlockedReason = (opp: OpportunityOrPledge): string | null => {
+    if (opp.archivedAt) return "Archived — restore it before recording money.";
+    if (opp.lossType === "lost")
+      return "Marked lost — payments can't be recorded on a lost record.";
+    if (opp.lossType === "dormant")
+      return "Marked dormant — reactivate the pledge to record a payment.";
+    if (pledgeOnly && !opp.writtenPledge)
+      return "Still an open opportunity — convert it to a pledge first, or book its QuickBooks record via the staged flow.";
+    return null;
+  };
 
   const giftRows = gifts.data?.data ?? [];
   const oppRows = opps.data?.data ?? [];
@@ -430,9 +437,10 @@ export function LinkEvidenceSearchDialog({
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               {mode === "pledges" ? "Pledges" : "Opportunities & pledges"}
             </p>
-            {oppBlockedReason ? (
+            {pledgeOnly && mode === "all" ? (
               <p className="text-[11px] text-muted-foreground">
-                {oppBlockedReason}
+                Picking a pledge records this payment under it as a new
+                gift/payment.
               </p>
             ) : null}
             {opps.isFetching && oppRows.length === 0 ? (
@@ -447,7 +455,8 @@ export function LinkEvidenceSearchDialog({
               </p>
             ) : (
               oppRows.map((opp) => {
-                const blocked = oppBlockedReason != null;
+                const blockedReason = oppRowBlockedReason(opp);
+                const blocked = blockedReason != null;
                 return (
                   <button
                     key={opp.id}
@@ -481,6 +490,11 @@ export function LinkEvidenceSearchDialog({
                           .filter(Boolean)
                           .join(" · ") || "Opportunity"}
                       </span>
+                      {blockedReason ? (
+                        <span className="block whitespace-normal text-[11px] text-muted-foreground">
+                          {blockedReason}
+                        </span>
+                      ) : null}
                     </span>
                     <OppStatusBadge status={opp.status} />
                   </button>

@@ -7470,6 +7470,13 @@ export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
   householdId?: string | null;
   /** Conduit the donor gave through, propagated onto the gift. */
   paymentIntermediaryId?: string | null;
+  /** Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge's allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit. */
+  opportunityId?: string | null;
+});
+
+export type StripeChargeCreateGiftBody = MintGiftOverridesBody & ({
+  /** Book this charge's GROSS ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge, and its allocations seed from the pledge's allocation plan scaled to the charge GROSS. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit. */
+  opportunityId?: string | null;
 });
 
 export interface PaymentUnitGiftResponse {

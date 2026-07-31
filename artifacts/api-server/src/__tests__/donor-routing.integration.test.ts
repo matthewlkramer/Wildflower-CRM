@@ -168,24 +168,14 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
       },
     });
 
+    // people.primary_household_id is the sole household-membership authority
+    // (household rows in people_entity_roles are retired) — the route persists
+    // the household default there, not as a role row.
     const [person] = await db
       .select({ primaryHouseholdId: schema.people.primaryHouseholdId })
       .from(schema.people)
       .where(eq(schema.people.id, PERSON_ID));
     expect(person.primaryHouseholdId).toBe(HOUSEHOLD_ID);
-
-    const roles = await db
-      .select()
-      .from(schema.peopleEntityRoles)
-      .where(eq(schema.peopleEntityRoles.personId, PERSON_ID));
-    expect(roles).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          householdId: HOUSEHOLD_ID,
-          current: "current",
-        }),
-      ]),
-    );
 
     const [defaultPi] = await db
       .select()

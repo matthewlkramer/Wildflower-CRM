@@ -66,18 +66,24 @@ function componentAnchor(
   };
 }
 
-export function buildGiftPlacementPlan(
-  deposit: WorkbenchDeposit,
-  gift: GiftOrPayment,
-): GiftPlacementPlan {
-  const liveCharges = deposit.charges.filter(
+function liveChargesOf(deposit: WorkbenchDeposit) {
+  return deposit.charges.filter(
     (charge) =>
       !charge.exclusionReason &&
       !charge.refunded &&
       cents(charge.amountRefunded) === 0,
   );
-  const chargeTargets: GiftPlacementTarget[] = liveCharges
-    .filter((charge) => !charge.linkedGiftId || charge.linkedGiftId === gift.id)
+}
+
+function chargeTargetsOf(
+  liveCharges: ReturnType<typeof liveChargesOf>,
+  giftId: string | null,
+): GiftPlacementTarget[] {
+  return liveCharges
+    .filter(
+      (charge) =>
+        !charge.linkedGiftId || (giftId != null && charge.linkedGiftId === giftId),
+    )
     .map((charge) => ({
       key: `charge:${charge.chargeId}`,
       anchor: {
@@ -90,30 +96,56 @@ export function buildGiftPlacementPlan(
       date: charge.chargeDate ?? null,
       currentGiftId: charge.linkedGiftId ?? null,
     }));
+}
 
-  const componentTargets: GiftPlacementTarget[] =
-    deposit.composition.kind === "components"
-      ? deposit.composition.components.flatMap((component) => {
-          if (
-            component.exclusionReason ||
-            (component.countedGiftIds?.length ?? 0) > 0
-          )
-            return [];
-          const anchor = componentAnchor(deposit, component);
-          return anchor
-            ? [
-                {
-                  key: `${anchor.kind}:${anchor.id}`,
-                  anchor,
-                  label: component.label ?? component.kind,
-                  amount: component.amount,
-                  date: component.receivedDate ?? deposit.date ?? null,
-                  currentGiftId: null,
-                },
-              ]
-            : [];
-        })
-      : [];
+function componentTargetsOf(deposit: WorkbenchDeposit): GiftPlacementTarget[] {
+  return deposit.composition.kind === "components"
+    ? deposit.composition.components.flatMap((component) => {
+        if (
+          component.exclusionReason ||
+          (component.countedGiftIds?.length ?? 0) > 0
+        )
+          return [];
+        const anchor = componentAnchor(deposit, component);
+        return anchor
+          ? [
+              {
+                key: `${anchor.kind}:${anchor.id}`,
+                anchor,
+                label: component.label ?? component.kind,
+                amount: component.amount,
+                date: component.receivedDate ?? deposit.date ?? null,
+                currentGiftId: null,
+              },
+            ]
+          : [];
+      })
+    : [];
+}
+
+/**
+ * The payments on a deposit row that can accept a new/linked gift, gift-free.
+ * Charge targets always win when present (Stripe rows book per-charge; the
+ * manual components under a payout are the same money, not extra targets).
+ * Used by the pledge-payment pick, which has no gift yet: exactly 1 target
+ * mints directly, several ask the human which payment, and there is no
+ * whole-payout split for a pledge pick.
+ */
+export function extractPlacementTargets(
+  deposit: WorkbenchDeposit,
+  giftId?: string | null,
+): GiftPlacementTarget[] {
+  const chargeTargets = chargeTargetsOf(liveChargesOf(deposit), giftId ?? null);
+  return chargeTargets.length ? chargeTargets : componentTargetsOf(deposit);
+}
+
+export function buildGiftPlacementPlan(
+  deposit: WorkbenchDeposit,
+  gift: GiftOrPayment,
+): GiftPlacementPlan {
+  const liveCharges = liveChargesOf(deposit);
+  const chargeTargets = chargeTargetsOf(liveCharges, gift.id);
+  const componentTargets = componentTargetsOf(deposit);
 
   const targets = chargeTargets.length ? chargeTargets : componentTargets;
   const exact = targets.filter(
@@ -177,6 +209,7 @@ export function GiftPlacementDialog({
   open,
   onOpenChange,
   gift,
+  pledgeName,
   plan,
   busy,
   onLink,
@@ -185,6 +218,8 @@ export function GiftPlacementDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   gift: GiftOrPayment | null;
+  /** Pledge-payment pick: which payment gets the minted gift (no split). */
+  pledgeName?: string | null;
   plan: GiftPlacementPlan | null;
   busy: boolean;
   onLink: (target: GiftPlacementTarget) => void;
@@ -203,15 +238,29 @@ export function GiftPlacementDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl" data-testid="dialog-gift-placement">
         <DialogHeader>
-          <DialogTitle>Where should this gift go?</DialogTitle>
+          <DialogTitle>
+            {pledgeName
+              ? "Which payment pays this pledge?"
+              : "Where should this gift go?"}
+          </DialogTitle>
           <DialogDescription>
-            “{gift?.name ?? gift?.id}” is {formatCurrency(gift?.amount ?? "0")}.
-            Choose the payment it belongs to, or use the payout split when this
-            gift represents the whole Stripe batch.
+            {pledgeName ? (
+              <>
+                This row has several open payments. Pick the one to record as a
+                payment on “{pledgeName}”.
+              </>
+            ) : (
+              <>
+                “{gift?.name ?? gift?.id}” is{" "}
+                {formatCurrency(gift?.amount ?? "0")}. Choose the payment it
+                belongs to, or use the payout split when this gift represents
+                the whole Stripe batch.
+              </>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        {plan?.split ? (
+        {!pledgeName && plan?.split ? (
           <div className="rounded-md border border-emerald-300 bg-emerald-50/60 p-3 dark:border-emerald-800 dark:bg-emerald-950/20">
             <p className="text-sm font-semibold">
               This gift matches the whole payout.
@@ -242,7 +291,9 @@ export function GiftPlacementDialog({
         ) : null}
 
         <div className="space-y-2">
-          <p className="text-xs font-medium">Or link it to one payment</p>
+          <p className="text-xs font-medium">
+            {pledgeName ? "Open payments on this row" : "Or link it to one payment"}
+          </p>
           {plan?.targets.map((target) => (
             <button
               type="button"
@@ -296,7 +347,7 @@ export function GiftPlacementDialog({
             onClick={() => selected && onLink(selected)}
             data-testid="button-link-gift-to-selected-payment"
           >
-            Link to selected payment
+            {pledgeName ? "Record payment on pledge" : "Link to selected payment"}
           </Button>
         </DialogFooter>
       </DialogContent>

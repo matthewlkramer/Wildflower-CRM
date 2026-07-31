@@ -1172,8 +1172,8 @@ export const useAddBankDepositComponent = <TError = ErrorType<BadRequestResponse
       return useMutation(getAddBankDepositComponentMutationOptions(options));
     }
     /**
- * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow.
- * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow. With opportunityId, the mint books the unit as a payment on that pledge (donor derived from the pledge, allocations seeded from its plan) — no QuickBooks record is required.
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR), optionally booked as a payment on a pledge.
  */
 export const getCreateGiftFromPaymentUnitUrl = (id: string,) => {
 
@@ -1231,7 +1231,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CreateGiftFromPaymentUnitMutationError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
- * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR), optionally booked as a payment on a pledge.
  */
 export const useCreateGiftFromPaymentUnit = <TError = ErrorType<BadRequestResponse | FinanceForbiddenResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createGiftFromPaymentUnit>>, TError,{id: string;data: BodyType<CreateGiftFromPaymentUnitBody>}, TContext>, request?: SecondParameter<typeof customFetch>}

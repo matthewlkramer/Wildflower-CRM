@@ -131,19 +131,12 @@ async function seedHouseholdMembership(
   personId: string,
   householdId: string,
 ): Promise<void> {
-  const id = nextId("role");
-  await db.insert(schema.peopleEntityRoles).values({
-    id,
-    personId,
-    entityType: "household",
-    householdId,
-    current: "current",
-  });
+  // people.primary_household_id is the sole household-membership authority
+  // (household rows in people_entity_roles are retired).
   await db
     .update(schema.people)
     .set({ primaryHouseholdId: householdId })
     .where(eqFn(schema.people.id, personId));
-  seededRoleIds.push(id);
 }
 
 type GiftOpts = {

@@ -64,6 +64,13 @@ import {
 import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
 import { respondInvariantFailure } from "../quickbooks/shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
+import {
+  ReconcileAbort,
+  copyPledgeAllocationsToGift,
+  lockAndValidatePledgeForPayment,
+} from "../../lib/reconciliationCommit";
+import { donorOf } from "../../lib/quickbooksLink";
+import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 
 const router: IRouter = Router();
 
@@ -2405,13 +2412,20 @@ router.post(
     const body = parseOrBadRequest(CreateGiftFromPaymentUnitBody, req.body, res);
     if (!body) return;
 
-    const donor = {
+    // Payment-on-pledge: the donor DERIVES from the pledge (locked in-tx below)
+    // — body donor fields are ignored, mirroring the staged
+    // create_gift_from_opportunity outcome. Otherwise the body must carry a
+    // valid Donor XOR.
+    const pledgeOpportunityId = body.opportunityId ?? null;
+    const bodyDonor = {
       organizationId: body.organizationId ?? null,
       individualGiverPersonId: body.individualGiverPersonId ?? null,
       householdId: body.householdId ?? null,
     };
-    const issues = validateGiftInvariants(donor);
-    if (issues.length) return respondInvariantFailure(res, issues);
+    if (!pledgeOpportunityId) {
+      const issues = validateGiftInvariants(bodyDonor);
+      if (issues.length) return respondInvariantFailure(res, issues);
+    }
 
     const giftId = newId();
     const result = await db.transaction(async (tx) => {
@@ -2464,6 +2478,14 @@ router.post(
         return { kind: "no_amount" as const };
       }
 
+      // Payment-on-pledge: lock + validate the pledge (unit → opp lock order;
+      // see lockAndValidatePledgeForPayment) and derive the donor from it —
+      // the body's donor fields are ignored on this path.
+      const opp = pledgeOpportunityId
+        ? await lockAndValidatePledgeForPayment(tx, pledgeOpportunityId)
+        : null;
+      const donor = opp ? donorOf(opp) : bodyDonor;
+
       const overrideName = body.name?.trim();
       const giftDateReceived = body.dateReceived ?? unit.received_date;
       const kindLabel =
@@ -2482,34 +2504,56 @@ router.post(
         organizationId: donor.organizationId,
         individualGiverPersonId: donor.individualGiverPersonId,
         householdId: donor.householdId,
+        // Payment-on-pledge: tie the gift to the pledge so it derives cash_in
+        // when fully paid (re-derived post-commit).
+        opportunityId: opp?.id ?? null,
         paymentIntermediaryId:
           body.paymentIntermediaryId ?? unit.source_intermediary_id ?? null,
         details: `Created from a bank-deposit payment (${unit.kind}).`,
         ownerUserId: user.id,
       });
       // Every gift needs at least one allocation (the sole home of money
-      // scope). Seed a default full-amount line carrying the source QBO row's
-      // attributed entity + goal-counting signal where one exists, each
-      // overridable by the human body field (entityId: explicit null clears).
-      await seedInitialGiftAllocation(tx, {
-        giftId,
-        amount: unit.amount,
-        dateReceived: giftDateReceived,
-        entityId:
-          body.entityId !== undefined
-            ? body.entityId
-            : (unit.source_entity_id ?? null),
-        countsTowardGoal:
-          body.countsTowardGoal ??
-          !isGovernmentReimbursement({
-            amount: unit.amount,
-            payerName: unit.source_payer_name,
-            lineItemNames: null,
-            lineAccountNames: null,
-            rawReference: null,
-            lineDescription: null,
-          }),
-      });
+      // scope). Payment-on-pledge: seed from the pledge's allocation plan
+      // scaled to the unit's money (falling through to the default line when
+      // the pledge has none). Otherwise seed a default full-amount line
+      // carrying the source QBO row's attributed entity + goal-counting
+      // signal where one exists, each overridable by the human body field
+      // (entityId: explicit null clears).
+      if (opp) {
+        await copyPledgeAllocationsToGift(tx, opp.id, giftId, unit.amount);
+      }
+      const seededCount = opp
+        ? Number(
+            (
+              (
+                await tx.execute(
+                  sql`SELECT count(*)::int AS n FROM gift_allocations WHERE gift_id = ${giftId}`,
+                )
+              ).rows[0] as { n: number }
+            ).n,
+          )
+        : 0;
+      if (!opp || seededCount === 0) {
+        await seedInitialGiftAllocation(tx, {
+          giftId,
+          amount: unit.amount,
+          dateReceived: giftDateReceived,
+          entityId:
+            body.entityId !== undefined
+              ? body.entityId
+              : (unit.source_entity_id ?? null),
+          countsTowardGoal:
+            body.countsTowardGoal ??
+            !isGovernmentReimbursement({
+              amount: unit.amount,
+              payerName: unit.source_payer_name,
+              lineItemNames: null,
+              lineAccountNames: null,
+              rawReference: null,
+              lineDescription: null,
+            }),
+        });
+      }
       await assertGiftHasAllocations(tx, giftId);
       // The unit's gift tie IS the resolution record (one authority): the
       // minted gift is paid by this unit, human-confirmed, mint-owned.
@@ -2522,9 +2566,18 @@ router.post(
             created_the_gift = true
         WHERE id = ${unit.id}
       `);
-      return { kind: "ok" as const, unit };
+      return { kind: "ok" as const, unit, oppId: opp?.id ?? null };
+    }).catch((e: unknown) => {
+      // Pledge eligibility aborts (404 / archived / lost / not-a-pledge) roll
+      // the whole mint back and map to their response below.
+      if (e instanceof ReconcileAbort) return { kind: "abort" as const, abort: e };
+      throw e;
     });
 
+    if (result.kind === "abort") {
+      res.status(result.abort.httpStatus).json(result.abort.payload);
+      return;
+    }
     if (result.kind === "not_found") {
       notFound(res, "payment unit");
       return;
@@ -2567,6 +2620,13 @@ router.post(
       return;
     }
 
+    // Payment-on-pledge: the pledge's status/paid totals DERIVE from its live
+    // payments — recompute after the mint committed (same post-commit applier
+    // as the staged create_gift_from_opportunity outcome).
+    if (result.oppId) {
+      await applyDerivedOppFieldsMany(result.oppId);
+    }
+
     const [gift] = await db
       .select(giftHeaderColumns)
       .from(giftsAndPayments)
@@ -2581,6 +2641,7 @@ router.post(
       extra: {
         paymentUnitId: result.unit.id,
         bankDepositId: result.unit.bank_deposit_id,
+        ...(result.oppId ? { opportunityId: result.oppId } : {}),
       },
     });
     res.status(201).json({ gift, paymentUnitId: result.unit.id });

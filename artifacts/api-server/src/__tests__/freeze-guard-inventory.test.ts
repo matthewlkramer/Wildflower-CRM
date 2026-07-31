@@ -151,6 +151,11 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Owner/assignee reassignment: CRM ownership metadata, not an audited financial fact.",
   },
+  "routes/cleanupQueue.ts": {
+    classification: "exempt",
+    reason:
+      "Historical donor-attribution proposal apply: repoints the gift's donor FKs (structural donor-identity consolidation, same class as lib/mergeEntities.ts); never edits an audited amount/date. FOLLOW-UP (same deferral as mergeEntities): repointing a closed-FY gift's donor is not freeze-gated yet.",
+  },
   "routes/emailProposals.ts": {
     classification: "exempt",
     reason:

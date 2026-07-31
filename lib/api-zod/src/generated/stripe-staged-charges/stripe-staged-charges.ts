@@ -350,7 +350,7 @@ export const LinkStripeChargeToGiftResponse = zod.object({
 })
 
 /**
- * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR).
+ * @summary Mint a new gifts_and_payments row (crediting GROSS) from a pending Stripe charge (donor XOR), optionally booked as a payment on a pledge.
  */
 export const CreateGiftFromStripeStagedChargeParams = zod.object({
   "id": zod.coerce.string()
@@ -361,7 +361,9 @@ export const CreateGiftFromStripeStagedChargeBody = zod.object({
   "dateReceived": zod.string().date().nullish().describe('Override the gift\'s date received (also drives the seeded allocation\'s fiscal year). Omitted keeps the evidence date.'),
   "entityId": zod.string().nullish().describe('Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path).'),
   "countsTowardGoal": zod.boolean().nullish().describe('Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money).')
-}).describe('Optional human overrides for the evidence-mint create-gift endpoints\n(\/staged-payments\/{id}\/create-gift, \/stripe-staged-charges\/{id}\/create-gift\nand \/reconciliation\/payment-units\/{id}\/create-gift).\nEvery field is optional: an OMITTED field keeps today\'s evidence-derived\ndefault (payer\/date from the evidence row; entity + goal-counting from the\nQuickBooks attribution where present). A PRESENT field overrides that\ndefault on the minted gift header and its seeded starter allocation. The\ngift AMOUNT is never overridable here — the mint books the evidence amount\n(Stripe GROSS \/ QB amount) and the counted ledger row; adjust the gift on\nits detail page afterward if the entered amount should differ.\n')
+}).describe('Optional human overrides for the evidence-mint create-gift endpoints\n(\/staged-payments\/{id}\/create-gift, \/stripe-staged-charges\/{id}\/create-gift\nand \/reconciliation\/payment-units\/{id}\/create-gift).\nEvery field is optional: an OMITTED field keeps today\'s evidence-derived\ndefault (payer\/date from the evidence row; entity + goal-counting from the\nQuickBooks attribution where present). A PRESENT field overrides that\ndefault on the minted gift header and its seeded starter allocation. The\ngift AMOUNT is never overridable here — the mint books the evidence amount\n(Stripe GROSS \/ QB amount) and the counted ledger row; adjust the gift on\nits detail page afterward if the entered amount should differ.\n').and(zod.object({
+  "opportunityId": zod.string().nullish().describe('Book this charge\'s GROSS ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge, and its allocations seed from the pledge\'s allocation plan scaled to the charge GROSS. Must be a live written pledge — not archived, not lost\/dormant (409 otherwise). The pledge\'s derived status\/paid totals recompute after commit.')
+}).describe('Overrides for the per-charge mint. Optionally set opportunityId to book the charge as a payment on a pledge — the donor then DERIVES from the pledge (the charge row\'s resolved donor is ignored).'))
 
 /**
  * @summary Manually file a Stripe charge under a non-gift exclusion category.

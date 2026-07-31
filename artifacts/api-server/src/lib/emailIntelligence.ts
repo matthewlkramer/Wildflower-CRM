@@ -979,13 +979,14 @@ export async function resolveThankYouDonors(
         WHERE lower(e.email) IN (${recipientList})
           AND e.household_id IS NOT NULL
         UNION
-        SELECT per.household_id
+        -- people.primary_household_id is the sole household-membership
+        -- authority (household rows in people_entity_roles are retired).
+        SELECT p.primary_household_id AS household_id
         FROM emails e
-        JOIN people_entity_roles per ON per.person_id = e.person_id
+        JOIN people p ON p.id = e.person_id
         WHERE lower(e.email) IN (${recipientList})
           AND e.person_id IS NOT NULL
-          AND per.current = 'current'
-          AND per.household_id IS NOT NULL
+          AND p.primary_household_id IS NOT NULL
       ) t
     `),
   ]);

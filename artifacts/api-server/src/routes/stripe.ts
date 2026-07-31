@@ -52,9 +52,13 @@ import {
   LinkStripeChargeToGiftBody,
   CreateGiftFromStripeStagedChargeBody,
 } from "@workspace/api-zod";
-import { linkChargeToGiftInTx } from "../lib/reconciliationBundleCommit";
+import {
+  createGiftFromChargeInTx,
+  linkChargeToGiftInTx,
+} from "../lib/reconciliationBundleCommit";
 import {
   ReconcileAbort,
+  lockAndValidatePledgeForPayment,
   orphanStripeSourceChargeInTx,
 } from "../lib/reconciliationCommit";
 import { donorOf, hasExactlyOneDonor, donorsMatch } from "../lib/quickbooksLink";
@@ -858,12 +862,16 @@ router.post(
       });
       return;
     }
-    const preIssues = validateGiftInvariants({
-      organizationId: existing.organizationId,
-      individualGiverPersonId: existing.individualGiverPersonId,
-      householdId: existing.householdId,
-    });
-    if (preIssues.length) return respondInvariantFailure(res, preIssues);
+    // Payment-on-pledge: the donor DERIVES from the pledge (locked in-tx
+    // below) — the charge row's resolved donor is not required on that path.
+    if (!overrides.opportunityId) {
+      const preIssues = validateGiftInvariants({
+        organizationId: existing.organizationId,
+        individualGiverPersonId: existing.individualGiverPersonId,
+        householdId: existing.householdId,
+      });
+      if (preIssues.length) return respondInvariantFailure(res, preIssues);
+    }
 
     const giftId = newId();
     // Lock + re-read inside the tx so the gift is always minted from the fresh
@@ -875,6 +883,12 @@ router.post(
     const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
+        // Payment-on-pledge: lock + validate the pledge BEFORE the charge
+        // (opp → charge lock order, matching approve.ts) and derive the
+        // donor from it.
+        const opp = overrides.opportunityId
+          ? await lockAndValidatePledgeForPayment(tx, overrides.opportunityId)
+          : null;
         const locked = await tx
           .select()
           .from(stripeStagedCharges)
@@ -892,6 +906,37 @@ router.post(
           )
         ) {
           throw new Error(NOT_PENDING);
+        }
+
+        if (opp) {
+          // One money path: the same primitive the settlement-bundle confirm
+          // and the charge-anchored approve outcome use — gift tied to the
+          // pledge, donor from the pledge, allocations seeded from its plan
+          // scaled to the charge GROSS, charge stamped + counted ledger row.
+          await createGiftFromChargeInTx(tx, {
+            newGiftId: giftId,
+            charge: locked,
+            donor: donorOf(opp),
+            paymentIntermediaryId: null,
+            opportunityId: opp.id,
+            audit: {
+              summary: "Minted gift from Stripe charge as a payment on a pledge",
+              metadata: {
+                stripeChargeId: locked.id,
+                outcome: "create_gift_from_opportunity",
+                opportunityId: opp.id,
+              },
+            },
+            userId: user.id,
+            auditReq: req,
+          });
+          // §4.3 supersede: this per-charge counted row may complete the
+          // coverage of a coarse QB deposit confirmed-settled against the
+          // charge's payout — the deposit's coarse row demotes in the same tx.
+          supersedeGiftIds.push(
+            ...(await applySupersedeForPayoutInTx(tx, locked.stripePayoutId)),
+          );
+          return;
         }
 
         const donor = {
@@ -990,7 +1035,19 @@ router.post(
       if (e instanceof Error && e.message === INVARIANT) {
         return respondInvariantFailure(res, lockedIssues);
       }
+      // Pledge eligibility aborts (404 / archived / lost / not-a-pledge) and
+      // the primitive's in-tx race re-checks map straight to their response.
+      if (e instanceof ReconcileAbort) {
+        res.status(e.httpStatus).json(e.payload);
+        return;
+      }
       throw e;
+    }
+
+    // Payment-on-pledge: the pledge's status/paid totals DERIVE from its live
+    // payments — recompute after the mint committed.
+    if (overrides.opportunityId) {
+      await applyDerivedOppFieldsMany(overrides.opportunityId);
     }
 
     // Stripe-sourced gift (no direct QB link) ties at the payout level — persist

@@ -166,7 +166,7 @@ describe("deposit workbench rows", () => {
     const menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
     for (const label of [
-      "Search and link gift…",
+      "Search and link gift or pledge…",
       "Create standalone gift…",
       "Record as payment on pledge…",
     ]) {
@@ -179,7 +179,10 @@ describe("deposit workbench rows", () => {
     );
   });
 
-  it("blocks only the pledge path — with the Stripe reason — for an unlinked charge anchor", () => {
+  it("enables every gift action — including the pledge path — for an unlinked charge anchor", () => {
+    // QB-first gating is retired: Stripe money can be recorded directly as a
+    // payment on a pledge (the server mints the gift under it); the QBO entry
+    // is the LAST step, done later in QuickBooks.
     render(
       makeDeposit({
         composition: {
@@ -204,24 +207,24 @@ describe("deposit workbench rows", () => {
     );
     const menu = openMenuContaining("Record as payment on pledge…");
     expect(menu).not.toBeNull();
-    expect(
-      menuItem(menu as HTMLElement, "Search and link gift…")?.getAttribute("data-disabled"),
-    ).toBeNull();
-    expect(
-      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute("data-disabled"),
-    ).toBeNull();
-    const pledgeItem = menuItem(menu as HTMLElement, "Record as payment on pledge…");
-    expect(pledgeItem?.getAttribute("data-disabled")).not.toBeNull();
-    expect(pledgeItem?.textContent).toContain(
-      "Stripe money can only be linked to an existing gift",
-    );
+    for (const label of [
+      "Search and link gift or pledge…",
+      "Create standalone gift…",
+      "Record as payment on pledge…",
+    ]) {
+      expect(
+        menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
+        label,
+      ).toBeNull();
+    }
   });
 
   it("enables all unit-backed gift actions for a manual gift-less payment", () => {
     // "Record without a gift" leaves a manual bank_spine component whose unit
     // has no gift and no QB staged source. Linking an existing gift (adopt-unit
-    // path), minting a standalone gift, and identifying the donor all act on
-    // the decomposed payment unit; only the pledge path still needs QB.
+    // path), minting a standalone gift, identifying the donor, and recording a
+    // pledge payment all act on the decomposed payment unit — no QB record
+    // needed (QB-first gating is retired).
     render(
       makeDeposit({
         composition: {
@@ -249,20 +252,16 @@ describe("deposit workbench rows", () => {
     const menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
     for (const label of [
-      "Search and link gift…",
+      "Search and link gift or pledge…",
       "Create standalone gift…",
       "Identify donor…",
+      "Record as payment on pledge…",
     ]) {
       expect(
         menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
         label,
       ).toBeNull();
     }
-    const pledgeItem = menuItem(menu as HTMLElement, "Record as payment on pledge…");
-    expect(pledgeItem?.getAttribute("data-disabled")).not.toBeNull();
-    expect(pledgeItem?.textContent).toContain(
-      "No QuickBooks record backs this manual payment yet",
-    );
     expect(menu?.textContent).not.toContain(
       "No unlinked payment evidence — resolve the deposit's composition first.",
     );
@@ -272,7 +271,8 @@ describe("deposit workbench rows", () => {
     // A component can carry a staged QB source that has since become
     // unavailable (booked elsewhere, excluded, or derived-excluded by a
     // confirmed charge tie). Staged-anchored actions would 409 — the row must
-    // anchor on the payment unit instead: pledge path blocked, mint enabled.
+    // anchor on the payment unit instead; unit-backed actions (mint, pledge
+    // payment) stay enabled.
     const stagedBackedComponent = (stagedActionable: boolean) =>
       makeDeposit({
         composition: {
@@ -297,7 +297,8 @@ describe("deposit workbench rows", () => {
         },
       });
 
-    // Not actionable → component/unit anchor: mint enabled, pledge blocked.
+    // Not actionable → component/unit anchor: mint and pledge path enabled
+    // (the pledge payment mints from the unit, not the dead staged row).
     render(stagedBackedComponent(false), { isFinanceOrAdmin: true });
     let menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
@@ -306,7 +307,7 @@ describe("deposit workbench rows", () => {
     ).toBeNull();
     expect(
       menuItem(menu as HTMLElement, "Record as payment on pledge…")?.getAttribute("data-disabled"),
-    ).not.toBeNull();
+    ).toBeNull();
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });

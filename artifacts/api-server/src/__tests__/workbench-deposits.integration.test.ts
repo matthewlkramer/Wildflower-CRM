@@ -47,6 +47,8 @@ const bankTransactionIds: string[] = [];
 const depositQboComponentIds: string[] = [];
 const accountingCheckIds: string[] = [];
 const giftIds: string[] = [];
+const oppIds: string[] = [];
+const pledgeAllocIds: string[] = [];
 let db: (typeof import("@workspace/db"))["db"];
 let schema: typeof import("@workspace/db");
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -182,6 +184,37 @@ async function seedUnit(
   return unitId;
 }
 
+/**
+ * Seed an opportunity/pledge (org donor) with ONE pledge-allocation plan line,
+ * for the payment-on-pledge mint tests. Defaults to a live written pledge.
+ */
+async function seedPledge(opts?: {
+  writtenPledge?: boolean;
+  lossType?: "dormant" | "lost" | null;
+  archivedAt?: Date | null;
+}): Promise<{ oppId: string; allocationId: string }> {
+  const oppId = nextId("opp");
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id: oppId,
+    name: `Pledge ${oppId}`,
+    organizationId: ORG_ID,
+    stage: "written_commitment",
+    awardedAmount: "1000.00",
+    writtenPledge: opts?.writtenPledge ?? true,
+    lossType: opts?.lossType ?? null,
+    archivedAt: opts?.archivedAt ?? null,
+  });
+  oppIds.push(oppId);
+  const allocationId = nextId("palloc");
+  await db.insert(schema.pledgeAllocations).values({
+    id: allocationId,
+    pledgeOrOpportunityId: oppId,
+    subAmount: "1000.00",
+  });
+  pledgeAllocIds.push(allocationId);
+  return { oppId, allocationId };
+}
+
 async function seedDepositQboComponent(
   depositId: string,
   amount: string,
@@ -290,6 +323,18 @@ afterAll(async () => {
     await db
       .delete(schema.giftsAndPayments)
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
+  }
+  // Pledge fixtures: allocations before their opps (RESTRICT), opps after the
+  // gifts that reference them (gift.opportunityId).
+  if (pledgeAllocIds.length) {
+    await db
+      .delete(schema.pledgeAllocations)
+      .where(inArrayFn(schema.pledgeAllocations.id, pledgeAllocIds));
+  }
+  if (oppIds.length) {
+    await db
+      .delete(schema.opportunitiesAndPledges)
+      .where(inArrayFn(schema.opportunitiesAndPledges.id, oppIds));
   }
   if (accountingCheckIds.length) {
     await db
@@ -1640,3 +1685,89 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(badDate.status).toBe(400);
   });
 });
+
+describe.skipIf(!HAS_DB)(
+  "POST /reconciliation/payment-units/:id/create-gift with opportunityId (payment on pledge)",
+  () => {
+    it("mints the gift under the pledge: donor derived from the pledge, allocations copied scaled to the unit money, unit tied", async () => {
+      const deposit = await seedDeposit("Pledge payment check", "400.00");
+      const unitId = await seedUnit(deposit, "400.00");
+      const { oppId, allocationId } = await seedPledge();
+
+      // The body carries NO donor fields — on the pledge path the donor
+      // DERIVES from the pledge.
+      const res = await postJson(
+        `/api/reconciliation/payment-units/${unitId}/create-gift`,
+        { opportunityId: oppId },
+      );
+      expect(res.status).toBe(201);
+      const giftId = res.json.gift.id as string;
+      expect(giftId).toBeTruthy();
+      giftIds.push(giftId);
+      expect(res.json.gift.opportunityId).toBe(oppId);
+      expect(res.json.gift.organizationId).toBe(ORG_ID);
+      // The amount is never overridable — the unit's money books.
+      expect(res.json.gift.amount).toBe("400.00");
+
+      // Allocations seed from the pledge's plan scaled to the unit money —
+      // stamped with the source pledge allocation, not the default line.
+      const allocations = await db
+        .select()
+        .from(schema.giftAllocations)
+        .where(eqFn(schema.giftAllocations.giftId, giftId));
+      expect(allocations).toHaveLength(1);
+      expect(allocations[0].subAmount).toBe("400.00");
+      expect(allocations[0].sourcePledgeAllocationId).toBe(allocationId);
+
+      // The unit's gift tie IS the resolution record: mint-owned.
+      const [unit] = await db
+        .select()
+        .from(schema.paymentUnits)
+        .where(eqFn(schema.paymentUnits.id, unitId));
+      expect(unit.giftId).toBe(giftId);
+      expect(unit.createdTheGift).toBe(true);
+    }, 30_000);
+
+    it("rejects non-pledges, lost, archived, and unknown opportunities without minting anything", async () => {
+      const deposit = await seedDeposit("Pledge payment blocked", "50.00");
+      const unitId = await seedUnit(deposit, "50.00");
+
+      const open = await seedPledge({ writtenPledge: false });
+      const lost = await seedPledge({ lossType: "lost" });
+      const archived = await seedPledge({ archivedAt: new Date() });
+
+      const cases: Array<[string, number, string]> = [
+        [open.oppId, 409, "not_a_pledge"],
+        [lost.oppId, 409, "pledge_lost"],
+        [archived.oppId, 409, "opportunity_archived"],
+        [`${RUN}_missing_opp`, 404, "not_found"],
+      ];
+      for (const [oppId, status, error] of cases) {
+        const res = await postJson(
+          `/api/reconciliation/payment-units/${unitId}/create-gift`,
+          { opportunityId: oppId },
+        );
+        expect(res.status).toBe(status);
+        expect(res.json.error).toBe(error);
+      }
+
+      // The whole mint rolled back every time: unit untied, no gift exists.
+      const [unit] = await db
+        .select()
+        .from(schema.paymentUnits)
+        .where(eqFn(schema.paymentUnits.id, unitId));
+      expect(unit.giftId).toBeNull();
+      const gifts = await db
+        .select()
+        .from(schema.giftsAndPayments)
+        .where(
+          inArrayFn(schema.giftsAndPayments.opportunityId, [
+            open.oppId,
+            lost.oppId,
+            archived.oppId,
+          ]),
+        );
+      expect(gifts).toHaveLength(0);
+    }, 30_000);
+  },
+);

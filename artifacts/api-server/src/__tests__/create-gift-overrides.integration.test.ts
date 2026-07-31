@@ -49,6 +49,9 @@ const RUN = `mintovr_${Date.now()}`;
 const REALM_ID = `${RUN}_realm`;
 const ACCOUNT_ID = `${RUN}_acct`;
 const ORG_ID = `${RUN}_org`;
+// Second org: the pledge's donor on the payment-on-pledge tests, distinct from
+// the charge's own resolved donor to PROVE the gift donor derives from the pledge.
+const ORG_B = `${RUN}_org_b`;
 const ENTITY_A = `${RUN}_ent_a`;
 const ENTITY_B = `${RUN}_ent_b`;
 
@@ -62,6 +65,8 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
+  opportunitiesAndPledges: Db["opportunitiesAndPledges"];
+  pledgeAllocations: Db["pledgeAllocations"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -71,6 +76,8 @@ let baseUrl = "";
 const stagedIds: string[] = [];
 const chargeIds: string[] = [];
 const giftIds: string[] = [];
+const oppIds: string[] = [];
+const pledgeAllocIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
 
@@ -113,7 +120,9 @@ async function seedStaged(opts?: { entityId?: string | null }): Promise<string> 
   return id;
 }
 
-async function seedCharge(): Promise<string> {
+async function seedCharge(opts?: {
+  organizationId?: string | null;
+}): Promise<string> {
   const id = nextId("ch");
   await db.insert(schema.stripeStagedCharges).values({
     id,
@@ -123,11 +132,40 @@ async function seedCharge(): Promise<string> {
     netAmount: "100.84",
     dateReceived: "2026-03-15",
     payerName: `${RUN} Stripe payer`,
-    organizationId: ORG_ID,
+    organizationId: opts?.organizationId === undefined ? ORG_ID : opts.organizationId,
     matchStatus: "matched",
   });
   chargeIds.push(id);
   return id;
+}
+
+/**
+ * Seed an opportunity/pledge (donor = ORG_B, distinct from the charge donor)
+ * with ONE pledge-allocation plan line carrying ENTITY_A, for the
+ * payment-on-pledge mint tests. Defaults to a live written pledge.
+ */
+async function seedPledge(opts?: {
+  writtenPledge?: boolean;
+}): Promise<{ oppId: string; allocationId: string }> {
+  const oppId = nextId("opp");
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id: oppId,
+    name: `Pledge ${oppId}`,
+    organizationId: ORG_B,
+    stage: "written_commitment",
+    awardedAmount: "500.00",
+    writtenPledge: opts?.writtenPledge ?? true,
+  });
+  oppIds.push(oppId);
+  const allocationId = nextId("palloc");
+  await db.insert(schema.pledgeAllocations).values({
+    id: allocationId,
+    pledgeOrOpportunityId: oppId,
+    subAmount: "500.00",
+    entityId: ENTITY_A,
+  });
+  pledgeAllocIds.push(allocationId);
+  return { oppId, allocationId };
 }
 
 async function readGiftWithAllocation(giftId: string) {
@@ -162,6 +200,8 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
+    opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
+    pledgeAllocations: dbMod.pledgeAllocations,
   };
   inArrayFn = drizzle.inArray;
   eqFn = drizzle.eq;
@@ -172,10 +212,10 @@ beforeAll(async () => {
     email: `${TEST_USER_ID}@wildflowerschools.org`,
     role: "admin",
   });
-  await db.insert(schema.organizations).values({
-    id: ORG_ID,
-    name: `Mint Overrides Test Org ${RUN}`,
-  });
+  await db.insert(schema.organizations).values([
+    { id: ORG_ID, name: `Mint Overrides Test Org ${RUN}` },
+    { id: ORG_B, name: `Mint Overrides Pledge Org ${RUN}` },
+  ]);
   await db.insert(schema.entities).values([
     { id: ENTITY_A, name: `Mint Overrides Entity A ${RUN}` },
     { id: ENTITY_B, name: `Mint Overrides Entity B ${RUN}` },
@@ -213,10 +253,22 @@ afterAll(async () => {
     await db
       .delete(schema.stripeStagedCharges)
       .where(inArrayFn(schema.stripeStagedCharges.id, chargeIds));
+  // Pledge fixtures: allocations before their opps (RESTRICT), opps after the
+  // gifts that reference them (gift.opportunityId) but before their org/entity.
+  if (pledgeAllocIds.length)
+    await db
+      .delete(schema.pledgeAllocations)
+      .where(inArrayFn(schema.pledgeAllocations.id, pledgeAllocIds));
+  if (oppIds.length)
+    await db
+      .delete(schema.opportunitiesAndPledges)
+      .where(inArrayFn(schema.opportunitiesAndPledges.id, oppIds));
   await db
     .delete(schema.entities)
     .where(inArrayFn(schema.entities.id, [ENTITY_A, ENTITY_B]));
-  await db.delete(schema.organizations).where(eqFn(schema.organizations.id, ORG_ID));
+  await db
+    .delete(schema.organizations)
+    .where(inArrayFn(schema.organizations.id, [ORG_ID, ORG_B]));
   await db.delete(schema.users).where(eqFn(schema.users.id, TEST_USER_ID));
 }, 60_000);
 
@@ -332,6 +384,63 @@ describe.skipIf(!HAS_DB)(
       expect(allocations[0].entityId).toBe(ENTITY_B);
       expect(allocations[0].countsTowardGoal).toBe(false);
       expect(allocations[0].subAmount).toBe("104.42");
+    }, 30_000);
+  },
+);
+
+describe.skipIf(!HAS_DB)(
+  "POST /stripe-staged-charges/:id/create-gift with opportunityId (payment on pledge)",
+  () => {
+    it("mints under the pledge: donor from the pledge (charge donor not required), allocations copied at charge GROSS", async () => {
+      // Donor-less charge: on the pledge path the charge's own resolved donor
+      // is NOT required — the donor derives from the pledge (ORG_B).
+      const chargeId = await seedCharge({ organizationId: null });
+      const { oppId, allocationId } = await seedPledge();
+
+      const res = await apiPost(
+        `/api/stripe-staged-charges/${chargeId}/create-gift`,
+        { opportunityId: oppId },
+      );
+      expect(res.status).toBe(201);
+      const giftId = trackGift(res.json);
+
+      const { gift, allocations } = await readGiftWithAllocation(giftId);
+      expect(gift.opportunityId).toBe(oppId);
+      expect(gift.organizationId).toBe(ORG_B);
+      // Donor is credited GROSS; the amount is never overridable.
+      expect(gift.amount).toBe("104.42");
+      // Allocations seed from the pledge's plan scaled to the charge GROSS,
+      // carrying the plan's scope (entity) and the source-allocation stamp.
+      expect(allocations).toHaveLength(1);
+      expect(allocations[0].subAmount).toBe("104.42");
+      expect(allocations[0].entityId).toBe(ENTITY_A);
+      expect(allocations[0].sourcePledgeAllocationId).toBe(allocationId);
+
+      // The charge owns the mint: pledge donor adopted onto the evidence row.
+      const [charge] = await db
+        .select()
+        .from(schema.stripeStagedCharges)
+        .where(eqFn(schema.stripeStagedCharges.id, chargeId));
+      expect(charge.organizationId).toBe(ORG_B);
+      expect(charge.matchStatus).toBe("matched");
+    }, 30_000);
+
+    it("refuses a non-pledge opportunity (409 not_a_pledge) and mints nothing", async () => {
+      const chargeId = await seedCharge();
+      const { oppId } = await seedPledge({ writtenPledge: false });
+
+      const res = await apiPost(
+        `/api/stripe-staged-charges/${chargeId}/create-gift`,
+        { opportunityId: oppId },
+      );
+      expect(res.status).toBe(409);
+      expect(res.json?.error).toBe("not_a_pledge");
+
+      const gifts = await db
+        .select()
+        .from(schema.giftsAndPayments)
+        .where(eqFn(schema.giftsAndPayments.opportunityId, oppId));
+      expect(gifts).toHaveLength(0);
     }, 30_000);
   },
 );

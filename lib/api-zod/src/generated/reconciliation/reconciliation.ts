@@ -604,8 +604,8 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
 })])
 
 /**
- * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow.
- * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR).
+ * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow. With opportunityId, the mint books the unit as a payment on that pledge (donor derived from the pledge, allocations seeded from its plan) — no QuickBooks record is required.
+ * @summary Mint a new gift from a decomposed bank-deposit payment unit (Donor XOR), optionally booked as a payment on a pledge.
  */
 export const CreateGiftFromPaymentUnitParams = zod.object({
   "id": zod.coerce.string()
@@ -620,8 +620,9 @@ export const CreateGiftFromPaymentUnitBody = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "paymentIntermediaryId": zod.string().nullish().describe('Conduit the donor gave through, propagated onto the gift.')
-}).describe('Donor + overrides for the unit-anchored mint. Exactly one donor FK must be set (Donor XOR); null\/omit the others. The gift AMOUNT is never overridable — the mint books the unit\'s money.'))
+  "paymentIntermediaryId": zod.string().nullish().describe('Conduit the donor gave through, propagated onto the gift.'),
+  "opportunityId": zod.string().nullish().describe('Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge\'s allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost\/dormant (409 otherwise). The pledge\'s derived status\/paid totals recompute after commit.')
+}).describe('Donor + overrides for the unit-anchored mint. Exactly one donor FK must be set (Donor XOR); null\/omit the others. Alternatively set opportunityId to book the unit as a payment on a pledge — the donor then DERIVES from the pledge and body donor fields are ignored. The gift AMOUNT is never overridable — the mint books the unit\'s money.'))
 
 /**
  * Finance/admin review only. Records a confirmed qbo_line_deposit source-link claim (human provenance) tying the selected QuickBooks staged payment to this deposit as accounting evidence. Never changes money, components, units, or gifts.
