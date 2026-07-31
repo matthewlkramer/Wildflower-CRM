@@ -61,12 +61,11 @@ jobs:
             | gzip --decompress \
             > /tmp/apply_opportunity_commitment_lifecycle.py
           set -e
-          # The staged gzip lost its trailer and final partial line. Everything
-          # through the implementation is intact; replace only that incomplete
-          # final line with the separately reviewed script tail.
           sed -i '$d' /tmp/apply_opportunity_commitment_lifecycle.py
           cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail \
             >> /tmp/apply_opportunity_commitment_lifecycle.py
+          python .github/scripts/fix_lifecycle_payload_openapi_patch.py \
+            /tmp/apply_opportunity_commitment_lifecycle.py
           python -m py_compile /tmp/apply_opportunity_commitment_lifecycle.py
           python /tmp/apply_opportunity_commitment_lifecycle.py
 
@@ -125,6 +124,7 @@ jobs:
         run: |
           rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part*
           rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.tail
+          rm -f .github/scripts/fix_lifecycle_payload_openapi_patch.py
           rm -f .github/workflows/apply-opportunity-commitment-lifecycle.yml
           rm -f .github/workflows/inspect-opportunity-lifecycle-payload.yml
 
