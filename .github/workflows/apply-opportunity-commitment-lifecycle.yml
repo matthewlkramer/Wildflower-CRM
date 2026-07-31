@@ -31,6 +31,10 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_commitment_lifecycle
       AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
       AI_INTEGRATIONS_ANTHROPIC_API_KEY: commitment-lifecycle-test-key
+      # clerkMiddleware still initializes before the route-level requireAuth mock
+      # used by HTTP integration tests. This syntactically valid non-production
+      # key lets it construct an anonymous auth context without contacting Clerk.
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
 
     steps:
       - uses: actions/checkout@v4
@@ -65,7 +69,7 @@ jobs:
         run: pnpm --filter @workspace/api-spec run codegen
       - name: Format implementation files
         run: |
-          files=(lib/db/src/schema/_enums.ts lib/db/src/schema/opportunitiesAndPledges.ts artifacts/api-server/src/lib/pledgeStage.ts artifacts/api-server/src/lib/reconciliationCommit.ts artifacts/api-server/src/routes/opportunitiesAndPledges.ts artifacts/wildflower-crm/src/pages/opportunity-detail.tsx artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx lib/api-zod/src/index.ts)
+          files=(lib/db/src/schema/_enums.ts lib/db/src/schema/opportunitiesAndPledges.ts artifacts/api-server/src/lib/pledgeStage.ts artifacts/api-server/src/lib/reconciliationCommit.ts artifacts/api-server/src/routes/opportunitiesAndPledges.ts artifacts/wildflower-crm/src/pages/opportunity-detail.tsx artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx artifacts/wildflower-crm/src/components/gift-form-dialog.tsx lib/api-zod/src/index.ts)
           while IFS= read -r f; do files+=("$f"); done < <(find artifacts/api-server/src/__tests__ -maxdepth 1 -type f \( -iname '*commitment*' -o -iname 'derive-opp-fields.test.ts' \))
           existing=(); for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
           pnpm exec prettier --write "${existing[@]}"
