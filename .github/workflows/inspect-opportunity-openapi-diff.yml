@@ -38,7 +38,7 @@ jobs:
             { encoding: 'utf8' },
           ).trim();
           if (!yamlPackage) throw new Error('Could not locate yaml package');
-          const YAML = require(path.dirname(yamlPackage));
+          const YAML = require(path.resolve(path.dirname(yamlPackage)));
           const baseText = execFileSync(
             'git',
             ['show', 'origin/main:lib/api-spec/openapi.yaml'],
