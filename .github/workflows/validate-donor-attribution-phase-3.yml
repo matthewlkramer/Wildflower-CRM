@@ -72,6 +72,14 @@ jobs:
           if not sql.endswith('COMMIT;'):
               sql = sql + '\n\nCOMMIT;'
           migration.write_text(sql + '\n')
+
+          route = Path('artifacts/api-server/src/routes/cleanupQueue.ts')
+          source = route.read_text()
+          source = source.replace(
+              'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId) =>',
+              'const userNameSql = (column: typeof cleanupQueue.flaggedByUserId | typeof cleanupQueue.resolvedByUserId) =>',
+          )
+          route.write_text(source)
           PY
 
       - name: Regenerate API clients
