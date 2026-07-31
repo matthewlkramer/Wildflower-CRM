@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: agent/opportunity-commitment-lifecycle
-      - name: Recover and print payload tail
+      - name: Recover and print OpenAPI patch section
         shell: bash
         run: |
           set +e
@@ -25,8 +25,10 @@ jobs:
             | gzip --decompress \
             > /tmp/apply.py
           set -e
-          echo "RECOVERED_LINES=$(wc -l < /tmp/apply.py)"
-          echo "--- RECOVERED TAIL ---"
-          nl -ba /tmp/apply.py | tail -n 260
-          echo "--- END TAIL ---"
+          sed -i '$d' /tmp/apply.py
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail >> /tmp/apply.py
+          echo "--- SCRIPT 1030-1125 ---"
+          nl -ba /tmp/apply.py | sed -n '1030,1125p'
+          echo "--- CURRENT OPENAPI writtenPledge CONTEXT ---"
+          grep -n -B 8 -A 12 'writtenPledge:' lib/api-spec/openapi.yaml | head -n 120 || true
           exit 1
