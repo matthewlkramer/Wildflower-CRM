@@ -1,5 +1,12 @@
 # 0085 — Backfill gift allocations + fix LaTania donor + flag Alia Peera
 
+> **SUPERSEDED — do not apply.** This file was never run against production,
+> and the schema has since drifted (0150 renamed `usage_restriction_type` →
+> `other_restriction_type`; `cleanup_queue` has no unique constraint matching
+> the `ON CONFLICT` clause). Apply
+> `0224_reapply_gift_allocation_backfill.sql` instead — same owner-ratified
+> booking, updated for the current schema.
+
 Data-only production backfill. Gives every active gift the one `gift_allocations`
 row it must have (that child row is where all money scope + revenue coding live),
 and makes two small companion fixes. **No schema changes** — the mint-path

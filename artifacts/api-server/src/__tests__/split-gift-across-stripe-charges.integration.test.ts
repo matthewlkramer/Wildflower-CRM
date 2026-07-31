@@ -12,6 +12,7 @@ const PERSON_ID = `${RUN}_person`;
 const OTHER_PERSON_ID = `${RUN}_other_person`;
 const OTHER_GIFT_ID = `${RUN}_other_gift`;
 const OTHER_ALLOC_ID = `${RUN}_other_alloc`;
+const ORPHAN_GIFT_ID = `${RUN}_orphan_gift`;
 const ENTITY_ID = `${RUN}_entity`;
 const BANK_ID = `${RUN}_bank`;
 const PAYOUT_ID = `${RUN}_payout`;
@@ -121,6 +122,16 @@ beforeAll(async () => {
     intendedUsage: "gen_ops",
     countsTowardGoal: true,
   });
+  // Legacy orphan (pre-dates the allocation-seeding invariant): header only,
+  // deliberately NO gift_allocations row.
+  await db.insert(schema.giftsAndPayments).values({
+    id: ORPHAN_GIFT_ID,
+    name: "Erica Cantoni (orphan)",
+    amount: "18.00",
+    dateReceived: "2099-11-13",
+    individualGiverPersonId: PERSON_ID,
+    ownerUserId: USER_ID,
+  });
   await db.insert(schema.stripeStagedCharges).values(
     CHARGE_IDS.map((id, index) => ({
       id,
@@ -164,7 +175,7 @@ afterAll(async () => {
     .delete(schema.paymentUnits)
     .where(inArray(schema.paymentUnits.id, UNIT_IDS));
   const splitIds = createdGiftIds.length ? createdGiftIds : [GIFT_ID];
-  const allGiftIds = [...splitIds, OTHER_GIFT_ID];
+  const allGiftIds = [...splitIds, OTHER_GIFT_ID, ORPHAN_GIFT_ID];
   await db
     .delete(schema.giftAllocations)
     .where(inArray(schema.giftAllocations.giftId, allGiftIds));
@@ -222,6 +233,21 @@ describe.skipIf(!HAS_DB)("split gift across Stripe charges", () => {
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toMatchObject({
       error: "donor_mismatch",
+    });
+  });
+
+  it("rejects a legacy orphan gift with zero allocations with a specific error", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/reconciliation/deposits/${BANK_ID}/split-gift-across-stripe-charges`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ giftId: ORPHAN_GIFT_ID }),
+      },
+    );
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "no_allocations",
     });
   });
 

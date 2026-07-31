@@ -286,6 +286,15 @@ router.post(
           .where(eq(giftAllocations.giftId, gift.id))
           .orderBy(asc(giftAllocations.id))
           .for("update");
+        if (allocations.length === 0) {
+          return {
+            ok: false,
+            status: 409,
+            error: "no_allocations",
+            message:
+              "This gift has no allocation row at all, so there is no designation to copy. Open the gift and add its allocation (fund entity, fiscal year, restriction) first, then retry the split.",
+          };
+        }
         if (allocations.length !== 1) {
           return {
             ok: false,

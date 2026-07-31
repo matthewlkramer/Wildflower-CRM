@@ -33,6 +33,7 @@ code/docs and update or archive the stale memory.
 - [archive soft-delete boundaries](archive-soft-delete-boundaries.md) — archive REPLACED hard delete app-wide (only QuickBooks revert still hard-deletes); admin show-archived is server-enforced LIST-only; archived gifts EXCLUDED from analytics + pledge paid-amount.
 - [Loan vs revenue tracks + loan_or_grant flag](loan-capital-fundraising-category.md) — loan_or_grant is the SOLE authority; gift `type` and fundraising_category columns are DROPPED (never revive); goals PK includes loan_or_grant.
 - [Gift scope → allocation migration](gift-scope-allocation-migration.md) — settled/fees + off-books all DERIVED in giftPaymentSummary.ts (off-books = all allocs on no-payment entities); QB tie is live-derived, no stored column.
+- [Donor-routing trigger vs test fixtures](donor-routing-trigger-test-fixtures.md) — gift inserts get rerouted person→household by trigger; fixtures needing individual donor-of-record must seed mode='self' prefs.
 
 ## Delivery, database, and verification
 

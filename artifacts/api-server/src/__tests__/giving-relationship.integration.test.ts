@@ -79,6 +79,24 @@ beforeAll(async () => {
     name: "Giving Relationship DAF",
     type: "daf",
   });
+  // The gifts_apply_preferred_donor_trg trigger (migration 0222) routes an
+  // individual's new gift to their primary household unless the person has an
+  // explicit 'self' routing preference. These fixtures need the individual
+  // gifts to keep the person as donor of record.
+  await db.insert(schema.donorRoutingPreferences).values([
+    {
+      id: `${RUN}_person_self`,
+      sourceKind: "individual",
+      sourcePersonId: PERSON_ID,
+      mode: "self",
+    },
+    {
+      id: `${RUN}_member_self`,
+      sourceKind: "individual",
+      sourcePersonId: MEMBER_ID,
+      mode: "self",
+    },
+  ]);
   await db.insert(schema.peopleEntityRoles).values([
     {
       id: `${RUN}_person_principal`,
@@ -180,7 +198,9 @@ describe.skipIf(!HAS_DB)("giving relationship", () => {
       donorOfRecordTotal: "100.00",
       throughIntermediaryTotal: "200.00",
       giftCount: 3,
-      resolvedDonor: { kind: "household", id: HOUSEHOLD_ID },
+      // The person has an explicit 'self' routing preference (see beforeAll),
+      // so donor routing resolves to the person, not the household default.
+      resolvedDonor: { kind: "individual", id: PERSON_ID },
     });
     expect(
       Object.fromEntries(
