@@ -1,0 +1,32 @@
+name: Inspect opportunity lifecycle payload
+
+on:
+  pull_request:
+    branches: [main]
+    types: [synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    if: github.head_ref == 'agent/opportunity-commitment-lifecycle'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/opportunity-commitment-lifecycle
+      - name: Recover and print payload tail
+        shell: bash
+        run: |
+          set +e
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part* \
+            | base64 --decode \
+            | gzip --decompress \
+            > /tmp/apply.py
+          set -e
+          echo "RECOVERED_LINES=$(wc -l < /tmp/apply.py)"
+          echo "--- RECOVERED TAIL ---"
+          nl -ba /tmp/apply.py | tail -n 260
+          echo "--- END TAIL ---"
+          exit 1
