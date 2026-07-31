@@ -50,8 +50,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Establish current schema
-        run: pnpm --filter @workspace/db run push-force
+      - name: Establish current schema and prior donor lifecycle behavior
+        run: |
+          pnpm --filter @workspace/db run push-force
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0222_donor_attribution_phase_2.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0223_donor_attribution_phase_3.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0224_opportunity_commitment_lifecycle.sql
+
+      - name: Verify migration 0225 is portable without production donor records
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0225_normalize_primary_donor_paths.sql
 
       - name: Seed production-shaped donor clusters
         shell: bash
@@ -73,6 +80,8 @@ jobs:
             ('recjOa1ezzMRJmfP7', 'Avi Nash', 'Avi', 'Nash', 'rec673AHumJJiIPSy'),
             ('rechFxTLLlbH9c3m6', 'Sandra Nash', 'Sandra', 'Nash', 'rec673AHumJJiIPSy');
 
+          -- Reconstruct Nancy's pre-0225 direct route. Migration 0225 replaces
+          -- this with individual -> primary household -> fund.
           INSERT INTO donor_routing_preferences (
             id, source_kind, source_person_id, mode, target_kind,
             target_organization_id
@@ -106,10 +115,10 @@ jobs:
             ('test_nash_archived_opportunity', 'Archived Nash opportunity', 'recR28K8Twq5uV8Q0', 'open', NULL, NULL, NULL, now());
           SQL
 
-      - name: Rehearse migration 0225
+      - name: Apply migration 0225 with the production-shaped records present
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0225_normalize_primary_donor_paths.sql
 
-      - name: Verify historical normalization and stored routes
+      - name: Verify historical gifts, opportunities, and pledges
         shell: bash
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
@@ -140,7 +149,8 @@ jobs:
             FROM opportunities_and_pledges
             WHERE id = 'test_peretsman_opportunity'
               AND organization_id = 'recEnJihmxpxL6Mes'
-              AND household_id IS NULL;
+              AND household_id IS NULL
+              AND individual_giver_person_id IS NULL;
             IF n <> 1 THEN
               RAISE EXCEPTION 'Peretsman opportunity normalization failed';
             END IF;
@@ -149,16 +159,20 @@ jobs:
             FROM opportunities_and_pledges
             WHERE id IN ('test_nash_pledge', 'test_nash_archived_opportunity')
               AND household_id = 'rec673AHumJJiIPSy'
-              AND organization_id IS NULL;
+              AND organization_id IS NULL
+              AND individual_giver_person_id IS NULL;
             IF n <> 2 THEN
               RAISE EXCEPTION 'Nash opportunity/pledge normalization failed: %', n;
             END IF;
 
             IF EXISTS (
               SELECT 1 FROM donor_routing_preferences
-              WHERE source_person_id = 'recEo8nqWp6DxB5tU'
+              WHERE source_person_id IN (
+                'recEo8nqWp6DxB5tU', 'recwTfTiygjGC8lyw',
+                'recjOa1ezzMRJmfP7', 'rechFxTLLlbH9c3m6'
+              )
             ) THEN
-              RAISE EXCEPTION 'Nancy direct route was not retired';
+              RAISE EXCEPTION 'Individual route overrides were not retired';
             END IF;
 
             IF NOT EXISTS (
@@ -172,19 +186,53 @@ jobs:
 
             IF NOT EXISTS (
               SELECT 1 FROM donor_routing_preferences
+              WHERE source_organization_id = 'recEnJihmxpxL6Mes'
+                AND mode = 'self'
+            ) THEN
+              RAISE EXCEPTION 'Scully Peretsman Fund endpoint missing';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM donor_routing_preferences
               WHERE source_organization_id = 'recR28K8Twq5uV8Q0'
                 AND mode = 'target'
                 AND target_household_id = 'rec673AHumJJiIPSy'
             ) THEN
               RAISE EXCEPTION 'Indira Foundation route missing';
             END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM donor_routing_preferences
+              WHERE source_household_id = 'rec673AHumJJiIPSy'
+                AND mode = 'self'
+            ) THEN
+              RAISE EXCEPTION 'Nash household endpoint missing';
+            END IF;
+
+            IF (SELECT count(*) FROM audit_log WHERE id LIKE 'audit_donor_cluster_0225_%') <> 7 THEN
+              RAISE EXCEPTION 'Expected seven row-level normalization audits';
+            END IF;
           END $$;
           SQL
 
-      - name: Verify future opportunities and pledges follow the route
+      - name: Verify future gifts, opportunities, and pledges follow the paths
         shell: bash
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          INSERT INTO gifts_and_payments (
+            id, name, amount, date_received, individual_giver_person_id
+          ) VALUES (
+            'test_new_nancy_gift', 'New Nancy gift', 10, '2026-07-31',
+            'recEo8nqWp6DxB5tU'
+          );
+
+          INSERT INTO gifts_and_payments (
+            id, name, amount, date_received, organization_id
+          ) VALUES (
+            'test_new_indira_gift', 'New Indira gift', 20, '2026-07-31',
+            'recR28K8Twq5uV8Q0'
+          );
+
           INSERT INTO opportunities_and_pledges (
             id, name, individual_giver_person_id, status
           ) VALUES (
@@ -201,6 +249,26 @@ jobs:
 
           DO $$
           BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM gifts_and_payments
+              WHERE id = 'test_new_nancy_gift'
+                AND organization_id = 'recEnJihmxpxL6Mes'
+                AND household_id IS NULL
+                AND individual_giver_person_id IS NULL
+            ) THEN
+              RAISE EXCEPTION 'New Nancy gift did not follow route';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1 FROM gifts_and_payments
+              WHERE id = 'test_new_indira_gift'
+                AND household_id = 'rec673AHumJJiIPSy'
+                AND organization_id IS NULL
+                AND individual_giver_person_id IS NULL
+            ) THEN
+              RAISE EXCEPTION 'New Indira gift did not follow route';
+            END IF;
+
             IF NOT EXISTS (
               SELECT 1 FROM opportunities_and_pledges
               WHERE id = 'test_new_nancy_opportunity'
@@ -220,12 +288,31 @@ jobs:
             ) THEN
               RAISE EXCEPTION 'New Indira opportunity did not follow route';
             END IF;
+          END $$;
 
-            IF (SELECT count(*) FROM audit_log WHERE id LIKE 'audit_donor_cluster_0225_%') < 8 THEN
-              RAISE EXCEPTION 'Expected row-level normalization audit entries';
+          -- A deliberate later edit remains possible because routing is applied
+          -- on insert, not on update. This is the explicit-exception mechanism.
+          UPDATE opportunities_and_pledges
+          SET organization_id = 'recR28K8Twq5uV8Q0',
+              household_id = NULL,
+              individual_giver_person_id = NULL
+          WHERE id = 'test_new_indira_opportunity';
+
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1 FROM opportunities_and_pledges
+              WHERE id = 'test_new_indira_opportunity'
+                AND organization_id = 'recR28K8Twq5uV8Q0'
+                AND household_id IS NULL
+            ) THEN
+              RAISE EXCEPTION 'Explicit donor exception was not preserved';
             END IF;
           END $$;
           SQL
+
+      - name: Verify migration 0225 is idempotent
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f lib/db/migrations/0225_normalize_primary_donor_paths.sql
 
       - name: Type-check exporter and API
         run: |
