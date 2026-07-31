@@ -183,8 +183,11 @@ jobs:
       - name: Verify retired lifecycle writes are absent
         shell: bash
         run: |
-          if git grep -n 'convert_to_pledge_and_first_payment' -- \
-            artifacts lib/api-spec lib/api-client-react lib/api-zod; then
+          matches=$(git grep -n 'convert_to_pledge_and_first_payment' -- \
+            artifacts lib/api-spec lib/api-client-react lib/api-zod \
+            | grep -v '/__tests__/' || true)
+          if [ -n "$matches" ]; then
+            printf '%s\n' "$matches"
             echo 'Retired reconciliation outcome remains in application code.' >&2
             exit 1
           fi
