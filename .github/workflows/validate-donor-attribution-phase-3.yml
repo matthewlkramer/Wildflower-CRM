@@ -51,6 +51,16 @@ jobs:
           cat .github/scripts/apply_donor_attribution_phase3.py.gz.b64.part* > /tmp/phase3.b64
           base64 -d /tmp/phase3.b64 | gzip -d > /tmp/apply_donor_attribution_phase3.py
           python /tmp/apply_donor_attribution_phase3.py
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('lib/api-spec/openapi.yaml')
+          text = path.read_text()
+          text = text.replace(
+              '"409": { description: Proposal is stale, unavailable, or no longer open. }',
+              '"409": { description: "Proposal is stale, unavailable, or no longer open." }',
+          )
+          path.write_text(text)
+          PY
 
       - name: Regenerate API clients
         run: pnpm --filter @workspace/api-spec run codegen
