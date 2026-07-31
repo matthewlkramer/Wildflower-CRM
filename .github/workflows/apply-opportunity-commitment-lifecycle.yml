@@ -37,97 +37,58 @@ jobs:
         with:
           ref: agent/opportunity-commitment-lifecycle
           fetch-depth: 0
-
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
+        with: { version: 10 }
       - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-
       - name: Establish pre-change schema
         run: pnpm --filter @workspace/db run push-force
-
       - name: Assemble and apply lifecycle patch
         shell: bash
         run: |
           set +e
-          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part* \
-            | base64 --decode \
-            | gzip --decompress \
-            > /tmp/apply_opportunity_commitment_lifecycle.py
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part* | base64 --decode | gzip --decompress > /tmp/apply.py
           set -e
-          sed -i '$d' /tmp/apply_opportunity_commitment_lifecycle.py
-          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail \
-            >> /tmp/apply_opportunity_commitment_lifecycle.py
-          python .github/scripts/fix_lifecycle_payload_openapi_patch.py \
-            /tmp/apply_opportunity_commitment_lifecycle.py
-          python -m py_compile /tmp/apply_opportunity_commitment_lifecycle.py
-          python /tmp/apply_opportunity_commitment_lifecycle.py
-
+          sed -i '$d' /tmp/apply.py
+          cat .github/scripts/apply_opportunity_commitment_lifecycle.py.tail >> /tmp/apply.py
+          python .github/scripts/fix_lifecycle_payload_openapi_patch.py /tmp/apply.py
+          python -m py_compile /tmp/apply.py
+          python /tmp/apply.py
+          python .github/scripts/fix_lifecycle_source_after_apply.py
       - name: Rehearse lifecycle migration
         run: |
           migration=$(ls lib/db/migrations/0224*commitment*lifecycle*.sql lib/db/migrations/0224*.sql 2>/dev/null | head -n 1)
           test -n "$migration"
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$migration"
-
       - name: Regenerate API clients
         run: pnpm --filter @workspace/api-spec run codegen
-
       - name: Format implementation files
         run: |
-          files=(
-            lib/db/src/schema/_enums.ts
-            lib/db/src/schema/opportunitiesAndPledges.ts
-            artifacts/api-server/src/lib/pledgeStage.ts
-            artifacts/api-server/src/lib/reconciliationCommit.ts
-            artifacts/api-server/src/routes/opportunitiesAndPledges.ts
-            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
-            artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx
-            lib/api-zod/src/index.ts
-          )
+          files=(lib/db/src/schema/_enums.ts lib/db/src/schema/opportunitiesAndPledges.ts artifacts/api-server/src/lib/pledgeStage.ts artifacts/api-server/src/lib/reconciliationCommit.ts artifacts/api-server/src/routes/opportunitiesAndPledges.ts artifacts/wildflower-crm/src/pages/opportunity-detail.tsx artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx lib/api-zod/src/index.ts)
           while IFS= read -r f; do files+=("$f"); done < <(find artifacts/api-server/src/__tests__ -maxdepth 1 -type f \( -iname '*commitment*' -o -iname 'derive-opp-fields.test.ts' \))
-          existing=()
-          for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
+          existing=(); for f in "${files[@]}"; do [ -f "$f" ] && existing+=("$f"); done
           pnpm exec prettier --write "${existing[@]}"
-
       - run: pnpm run check:codegen
       - run: pnpm run check:api
       - run: pnpm run check:web
-
       - name: Run focused lifecycle tests
         shell: bash
         run: |
           shopt -s nullglob
-          tests=(
-            artifacts/api-server/src/__tests__/derive-opp-fields.test.ts
-            artifacts/api-server/src/__tests__/*commitment*.test.ts
-            artifacts/api-server/src/__tests__/*commitment*.integration.test.ts
-            artifacts/api-server/src/__tests__/create-gift-overrides.integration.test.ts
-          )
-          unique=()
-          declare -A seen=()
-          for f in "${tests[@]}"; do
-            if [ -f "$f" ] && [ -z "${seen[$f]:-}" ]; then
-              unique+=("${f#artifacts/api-server/}")
-              seen[$f]=1
-            fi
-          done
+          tests=(artifacts/api-server/src/__tests__/derive-opp-fields.test.ts artifacts/api-server/src/__tests__/*commitment*.test.ts artifacts/api-server/src/__tests__/*commitment*.integration.test.ts artifacts/api-server/src/__tests__/create-gift-overrides.integration.test.ts)
+          unique=(); declare -A seen=()
+          for f in "${tests[@]}"; do if [ -f "$f" ] && [ -z "${seen[$f]:-}" ]; then unique+=("${f#artifacts/api-server/}"); seen[$f]=1; fi; done
           test ${#unique[@]} -ge 2
           pnpm --filter @workspace/api-server exec vitest run "${unique[@]}"
-
       - name: Remove temporary implementation machinery
         run: |
           rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.gz.b64.part*
           rm -f .github/scripts/apply_opportunity_commitment_lifecycle.py.tail
           rm -f .github/scripts/fix_lifecycle_payload_openapi_patch.py
+          rm -f .github/scripts/fix_lifecycle_source_after_apply.py
           rm -f .github/workflows/apply-opportunity-commitment-lifecycle.yml
           rm -f .github/workflows/inspect-opportunity-lifecycle-payload.yml
-
       - name: Commit validated implementation
         run: |
           git config user.name "github-actions[bot]"
