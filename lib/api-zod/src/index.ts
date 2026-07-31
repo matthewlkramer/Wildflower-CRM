@@ -88,9 +88,7 @@ export interface OppCloseTransitionState {
 
 function isClosed(s: OppCloseTransitionState): boolean {
   return (
-    s.lossType === "dormant" ||
-    s.lossType === "lost" ||
-    s.stage === "complete"
+    s.lossType === "dormant" || s.lossType === "lost" || s.stage === "complete"
   );
 }
 
@@ -210,29 +208,29 @@ export function validateMeetingContactInvariants(
   return issues;
 }
 
-export const CreateMeetingNoteBodyRefined =
-  CreateMeetingNoteBody.superRefine(
-    (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
-      issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
-      // Exactly one of transcript / summary. Both routes are mutually
-      // exclusive: transcript runs through AI; summary is stored verbatim.
-      const hasT = typeof b.transcript === "string" && b.transcript.trim().length > 0;
-      const hasS = typeof b.summary === "string" && b.summary.trim().length > 0;
-      if (!hasT && !hasS) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["transcript"],
-          message: "Either transcript or summary is required.",
-        });
-      } else if (hasT && hasS) {
-        ctx.addIssue({
-          code: "custom",
-          path: ["summary"],
-          message: "Provide either transcript or summary, not both.",
-        });
-      }
-    },
-  );
+export const CreateMeetingNoteBodyRefined = CreateMeetingNoteBody.superRefine(
+  (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
+    issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
+    // Exactly one of transcript / summary. Both routes are mutually
+    // exclusive: transcript runs through AI; summary is stored verbatim.
+    const hasT =
+      typeof b.transcript === "string" && b.transcript.trim().length > 0;
+    const hasS = typeof b.summary === "string" && b.summary.trim().length > 0;
+    if (!hasT && !hasS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["transcript"],
+        message: "Either transcript or summary is required.",
+      });
+    } else if (hasT && hasS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["summary"],
+        message: "Provide either transcript or summary, not both.",
+      });
+    }
+  },
+);
 
 /**
  * Media-mention field invariants that OpenAPI/zod schemas can't express:
@@ -274,19 +272,14 @@ export function validateMediaMentionInvariants(
   ) {
     issues.push({ path: "aiSummary", message: MEDIA_AI_SUMMARY_MESSAGE });
   }
-  if (
-    state.url != null &&
-    state.url.length > 0 &&
-    !isHttpUrl(state.url)
-  ) {
+  if (state.url != null && state.url.length > 0 && !isHttpUrl(state.url)) {
     issues.push({ path: "url", message: MEDIA_URL_MESSAGE });
   }
   return issues;
 }
 
-export const CreateMediaMentionBodyRefined =
-  CreateMediaMentionBody.superRefine(
-    (b: z.infer<typeof CreateMediaMentionBody>, ctx) => {
-      issuesToZodCtx(validateMediaMentionInvariants(b), ctx);
-    },
-  );
+export const CreateMediaMentionBodyRefined = CreateMediaMentionBody.superRefine(
+  (b: z.infer<typeof CreateMediaMentionBody>, ctx) => {
+    issuesToZodCtx(validateMediaMentionInvariants(b), ctx);
+  },
+);

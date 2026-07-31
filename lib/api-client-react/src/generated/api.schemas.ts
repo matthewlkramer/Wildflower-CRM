@@ -1974,6 +1974,29 @@ export interface UpdateAddressBody {
   householdId?: string | null;
 }
 
+/**
+ * The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
+ */
+export type OpportunityCommitmentPath = typeof OpportunityCommitmentPath[keyof typeof OpportunityCommitmentPath];
+
+
+export const OpportunityCommitmentPath = {
+  gift: 'gift',
+  written_pledge: 'written_pledge',
+  verbal_pledge: 'verbal_pledge',
+} as const;
+
+/**
+ * Actual positive outcome, derived from pledge finalization or received money.
+ */
+export type OpportunityOutcomeType = typeof OpportunityOutcomeType[keyof typeof OpportunityOutcomeType];
+
+
+export const OpportunityOutcomeType = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
 export interface OpportunityOrPledge {
   id: string;
   name?: string | null;
@@ -2017,12 +2040,23 @@ export interface OpportunityOrPledge {
   actualCompletionDate?: string | null;
   winProbability?: string | null;
   stage?: OpportunityStage | null;
+  /** The positive outcome the donor verbally confirmed; not itself an actual pledge or gift. */
+  readonly commitmentPath?: OpportunityCommitmentPath | null;
+  readonly verbalCommitmentAt?: string | null;
+  /** Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money. */
+  readonly pledgeCommittedAt?: string | null;
+  /** Actual positive outcome, derived from pledge finalization or received money. */
+  readonly outcomeType?: OpportunityOutcomeType | null;
   lossReason?: string | null;
   applicationDeadline?: string | null;
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  writtenPledge: boolean;
+  /**
+   * Compatibility mirror of pledgeCommittedAt != null; never write directly.
+   * @deprecated
+   */
+  readonly writtenPledge: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -2339,7 +2373,6 @@ export interface CreateOpportunityOrPledgeBody {
   paymentDetails?: string;
   usageNotes?: string;
   copperPledgeId?: string;
-  writtenPledge?: boolean;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
   grantLetterUploadedAt?: string;
@@ -2371,7 +2404,6 @@ export interface UpdateOpportunityOrPledgeBody {
   paymentDetails?: string | null;
   usageNotes?: string | null;
   copperPledgeId?: string | null;
-  writtenPledge?: boolean;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
   grantLetterUploadedAt?: string | null;
@@ -9068,6 +9100,31 @@ export interface WriteOffPledgeBody {
   amount?: string | null;
 }
 
+export interface RecordVerbalCommitmentBody {
+  commitmentPath: OpportunityCommitmentPath;
+  verbalCommitmentAt: string;
+  /** @pattern ^[0-9]+(\.[0-9]{1,2})?$ */
+  confirmedAmount: string;
+  expectedDate?: string | null;
+}
+
+export interface FinalizePledgeBody {
+  pledgeCommittedAt: string;
+}
+
+export interface OpportunityCommitmentResult {
+  id: string;
+  commitmentPath?: OpportunityCommitmentPath | null;
+  verbalCommitmentAt?: string | null;
+  pledgeCommittedAt?: string | null;
+  outcomeType?: OpportunityOutcomeType | null;
+  status?: OpportunityStatus | null;
+  stage?: OpportunityStage | null;
+  awardedAmount?: string | null;
+  paidAmount: string;
+  promptForReportingDeadlines?: boolean | null;
+}
+
 /**
  * Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor.
  */
@@ -9320,7 +9377,6 @@ export interface BulkUpdateOpportunitiesPatch {
   lossType?: OpportunityLossType | null;
   stage?: OpportunityStage | null;
   type?: OpportunityType | null;
-  writtenPledge?: boolean | null;
   /** Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt. */
   actualCompletionDate?: string | null;
   /** Projected close date on each opportunity. */

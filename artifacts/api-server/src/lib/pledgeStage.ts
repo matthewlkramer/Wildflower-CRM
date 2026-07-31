@@ -17,10 +17,10 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 // Receiving money or reaching one of these stages does not make a record a
 // pledge — only a genuine written commitment does (see deriveOppFields).
 
-// When a win is undone we cannot recover the exact pre-win funnel stage (it was
-// overwritten by `complete`), so we revert to the terminal funnel stage. This
-// keeps win-reversal safe: a later loss/dormant never shows "Complete".
-const PRE_WIN_STAGE = "verbal_confirmation";
+// `complete` is retained only for imported rows. New lifecycle derivation never
+// overwrites the cultivation stage; imported complete rows normalize to the
+// final meaningful opportunity stage.
+const LEGACY_COMPLETE_STAGE = "verbal_confirmation";
 
 // ── Win-probability weighting ────────────────────────────────────────────────
 // Open opps weight by stage. A written pledge that isn't fully paid is its own
@@ -75,7 +75,9 @@ export function rollupConditional(
   allocs: Array<{ conditional: string | null; conditionsMet: string | null }>,
 ): ConditionalRollup {
   if (allocs.length === 0) return { conditional: null, conditionsMet: "yes" };
-  const conditionalAllocs = allocs.filter((a) => isConditionalPledge(a.conditional));
+  const conditionalAllocs = allocs.filter((a) =>
+    isConditionalPledge(a.conditional),
+  );
   if (conditionalAllocs.length === 0) {
     return { conditional: "unconditional", conditionsMet: "yes" };
   }
@@ -83,7 +85,9 @@ export function rollupConditional(
   const conditional = [...conditionalAllocs]
     .map((a) => a.conditional!)
     .sort()[0]!;
-  const conditionsMet = conditionalAllocs.every((a) => a.conditionsMet === "yes")
+  const conditionsMet = conditionalAllocs.every(
+    (a) => a.conditionsMet === "yes",
+  )
     ? "yes"
     : "no";
   return { conditional, conditionsMet };
@@ -143,27 +147,28 @@ export function canonicalWinProbability(
 
 export interface DeriveInput {
   stage: string | null;
-  // User-set override (null | 'dormant' | 'lost'). When set, status mirrors it;
-  // otherwise status is computed from written_pledge + payments.
   lossType: string | null;
-  // Sticky commitment flag (renamed from writtenPledge). Drives status='pledge'.
-  writtenPledge: boolean | null;
+  commitmentPath?: string | null;
+  verbalCommitmentAt?: string | Date | null;
+  pledgeCommittedAt?: string | Date | null;
+  writtenPledge?: boolean | null;
   conditional: string | null;
   grantLetterUrl: string | null;
   awardedAmount: string | number | null;
   paidAmount: string | number;
-  // Task #788 — how the money is disbursed. fixed_commitment completes via
-  // paid >= awarded; cost_reimbursement completes ONLY via awardClosedAt.
+  firstPaymentDate?: string | Date | null;
+  actualCompletionDate?: string | Date | null;
   disbursementModel: string | null;
-  // Second user-set lifecycle input (alongside lossType): the explicit
-  // award-closure date on a cost-reimbursement pledge. Non-null = complete.
   awardClosedAt: string | Date | null;
 }
 
 export interface DeriveOutput {
   stage: string | null;
-  // Fully calculated — never an input.
   status: string | null;
+  commitmentPath: string | null;
+  verbalCommitmentAt: string | Date | null;
+  pledgeCommittedAt: string | Date | null;
+  actualCompletionDate: string | Date | null;
   writtenPledge: boolean;
 }
 
@@ -196,45 +201,75 @@ export interface DeriveOutput {
 export function deriveOppFields(input: DeriveInput): DeriveOutput {
   const paidNum = Number(input.paidAmount ?? 0);
   const awardedNum = Number(input.awardedAmount ?? 0);
-  const isCostReimbursement = input.disbursementModel === "cost_reimbursement";
-  // Fixed commitments complete when the money is fully in; cost-reimbursement
-  // awards complete ONLY via the explicit Close-award action (the ceiling is
-  // informational — paid >= ceiling never completes one).
-  const fullyPaid = isCostReimbursement
-    ? input.awardClosedAt != null
-    : awardedNum > 0 && paidNum >= awardedNum;
+  const hasPayment = Number.isFinite(paidNum) && paidNum > 0;
 
-  // A record becomes a (sticky) written pledge ONLY when it carries a genuine
-  // written commitment — a grant letter — and the money has not already fully
-  // landed. A gift you were merely told about (no grant letter), or a grant
-  // whose payment already arrived, is NOT a pledge.
-  let writtenPledge = input.writtenPledge ?? false;
-  if (!writtenPledge && !!input.grantLetterUrl && !fullyPaid) {
-    writtenPledge = true;
+  let commitmentPath = input.commitmentPath ?? null;
+  let verbalCommitmentAt = input.verbalCommitmentAt ?? null;
+  let pledgeCommittedAt = input.pledgeCommittedAt ?? null;
+  let actualCompletionDate = input.actualCompletionDate ?? null;
+
+  // Transitional compatibility for tests/imports created before migration
+  // 0224. Production data is backfilled; new API writes cannot set this flag.
+  const legacyPledge =
+    pledgeCommittedAt == null &&
+    commitmentPath == null &&
+    input.writtenPledge === true;
+  const isPledge = pledgeCommittedAt != null || legacyPledge;
+
+  if (!isPledge && hasPayment) {
+    commitmentPath = "gift";
+    verbalCommitmentAt =
+      verbalCommitmentAt ?? input.firstPaymentDate ?? actualCompletionDate;
+    actualCompletionDate =
+      actualCompletionDate ?? input.firstPaymentDate ?? verbalCommitmentAt;
   }
+
+  const isCostReimbursement = input.disbursementModel === "cost_reimbursement";
+  const fullyCollected = isPledge
+    ? isCostReimbursement
+      ? input.awardClosedAt != null
+      : awardedNum > 0 && paidNum >= awardedNum
+    : hasPayment && (awardedNum <= 0 || paidNum >= awardedNum);
 
   let status: string;
   if (input.lossType === "dormant" || input.lossType === "lost") {
     status = input.lossType;
-  } else if (fullyPaid) {
+  } else if (fullyCollected) {
     status = "cash_in";
-  } else if (writtenPledge) {
+  } else if (isPledge) {
     status = "pledge";
   } else {
     status = "open";
   }
 
-  // A won row reads `complete`; otherwise keep the funnel stage but never leave
-  // a stale `complete` on a non-won row.
-  const won = status === "pledge" || status === "cash_in";
-  let stage = input.stage;
-  if (won) {
-    stage = "complete";
-  } else if (stage === "complete") {
-    stage = PRE_WIN_STAGE;
-  }
+  const hadLifecycle =
+    input.commitmentPath != null ||
+    input.pledgeCommittedAt != null ||
+    input.verbalCommitmentAt != null;
+  const legacyOutcomeStage =
+    input.stage === "complete" ||
+    input.stage === "cash_in" ||
+    input.stage === "written_commitment" ||
+    input.stage === "conditional_commitment";
+  const stage = hadLifecycle
+    ? legacyOutcomeStage
+      ? LEGACY_COMPLETE_STAGE
+      : input.stage
+    : status === "pledge" || status === "cash_in"
+      ? "complete"
+      : input.stage === "complete"
+        ? LEGACY_COMPLETE_STAGE
+        : input.stage;
 
-  return { status, stage, writtenPledge };
+  return {
+    status,
+    stage,
+    commitmentPath,
+    verbalCommitmentAt,
+    pledgeCommittedAt,
+    actualCompletionDate,
+    writtenPledge: isPledge,
+  };
 }
 
 /**
@@ -258,44 +293,71 @@ export async function applyDerivedOppFields(
     .then((r) => r[0]);
   if (!row) return;
 
-  const [{ paid } = { paid: "0" }] = await db
-    .select({
-      paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
-    })
-    .from(giftsAndPayments)
-    .where(
-      and(
-        eq(giftsAndPayments.opportunityId, id),
-        // Archived gifts are logically deleted and excluded from analytics
-        // totals; keep paid derivation consistent so an archived payment can't
-        // keep an opportunity derived as cash_in.
-        isNull(giftsAndPayments.archivedAt),
-      ),
-    );
+  const [{ paid, firstPaymentDate } = { paid: "0", firstPaymentDate: null }] =
+    await db
+      .select({
+        paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
+        firstPaymentDate: sql<
+          string | null
+        >`MIN(${giftsAndPayments.dateReceived})`,
+      })
+      .from(giftsAndPayments)
+      .where(
+        and(
+          eq(giftsAndPayments.opportunityId, id),
+          // Archived gifts are logically deleted and excluded from analytics
+          // totals; keep paid derivation consistent so an archived payment can't
+          // keep an opportunity derived as cash_in.
+          isNull(giftsAndPayments.archivedAt),
+        ),
+      );
 
   // Grant conditions now live on the pledge allocations; the header conditional
   // is a derived rollup (conditional when ANY allocation is conditional). It
   // drives win-probability weighting (90% non-conditional / 75% conditional).
   const rollup = await deriveConditionalRollup(id);
 
-  const { status, stage, writtenPledge } = deriveOppFields({
+  const derived = deriveOppFields({
     stage: row.stage,
     lossType: row.lossType,
+    commitmentPath: row.commitmentPath,
+    verbalCommitmentAt: row.verbalCommitmentAt,
+    pledgeCommittedAt: row.pledgeCommittedAt,
     writtenPledge: row.writtenPledge,
     conditional: rollup.conditional,
     grantLetterUrl: row.grantLetterUrl,
     awardedAmount: row.awardedAmount,
     paidAmount: paid,
+    firstPaymentDate,
+    actualCompletionDate: row.actualCompletionDate,
     disbursementModel: row.disbursementModel,
     awardClosedAt: row.awardClosedAt,
   });
+  const {
+    status,
+    stage,
+    writtenPledge,
+    commitmentPath,
+    verbalCommitmentAt,
+    pledgeCommittedAt,
+    actualCompletionDate,
+  } = derived;
 
   const statusOrStageChanged = status !== row.status || stage !== row.stage;
+  const lifecycleChanged =
+    commitmentPath !== row.commitmentPath ||
+    verbalCommitmentAt !== row.verbalCommitmentAt ||
+    pledgeCommittedAt !== row.pledgeCommittedAt ||
+    actualCompletionDate !== row.actualCompletionDate;
   const paidChanged = Number(paid) !== Number(row.paid ?? 0);
   // Re-canonicalise win-probability when status/stage changes OR when the
   // allocation-driven conditional rollup would change the pledge weight (an
   // allocation edit re-stamps win_probability even if status is unchanged).
-  const canonicalWp = canonicalWinProbability(status, stage, rollup.conditional);
+  const canonicalWp = canonicalWinProbability(
+    status,
+    stage,
+    rollup.conditional,
+  );
   const winProbabilityChanged =
     (status === "pledge" &&
       canonicalWp !== null &&
@@ -307,6 +369,7 @@ export async function applyDerivedOppFields(
     (row.winProbability == null && canonicalWp !== null);
   if (
     statusOrStageChanged ||
+    lifecycleChanged ||
     writtenPledge !== row.writtenPledge ||
     paidChanged ||
     winProbabilityChanged
@@ -317,12 +380,25 @@ export async function applyDerivedOppFields(
     // same so the pledge weight tracks its conditions.
     const winProbability =
       statusOrStageChanged || winProbabilityChanged
-        ? canonicalWp ?? row.winProbability
+        ? (canonicalWp ?? row.winProbability)
         : row.winProbability;
     await db
       .update(opportunitiesAndPledges)
       .set({
         status: status as typeof row.status,
+        commitmentPath: commitmentPath as typeof row.commitmentPath,
+        verbalCommitmentAt:
+          verbalCommitmentAt == null
+            ? null
+            : String(verbalCommitmentAt).slice(0, 10),
+        pledgeCommittedAt:
+          pledgeCommittedAt == null
+            ? null
+            : String(pledgeCommittedAt).slice(0, 10),
+        actualCompletionDate:
+          actualCompletionDate == null
+            ? null
+            : String(actualCompletionDate).slice(0, 10),
         writtenPledge,
         stage: stage as typeof row.stage,
         winProbability,

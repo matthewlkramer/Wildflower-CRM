@@ -1755,6 +1755,34 @@ paths:
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /opportunities-and-pledges/{id}/record-verbal-commitment:
+    post:
+      operationId: recordVerbalCommitment
+      tags: [opportunities-and-pledges]
+      summary: Record the donor's verbal confirmation of the expected positive outcome.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecordVerbalCommitmentBody" } } }
+      responses:
+        "200": { description: Recorded, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityCommitmentResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The opportunity is already closed, paid, archived, or finalized as a pledge." }
+  /opportunities-and-pledges/{id}/finalize-pledge:
+    post:
+      operationId: finalizePledge
+      tags: [opportunities-and-pledges]
+      summary: Finalize a written or verbal pledge after validating its document, allocations, schedule, and conditions.
+      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/FinalizePledgeBody" } } }
+      responses:
+        "200": { description: Finalized, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityCommitmentResult" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Pledge finalization requirements are incomplete. }
   /opportunities-and-pledges/{id}:
     get:
       operationId: getOpportunityOrPledge
@@ -7060,6 +7088,10 @@ components:
         actualCompletionDate:       { type: string, format: date, nullable: true }
         winProbability:             { type: string, nullable: true }
         stage:                      { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
+        commitmentPath:           { allOf: [ { $ref: "#/components/schemas/OpportunityCommitmentPath" } ], nullable: true, readOnly: true, description: "The positive outcome the donor verbally confirmed; not itself an actual pledge or gift." }
+        verbalCommitmentAt:       { type: string, format: date, nullable: true, readOnly: true }
+        pledgeCommittedAt:        { type: string, format: date, nullable: true, readOnly: true, description: "Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money." }
+        outcomeType:              { allOf: [ { $ref: "#/components/schemas/OpportunityOutcomeType" } ], nullable: true, readOnly: true, description: "Actual positive outcome, derived from pledge finalization or received money." }
         lossReason:                 { type: string, nullable: true }
         applicationDeadline:        { type: string, format: date, nullable: true }
         paymentDetails:             { type: string, nullable: true }
@@ -7071,7 +7103,7 @@ components:
         # also tick it manually. Never auto-cleared. Drives the Pledges page
         # filter AND the calculated status (writtenPledge=true ⇒ status pledge,
         # unless fully paid ⇒ cash_in).
-        writtenPledge:              { type: boolean }
+        writtenPledge:              { type: boolean, readOnly: true, deprecated: true, description: "Compatibility mirror of pledgeCommittedAt != null; never write directly." }
         # Foundation grant letter (object storage URL + display name +
         # upload time). Uploading flips writtenPledge=true.
         grantLetterUrl:             { type: string, nullable: true }
@@ -7185,7 +7217,6 @@ components:
         paymentDetails:             { type: string }
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
-        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string }
         grantLetterFilename:        { type: string }
         grantLetterUploadedAt:      { type: string, format: date-time }
@@ -7215,7 +7246,6 @@ components:
         paymentDetails:             { type: string, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
-        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         grantLetterUploadedAt:      { type: string, format: date-time, nullable: true }
@@ -12268,6 +12298,41 @@ components:
       properties:
         reason: { type: string, nullable: true, description: "Optional free-text note explaining why the pledge is being written off (recorded on the write-off pledge's usage notes)." }
         amount: { type: string, nullable: true, description: "Dollar amount (major units, 2dp) of pledge commitment to write off. Independent of any payment actually received. Must be > 0 and <= the pledge's uncollected remainder net of prior active write-offs; omitted/null writes off that full net balance." }
+    OpportunityCommitmentPath:
+      type: string
+      enum: [gift, written_pledge, verbal_pledge]
+      description: The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
+    OpportunityOutcomeType:
+      type: string
+      enum: [gift, pledge]
+      description: Actual positive outcome, derived from pledge finalization or received money.
+    RecordVerbalCommitmentBody:
+      type: object
+      required: [commitmentPath, verbalCommitmentAt, confirmedAmount]
+      properties:
+        commitmentPath:     { $ref: "#/components/schemas/OpportunityCommitmentPath" }
+        verbalCommitmentAt: { type: string, format: date }
+        confirmedAmount:    { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$" }
+        expectedDate:       { type: string, format: date, nullable: true }
+    FinalizePledgeBody:
+      type: object
+      required: [pledgeCommittedAt]
+      properties:
+        pledgeCommittedAt: { type: string, format: date }
+    OpportunityCommitmentResult:
+      type: object
+      required: [id, paidAmount]
+      properties:
+        id:                  { type: string }
+        commitmentPath:      { allOf: [ { $ref: "#/components/schemas/OpportunityCommitmentPath" } ], nullable: true }
+        verbalCommitmentAt:  { type: string, format: date, nullable: true }
+        pledgeCommittedAt:   { type: string, format: date, nullable: true }
+        outcomeType:         { allOf: [ { $ref: "#/components/schemas/OpportunityOutcomeType" } ], nullable: true }
+        status:              { allOf: [ { $ref: "#/components/schemas/OpportunityStatus" } ], nullable: true }
+        stage:               { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
+        awardedAmount:       { type: string, nullable: true }
+        paidAmount:          { type: string }
+        promptForReportingDeadlines: { type: boolean, nullable: true }
     MintGiftFromOpportunityBody:
       type: object
       description: "Options for proactively minting a gift from an opportunity/pledge. All money/donor/scope is derived server-side from the opportunity; the client only chooses the settlement-expectation flavor."
@@ -12415,7 +12480,6 @@ components:
         lossType:    { allOf: [ { $ref: "#/components/schemas/OpportunityLossType" } ], nullable: true }
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        writtenPledge:   { type: boolean, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt." }
         projectedCloseDate:   { type: string, format: date, nullable: true, description: "Projected close date on each opportunity." }
         applicationDeadline:  { type: string, format: date, nullable: true, description: "Application deadline on each opportunity." }

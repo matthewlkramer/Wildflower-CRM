@@ -4,7 +4,6 @@ import { ChevronDown, Plus } from "lucide-react";
 import {
   useCreateGiftOrPayment,
   useCreateOrganization,
-  useUpdateOpportunityOrPledge,
   useListOpportunitiesAndPledges,
   useGetPendingStagedMoneyForDonor,
   useListEntities,
@@ -15,7 +14,6 @@ import {
   getGetPendingStagedMoneyForDonorQueryKey,
   getListGiftsAndPaymentsQueryKey,
   getListOrganizationsQueryKey,
-  getListOpportunitiesAndPledgesQueryKey,
   getListPledgeAllocationsQueryKey,
   useGetCurrentUser,
   type OpportunityOrPledge,
@@ -64,15 +62,19 @@ import { OppCombobox } from "@/components/opp-combobox";
 
 const NONE = "__none__";
 
-const INTENDED_USAGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "gen_ops", label: "Gen ops" },
-  { value: "growth", label: "Growth" },
-  { value: "school_startup", label: "School startup" },
-  { value: "teacher_training", label: "Teacher training" },
-  { value: "project", label: "Project" },
-];
+const INTENDED_USAGE_OPTIONS: ReadonlyArray<{ value: string; label: string }> =
+  [
+    { value: "gen_ops", label: "Gen ops" },
+    { value: "growth", label: "Growth" },
+    { value: "school_startup", label: "School startup" },
+    { value: "teacher_training", label: "Teacher training" },
+    { value: "project", label: "Project" },
+  ];
 
-const RESTRICTION_AXIS_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+const RESTRICTION_AXIS_OPTIONS: ReadonlyArray<{
+  value: string;
+  label: string;
+}> = [
   { value: "unrestricted", label: "Unrestricted" },
   { value: "donor_restricted", label: "Donor-restricted" },
   { value: "wf_restricted", label: "WF board-designated" },
@@ -109,7 +111,8 @@ function buildScopeParams(
   scope: LinkedRecordsScope | undefined,
 ): Record<string, string> {
   if (!scope) return {};
-  if ("organizationId" in scope) return { organizationId: scope.organizationId };
+  if ("organizationId" in scope)
+    return { organizationId: scope.organizationId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };
 }
@@ -118,7 +121,8 @@ function donorFromScope(scope: LinkedRecordsScope): {
   type: DonorType;
   id: string;
 } {
-  if ("organizationId" in scope) return { type: "organization", id: scope.organizationId };
+  if ("organizationId" in scope)
+    return { type: "organization", id: scope.organizationId };
   if ("householdId" in scope)
     return { type: "household", id: scope.householdId };
   return { type: "individual", id: scope.individualGiverPersonId };
@@ -151,78 +155,6 @@ function oppDonorFields(opp: OpportunityOrPledge): {
   if (opp.individualGiverPersonId)
     return { individualGiverPersonId: opp.individualGiverPersonId };
   return {};
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
-   Post-creation follow-up prompt
-   ────────────────────────────────────────────────────────────────────────── */
-
-function OppFollowUpDialog({
-  opp,
-  onDone,
-}: {
-  opp: { id: string; name: string | null };
-  onDone: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  const updateOpp = useUpdateOpportunityOrPledge({
-    mutation: {
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: getListOpportunitiesAndPledgesQueryKey(),
-        });
-        onDone();
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Update failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-        onDone();
-      },
-    },
-  });
-
-  function markWrittenPledge() {
-    updateOpp.mutate({ id: opp.id, data: { writtenPledge: true } });
-  }
-
-  return (
-    <Dialog open onOpenChange={() => onDone()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Update the linked opportunity?</DialogTitle>
-          <DialogDescription>
-            The gift was created and linked to{" "}
-            <span className="font-medium">{opp.name ?? opp.id}</span>. The
-            payment is now counted toward this opportunity — its status updates
-            automatically. Mark it as a written pledge if the funder has made a
-            written commitment.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2 pt-1">
-          <Button
-            onClick={markWrittenPledge}
-            disabled={updateOpp.isPending}
-            data-testid="button-opp-followup-pledge"
-          >
-            Mark as a written pledge
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={onDone}
-            disabled={updateOpp.isPending}
-            data-testid="button-opp-followup-no-change"
-          >
-            No change
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
 }
 
 /* ──────────────────────────────────────────────────────────────────────────
@@ -306,22 +238,17 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     setCoding((c) => ({ ...c, [k]: v }));
   }
 
-  // Follow-up state — set after creation when the linked opp was "open"
-  const [followUpOpp, setFollowUpOpp] = useState<{
-    id: string;
-    name: string | null;
-  } | null>(null);
-  const [pendingNavGiftId, setPendingNavGiftId] = useState<string | null>(null);
-
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   // ── Option sources ───────────────────────────────────────────────────────
-  const campaignOptions = (useListFundraisingCampaigns().data ?? []).map((c) => ({
-    value: c.slug,
-    label: c.name,
-  }));
+  const campaignOptions = (useListFundraisingCampaigns().data ?? []).map(
+    (c) => ({
+      value: c.slug,
+      label: c.name,
+    }),
+  );
   const entityOptions = (useListEntities().data ?? []).map((e) => ({
     value: e.id,
     label: e.name,
@@ -464,19 +391,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         });
         toast({ title: "Gift created" });
         const giftId = created?.id ?? null;
-        // If the linked opportunity was still "open", prompt the user to
-        // advance its stage before navigating to the new gift.
-        if (giftId && linkedOpp && linkedOpp.status === "open") {
-          setOpen(false);
-          const oppSnap = { id: linkedOpp.id, name: linkedOpp.name ?? null };
-          resetForm();
-          setPendingNavGiftId(giftId);
-          setFollowUpOpp(oppSnap);
-        } else {
-          setOpen(false);
-          resetForm();
-          if (giftId) navigate(`/gifts/${giftId}`);
-        }
+        setOpen(false);
+        resetForm();
+        if (giftId) navigate(`/gifts/${giftId}`);
       },
       onError: (err: unknown) => {
         toast({
@@ -524,7 +441,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     } else {
       const body = donorBodyFor(donorType, donorId);
       donorFields = {
-        ...(body.organizationId != null ? { organizationId: body.organizationId } : {}),
+        ...(body.organizationId != null
+          ? { organizationId: body.organizationId }
+          : {}),
         ...(body.householdId != null ? { householdId: body.householdId } : {}),
         ...(body.individualGiverPersonId != null
           ? { individualGiverPersonId: body.individualGiverPersonId }
@@ -544,10 +463,16 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
         ? { fundableProjectId: coding.fundableProjectId }
         : {}),
       ...(coding.regionalRestrictionType !== "unrestricted"
-        ? { regionalRestrictionType: coding.regionalRestrictionType as RestrictionAxis }
+        ? {
+            regionalRestrictionType:
+              coding.regionalRestrictionType as RestrictionAxis,
+          }
         : {}),
       ...(coding.otherRestrictionType !== "unrestricted"
-        ? { otherRestrictionType: coding.otherRestrictionType as RestrictionAxis }
+        ? {
+            otherRestrictionType:
+              coding.otherRestrictionType as RestrictionAxis,
+          }
         : {}),
       ...(coding.timeRestrictionType !== "unrestricted"
         ? { timeRestrictionType: coding.timeRestrictionType as RestrictionAxis }
@@ -559,10 +484,14 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
       data: {
         name: trimmed,
         ...donorFields,
-        ...(linkedOpp ? { opportunityId: linkedOpp.id, offBooksException: true } : {}),
+        ...(linkedOpp
+          ? { opportunityId: linkedOpp.id, offBooksException: true }
+          : {}),
         ...(amt ? { amount: amt } : {}),
         ...(date ? { dateReceived: date } : {}),
-        ...(titleReference.trim() ? { titleReference: titleReference.trim() } : {}),
+        ...(titleReference.trim()
+          ? { titleReference: titleReference.trim() }
+          : {}),
         ...(memoDescription.trim()
           ? { memoDescription: memoDescription.trim() }
           : {}),
@@ -578,22 +507,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
     if (!next) resetForm();
   }
 
-
   return (
     <>
-      {/* Follow-up prompt rendered outside the main dialog so both can coexist */}
-      {followUpOpp && pendingNavGiftId ? (
-        <OppFollowUpDialog
-          opp={followUpOpp}
-          onDone={() => {
-            const giftId = pendingNavGiftId;
-            setFollowUpOpp(null);
-            setPendingNavGiftId(null);
-            if (giftId) navigate(`/gifts/${giftId}`);
-          }}
-        />
-      ) : null}
-
       <Dialog open={open} onOpenChange={resetAndClose}>
         <DialogTrigger asChild>
           {scope ? (
@@ -621,7 +536,6 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-3">
-
             {/* ── Step 1: Link to an opportunity or pledge ── */}
             <div className="space-y-1.5">
               <Label>Linked opportunity or pledge</Label>
@@ -639,9 +553,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                 disabled={create.isPending}
               />
               <p className="text-xs text-muted-foreground">
-                Optional — link to an existing opportunity or pledge, or
-                choose &ldquo;No linked opportunity&rdquo; to pick a donor
-                directly.
+                Optional — link to an existing opportunity or pledge, or choose
+                &ldquo;No linked opportunity&rdquo; to pick a donor directly.
               </p>
               {linkedOpp !== null ? (
                 <div
@@ -718,8 +631,8 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   >
                     <p className="font-medium">
                       {pendingCount} pending payment
-                      {pendingCount === 1 ? "" : "s"} for this donor are awaiting
-                      reconciliation.
+                      {pendingCount === 1 ? "" : "s"} for this donor are
+                      awaiting reconciliation.
                     </p>
                     <ul className="mt-1 space-y-0.5">
                       {(pendingMoney.data?.items ?? []).map((it, i) => (
@@ -794,7 +707,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-gift-title-reference">Title / reference</Label>
+              <Label htmlFor="new-gift-title-reference">
+                Title / reference
+              </Label>
               <Input
                 id="new-gift-title-reference"
                 value={titleReference}
@@ -866,9 +781,14 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   <Label>Fund entity</Label>
                   <Select
                     value={coding.entityId || NONE}
-                    onValueChange={(v) => setCode("entityId", v === NONE ? "" : v)}
+                    onValueChange={(v) =>
+                      setCode("entityId", v === NONE ? "" : v)
+                    }
                   >
-                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-entity">
+                    <SelectTrigger
+                      className="h-8 text-sm"
+                      data-testid="select-gift-entity"
+                    >
                       <SelectValue placeholder="— None —" />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
@@ -886,9 +806,14 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   <Label>Fiscal year</Label>
                   <Select
                     value={coding.grantYear || NONE}
-                    onValueChange={(v) => setCode("grantYear", v === NONE ? "" : v)}
+                    onValueChange={(v) =>
+                      setCode("grantYear", v === NONE ? "" : v)
+                    }
                   >
-                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-fy">
+                    <SelectTrigger
+                      className="h-8 text-sm"
+                      data-testid="select-gift-fy"
+                    >
                       <SelectValue placeholder="— From gift date —" />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
@@ -910,7 +835,10 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                       setCode("intendedUsage", v === NONE ? "" : v)
                     }
                   >
-                    <SelectTrigger className="h-8 text-sm" data-testid="select-gift-usage">
+                    <SelectTrigger
+                      className="h-8 text-sm"
+                      data-testid="select-gift-usage"
+                    >
                       <SelectValue placeholder="— None —" />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
@@ -985,12 +913,16 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                     </div>
                   ))}
                   <div className="space-y-1.5">
-                    <Label htmlFor="new-gift-source-url">Source record link</Label>
+                    <Label htmlFor="new-gift-source-url">
+                      Source record link
+                    </Label>
                     <Input
                       id="new-gift-source-url"
                       type="url"
                       value={coding.sourceRecordUrl}
-                      onChange={(e) => setCode("sourceRecordUrl", e.target.value)}
+                      onChange={(e) =>
+                        setCode("sourceRecordUrl", e.target.value)
+                      }
                       placeholder="e.g. Donorbox donation URL"
                       data-testid="input-gift-source-url"
                     />

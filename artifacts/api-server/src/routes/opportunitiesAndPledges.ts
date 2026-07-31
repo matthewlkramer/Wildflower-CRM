@@ -1,12 +1,39 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
-import { opportunitiesAndPledges, pledgeAllocations, pledgeExpectedPayments, giftsAndPayments, giftAllocations, organizations, households, people, tasks, type NewPledgeAllocation } from "@workspace/db/schema";
+import {
+  opportunitiesAndPledges,
+  pledgeAllocations,
+  pledgeExpectedPayments,
+  giftsAndPayments,
+  giftAllocations,
+  organizations,
+  households,
+  people,
+  tasks,
+  type NewPledgeAllocation,
+} from "@workspace/db/schema";
 import { derivePledgePlanning } from "../lib/pledgePlanning";
 import { giftSelectWithDerived } from "./giftsAndPayments";
 import { oppWorklistConds, type OppWorklist } from "../lib/worklists";
 import { alias } from "drizzle-orm/pg-core";
-import { and, asc, count, desc, eq, exists, getTableColumns, ilike, inArray, isNull, notExists, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  exists,
+  getTableColumns,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  notExists,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 
 // Second `people` alias so we can join *both* the individual giver
 // (via individual_giver_person_id) and the primary contact (via
@@ -87,6 +114,11 @@ const donorJoinSelect = {
   reimbursable: reimbursablePledgeExistsSql(
     sql`${opportunitiesAndPledges.id}`,
   ).as("reimbursable"),
+  outcomeType: sql<"gift" | "pledge" | null>`CASE
+    WHEN ${opportunitiesAndPledges.pledgeCommittedAt} IS NOT NULL THEN 'pledge'
+    WHEN ${opportunitiesAndPledges.paid} > 0 THEN 'gift'
+    ELSE NULL
+  END`.as("outcome_type"),
 };
 
 import {
@@ -110,9 +142,25 @@ import {
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, normalizeArrayQuery, notFound, parseOrBadRequest, parsePagination, paramId, splitBlank } from "../lib/helpers";
-import { resolvePledgeFreeze, resolvePledgeFreezeById, respondFrozen } from "../lib/freezeGuard";
-import { getCurrentOpenFiscalYear, todayInChicago } from "../lib/governingFiscalYear";
+import {
+  asyncHandler,
+  newId,
+  normalizeArrayQuery,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+  splitBlank,
+} from "../lib/helpers";
+import {
+  resolvePledgeFreeze,
+  resolvePledgeFreezeById,
+  respondFrozen,
+} from "../lib/freezeGuard";
+import {
+  getCurrentOpenFiscalYear,
+  todayInChicago,
+} from "../lib/governingFiscalYear";
 import {
   findActiveEditableWriteOffChild,
   findActiveWriteOffChildPledgeId,
@@ -121,7 +169,12 @@ import {
 import { computePledgeUncollectedRemainder } from "../lib/pledgeCapacity";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
-import { activeOnlyUnlessAdmin, archiveOne, executeBulkArchive, unarchiveOne } from "../lib/archive";
+import {
+  activeOnlyUnlessAdmin,
+  archiveOne,
+  executeBulkArchive,
+  unarchiveOne,
+} from "../lib/archive";
 import {
   applyDerivedOppFields,
   canonicalWinProbability,
@@ -167,13 +220,26 @@ function maskOppDonorRow<
   };
 }
 
-const OPP_ARRAY_PARAMS = ["fiscalYear", "status", "stage", "type", "ownerUserId", "entityId", "fundableProjectId"] as const;
+const OPP_ARRAY_PARAMS = [
+  "fiscalYear",
+  "status",
+  "stage",
+  "type",
+  "ownerUserId",
+  "entityId",
+  "fundableProjectId",
+] as const;
 
-function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
+function respondInvariantFailure(
+  res: Response,
+  issues: InvariantIssue[],
+): void {
   res.status(400).json({
     error: "validation_error",
     message: "Request validation failed",
-    details: { issues: issues.map((i) => ({ path: [i.path], message: i.message })) },
+    details: {
+      issues: issues.map((i) => ({ path: [i.path], message: i.message })),
+    },
   });
 }
 
@@ -190,11 +256,15 @@ router.get(
     // the prior route behavior of accepting manually-typed uppercase values
     // by lowercasing here, after the comma-form split.
     if (Array.isArray(normalizedQuery.fiscalYear)) {
-      normalizedQuery.fiscalYear = (normalizedQuery.fiscalYear as unknown[]).map(
-        (v) => (typeof v === "string" ? v.toLowerCase() : v),
-      );
+      normalizedQuery.fiscalYear = (
+        normalizedQuery.fiscalYear as unknown[]
+      ).map((v) => (typeof v === "string" ? v.toLowerCase() : v));
     }
-    const q = parseOrBadRequest(ListOpportunitiesAndPledgesQueryParams, normalizedQuery, res);
+    const q = parseOrBadRequest(
+      ListOpportunitiesAndPledgesQueryParams,
+      normalizedQuery,
+      res,
+    );
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
@@ -223,41 +293,90 @@ router.get(
     }
     {
       const f = splitBlank(q.status as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.status), inArray(opportunitiesAndPledges.status, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.status));
-      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.status, f.values as never[]));
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(opportunitiesAndPledges.status),
+            inArray(opportunitiesAndPledges.status, f.values as never[]),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(opportunitiesAndPledges.status));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(opportunitiesAndPledges.status, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.stage as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.stage), inArray(opportunitiesAndPledges.stage, f.values as never[]))!);
-      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.stage));
-      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.stage, f.values as never[]));
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(opportunitiesAndPledges.stage),
+            inArray(opportunitiesAndPledges.stage, f.values as never[]),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(opportunitiesAndPledges.stage));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(opportunitiesAndPledges.stage, f.values as never[]),
+        );
     }
     {
       const f = splitBlank(q.type as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.type), inArray(opportunitiesAndPledges.type, f.values as never[]))!);
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(opportunitiesAndPledges.type),
+            inArray(opportunitiesAndPledges.type, f.values as never[]),
+          )!,
+        );
       else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.type));
-      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.type, f.values as never[]));
+      else if (f.values.length > 0)
+        filters.push(
+          inArray(opportunitiesAndPledges.type, f.values as never[]),
+        );
     }
-    if (q.organizationId) filters.push(eq(opportunitiesAndPledges.organizationId, q.organizationId));
-    if (q.householdId) filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
-    if (q.individualGiverPersonId) filters.push(eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId));
+    if (q.organizationId)
+      filters.push(
+        eq(opportunitiesAndPledges.organizationId, q.organizationId),
+      );
+    if (q.householdId)
+      filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
+    if (q.individualGiverPersonId)
+      filters.push(
+        eq(
+          opportunitiesAndPledges.individualGiverPersonId,
+          q.individualGiverPersonId,
+        ),
+      );
     {
       const f = splitBlank(q.ownerUserId as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0) filters.push(or(isNull(opportunitiesAndPledges.ownerUserId), inArray(opportunitiesAndPledges.ownerUserId, f.values))!);
-      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.ownerUserId));
-      else if (f.values.length > 0) filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
+      if (f.wantsBlank && f.values.length > 0)
+        filters.push(
+          or(
+            isNull(opportunitiesAndPledges.ownerUserId),
+            inArray(opportunitiesAndPledges.ownerUserId, f.values),
+          )!,
+        );
+      else if (f.wantsBlank)
+        filters.push(isNull(opportunitiesAndPledges.ownerUserId));
+      else if (f.values.length > 0)
+        filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
     }
-    if (typeof q.writtenPledge === "boolean") filters.push(eq(opportunitiesAndPledges.writtenPledge, q.writtenPledge));
-    // Convenience filter that encodes the page split. Commitment now lives on
-    // the sticky writtenPledge flag (cultivation stage is a pure funnel), so the
-    // split is simply writtenPledge true/false. Legacy committed rows are
-    // latched writtenPledge=true by the backfill. See the OpportunityOrPledge
-    // schema comments for the rationale.
+    if (typeof q.writtenPledge === "boolean") {
+      filters.push(
+        q.writtenPledge
+          ? isNotNull(opportunitiesAndPledges.pledgeCommittedAt)
+          : isNull(opportunitiesAndPledges.pledgeCommittedAt),
+      );
+    }
+    // Page split uses the actual pledge boundary, not the legacy mirror.
     if (q.pledgeView === "pledges") {
-      filters.push(eq(opportunitiesAndPledges.writtenPledge, true));
+      filters.push(isNotNull(opportunitiesAndPledges.pledgeCommittedAt));
     } else if (q.pledgeView === "opportunities") {
-      filters.push(eq(opportunitiesAndPledges.writtenPledge, false));
+      filters.push(isNull(opportunitiesAndPledges.pledgeCommittedAt));
     }
     // Multi-value fiscal-year filter — matches opps that have at least
     // one pledge_allocation row whose grant_year is in the selected set.
@@ -278,7 +397,10 @@ router.get(
                 .from(pledgeAllocations)
                 .where(
                   and(
-                    eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                    eq(
+                      pledgeAllocations.pledgeOrOpportunityId,
+                      opportunitiesAndPledges.id,
+                    ),
                     inArray(pledgeAllocations.grantYear, fyValues),
                   ),
                 ),
@@ -289,10 +411,16 @@ router.get(
             db
               .select({ one: sql`1` })
               .from(pledgeAllocations)
-              .where(eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id)),
+              .where(
+                eq(
+                  pledgeAllocations.pledgeOrOpportunityId,
+                  opportunitiesAndPledges.id,
+                ),
+              ),
           )
         : undefined;
-      if (existsClause && noAllocClause) filters.push(or(existsClause, noAllocClause)!);
+      if (existsClause && noAllocClause)
+        filters.push(or(existsClause, noAllocClause)!);
       else if (existsClause) filters.push(existsClause);
       else if (noAllocClause) filters.push(noAllocClause);
     }
@@ -309,14 +437,18 @@ router.get(
             .from(pledgeAllocations)
             .where(
               and(
-                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+                eq(
+                  pledgeAllocations.pledgeOrOpportunityId,
+                  opportunitiesAndPledges.id,
+                ),
                 inArray(pledgeAllocations.entityId, entitySelected),
               ),
             ),
         ),
       );
     }
-    const fundableProjectSelected = (q.fundableProjectId as string[] | undefined) ?? [];
+    const fundableProjectSelected =
+      (q.fundableProjectId as string[] | undefined) ?? [];
     if (fundableProjectSelected.length > 0) {
       filters.push(
         exists(
@@ -325,8 +457,14 @@ router.get(
             .from(pledgeAllocations)
             .where(
               and(
-                eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
-                inArray(pledgeAllocations.fundableProjectId, fundableProjectSelected),
+                eq(
+                  pledgeAllocations.pledgeOrOpportunityId,
+                  opportunitiesAndPledges.id,
+                ),
+                inArray(
+                  pledgeAllocations.fundableProjectId,
+                  fundableProjectSelected,
+                ),
               ),
             ),
         ),
@@ -335,30 +473,56 @@ router.get(
     // Presence filters on computed rollup fields (has value vs blank).
     // Each mirrors the matching column expression in donorJoinSelect.
     if (q.paidPresence === "has") {
-      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) > 0`);
+      filters.push(
+        sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) > 0`,
+      );
     } else if (q.paidPresence === "blank") {
-      filters.push(sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) <= 0`);
+      filters.push(
+        sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) <= 0`,
+      );
     }
     if (q.coveredFysPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
+      );
     } else if (q.coveredFysPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
+      );
     }
     if (q.entitiesPresence === "has") {
-      filters.push(sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
+      filters.push(
+        sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
+      );
     } else if (q.entitiesPresence === "blank") {
-      filters.push(sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`);
+      filters.push(
+        sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
+      );
     }
-    if (q.projectedCloseDatePresence === "has") filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NOT NULL`);
-    else if (q.projectedCloseDatePresence === "blank") filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NULL`);
-    if (q.applicationDeadlinePresence === "has") filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`);
-    else if (q.applicationDeadlinePresence === "blank") filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NULL`);
-    if (q.winProbabilityPresence === "has") filters.push(sql`${opportunitiesAndPledges.winProbability} IS NOT NULL`);
-    else if (q.winProbabilityPresence === "blank") filters.push(sql`${opportunitiesAndPledges.winProbability} IS NULL`);
+    if (q.projectedCloseDatePresence === "has")
+      filters.push(
+        sql`${opportunitiesAndPledges.projectedCloseDate} IS NOT NULL`,
+      );
+    else if (q.projectedCloseDatePresence === "blank")
+      filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NULL`);
+    if (q.applicationDeadlinePresence === "has")
+      filters.push(
+        sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`,
+      );
+    else if (q.applicationDeadlinePresence === "blank")
+      filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NULL`);
+    if (q.winProbabilityPresence === "has")
+      filters.push(sql`${opportunitiesAndPledges.winProbability} IS NOT NULL`);
+    else if (q.winProbabilityPresence === "blank")
+      filters.push(sql`${opportunitiesAndPledges.winProbability} IS NULL`);
     // Donor-lifecycle worklist preset — composite predicate shared verbatim
     // with the dashboard worklist counts (see lib/worklists).
-    if (q.worklist) filters.push(...oppWorklistConds(q.worklist as OppWorklist));
-    const archivedFilter = activeOnlyUnlessAdmin(req, opportunitiesAndPledges.archivedAt);
+    if (q.worklist)
+      filters.push(...oppWorklistConds(q.worklist as OppWorklist));
+    const archivedFilter = activeOnlyUnlessAdmin(
+      req,
+      opportunitiesAndPledges.archivedAt,
+    );
     if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
     // Default order is newest projected-close first. Two worklists override it:
@@ -379,39 +543,81 @@ router.get(
     // row set exceeds the page limit. Reuses the same joins as the count
     // query (search may reference the donor tables).
     const wantStageTotals = q.includeStageAskTotals === true;
-    const [rows, [{ value: total } = { value: 0 }], stageTotalRows] = await Promise.all([
-      db
-        .select(donorJoinSelect)
-        .from(opportunitiesAndPledges)
-        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
-        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
-        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-        .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
-        .where(where)
-        .orderBy(...(worklistOrder ?? [desc(opportunitiesAndPledges.projectedCloseDate)]))
-        .limit(limit)
-        .offset(offset),
-      db
-        .select({ value: count() })
-        .from(opportunitiesAndPledges)
-        .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
-        .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
-        .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-        .where(where),
-      wantStageTotals
-        ? db
-            .select({
-              stage: opportunitiesAndPledges.stage,
-              total: sql<string | null>`SUM(${opportunitiesAndPledges.askAmount})`,
-            })
-            .from(opportunitiesAndPledges)
-            .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
-            .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
-            .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-            .where(where)
-            .groupBy(opportunitiesAndPledges.stage)
-        : Promise.resolve([] as { stage: string | null; total: string | null }[]),
-    ]);
+    const [rows, [{ value: total } = { value: 0 }], stageTotalRows] =
+      await Promise.all([
+        db
+          .select(donorJoinSelect)
+          .from(opportunitiesAndPledges)
+          .leftJoin(
+            organizations,
+            eq(organizations.id, opportunitiesAndPledges.organizationId),
+          )
+          .leftJoin(
+            households,
+            eq(households.id, opportunitiesAndPledges.householdId),
+          )
+          .leftJoin(
+            people,
+            eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+          )
+          .leftJoin(
+            primaryContact,
+            eq(
+              primaryContact.id,
+              opportunitiesAndPledges.primaryContactPersonId,
+            ),
+          )
+          .where(where)
+          .orderBy(
+            ...(worklistOrder ?? [
+              desc(opportunitiesAndPledges.projectedCloseDate),
+            ]),
+          )
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ value: count() })
+          .from(opportunitiesAndPledges)
+          .leftJoin(
+            organizations,
+            eq(organizations.id, opportunitiesAndPledges.organizationId),
+          )
+          .leftJoin(
+            households,
+            eq(households.id, opportunitiesAndPledges.householdId),
+          )
+          .leftJoin(
+            people,
+            eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+          )
+          .where(where),
+        wantStageTotals
+          ? db
+              .select({
+                stage: opportunitiesAndPledges.stage,
+                total: sql<
+                  string | null
+                >`SUM(${opportunitiesAndPledges.askAmount})`,
+              })
+              .from(opportunitiesAndPledges)
+              .leftJoin(
+                organizations,
+                eq(organizations.id, opportunitiesAndPledges.organizationId),
+              )
+              .leftJoin(
+                households,
+                eq(households.id, opportunitiesAndPledges.householdId),
+              )
+              .leftJoin(
+                people,
+                eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+              )
+              .where(where)
+              .groupBy(opportunitiesAndPledges.stage)
+          : Promise.resolve(
+              [] as { stage: string | null; total: string | null }[],
+            ),
+      ]);
     const viewer = getViewer(req);
     const data = rows.map((r) => maskOppDonorRow(r, viewer));
     const stageAskTotals = Object.fromEntries(
@@ -434,10 +640,22 @@ router.get(
     const row = await db
       .select(donorJoinSelect)
       .from(opportunitiesAndPledges)
-      .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
-      .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
-      .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-      .leftJoin(primaryContact, eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId))
+      .leftJoin(
+        organizations,
+        eq(organizations.id, opportunitiesAndPledges.organizationId),
+      )
+      .leftJoin(
+        households,
+        eq(households.id, opportunitiesAndPledges.householdId),
+      )
+      .leftJoin(
+        people,
+        eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+      )
+      .leftJoin(
+        primaryContact,
+        eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId),
+      )
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
     if (!row) return notFound(res, "opportunity");
@@ -450,9 +668,15 @@ router.get(
       flaggedForResearch,
       expectedPayments,
     ] = await Promise.all([
-      db.select().from(pledgeAllocations).where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
+      db
+        .select()
+        .from(pledgeAllocations)
+        .where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
       // Named gift-header projection for the nested `payments` array.
-      db.select(giftSelectWithDerived).from(giftsAndPayments).where(eq(giftsAndPayments.opportunityId, id)),
+      db
+        .select(giftSelectWithDerived)
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.opportunityId, id)),
       // Derived audit-close resolution state (never persisted — see the
       // PledgeAuditCloseResolution schema). Drives the "write off remainder"
       // action; the amount reuses the write-off route's shared helper.
@@ -470,7 +694,9 @@ router.get(
     ]);
     const auditClose = {
       frozen: pledgeFreeze.frozen,
-      frozenFiscalYearLabel: pledgeFreeze.frozen ? pledgeFreeze.fiscalYearLabel : null,
+      frozenFiscalYearLabel: pledgeFreeze.frozen
+        ? pledgeFreeze.fiscalYearLabel
+        : null,
       uncollectedRemainder: Math.max(0, uncollectedRaw).toFixed(2),
       resolvedByWriteOffPledgeId,
     };
@@ -502,7 +728,10 @@ router.get(
             varianceReason: giftAllocations.varianceReason,
           })
           .from(giftAllocations)
-          .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
+          .innerJoin(
+            giftsAndPayments,
+            eq(giftsAndPayments.id, giftAllocations.giftId),
+          )
           .where(
             and(
               inArray(giftAllocations.sourcePledgeAllocationId, allocIds),
@@ -516,9 +745,10 @@ router.get(
     >();
     for (const r of actualRows) {
       if (!r.sourcePledgeAllocationId) continue;
-      const acc =
-        actualBySource.get(r.sourcePledgeAllocationId) ??
-        { actual: 0, varianceReasons: [] };
+      const acc = actualBySource.get(r.sourcePledgeAllocationId) ?? {
+        actual: 0,
+        varianceReasons: [],
+      };
       const amt = r.subAmount == null ? null : Number(r.subAmount);
       if (amt != null && Number.isFinite(amt)) acc.actual += amt;
       if (r.varianceReason) acc.varianceReasons.push(r.varianceReason);
@@ -575,7 +805,6 @@ router.post(
         "lossType",
         "stage",
         "type",
-        "writtenPledge",
         "actualCompletionDate",
         "projectedCloseDate",
         "applicationDeadline",
@@ -604,16 +833,27 @@ router.post(
         const issues = [
           ...validateOppInvariants({
             organizationId: merged.organizationId as string | null | undefined,
-            individualGiverPersonId: merged.individualGiverPersonId as string | null | undefined,
+            individualGiverPersonId: merged.individualGiverPersonId as
+              | string
+              | null
+              | undefined,
             householdId: merged.householdId as string | null | undefined,
             status: merged.status as string | null | undefined,
-            actualCompletionDate: merged.actualCompletionDate as string | Date | null | undefined,
+            actualCompletionDate: merged.actualCompletionDate as
+              | string
+              | Date
+              | null
+              | undefined,
           }),
           ...validateOppCloseTransition(
             {
               lossType: ex.lossType as string | null | undefined,
               stage: ex.stage as string | null | undefined,
-              actualCompletionDate: ex.actualCompletionDate as string | Date | null | undefined,
+              actualCompletionDate: ex.actualCompletionDate as
+                | string
+                | Date
+                | null
+                | undefined,
             },
             patch as {
               lossType?: string | null;
@@ -672,7 +912,9 @@ router.post(
                   .map((r: { e: string | null }) => r.e)
                   .filter((e: string | null): e is string => !!e)
               : [];
-          for (const entityId of v.entities.filter((e) => !existingEntities.includes(e))) {
+          for (const entityId of v.entities.filter(
+            (e) => !existingEntities.includes(e),
+          )) {
             await tx.insert(pledgeAllocations).values({
               id: newId(),
               pledgeOrOpportunityId: id,
@@ -682,7 +924,8 @@ router.post(
         }
         const fys = v.coveredFiscalYears;
         if (fys) {
-          const mode = v.coveredFiscalYearsMode === "append" ? "append" : "replace";
+          const mode =
+            v.coveredFiscalYearsMode === "append" ? "append" : "replace";
           if (mode === "replace") {
             await tx
               .delete(pledgeAllocations)
@@ -717,7 +960,9 @@ router.post(
         // so stale links don't linger.
         if (v.intendedUsage) {
           const fundableProjectId =
-            v.intendedUsage === "project" ? (v.fundableProjectId ?? null) : null;
+            v.intendedUsage === "project"
+              ? (v.fundableProjectId ?? null)
+              : null;
           const existing = await tx
             .select({ id: pledgeAllocations.id })
             .from(pledgeAllocations)
@@ -748,7 +993,11 @@ router.post(
 router.post(
   "/opportunities-and-pledges",
   asyncHandler(async (req, res) => {
-    const body = parseOrBadRequest(CreateOpportunityOrPledgeBodyRefined, req.body, res);
+    const body = parseOrBadRequest(
+      CreateOpportunityOrPledgeBodyRefined,
+      req.body,
+      res,
+    );
     if (!body) return;
     // Freeze guard: refuse to create a pledge whose made/won date lands in an
     // audit-closed FY.
@@ -779,7 +1028,6 @@ router.post(
       const derivedStatus = deriveOppFields({
         stage: body.stage ?? null,
         lossType: body.lossType ?? null,
-        writtenPledge: body.writtenPledge ?? null,
         conditional: null,
         grantLetterUrl: body.grantLetterUrl ?? null,
         awardedAmount: body.awardedAmount ?? null,
@@ -809,9 +1057,14 @@ router.post(
       });
     }
     const final = row
-      ? (await db.select(oppHeaderColumns).from(opportunitiesAndPledges).where(eq(opportunitiesAndPledges.id, row.id)).then((r) => r[0])) ?? row
+      ? ((await db
+          .select(oppHeaderColumns)
+          .from(opportunitiesAndPledges)
+          .where(eq(opportunitiesAndPledges.id, row.id))
+          .then((r) => r[0])) ?? row)
       : row;
-    if (final) await auditCreate(req, "opportunity", final.id, "Created opportunity");
+    if (final)
+      await auditCreate(req, "opportunity", final.id, "Created opportunity");
     res.status(201).json(final);
   }),
 );
@@ -1170,7 +1423,11 @@ router.post(
 router.patch(
   "/opportunities-and-pledges/:id",
   asyncHandler(async (req, res) => {
-    const body = parseOrBadRequest(UpdateOpportunityOrPledgeBody, req.body, res);
+    const body = parseOrBadRequest(
+      UpdateOpportunityOrPledgeBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     const id = paramId(req);
     const existing = await db
@@ -1250,11 +1507,7 @@ router.patch(
         disbursementModel: merged.disbursementModel ?? null,
         awardClosedAt: merged.awardClosedAt ?? null,
       }).status;
-      const wp = canonicalWinProbability(
-        derivedStatus,
-        merged.stage,
-        null,
-      );
+      const wp = canonicalWinProbability(derivedStatus, merged.stage, null);
       if (wp !== null) writeData.winProbability = wp;
     }
 
@@ -1291,10 +1544,12 @@ router.patch(
       const [{ value: existingCount } = { value: 0 }] = await db
         .select({ value: count() })
         .from(tasks)
-        .where(and(
-          eq(tasks.kind, "reporting_deadline"),
-          sql`${tasks.opportunityIds} @> ARRAY[${id}]::text[]`,
-        ));
+        .where(
+          and(
+            eq(tasks.kind, "reporting_deadline"),
+            sql`${tasks.opportunityIds} @> ARRAY[${id}]::text[]`,
+          ),
+        );
       if (Number(existingCount) === 0) promptForReportingDeadlines = true;
     }
 
@@ -1302,7 +1557,15 @@ router.patch(
     // (Task #449) — it's derived on demand from the allocation's scope + the
     // gift/opportunity donor, so a donor change needs no allocation rewrite.
 
-    await auditUpdate(req, "opportunity", row.id, existing as Record<string, unknown>, (final ?? row) as Record<string, unknown>, Object.keys(body), "Updated opportunity");
+    await auditUpdate(
+      req,
+      "opportunity",
+      row.id,
+      existing as Record<string, unknown>,
+      (final ?? row) as Record<string, unknown>,
+      Object.keys(body),
+      "Updated opportunity",
+    );
     res.json({ ...(final ?? row), promptForReportingDeadlines });
   }),
 );
@@ -1342,13 +1605,22 @@ router.post(
     const [[{ planned } = { planned: "0" }], [{ paid } = { paid: "0" }]] =
       await Promise.all([
         db
-          .select({ planned: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text` })
+          .select({
+            planned: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
+          })
           .from(pledgeAllocations)
           .where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
         db
-          .select({ paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text` })
+          .select({
+            paid: sql<string>`COALESCE(SUM(${giftsAndPayments.amount}), 0)::text`,
+          })
           .from(giftsAndPayments)
-          .where(and(eq(giftsAndPayments.opportunityId, id), isNull(giftsAndPayments.archivedAt))),
+          .where(
+            and(
+              eq(giftsAndPayments.opportunityId, id),
+              isNull(giftsAndPayments.archivedAt),
+            ),
+          ),
       ]);
     const remainingProjected = Number(planned) - Number(paid);
     if (remainingProjected > 0.005) {
@@ -1408,7 +1680,11 @@ router.post(
     }
     await db
       .update(opportunitiesAndPledges)
-      .set({ awardClosedAt: null, awardCloseReason: null, updatedAt: new Date() })
+      .set({
+        awardClosedAt: null,
+        awardCloseReason: null,
+        updatedAt: new Date(),
+      })
       .where(eq(opportunitiesAndPledges.id, id));
     await applyDerivedOppFields(id);
     const final = await db

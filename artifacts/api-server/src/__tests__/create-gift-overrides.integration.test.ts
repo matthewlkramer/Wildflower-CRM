@@ -45,6 +45,18 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+
+vi.mock("@clerk/express", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clerk/express")>();
+  return {
+    ...actual,
+    clerkMiddleware:
+      () =>
+      (_req: unknown, _res: unknown, next: () => void): void =>
+        next(),
+  };
+});
+
 const RUN = `mintovr_${Date.now()}`;
 const REALM_ID = `${RUN}_realm`;
 const ACCOUNT_ID = `${RUN}_acct`;

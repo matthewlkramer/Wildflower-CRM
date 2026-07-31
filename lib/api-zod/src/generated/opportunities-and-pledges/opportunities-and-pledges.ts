@@ -73,12 +73,16 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -129,12 +133,65 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   "paymentDetails": zod.string().optional(),
   "usageNotes": zod.string().optional(),
   "copperPledgeId": zod.string().optional(),
-  "writtenPledge": zod.boolean().optional(),
   "grantLetterUrl": zod.string().optional(),
   "grantLetterFilename": zod.string().optional(),
   "grantLetterUploadedAt": zod.string().datetime({}).optional(),
   "primaryContactPersonId": zod.string().optional(),
   "ownerUserId": zod.string().optional()
+})
+
+/**
+ * @summary Record the donor's verbal confirmation of the expected positive outcome.
+ */
+export const RecordVerbalCommitmentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const recordVerbalCommitmentBodyConfirmedAmountRegExp = new RegExp('^[0-9]+(\\.[0-9]{1,2})?$');
+
+
+export const RecordVerbalCommitmentBody = zod.object({
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date(),
+  "confirmedAmount": zod.string().regex(recordVerbalCommitmentBodyConfirmedAmountRegExp),
+  "expectedDate": zod.string().date().nullish()
+})
+
+export const RecordVerbalCommitmentResponse = zod.object({
+  "id": zod.string(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish(),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish(),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish(),
+  "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "awardedAmount": zod.string().nullish(),
+  "paidAmount": zod.string(),
+  "promptForReportingDeadlines": zod.boolean().nullish()
+})
+
+/**
+ * @summary Finalize a written or verbal pledge after validating its document, allocations, schedule, and conditions.
+ */
+export const FinalizePledgeParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const FinalizePledgeBody = zod.object({
+  "pledgeCommittedAt": zod.string().date()
+})
+
+export const FinalizePledgeResponse = zod.object({
+  "id": zod.string(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish(),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish(),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish(),
+  "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Lifecycle status of an opportunity\/pledge row. FULLY CALCULATED and\nread-only — never set this directly. Derived server-side from the\nwrittenPledge outcome flag + payments + lossType on every write:\n  lossType set                              → status = lossType\n  else fully paid (paid ≥ awarded)          → cash_in\n  else writtenPledge = true                 → pledge\n  else                                      → open\nValues:\n  open    — actively in the funnel, not yet committed\n  pledge  — funder has committed but not fully paid; UI labels this\n            \"Waiting for payment\" (stored value stays `pledge`)\n  cash_in — fully paid (sum of non-archived payments ≥ awarded)\n  dormant — paused (mirrors lossType=\'dormant\')\n  lost    — declined\/withdrawn (mirrors lossType=\'lost\')\nTo mark a row dormant\/lost, set the `lossType` field instead. The\ncommitment outcome is the writtenPledge flag — cultivation `stage` no\nlonger feeds status.\n').nullish(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "awardedAmount": zod.string().nullish(),
+  "paidAmount": zod.string(),
+  "promptForReportingDeadlines": zod.boolean().nullish()
 })
 
 export const GetOpportunityOrPledgeParams = zod.object({
@@ -171,12 +228,16 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -364,7 +425,6 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean().optional(),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -402,12 +462,16 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -440,7 +504,6 @@ export const BulkUpdateOpportunitiesAndPledgesBody = zod.object({
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
   "type": zod.enum(['solicitation', 'renewal', 'open_application']).nullish(),
-  "writtenPledge": zod.boolean().nullish(),
   "actualCompletionDate": zod.string().date().nullish().describe('Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt.'),
   "projectedCloseDate": zod.string().date().nullish().describe('Projected close date on each opportunity.'),
   "applicationDeadline": zod.string().date().nullish().describe('Application deadline on each opportunity.'),
@@ -516,12 +579,16 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -577,12 +644,16 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -701,12 +772,16 @@ export const CloseAwardResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
@@ -769,12 +844,16 @@ export const ReopenAwardResponse = zod.object({
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel stage — a PURE pipeline position, fully separate from\nthe commitment outcome (writtenPledge) and the calculated status. Active\nfunnel: cold_lead → warm_lead → in_conversation → convince →\nprobable_renewal → verbal_confirmation → complete (terminal: won).\n`complete` is set automatically when an opp is won (status pledge|cash_in)\nand reverted off a stale `complete` when no longer won.\nDEPRECATED (retained for historical rows, never written going forward):\nconditional_commitment, written_commitment, cash_in — the commitment\noutcome now lives on the writtenPledge flag, not the stage.\n').nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
   "lossReason": zod.string().nullish(),
   "applicationDeadline": zod.string().date().nullish(),
   "paymentDetails": zod.string().nullish(),
   "usageNotes": zod.string().nullish(),
   "copperPledgeId": zod.string().nullish(),
-  "writtenPledge": zod.boolean(),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
   "grantLetterUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
