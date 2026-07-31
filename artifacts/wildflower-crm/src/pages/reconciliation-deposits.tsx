@@ -149,7 +149,6 @@ import {
   deriveApproveBody,
   deriveApproveBodyFromProposal,
   hasAmountBlocker,
-  type OutcomeChoice,
 } from "@/lib/reconciliation";
 
 type CandidatePaymentUnitWithClaim = DepositCandidatePaymentUnit & {
@@ -291,8 +290,6 @@ export default function ReconciliationDepositsPage() {
     anchor: AnchorRef;
     mode: "all" | "pledges";
   } | null>(null);
-  const [oppOutcomeFor, setOppOutcomeFor] =
-    useState<OpportunityOrPledge | null>(null);
   const [identifyFor, setIdentifyFor] = useState<{
     anchor: AnchorRef;
     preview: EvidencePreview;
@@ -971,7 +968,7 @@ export default function ReconciliationDepositsPage() {
   const approveStagedAgainst = async (
     stagedPaymentId: string,
     pick: { giftId?: string; giftLabel?: string; opp?: OpportunityOrPledge },
-    outcomeChoice: OutcomeChoice,
+    outcomeChoice: "create_gift_from_opportunity",
   ): Promise<boolean> => {
     const graph = await queryClient.fetchQuery(
       getGetReconciliationGraphQueryOptions(stagedPaymentId),
@@ -1224,10 +1221,7 @@ export default function ReconciliationDepositsPage() {
       if (is409(err)) invalidate();
     }
   };
-  const handleLinkEvidenceOpp = async (
-    opp: OpportunityOrPledge,
-    choice?: OutcomeChoice,
-  ) => {
+  const handleLinkEvidenceOpp = async (opp: OpportunityOrPledge) => {
     const target = linkEvidenceFor;
     if (!target) return;
     if (target.anchor.kind !== "staged") {
@@ -1237,31 +1231,19 @@ export default function ReconciliationDepositsPage() {
       if (done) setLinkEvidenceFor(null);
       return;
     }
-    // An OPEN opportunity has two booking outcomes — ask the human which one.
-    if (!choice && opp.status === "open" && linkEvidenceFor?.mode === "all") {
-      setOppOutcomeFor(opp);
-      return;
-    }
-    const outcome: OutcomeChoice =
-      choice ??
-      (opp.status === "open"
-        ? "convert_to_pledge_and_first_payment"
-        : "create_gift_from_opportunity");
     try {
       const done = await approveStagedAgainst(
         target.anchor.id,
         { opp },
-        outcome,
+        "create_gift_from_opportunity",
       );
       if (!done) return;
-      setOppOutcomeFor(null);
       setLinkEvidenceFor(null);
       invalidate();
       toast({
-        title:
-          outcome === "convert_to_pledge_and_first_payment"
-            ? "Pledge created with first payment"
-            : "Payment recorded",
+        title: opp.pledgeCommittedAt
+          ? "Pledge payment recorded"
+          : "Gift recorded",
         description: `“${target.anchor.label}” was booked against “${opp.name ?? "the selected record"}”.`,
       });
     } catch (err) {
@@ -2374,56 +2356,6 @@ export default function ReconciliationDepositsPage() {
         onPickGift={(gift) => void handleLinkEvidenceGift(gift)}
         onPickOpp={(opp) => void handleLinkEvidenceOpp(opp)}
       />
-      <AlertDialog
-        open={oppOutcomeFor != null}
-        onOpenChange={(open) => {
-          if (!open && !busy) setOppOutcomeFor(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>How should this be booked?</AlertDialogTitle>
-            <AlertDialogDescription>
-              “{oppOutcomeFor?.name ?? oppOutcomeFor?.id}” is still an open
-              opportunity. Convert it into a pledge with this as its first
-              payment, or book a one-time gift from it and keep the opportunity
-              as-is.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                const opp = oppOutcomeFor;
-                if (opp)
-                  void handleLinkEvidenceOpp(
-                    opp,
-                    "create_gift_from_opportunity",
-                  );
-              }}
-              data-testid="button-opp-outcome-gift"
-            >
-              One-time gift
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={() => {
-                const opp = oppOutcomeFor;
-                if (opp)
-                  void handleLinkEvidenceOpp(
-                    opp,
-                    "convert_to_pledge_and_first_payment",
-                  );
-              }}
-              data-testid="button-opp-outcome-pledge"
-            >
-              Convert to pledge + first payment
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
       <DonorResolveDialog
         open={identifyFor != null}
         onOpenChange={(open) => {
@@ -2848,7 +2780,9 @@ export default function ReconciliationDepositsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Remove confirmed QuickBooks tie?</AlertDialogTitle>
+            <AlertDialogTitle>
+              Remove confirmed QuickBooks tie?
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {revertTieFor?.label} will no longer be tied to this Stripe
               charge. The QuickBooks record and the charge both stay booked —
@@ -2869,8 +2803,7 @@ export default function ReconciliationDepositsPage() {
                     invalidate();
                     toast({
                       title: "QB tie removed",
-                      description:
-                        "The confirmed charge–QB link was reverted.",
+                      description: "The confirmed charge–QB link was reverted.",
                     });
                   })
                   .catch((err) => {

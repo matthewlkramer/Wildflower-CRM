@@ -41,6 +41,7 @@ import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { FileUploadField } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
+import { CommitmentLifecycleCard } from "@/components/commitment-lifecycle-card";
 import { WriteOffPledgeDialog } from "@/components/audit-close-dialogs";
 import {
   InlineEditBoolean,
@@ -74,7 +75,12 @@ import {
   type Highlight,
 } from "@/components/record-layout";
 import { useQueryClient } from "@tanstack/react-query";
-import { formatCurrency, formatDate, formatEnum, formatPercent } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatEnum,
+  formatPercent,
+} from "@/lib/format";
 import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import { useToast } from "@/hooks/use-toast";
 
@@ -86,7 +92,6 @@ const STAGE_OPTIONS = [
   { value: "probable_renewal", label: "Probable renewal" },
   { value: "verbal_confirmation", label: "Verbal confirmation" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<OpportunityStage>>;
-
 
 const TYPE_OPTIONS = [
   { value: "solicitation", label: "Solicitation" },
@@ -176,19 +181,36 @@ export default function OpportunityDetail({
   if (isError || !data) {
     return (
       <div className="space-y-4">
-        <Link href={backHref} className="text-sm text-primary hover:underline">{backLabel}</Link>
+        <Link href={backHref} className="text-sm text-primary hover:underline">
+          {backLabel}
+        </Link>
         <div className="text-sm text-destructive">
           {error instanceof Error ? error.message : `${entityLabel} not found.`}
         </div>
       </div>
     );
   }
-  return <OppView opp={data} backHref={backHref} backLabel={backLabel} entityLabel={entityLabel} />;
+  return (
+    <OppView
+      opp={data}
+      backHref={backHref}
+      backLabel={backLabel}
+      entityLabel={entityLabel}
+    />
+  );
 }
 
 function OppView({
-  opp, backHref, backLabel, entityLabel,
-}: { opp: OpportunityOrPledgeDetail; backHref: string; backLabel: string; entityLabel: string }) {
+  opp,
+  backHref,
+  backLabel,
+  entityLabel,
+}: {
+  opp: OpportunityOrPledgeDetail;
+  backHref: string;
+  backLabel: string;
+  entityLabel: string;
+}) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -201,7 +223,8 @@ function OppView({
   // gift-creation path left on a pledge — money that never hits our bank).
   const [offBooksConfirmOpen, setOffBooksConfirmOpen] = useState(false);
   // Non-null while the "mark dormant/lost" close-date prompt is open.
-  const [closingLossType, setClosingLossType] = useState<OpportunityLossType | null>(null);
+  const [closingLossType, setClosingLossType] =
+    useState<OpportunityLossType | null>(null);
   const [closeDateValue, setCloseDateValue] = useState("");
 
   const [editingName, setEditingName] = useState(false);
@@ -211,8 +234,12 @@ function OppView({
     mutation: {
       onSuccess: async (response) => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
-          queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getGetOpportunityOrPledgeQueryKey(opp.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListOpportunitiesAndPledgesQueryKey(),
+          }),
         ]);
         toast({ title: `${entityLabel} updated` });
         // The server sets `promptForReportingDeadlines` on the PATCH
@@ -236,7 +263,9 @@ function OppView({
   const archive = useArchiveOpportunityOrPledge({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() });
+        await queryClient.invalidateQueries({
+          queryKey: getListOpportunitiesAndPledgesQueryKey(),
+        });
         toast({ title: `${entityLabel} archived` });
         navigate(backHref);
       },
@@ -258,11 +287,19 @@ function OppView({
     mutation: {
       onSuccess: async (gift) => {
         await Promise.all([
-          queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
-          queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
-          queryClient.invalidateQueries({ queryKey: getListGiftsAndPaymentsQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getGetOpportunityOrPledgeQueryKey(opp.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListOpportunitiesAndPledgesQueryKey(),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListGiftsAndPaymentsQueryKey(),
+          }),
           gift?.id
-            ? queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) })
+            ? queryClient.invalidateQueries({
+                queryKey: getGetGiftOrPaymentQueryKey(gift.id),
+              })
             : Promise.resolve(),
         ]);
         toast({ title: "Gift created" });
@@ -477,12 +514,6 @@ function OppView({
           {/* Conversions. Only meaningful on a live (non-write-off) record. */}
           {!opp.isWriteOff ? (
             <>
-              <DropdownMenuItem
-                onSelect={() => patch({ writtenPledge: true })}
-                data-testid="action-mark-committed-pledge"
-              >
-                Mark as committed pledge
-              </DropdownMenuItem>
               {/*
                 Payments are minted from money evidence in the reconciliation
                 workbench — never typed in here. The old "won gift (awaiting
@@ -506,7 +537,9 @@ function OppView({
                 data-testid="action-record-off-books-gift"
               >
                 Record off-books gift
-                {!viewerIsFinance ? " (finance role required — off-books exception)" : ""}
+                {!viewerIsFinance
+                  ? " (finance role required — off-books exception)"
+                  : ""}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               {/*
@@ -519,7 +552,9 @@ function OppView({
                 }
                 data-testid="action-toggle-dormant"
               >
-                {opp.lossType === "dormant" ? "Unmark as dormant" : "Mark as dormant"}
+                {opp.lossType === "dormant"
+                  ? "Unmark as dormant"
+                  : "Mark as dormant"}
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() =>
@@ -582,7 +617,9 @@ function OppView({
         onOpenChange={setCloseAwardOpen}
       />
       <FlagForResearchDialog
-        targetType={entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"}
+        targetType={
+          entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"
+        }
         targetId={opp.id}
         recordLabel={opp.name ?? `this ${entityLabel.toLowerCase()}`}
         open={flagResearchOpen}
@@ -608,7 +645,10 @@ function OppView({
         never appear in our bank/QuickBooks — real payments are recorded in
         the reconciliation workbench when the money arrives.
       */}
-      <AlertDialog open={offBooksConfirmOpen} onOpenChange={setOffBooksConfirmOpen}>
+      <AlertDialog
+        open={offBooksConfirmOpen}
+        onOpenChange={setOffBooksConfirmOpen}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Record an off-books gift?</AlertDialogTitle>
@@ -661,10 +701,7 @@ function OppView({
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-1.5">
-            <label
-              htmlFor="close-date-input"
-              className="text-sm font-medium"
-            >
+            <label htmlFor="close-date-input" className="text-sm font-medium">
               Actual completion date
             </label>
             <Input
@@ -730,7 +767,9 @@ function OppView({
   const statusBadge = (status: OpportunityStatus | null) =>
     status ? (
       <Badge
-        variant={status === "cash_in" || status === "pledge" ? "default" : "outline"}
+        variant={
+          status === "cash_in" || status === "pledge" ? "default" : "outline"
+        }
       >
         {opportunityStatusLabel(status)}
       </Badge>
@@ -837,7 +876,10 @@ function OppView({
   // allocations / payments against it.
   const targetRaw = opp.awardedAmount ?? opp.askAmount ?? null;
   const targetAmount = targetRaw == null ? null : toNum(targetRaw);
-  const allocationsSum = allocations.reduce((s, a) => s + toNum(a.subAmount), 0);
+  const allocationsSum = allocations.reduce(
+    (s, a) => s + toNum(a.subAmount),
+    0,
+  );
   // Server-derived paid rollup (excludes archived payments) — the nested
   // `payments` array includes archived rows for admins, so a client-side sum
   // would overcount. Keep the pill in lockstep with the list/pledge math.
@@ -862,7 +904,11 @@ function OppView({
       <NeedsResearchBadge flagged={opp.flaggedForResearch} />
       <PlanningBadge opp={opp} />
       {opp.awardClosedAt ? (
-        <Badge variant="outline" className="rounded-full" data-testid="badge-award-closed">
+        <Badge
+          variant="outline"
+          className="rounded-full"
+          data-testid="badge-award-closed"
+        >
           Award closed
           {opp.awardCloseReason
             ? ` — ${AWARD_CLOSE_REASON_LABELS[opp.awardCloseReason] ?? opp.awardCloseReason}`
@@ -977,18 +1023,6 @@ function OppView({
                   became a pledge is shown as a pledge), so hide the row there.
                   (T#585)
                 */}
-                {entityLabel.toLowerCase() === "pledge" ? (
-                  <Row label="Closed as pledge">
-                    <InlineEditBoolean
-                      label="Written pledge"
-                      testIdBase="opp-written-pledge"
-                      value={opp.writtenPledge ?? false}
-                      allowNull={false}
-                      display={opp.writtenPledge ? "Yes" : "No"}
-                      onSave={(next) => patch({ writtenPledge: next ?? false })}
-                    />
-                  </Row>
-                ) : null}
                 {opp.auditClose.resolvedByWriteOffPledgeId ? (
                   <Row label="Uncollected remainder">
                     <Link
@@ -1014,8 +1048,8 @@ function OppView({
                 <Row label="Grant letter">
                   {/*
                     File upload via presigned URL → /api/storage/objects/<id>.
-                    Setting a URL also flips was_pledge sticky-true on
-                    the server side (see applyDerivedOppFields).
+                    Uploading the document does not itself create a pledge;
+                    use Finalize pledge after the plan is complete.
                   */}
                   <FileUploadField
                     url={opp.grantLetterUrl ?? null}
@@ -1050,8 +1084,12 @@ function OppView({
                   (rollup is null with no allocations, "unconditional" when
                   allocations exist but none are conditional).
                 */}
-                {opp.conditionalRollup && opp.conditionalRollup !== "unconditional" ? (
-                  <DerivedRow label="Conditions met" hint="derived from allocations">
+                {opp.conditionalRollup &&
+                opp.conditionalRollup !== "unconditional" ? (
+                  <DerivedRow
+                    label="Conditions met"
+                    hint="derived from allocations"
+                  >
                     {CONDITIONS_MET_LABELS[opp.conditionsMetRollup ?? "no"]}
                   </DerivedRow>
                 ) : null}
@@ -1099,7 +1137,9 @@ function OppView({
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
                   totalAmount={targetAmount}
-                  reimbursablePrompt={opp.disbursementModel === "cost_reimbursement"}
+                  reimbursablePrompt={
+                    opp.disbursementModel === "cost_reimbursement"
+                  }
                 />
               </div>
             </RelatedCard>
@@ -1141,12 +1181,15 @@ function OppView({
                   ))}
                 </div>
               ) : (
-                <p className="px-2 py-2 text-sm text-muted-foreground">No payments yet.</p>
+                <p className="px-2 py-2 text-sm text-muted-foreground">
+                  No payments yet.
+                </p>
               )}
             </RelatedCard>
 
             <div className="px-1 text-xs text-muted-foreground">
-              Created {formatDate(opp.createdAt)} • Updated {formatDate(opp.updatedAt)}
+              Created {formatDate(opp.createdAt)} • Updated{" "}
+              {formatDate(opp.updatedAt)}
             </div>
           </>
         }
@@ -1157,23 +1200,41 @@ function OppView({
           // to the opportunity itself. Tasks sit above the activity feed.
           (() => {
             const personIds: string[] = [];
-            if (opp.individualGiverPersonId) personIds.push(opp.individualGiverPersonId);
-            if (opp.primaryContactPersonId && opp.primaryContactPersonId !== opp.individualGiverPersonId) {
+            if (opp.individualGiverPersonId)
+              personIds.push(opp.individualGiverPersonId);
+            if (
+              opp.primaryContactPersonId &&
+              opp.primaryContactPersonId !== opp.individualGiverPersonId
+            ) {
               personIds.push(opp.primaryContactPersonId);
             }
-            const oppDefaultLinks: Partial<{ personIds: string[]; organizationIds: string[]; householdIds: string[]; opportunityIds: string[]; giftIds: string[] }> = {
-              ...(opp.organizationId ? { organizationIds: [opp.organizationId] } : {}),
+            const oppDefaultLinks: Partial<{
+              personIds: string[];
+              organizationIds: string[];
+              householdIds: string[];
+              opportunityIds: string[];
+              giftIds: string[];
+            }> = {
+              ...(opp.organizationId
+                ? { organizationIds: [opp.organizationId] }
+                : {}),
               ...(opp.householdId ? { householdIds: [opp.householdId] } : {}),
               ...(personIds.length > 0 ? { personIds } : {}),
             };
             return (
               <>
-                <TasksPanel opportunityId={opp.id} defaultLinks={oppDefaultLinks} />
+                <TasksPanel
+                  opportunityId={opp.id}
+                  defaultLinks={oppDefaultLinks}
+                />
                 <UnifiedActivityFeed
                   organizationId={opp.organizationId ?? undefined}
                   personId={opp.individualGiverPersonId ?? undefined}
                   householdId={opp.householdId ?? undefined}
-                  notesContext={{ opportunityId: opp.id, defaultLinks: oppDefaultLinks }}
+                  notesContext={{
+                    opportunityId: opp.id,
+                    defaultLinks: oppDefaultLinks,
+                  }}
                   hideTasks
                 />
               </>
@@ -1182,6 +1243,10 @@ function OppView({
         }
         right={
           <>
+            <CommitmentLifecycleCard
+              opp={opp}
+              onPledgeFinalized={() => setReportingDialogOpen(true)}
+            />
             <RelatedCard
               title="People"
               count={associatedPeople.length || undefined}
@@ -1215,7 +1280,9 @@ function OppView({
                     testIdBase="opp-advisor"
                     value={opp.individualAdvisorPersonId ?? null}
                     display={advisorDisplay}
-                    onSave={(next) => patch({ individualAdvisorPersonId: next })}
+                    onSave={(next) =>
+                      patch({ individualAdvisorPersonId: next })
+                    }
                   />
                 </Row>
               </div>
@@ -1226,9 +1293,14 @@ function OppView({
                       role.externalTitleOrRole ??
                       (role.connection ? formatEnum(role.connection) : null);
                     const roleLabel =
-                      [subtitle, role.personEmail].filter(Boolean).join(" · ") || undefined;
+                      [subtitle, role.personEmail]
+                        .filter(Boolean)
+                        .join(" · ") || undefined;
                     return (
-                      <div key={role.id} data-testid={`row-opp-person-${role.personId}`}>
+                      <div
+                        key={role.id}
+                        data-testid={`row-opp-person-${role.personId}`}
+                      >
                         <AffiliationRow
                           name={role.personName ?? `Person ${role.personId}`}
                           href={`/individuals/${role.personId}`}
@@ -1263,7 +1335,13 @@ function OppView({
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="flex items-baseline justify-between gap-2">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
@@ -1300,20 +1378,32 @@ function ProgressPill({
   const eps = 0.005;
   if (Math.abs(diff) < eps) {
     return (
-      <Badge variant="default" className="rounded-full" data-testid="pill-progress">
+      <Badge
+        variant="default"
+        className="rounded-full"
+        data-testid="pill-progress"
+      >
         {fullLabel}
       </Badge>
     );
   }
   if (diff > 0) {
     return (
-      <Badge variant="destructive" className="rounded-full" data-testid="pill-progress">
+      <Badge
+        variant="destructive"
+        className="rounded-full"
+        data-testid="pill-progress"
+      >
         {overLabel}
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="rounded-full" data-testid="pill-progress">
+    <Badge
+      variant="outline"
+      className="rounded-full"
+      data-testid="pill-progress"
+    >
       {underLabel}
     </Badge>
   );
@@ -1373,7 +1463,10 @@ function InlineEditAmounts({
     if (!canSave || busy) return;
     run(
       () =>
-        onSave({ askAmount: askParsed.value, awardedAmount: awardedParsed.value }),
+        onSave({
+          askAmount: askParsed.value,
+          awardedAmount: awardedParsed.value,
+        }),
       () => setEditing(false),
     );
   };
@@ -1454,7 +1547,8 @@ function InlineEditCloseDates({
     );
   }
 
-  const projectedNext = projectedDraft.trim().length === 0 ? null : projectedDraft;
+  const projectedNext =
+    projectedDraft.trim().length === 0 ? null : projectedDraft;
   const actualNext = actualDraft.trim().length === 0 ? null : actualDraft;
   const dirty =
     projectedNext !== (projected ?? null) || actualNext !== (actual ?? null);
@@ -1529,7 +1623,9 @@ function EditableNote({
   );
   return (
     <div>
-      <div className="text-xs font-medium text-muted-foreground mb-1">{label}</div>
+      <div className="text-xs font-medium text-muted-foreground mb-1">
+        {label}
+      </div>
       <InlineEditTextarea
         label={label}
         testIdBase={testIdBase}

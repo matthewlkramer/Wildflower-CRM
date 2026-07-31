@@ -89,7 +89,10 @@ export const EDGE_STATE_BADGE: Record<
 };
 
 /** Compact human label for how a candidate was derived (UI badge). */
-export const CANDIDATE_SOURCE_LABEL: Record<ReconciliationCandidateSource, string> = {
+export const CANDIDATE_SOURCE_LABEL: Record<
+  ReconciliationCandidateSource,
+  string
+> = {
   donor_xor: "donor",
   payment_on_pledge: "on pledge",
   name: "name",
@@ -105,18 +108,19 @@ export const CANDIDATE_SOURCE_LABEL: Record<ReconciliationCandidateSource, strin
  * Human label for a unit of money's ORIGIN (its funding source), distinct from
  * the QuickBooks payment instrument and from the funding-lane reconcile status.
  */
-export const FUNDING_SOURCE_LABEL: Record<StagedPaymentFundingSource, string> = {
-  stripe: "Stripe",
-  brokerage: "Brokerage / stock",
-  daf: "Donor-advised fund",
-  donorbox: "Donorbox",
-  paypal: "PayPal",
-  wire_ach: "Wire / ACH",
-  check: "Check",
-  cash: "Cash",
-  employer_match: "Employer match",
-  other: "Other",
-};
+export const FUNDING_SOURCE_LABEL: Record<StagedPaymentFundingSource, string> =
+  {
+    stripe: "Stripe",
+    brokerage: "Brokerage / stock",
+    daf: "Donor-advised fund",
+    donorbox: "Donorbox",
+    paypal: "PayPal",
+    wire_ach: "Wire / ACH",
+    check: "Check",
+    cash: "Cash",
+    employer_match: "Employer match",
+    other: "Other",
+  };
 
 /** Funding sources in display order for the manual-override picker. Derived from
  *  the generated enum so it can never drift from the contract. */
@@ -541,9 +545,7 @@ export function extractOwnApplicationConflict(
   return null;
 }
 
-export type OutcomeChoice =
-  | "create_gift_from_opportunity"
-  | "convert_to_pledge_and_first_payment";
+export type OutcomeChoice = "create_gift_from_opportunity";
 
 export type DeriveResult =
   | {
@@ -561,7 +563,9 @@ export type DeriveResult =
  * the server only waives with an explicit override reason.
  */
 export function hasAmountBlocker(blockers: string[]): boolean {
-  return blockers.some((b) => /amount|out.?of.?band|tolerance|mismatch/i.test(b));
+  return blockers.some((b) =>
+    /amount|out.?of.?band|tolerance|mismatch/i.test(b),
+  );
 }
 
 /**
@@ -659,10 +663,7 @@ export function deriveApproveBody(args: {
   if (opportunity) {
     return {
       ok: true,
-      summary:
-        outcomeChoice === "convert_to_pledge_and_first_payment"
-          ? `Convert “${opportunity.label}” to a pledge and record this as the first payment.`
-          : `Create a one-time gift from opportunity “${opportunity.label}”.`,
+      summary: `Record the arriving money from “${opportunity.label}”. It is a pledge payment only if the pledge was finalized before the payment arrived.`,
       body: { ...base, outcome: outcomeChoice, opportunityId: opportunity.id },
     };
   }
@@ -672,7 +673,8 @@ export function deriveApproveBody(args: {
     if (!kind) {
       return {
         ok: false,
-        reason: "The selected donor is missing its kind — pick it from search again.",
+        reason:
+          "The selected donor is missing its kind — pick it from search again.",
       };
     }
     const donorField =

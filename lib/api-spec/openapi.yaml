@@ -5510,6 +5510,60 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "Revision mismatch, blocker warnings present, or a row's gift/donor is no longer valid (re-derive and retry)." }
 
+  /opportunities-and-pledges/{id}/record-verbal-commitment:
+    post:
+      operationId: recordVerbalCommitment
+      tags:
+        - opportunities-and-pledges
+      summary: Record the donor's verbal confirmation of the expected positive outcome.
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecordVerbalCommitmentBody"
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunityCommitmentResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The opportunity is already closed, paid, archived, or finalized as a pledge.
+  /opportunities-and-pledges/{id}/finalize-pledge:
+    post:
+      operationId: finalizePledge
+      tags:
+        - opportunities-and-pledges
+      summary: Finalize a written or verbal pledge after validating its document, allocations, schedule, and conditions.
+      parameters:
+        - $ref: "#/components/parameters/IdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizePledgeBody"
+      responses:
+        "200":
+          description: Finalized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunityCommitmentResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Pledge finalization requirements are incomplete.
 components:
   parameters:
     Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 50 } }
@@ -5578,25 +5632,22 @@ components:
     OrganizationType: { type: string, enum: [advocacy_membership_lobbyist, authorizer, cmo, capital_provider, government, corporation, education_vendor, elected_official, higher_ed, investor, law_firm, media, nonprofit, philanthropic_advisor, real_estate, school, school_district, school_network, small_business_consulting, tribal] }
     OpportunityStatus:
       type: string
-      enum: [open, pledge, cash_in, dormant, lost]
+      enum:
+        - open
+        - pledge
+        - cash_in
+        - dormant
+        - lost
       description: |
-        Lifecycle status of an opportunity/pledge row. FULLY CALCULATED and
-        read-only — never set this directly. Derived server-side from the
-        writtenPledge outcome flag + payments + lossType on every write:
-          lossType set                              → status = lossType
-          else fully paid (paid ≥ awarded)          → cash_in
-          else writtenPledge = true                 → pledge
-          else                                      → open
-        Values:
-          open    — actively in the funnel, not yet committed
-          pledge  — funder has committed but not fully paid; UI labels this
-                    "Waiting for payment" (stored value stays `pledge`)
-          cash_in — fully paid (sum of non-archived payments ≥ awarded)
-          dormant — paused (mirrors lossType='dormant')
-          lost    — declined/withdrawn (mirrors lossType='lost')
-        To mark a row dormant/lost, set the `lossType` field instead. The
-        commitment outcome is the writtenPledge flag — cultivation `stage` no
-        longer feeds status.
+        Read-only lifecycle status derived from lossType, pledgeCommittedAt,
+        linked money, awarded amount, and the disbursement model:
+          lossType set                         → dormant or lost
+          finalized pledge, not fully collected → pledge
+          fully collected pledge               → cash_in
+          direct gift fully received            → cash_in
+          otherwise                             → open
+        A pledge exists only when pledgeCommittedAt is populated. The deprecated
+        writtenPledge field is a read-only compatibility mirror.
     OpportunityLossType:
       type: string
       enum: [dormant, lost]
@@ -5612,17 +5663,23 @@ components:
     OpportunityType: { type: string, enum: [solicitation, renewal, open_application] }
     OpportunityStage:
       type: string
-      enum: [cold_lead, warm_lead, in_conversation, convince, conditional_commitment, probable_renewal, verbal_confirmation, written_commitment, cash_in, complete]
+      enum:
+        - cold_lead
+        - warm_lead
+        - in_conversation
+        - convince
+        - conditional_commitment
+        - probable_renewal
+        - verbal_confirmation
+        - written_commitment
+        - cash_in
+        - complete
       description: |
-        Cultivation funnel stage — a PURE pipeline position, fully separate from
-        the commitment outcome (writtenPledge) and the calculated status. Active
-        funnel: cold_lead → warm_lead → in_conversation → convince →
-        probable_renewal → verbal_confirmation → complete (terminal: won).
-        `complete` is set automatically when an opp is won (status pledge|cash_in)
-        and reverted off a stale `complete` when no longer won.
-        DEPRECATED (retained for historical rows, never written going forward):
-        conditional_commitment, written_commitment, cash_in — the commitment
-        outcome now lives on the writtenPledge flag, not the stage.
+        Cultivation funnel position, separate from commitment and actual outcome.
+        Active stages end at verbal_confirmation. Pledge finalization and payment
+        do not overwrite the recorded stage. conditional_commitment,
+        written_commitment, cash_in, and complete remain only for historical API
+        compatibility and are normalized to verbal_confirmation by migration 0224.
     # `reimbursable` is RETIRED as an input (Task #788) — the disbursement-model
     # split (DisbursementModel) replaced it. It remains in the enum only so
     # historical rows still parse; the API rejects new writes of it and the UI
@@ -7018,6 +7075,86 @@ components:
         householdId:           { type: string, nullable: true }
 
     # ─── Opportunities & pledges ───────────────────────────────────────────────
+    OpportunityCommitmentPath:
+      type: string
+      enum:
+        - gift
+        - written_pledge
+        - verbal_pledge
+      description: The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
+    OpportunityOutcomeType:
+      type: string
+      enum:
+        - gift
+        - pledge
+      description: Actual positive outcome, derived from pledge finalization or received money.
+    RecordVerbalCommitmentBody:
+      type: object
+      required:
+        - commitmentPath
+        - verbalCommitmentAt
+        - confirmedAmount
+      properties:
+        commitmentPath:
+          $ref: "#/components/schemas/OpportunityCommitmentPath"
+        verbalCommitmentAt:
+          type: string
+          format: date
+        confirmedAmount:
+          type: string
+          pattern: ^[0-9]+(\.[0-9]{1,2})?$
+        expectedDate:
+          type: string
+          format: date
+          nullable: true
+    FinalizePledgeBody:
+      type: object
+      required:
+        - pledgeCommittedAt
+      properties:
+        pledgeCommittedAt:
+          type: string
+          format: date
+    OpportunityCommitmentResult:
+      type: object
+      required:
+        - id
+        - paidAmount
+      properties:
+        id:
+          type: string
+        commitmentPath:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityCommitmentPath"
+          nullable: true
+        verbalCommitmentAt:
+          type: string
+          format: date
+          nullable: true
+        pledgeCommittedAt:
+          type: string
+          format: date
+          nullable: true
+        outcomeType:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityOutcomeType"
+          nullable: true
+        status:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityStatus"
+          nullable: true
+        stage:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityStage"
+          nullable: true
+        awardedAmount:
+          type: string
+          nullable: true
+        paidAmount:
+          type: string
+        promptForReportingDeadlines:
+          type: boolean
+          nullable: true
     OpportunityOrPledge:
       type: object
       required: [id, conditionsMet, writtenPledge, loanOrGrant, createdAt, updatedAt]
@@ -7065,13 +7202,34 @@ components:
         paymentDetails:             { type: string, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
-        # Sticky-true commitment outcome (renamed from writtenPledge): has this opp
-        # ever reached a written commitment? Latches true automatically when a
-        # grant letter is uploaded or a legacy commitment stage is set; user can
-        # also tick it manually. Never auto-cleared. Drives the Pledges page
-        # filter AND the calculated status (writtenPledge=true ⇒ status pledge,
-        # unless fully paid ⇒ cash_in).
-        writtenPledge:              { type: boolean }
+        commitmentPath:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityCommitmentPath"
+          nullable: true
+          readOnly: true
+          description: The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
+        verbalCommitmentAt:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+        pledgeCommittedAt:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.
+        outcomeType:
+          allOf:
+            - $ref: "#/components/schemas/OpportunityOutcomeType"
+          nullable: true
+          readOnly: true
+          description: Actual positive outcome, derived from pledge finalization or received money.
+        writtenPledge:
+          type: boolean
+          readOnly: true
+          deprecated: true
+          description: Compatibility mirror of pledgeCommittedAt != null; never write directly.
         # Foundation grant letter (object storage URL + display name +
         # upload time). Uploading flips writtenPledge=true.
         grantLetterUrl:             { type: string, nullable: true }
@@ -7185,7 +7343,6 @@ components:
         paymentDetails:             { type: string }
         usageNotes:                 { type: string }
         copperPledgeId:             { type: string }
-        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string }
         grantLetterFilename:        { type: string }
         grantLetterUploadedAt:      { type: string, format: date-time }
@@ -7215,7 +7372,6 @@ components:
         paymentDetails:             { type: string, nullable: true }
         usageNotes:                 { type: string, nullable: true }
         copperPledgeId:             { type: string, nullable: true }
-        writtenPledge:                  { type: boolean }
         grantLetterUrl:             { type: string, nullable: true }
         grantLetterFilename:        { type: string, nullable: true }
         grantLetterUploadedAt:      { type: string, format: date-time, nullable: true }
@@ -9071,13 +9227,17 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     ReconciliationOutcome:
       type: string
-      enum: [link_existing_gift, create_gift, create_gift_from_opportunity, convert_to_pledge_and_first_payment]
+      enum:
+        - link_existing_gift
+        - create_gift
+        - create_gift_from_opportunity
       description: |
         What approving the card does.
-        link_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.
-        create_gift: human-mint a new gift from the QB evidence for the chosen donor.
-        create_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.
-        convert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.
+        link_existing_gift: tie the evidence to an existing gift; no new gift.
+        create_gift: mint a new gift from evidence for the chosen donor.
+        create_gift_from_opportunity: record arriving money from the selected
+        opportunity. It is a pledge payment only when pledgeCommittedAt was set
+        before the payment arrived; otherwise it is a direct gift outcome.
     ApproveCompleteMatchBody:
       type: object
       required: [outcome]
@@ -12283,7 +12443,10 @@ components:
       type: object
       description: "Options for reverting a gift back into an opportunity. The new record inherits the gift's donor and amount; the gift's allocations are mirrored onto pledge_allocations and the gift is archived."
       properties:
-        asPledge: { type: boolean, default: false, description: "When true the new record is a written PLEDGE (writtenPledge=true); otherwise an open opportunity." }
+        asPledge:
+          type: boolean
+          default: false
+          description: When true, reconstruct a finalized verbal pledge with a payment schedule from the archived gift; otherwise create an open opportunity.
         name: { type: string, nullable: true, description: "Name for the new opportunity/pledge. Defaults to the gift's name." }
     RevertGiftToOpportunityResult:
       type: object
@@ -12415,7 +12578,6 @@ components:
         lossType:    { allOf: [ { $ref: "#/components/schemas/OpportunityLossType" } ], nullable: true }
         stage:       { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true }
         type:        { allOf: [ { $ref: "#/components/schemas/OpportunityType" } ], nullable: true }
-        writtenPledge:   { type: boolean, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true, description: "Close date applied to each row. REQUIRED (in the patch or already on the row) for any row this bulk patch NEWLY closes (lossType set, or stage → complete) — such rows fail per-row validation without it. Rows already closed (incl. legacy no-date rows) are exempt." }
         projectedCloseDate:   { type: string, format: date, nullable: true, description: "Projected close date on each opportunity." }
         applicationDeadline:  { type: string, format: date, nullable: true, description: "Application deadline on each opportunity." }

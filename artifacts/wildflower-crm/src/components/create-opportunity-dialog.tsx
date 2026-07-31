@@ -62,7 +62,8 @@ function donorFromScope(scope: LinkedRecordsScope): {
   type: DonorType;
   id: string;
 } {
-  if ("organizationId" in scope) return { type: "organization", id: scope.organizationId };
+  if ("organizationId" in scope)
+    return { type: "organization", id: scope.organizationId };
   if ("householdId" in scope)
     return { type: "household", id: scope.householdId };
   return { type: "individual", id: scope.individualGiverPersonId };
@@ -137,14 +138,17 @@ export function CreateOpportunityDialog({
         await queryClient.invalidateQueries({
           queryKey: getListOpportunitiesAndPledgesQueryKey(),
         });
-        toast({ title: isPledge ? "Pledge created" : "Opportunity created" });
+        toast({
+          title: isPledge ? "Pledge setup created" : "Opportunity created",
+          description: isPledge
+            ? "Record the verbal commitment, add the plan, and finalize the pledge from the opportunity."
+            : undefined,
+        });
         setOpen(false);
         setForm(EMPTY_FORM);
         resetDonor();
         if (created?.id) {
-          navigate(
-            isPledge ? `/pledges/${created.id}` : `/opportunities/${created.id}`,
-          );
+          navigate(`/opportunities/${created.id}`);
         }
       },
       onError: (err: unknown) => {
@@ -180,7 +184,6 @@ export function CreateOpportunityDialog({
         organizationId: donor.organizationId ?? undefined,
         individualGiverPersonId: donor.individualGiverPersonId ?? undefined,
         householdId: donor.householdId ?? undefined,
-        ...(isPledge ? { writtenPledge: true } : {}),
         ...(form.stage ? { stage: form.stage } : {}),
         ...(form.type ? { type: form.type } : {}),
         loanOrGrant: form.loanOrGrant,
@@ -219,7 +222,9 @@ export function CreateOpportunityDialog({
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{isPledge ? "New pledge" : "New opportunity"}</DialogTitle>
+          <DialogTitle>
+            {isPledge ? "New pledge setup" : "New opportunity"}
+          </DialogTitle>
           <DialogDescription>
             Fill in the main details now — you can edit everything else after
             creating it.
@@ -347,7 +352,9 @@ export function CreateOpportunityDialog({
                 step="0.01"
                 min="0"
                 value={form.askAmount}
-                onChange={(e) => setForm({ ...form, askAmount: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, askAmount: e.target.value })
+                }
                 placeholder="Optional"
                 data-testid="input-new-opportunity-ask"
               />

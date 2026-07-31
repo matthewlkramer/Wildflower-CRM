@@ -378,7 +378,7 @@ export const ApproveReconciliationCardParams = zod.object({
 })
 
 export const ApproveReconciliationCardBody = zod.object({
-  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity', 'convert_to_pledge_and_first_payment']).describe('What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.\n'),
+  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nopportunity. It is a pledge payment only when pledgeCommittedAt was set\nbefore the payment arrived; otherwise it is a direct gift outcome.\n'),
   "giftId": zod.string().nullish().describe('Existing gift to link (required for link_existing_gift).'),
   "opportunityId": zod.string().nullish().describe('Opportunity\/pledge to generate from or link to (required for the \*_opportunity \/ convert_\* outcomes).'),
   "organizationId": zod.string().nullish().describe('Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn\'t derivable.'),
@@ -395,7 +395,7 @@ export const ApproveReconciliationCardBody = zod.object({
 
 export const ApproveReconciliationCardResponse = zod.object({
   "ok": zod.literal(true),
-  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity', 'convert_to_pledge_and_first_payment']).describe('What approving the card does.\nlink_existing_gift: tie the QB (+Stripe) evidence to an existing gift; no new gift.\ncreate_gift: human-mint a new gift from the QB evidence for the chosen donor.\ncreate_gift_from_opportunity: mint a one-time gift and link it to the chosen opportunity (opportunityId); the opp derives to cash_in when fully paid.\nconvert_to_pledge_and_first_payment: latch the opportunity as a pledge (set writtenPledge=true; cultivation stage is untouched) and mint the first-payment gift linked to it.\n'),
+  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nopportunity. It is a pledge payment only when pledgeCommittedAt was set\nbefore the payment arrived; otherwise it is a direct gift outcome.\n'),
   "stagedPaymentId": zod.string(),
   "giftId": zod.string().describe('The existing-or-newly-created gift the evidence is now tied to.'),
   "opportunityId": zod.string().nullish(),
