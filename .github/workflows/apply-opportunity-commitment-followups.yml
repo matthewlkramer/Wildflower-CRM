@@ -134,6 +134,21 @@ jobs:
           if bundle.count(old_convert) != 1:
               raise RuntimeError("Could not locate bundle mint compatibility flag")
           bundle_path.write_text(bundle.replace(old_convert, "", 1))
+
+          recon_page = Path(
+              "artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx"
+          )
+          page = recon_page.read_text()
+          page, outcome_type_count = re.subn(
+              r":\s*OutcomeChoice\b",
+              "",
+              page,
+          )
+          if outcome_type_count != 1:
+              raise RuntimeError(
+                  f"Expected one remaining OutcomeChoice annotation; found {outcome_type_count}"
+              )
+          recon_page.write_text(page)
           PY
 
       - name: Rehearse migration 0224
