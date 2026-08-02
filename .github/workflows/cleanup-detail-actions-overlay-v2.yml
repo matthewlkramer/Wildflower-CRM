@@ -1,0 +1,41 @@
+name: Clean up final detail action workflow
+
+on:
+  workflow_run:
+    workflows: ["Apply final reviewed detail action implementation"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/detail-action-lifecycle
+          fetch-depth: 0
+      - name: Remove temporary workflows and finalize PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          rm -f \
+            .github/workflows/apply-detail-actions-overlay.yml \
+            .github/workflows/cleanup-detail-actions-overlay.yml \
+            .github/workflows/apply-detail-actions-overlay-v2.yml \
+            .github/workflows/cleanup-detail-actions-overlay-v2.yml \
+            .github/workflows/export-repo-detail-actions.yml \
+            .github/workflows/validate-detail-actions.yml \
+            .github/workflows/validate-detail-actions-final.yml \
+            .github/workflows/validate-detail-actions-final2.yml \
+            detail-actions-validation.txt \
+            detail-actions-validation-result.txt
+          git add -A
+          git commit -m "Remove temporary detail action workflows" || true
+          git push origin HEAD:agent/detail-action-lifecycle
+          gh pr ready 104 --repo matthewlkramer/Wildflower-CRM
