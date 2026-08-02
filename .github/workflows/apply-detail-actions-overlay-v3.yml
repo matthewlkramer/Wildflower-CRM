@@ -1,0 +1,115 @@
+name: Apply final detail action implementation
+
+on:
+  push:
+    branches: [agent/detail-action-lifecycle]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply-and-validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_detail_actions_v3
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_detail_actions_v3"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_detail_actions_v3
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: detail-actions-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+      OVERLAY_URL: https://filebin.net/wf-detail-actions-20260801-final-v3-c6d2/detail-actions-overlay-v3.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/detail-action-lifecycle
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Apply locally validated overlay
+        run: |
+          curl --fail --location --silent --show-error "$OVERLAY_URL" -o /tmp/detail-actions-overlay-v3.tar.gz
+          tar -xzf /tmp/detail-actions-overlay-v3.tar.gz
+          rm -f \
+            .github/workflows/export-repo-detail-actions.yml \
+            .github/workflows/validate-detail-actions.yml \
+            .github/workflows/validate-detail-actions-final.yml \
+            .github/workflows/validate-detail-actions-final2.yml \
+            detail-actions-validation.txt \
+            detail-actions-validation-result.txt
+      - name: Assert business-critical implementation
+        run: |
+          test -f artifacts/api-server/src/routes/detailActions.ts
+          test -f artifacts/api-server/src/__tests__/detail-actions.integration.test.ts
+          test -f artifacts/wildflower-crm/src/components/detail-action-dialogs.tsx
+          test -f artifacts/wildflower-crm/src/components/donor-fundraising-actions.tsx
+          grep -q "convert-pledge-to-standalone-gift" artifacts/api-server/src/routes/detailActions.ts
+          grep -q "rewrittenAsOriginallyStandaloneGift" artifacts/api-server/src/routes/detailActions.ts
+          grep -q "Record pending gift" artifacts/wildflower-crm/src/components/detail-action-dialogs.tsx
+          grep -q "Link reimbursement payment" artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          grep -q "Split into pledge" artifacts/wildflower-crm/src/pages/gift-detail.tsx
+          grep -q "revert-pledge" artifacts/api-server/src/routes/detailActions.ts
+          ! grep -q "Record payment (via reconciliation workbench)" artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          ! grep -Eq "navigate\(['\"]\/reconciliation|href=['\"]\/reconciliation" \
+            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx \
+            artifacts/wildflower-crm/src/components/detail-action-dialogs.tsx \
+            artifacts/wildflower-crm/src/components/donor-fundraising-actions.tsx
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @workspace/db run push-force
+      - name: Typecheck
+        run: |
+          pnpm --filter @workspace/api-server typecheck
+          pnpm --filter @workspace/wildflower-crm typecheck
+      - name: Focused database-backed tests
+        shell: bash
+        run: |
+          files=()
+          for file in \
+            src/__tests__/detail-actions.integration.test.ts \
+            src/__tests__/gift-revert-to-opportunity.integration.test.ts \
+            src/__tests__/donor-attribution-phase3.integration.test.ts \
+            src/__tests__/opportunity-commitment-lifecycle.integration.test.ts \
+            src/__tests__/pledge-payment-lifecycle.integration.test.ts; do
+            [ -f "artifacts/api-server/$file" ] && files+=("$file")
+          done
+          pnpm --filter @workspace/api-server exec vitest run "${files[@]}" --reporter=verbose
+      - name: Formatting and diff integrity
+        shell: bash
+        run: |
+          changed=$(git status --short | awk '{print $2}' | grep -E '\.(ts|tsx|js|jsx|json|ya?ml|md)$' || true)
+          if [ -n "$changed" ]; then
+            pnpm exec prettier --write $changed
+            pnpm exec prettier --check $changed
+          fi
+          pnpm --filter @workspace/api-server typecheck
+          pnpm --filter @workspace/wildflower-crm typecheck
+          git diff --check
+      - name: Commit implementation and mark ready
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Implement complete record-local detail actions" || true
+          git push origin HEAD:agent/detail-action-lifecycle
+          gh pr ready 104 --repo matthewlkramer/Wildflower-CRM
