@@ -1,0 +1,133 @@
+name: Apply and validate PR 106 detail actions
+
+on:
+  pull_request_target:
+    types: [edited]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    if: >-
+      github.event.pull_request.number == 106 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'agent/detail-action-lifecycle-v2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_detail_actions_pr106
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_detail_actions_pr106"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_detail_actions_pr106
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: detail-actions-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Reconstruct and apply reviewed implementation patch
+        shell: bash
+        run: |
+          cat .detail-actions-patch/part-* > /tmp/detail-actions.patch
+          git apply --check /tmp/detail-actions.patch
+          git apply /tmp/detail-actions.patch
+          rm -rf .detail-actions-patch
+          rm -f \
+            .github/workflows/apply-detail-actions-v2.yml \
+            .github/workflows/validate-detail-actions-implementation.yml \
+            detail-actions-trigger.txt
+
+      - name: Assert required action model
+        shell: bash
+        run: |
+          test -f artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          test -f artifacts/api-server/src/__tests__/fundraising-record-actions.integration.test.ts
+          test -f artifacts/wildflower-crm/src/components/payment-evidence-picker-dialog.tsx
+          test -f artifacts/wildflower-crm/src/components/record-received-gift-dialog.tsx
+          test -f artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
+          grep -q "convert-pledge-to-standalone-gift" artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          grep -q "rewrittenAsOriginallyStandaloneGift" artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          grep -q "Record pending gift" artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
+          grep -q "Link reimbursement payment" artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          grep -q "Split into pledge" artifacts/wildflower-crm/src/pages/gift-detail.tsx
+          grep -q "revert-pledge" artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          ! grep -q "Record payment (via reconciliation workbench)" artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          ! grep -Eq "navigate\(['\"]\/reconciliation|href=['\"]\/reconciliation" \
+            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx \
+            artifacts/wildflower-crm/src/components/payment-evidence-picker-dialog.tsx \
+            artifacts/wildflower-crm/src/components/record-received-gift-dialog.tsx \
+            artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Establish disposable schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Generate API clients
+        run: pnpm --filter @workspace/api-spec run codegen
+
+      - name: Typecheck API and web
+        run: |
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/wildflower-crm run typecheck
+
+      - name: Run focused database-backed tests
+        shell: bash
+        run: |
+          files=()
+          for file in \
+            src/__tests__/fundraising-record-actions.integration.test.ts \
+            src/__tests__/gift-revert-to-opportunity.integration.test.ts \
+            src/__tests__/donor-attribution-phase3.integration.test.ts \
+            src/__tests__/opportunity-commitment-lifecycle.integration.test.ts \
+            src/__tests__/pledge-payment-lifecycle.integration.test.ts; do
+            [ -f "artifacts/api-server/$file" ] && files+=("$file")
+          done
+          pnpm --filter @workspace/api-server exec vitest run "${files[@]}" --reporter=verbose
+
+      - name: Format and revalidate
+        shell: bash
+        run: |
+          changed=$(git status --short | awk '{print $2}' | grep -E '\.(ts|tsx|js|jsx|json|ya?ml|md)$' || true)
+          if [ -n "$changed" ]; then
+            pnpm exec prettier --write $changed
+            pnpm exec prettier --check $changed
+          fi
+          pnpm --filter @workspace/api-spec run codegen:check
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/wildflower-crm run typecheck
+          git diff --check
+
+      - name: Commit implementation
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Implement record-local donor and fundraising actions"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
