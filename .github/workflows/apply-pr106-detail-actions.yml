@@ -1,18 +1,19 @@
 name: Apply and validate PR 106 detail actions
 
 on:
-  pull_request_target:
-    types: [opened, reopened, edited, ready_for_review, synchronize]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: apply-pr106-detail-actions
+  cancel-in-progress: false
+
 jobs:
   apply-and-validate:
-    if: >-
-      github.event.pull_request.number == 106 &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'agent/detail-action-lifecycle-v2'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
@@ -36,23 +37,36 @@ jobs:
       CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
       OVERLAY_URL: https://filebin.net/wf-detail-actions-20260801-final-v3-c6d2/detail-actions-overlay-v3.tar.gz
       OVERLAY_SHA256: 37011ad4545d055719d8752ed770ab64a4210a886020b8429e874645cbbafb06
+      TARGET_BRANCH: agent/detail-action-lifecycle-v2
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
-          ref: ${{ github.event.pull_request.head.ref }}
+          ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 0
 
+      - name: Check whether implementation is already present
+        id: implementation
+        shell: bash
+        run: |
+          if [ -f artifacts/api-server/src/routes/fundraisingRecordActions.ts ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: pnpm/action-setup@v4
+        if: steps.implementation.outputs.present != 'true'
         with:
           version: 10
 
       - uses: actions/setup-node@v4
+        if: steps.implementation.outputs.present != 'true'
         with:
           node-version: 22
           cache: pnpm
 
       - name: Download and apply reviewed implementation overlay
+        if: steps.implementation.outputs.present != 'true'
         shell: bash
         run: |
           curl --fail --location --silent --show-error "$OVERLAY_URL" -o /tmp/detail-actions-overlay.tar.gz
@@ -64,6 +78,7 @@ jobs:
             detail-actions-trigger.txt
 
       - name: Assert required action model
+        if: steps.implementation.outputs.present != 'true'
         shell: bash
         run: |
           test -f artifacts/api-server/src/routes/fundraisingRecordActions.ts
@@ -85,19 +100,24 @@ jobs:
             artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
 
       - run: pnpm install --frozen-lockfile
+        if: steps.implementation.outputs.present != 'true'
 
       - name: Establish disposable schema
+        if: steps.implementation.outputs.present != 'true'
         run: pnpm --filter @workspace/db run push-force
 
       - name: Generate API clients
+        if: steps.implementation.outputs.present != 'true'
         run: pnpm --filter @workspace/api-spec run codegen
 
       - name: Typecheck API and web
+        if: steps.implementation.outputs.present != 'true'
         run: |
           pnpm --filter @workspace/api-server run typecheck
           pnpm --filter @workspace/wildflower-crm run typecheck
 
       - name: Run focused database-backed tests
+        if: steps.implementation.outputs.present != 'true'
         shell: bash
         run: |
           files=()
@@ -112,6 +132,7 @@ jobs:
           pnpm --filter @workspace/api-server exec vitest run "${files[@]}" --reporter=verbose
 
       - name: Format and revalidate
+        if: steps.implementation.outputs.present != 'true'
         shell: bash
         run: |
           changed=$(git status --short | awk '{print $2}' | grep -E '\.(ts|tsx|js|jsx|json|ya?ml|md)$' || true)
@@ -125,10 +146,11 @@ jobs:
           git diff --check
 
       - name: Commit implementation
+        if: steps.implementation.outputs.present != 'true'
         shell: bash
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
           git commit -m "Implement record-local donor and fundraising actions"
-          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+          git push origin HEAD:$TARGET_BRANCH
