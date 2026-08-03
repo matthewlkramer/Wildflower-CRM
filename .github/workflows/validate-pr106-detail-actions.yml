@@ -1,0 +1,100 @@
+name: Validate PR 106 detail actions
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  validate:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.issue.number == 106 &&
+      github.event.comment.body == '/validate-detail-actions'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_detail_actions_pr106
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_detail_actions_pr106"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_detail_actions_pr106
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: detail-actions-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Resolve PR head
+        id: pr
+        run: |
+          echo "head_ref=$(gh pr view 106 --repo $GITHUB_REPOSITORY --json headRefName --jq .headRefName)" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$(gh pr view 106 --repo $GITHUB_REPOSITORY --json headRefOid --jq .headRefOid)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.head_ref }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Establish disposable schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Verify generated API code
+        run: pnpm --filter @workspace/api-spec run codegen:check
+
+      - name: Typecheck API and web
+        run: |
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/wildflower-crm run typecheck
+
+      - name: Run focused database-backed tests
+        shell: bash
+        run: |
+          files=(
+            src/__tests__/fundraising-record-actions.integration.test.ts
+            src/__tests__/gift-revert-to-opportunity.integration.test.ts
+            src/__tests__/donor-attribution-phase3.integration.test.ts
+            src/__tests__/opportunity-commitment-lifecycle.integration.test.ts
+            src/__tests__/pledge-payment-lifecycle.integration.test.ts
+          )
+          existing=()
+          for file in "${files[@]}"; do
+            [ -f "artifacts/api-server/$file" ] && existing+=("$file")
+          done
+          pnpm --filter @workspace/api-server exec vitest run "${existing[@]}" --reporter=verbose
+
+      - name: Diff integrity
+        run: git diff --check origin/main...HEAD
+
+      - name: Report success
+        if: success()
+        run: gh pr comment 106 --repo "$GITHUB_REPOSITORY" --body "Detail-action validation passed for commit ${{ steps.pr.outputs.head_sha }}: disposable PostgreSQL schema, generated-code consistency, API and web typechecks, focused lifecycle/payment/correction tests, and diff integrity."
+
+      - name: Report failure
+        if: failure()
+        run: gh pr comment 106 --repo "$GITHUB_REPOSITORY" --body "Detail-action validation failed for commit ${{ steps.pr.outputs.head_sha }}. Review the **Validate PR 106 detail actions** workflow logs for the failing step."
