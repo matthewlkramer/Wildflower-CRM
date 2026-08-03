@@ -52,7 +52,7 @@ export const getListGrantLeadsUrl = (params?: ListGrantLeadsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -64,16 +64,16 @@ export const getListGrantLeadsUrl = (params?: ListGrantLeadsParams,) => {
 }
 
 export const listGrantLeads = async (params?: ListGrantLeadsParams, options?: RequestInit): Promise<GrantLeadList> => {
-
+  
   return customFetch<GrantLeadList>(getListGrantLeadsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -84,7 +84,7 @@ export const getListGrantLeadsQueryKey = (params?: ListGrantLeadsParams,) => {
     ] as const;
     }
 
-
+    
 export const getListGrantLeadsQueryOptions = <TData = Awaited<ReturnType<typeof listGrantLeads>>, TError = ErrorType<unknown>>(params?: ListGrantLeadsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGrantLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -92,13 +92,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListGrantLeadsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listGrantLeads>>> = ({ signal }) => listGrantLeads(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGrantLeads>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -113,7 +113,7 @@ export type ListGrantLeadsQueryError = ErrorType<unknown>
 
 export function useListGrantLeads<TData = Awaited<ReturnType<typeof listGrantLeads>>, TError = ErrorType<unknown>>(
  params?: ListGrantLeadsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGrantLeads>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGrantLeadsQueryOptions(params,options)
@@ -129,22 +129,22 @@ export function useListGrantLeads<TData = Awaited<ReturnType<typeof listGrantLea
 export const getGetGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}`
 }
 
 export const getGrantLead = async (id: string, options?: RequestInit): Promise<GrantLeadDetail> => {
-
+  
   return customFetch<GrantLeadDetail>(getGetGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -155,7 +155,7 @@ export const getGetGrantLeadQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetGrantLeadQueryOptions = <TData = Awaited<ReturnType<typeof getGrantLead>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGrantLead>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -163,13 +163,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGrantLeadQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGrantLead>>> = ({ signal }) => getGrantLead(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGrantLead>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -181,7 +181,7 @@ export type GetGrantLeadQueryError = ErrorType<NotFoundResponse>
 
 export function useGetGrantLead<TData = Awaited<ReturnType<typeof getGrantLead>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGrantLead>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGrantLeadQueryOptions(id,options)
@@ -200,22 +200,22 @@ export function useGetGrantLead<TData = Awaited<ReturnType<typeof getGrantLead>>
 export const getClaimGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}/claim`
 }
 
 export const claimGrantLead = async (id: string, options?: RequestInit): Promise<GrantLead> => {
-
+  
   return customFetch<GrantLead>(getClaimGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -230,7 +230,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof claimGrantLead>>, {id: string}> = (props) => {
@@ -241,13 +241,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ClaimGrantLeadMutationResult = NonNullable<Awaited<ReturnType<typeof claimGrantLead>>>
-
+    
     export type ClaimGrantLeadMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -269,16 +269,16 @@ export const useClaimGrantLead = <TError = ErrorType<NotFoundResponse | void>,
 export const getAssignGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}/assign`
 }
 
 export const assignGrantLead = async (id: string,
     assignGrantLeadBody: AssignGrantLeadBody, options?: RequestInit): Promise<GrantLead> => {
-
+  
   return customFetch<GrantLead>(getAssignGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -286,7 +286,7 @@ export const assignGrantLead = async (id: string,
       assignGrantLeadBody,)
   }
 );}
-
+  
 
 
 
@@ -301,7 +301,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof assignGrantLead>>, {id: string;data: BodyType<AssignGrantLeadBody>}> = (props) => {
@@ -312,7 +312,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -340,22 +340,22 @@ export const useAssignGrantLead = <TError = ErrorType<BadRequestResponse | NotFo
 export const getArchiveGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}/archive`
 }
 
 export const archiveGrantLead = async (id: string, options?: RequestInit): Promise<GrantLead> => {
-
+  
   return customFetch<GrantLead>(getArchiveGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -370,7 +370,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveGrantLead>>, {id: string}> = (props) => {
@@ -381,13 +381,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveGrantLeadMutationResult = NonNullable<Awaited<ReturnType<typeof archiveGrantLead>>>
-
+    
     export type ArchiveGrantLeadMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -414,16 +414,16 @@ original lead intact with its title/funder updated to the primary.
 export const getSplitGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}/split`
 }
 
 export const splitGrantLead = async (id: string,
     splitGrantLeadBody: SplitGrantLeadBody, options?: RequestInit): Promise<SplitGrantLeadResponse> => {
-
+  
   return customFetch<SplitGrantLeadResponse>(getSplitGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -431,7 +431,7 @@ export const splitGrantLead = async (id: string,
       splitGrantLeadBody,)
   }
 );}
-
+  
 
 
 
@@ -446,7 +446,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitGrantLead>>, {id: string;data: BodyType<SplitGrantLeadBody>}> = (props) => {
@@ -457,7 +457,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -491,16 +491,16 @@ as a convenience but can be overridden.
 export const getConvertGrantLeadUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/grant-leads/${id}/convert`
 }
 
 export const convertGrantLead = async (id: string,
     convertGrantLeadBody: ConvertGrantLeadBody, options?: RequestInit): Promise<ConvertGrantLeadResponse> => {
-
+  
   return customFetch<ConvertGrantLeadResponse>(getConvertGrantLeadUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -508,7 +508,7 @@ export const convertGrantLead = async (id: string,
       convertGrantLeadBody,)
   }
 );}
-
+  
 
 
 
@@ -523,7 +523,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof convertGrantLead>>, {id: string;data: BodyType<ConvertGrantLeadBody>}> = (props) => {
@@ -534,7 +534,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -556,3 +556,4 @@ export const useConvertGrantLead = <TError = ErrorType<BadRequestResponse | NotF
       > => {
       return useMutation(getConvertGrantLeadMutationOptions(options));
     }
+    

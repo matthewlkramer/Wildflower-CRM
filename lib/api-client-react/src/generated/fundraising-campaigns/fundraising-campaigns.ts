@@ -48,7 +48,7 @@ export const getListFundraisingCampaignsUrl = (params?: ListFundraisingCampaigns
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -60,16 +60,16 @@ export const getListFundraisingCampaignsUrl = (params?: ListFundraisingCampaigns
 }
 
 export const listFundraisingCampaigns = async (params?: ListFundraisingCampaignsParams, options?: RequestInit): Promise<FundraisingCampaign[]> => {
-
+  
   return customFetch<FundraisingCampaign[]>(getListFundraisingCampaignsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -80,7 +80,7 @@ export const getListFundraisingCampaignsQueryKey = (params?: ListFundraisingCamp
     ] as const;
     }
 
-
+    
 export const getListFundraisingCampaignsQueryOptions = <TData = Awaited<ReturnType<typeof listFundraisingCampaigns>>, TError = ErrorType<unknown>>(params?: ListFundraisingCampaignsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFundraisingCampaigns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -88,13 +88,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFundraisingCampaignsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listFundraisingCampaigns>>> = ({ signal }) => listFundraisingCampaigns(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFundraisingCampaigns>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -109,7 +109,7 @@ export type ListFundraisingCampaignsQueryError = ErrorType<unknown>
 
 export function useListFundraisingCampaigns<TData = Awaited<ReturnType<typeof listFundraisingCampaigns>>, TError = ErrorType<unknown>>(
  params?: ListFundraisingCampaignsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFundraisingCampaigns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListFundraisingCampaignsQueryOptions(params,options)
@@ -128,15 +128,15 @@ export function useListFundraisingCampaigns<TData = Awaited<ReturnType<typeof li
 export const getCreateFundraisingCampaignUrl = () => {
 
 
-
+  
 
   return `/api/fundraising-campaigns`
 }
 
 export const createFundraisingCampaign = async (createFundraisingCampaignBody: CreateFundraisingCampaignBody, options?: RequestInit): Promise<FundraisingCampaign> => {
-
+  
   return customFetch<FundraisingCampaign>(getCreateFundraisingCampaignUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -144,7 +144,7 @@ export const createFundraisingCampaign = async (createFundraisingCampaignBody: C
       createFundraisingCampaignBody,)
   }
 );}
-
+  
 
 
 
@@ -159,7 +159,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFundraisingCampaign>>, {data: BodyType<CreateFundraisingCampaignBody>}> = (props) => {
@@ -170,7 +170,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -198,22 +198,22 @@ export const useCreateFundraisingCampaign = <TError = ErrorType<BadRequestRespon
 export const getGetFundraisingCampaignUrl = (slug: string,) => {
 
 
-
+  
 
   return `/api/fundraising-campaigns/${slug}`
 }
 
 export const getFundraisingCampaign = async (slug: string, options?: RequestInit): Promise<FundraisingCampaign> => {
-
+  
   return customFetch<FundraisingCampaign>(getGetFundraisingCampaignUrl(slug),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -224,7 +224,7 @@ export const getGetFundraisingCampaignQueryKey = (slug: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetFundraisingCampaignQueryOptions = <TData = Awaited<ReturnType<typeof getFundraisingCampaign>>, TError = ErrorType<ForbiddenResponse | NotFoundResponse>>(slug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundraisingCampaign>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -232,13 +232,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetFundraisingCampaignQueryKey(slug);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getFundraisingCampaign>>> = ({ signal }) => getFundraisingCampaign(slug, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(slug), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFundraisingCampaign>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -253,7 +253,7 @@ export type GetFundraisingCampaignQueryError = ErrorType<ForbiddenResponse | Not
 
 export function useGetFundraisingCampaign<TData = Awaited<ReturnType<typeof getFundraisingCampaign>>, TError = ErrorType<ForbiddenResponse | NotFoundResponse>>(
  slug: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundraisingCampaign>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFundraisingCampaignQueryOptions(slug,options)
@@ -272,16 +272,16 @@ export function useGetFundraisingCampaign<TData = Awaited<ReturnType<typeof getF
 export const getUpdateFundraisingCampaignUrl = (slug: string,) => {
 
 
-
+  
 
   return `/api/fundraising-campaigns/${slug}`
 }
 
 export const updateFundraisingCampaign = async (slug: string,
     updateFundraisingCampaignBody: UpdateFundraisingCampaignBody, options?: RequestInit): Promise<FundraisingCampaign> => {
-
+  
   return customFetch<FundraisingCampaign>(getUpdateFundraisingCampaignUrl(slug),
-  {
+  {      
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -289,7 +289,7 @@ export const updateFundraisingCampaign = async (slug: string,
       updateFundraisingCampaignBody,)
   }
 );}
-
+  
 
 
 
@@ -304,7 +304,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFundraisingCampaign>>, {slug: string;data: BodyType<UpdateFundraisingCampaignBody>}> = (props) => {
@@ -315,7 +315,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -343,22 +343,22 @@ export const useUpdateFundraisingCampaign = <TError = ErrorType<BadRequestRespon
 export const getArchiveFundraisingCampaignUrl = (slug: string,) => {
 
 
-
+  
 
   return `/api/fundraising-campaigns/${slug}/archive`
 }
 
 export const archiveFundraisingCampaign = async (slug: string, options?: RequestInit): Promise<FundraisingCampaign> => {
-
+  
   return customFetch<FundraisingCampaign>(getArchiveFundraisingCampaignUrl(slug),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -373,7 +373,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveFundraisingCampaign>>, {slug: string}> = (props) => {
@@ -384,13 +384,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveFundraisingCampaignMutationResult = NonNullable<Awaited<ReturnType<typeof archiveFundraisingCampaign>>>
-
+    
     export type ArchiveFundraisingCampaignMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     /**
@@ -412,22 +412,22 @@ export const useArchiveFundraisingCampaign = <TError = ErrorType<ForbiddenRespon
 export const getUnarchiveFundraisingCampaignUrl = (slug: string,) => {
 
 
-
+  
 
   return `/api/fundraising-campaigns/${slug}/unarchive`
 }
 
 export const unarchiveFundraisingCampaign = async (slug: string, options?: RequestInit): Promise<FundraisingCampaign> => {
-
+  
   return customFetch<FundraisingCampaign>(getUnarchiveFundraisingCampaignUrl(slug),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -442,7 +442,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>, {slug: string}> = (props) => {
@@ -453,13 +453,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveFundraisingCampaignMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveFundraisingCampaign>>>
-
+    
     export type UnarchiveFundraisingCampaignMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     /**
@@ -475,3 +475,4 @@ export const useUnarchiveFundraisingCampaign = <TError = ErrorType<ForbiddenResp
       > => {
       return useMutation(getUnarchiveFundraisingCampaignMutationOptions(options));
     }
+    

@@ -49,7 +49,7 @@ export const getListGiftAllocationsUrl = (params?: ListGiftAllocationsParams,) =
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -61,16 +61,16 @@ export const getListGiftAllocationsUrl = (params?: ListGiftAllocationsParams,) =
 }
 
 export const listGiftAllocations = async (params?: ListGiftAllocationsParams, options?: RequestInit): Promise<GiftAllocationList> => {
-
+  
   return customFetch<GiftAllocationList>(getListGiftAllocationsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -81,7 +81,7 @@ export const getListGiftAllocationsQueryKey = (params?: ListGiftAllocationsParam
     ] as const;
     }
 
-
+    
 export const getListGiftAllocationsQueryOptions = <TData = Awaited<ReturnType<typeof listGiftAllocations>>, TError = ErrorType<unknown>>(params?: ListGiftAllocationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftAllocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -89,13 +89,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListGiftAllocationsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listGiftAllocations>>> = ({ signal }) => listGiftAllocations(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGiftAllocations>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -107,7 +107,7 @@ export type ListGiftAllocationsQueryError = ErrorType<unknown>
 
 export function useListGiftAllocations<TData = Awaited<ReturnType<typeof listGiftAllocations>>, TError = ErrorType<unknown>>(
  params?: ListGiftAllocationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftAllocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGiftAllocationsQueryOptions(params,options)
@@ -123,15 +123,15 @@ export function useListGiftAllocations<TData = Awaited<ReturnType<typeof listGif
 export const getCreateGiftAllocationUrl = () => {
 
 
-
+  
 
   return `/api/gift-allocations`
 }
 
 export const createGiftAllocation = async (createGiftAllocationBody: CreateGiftAllocationBody, options?: RequestInit): Promise<GiftAllocation> => {
-
+  
   return customFetch<GiftAllocation>(getCreateGiftAllocationUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -139,7 +139,7 @@ export const createGiftAllocation = async (createGiftAllocationBody: CreateGiftA
       createGiftAllocationBody,)
   }
 );}
-
+  
 
 
 
@@ -154,7 +154,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftAllocation>>, {data: BodyType<CreateGiftAllocationBody>}> = (props) => {
@@ -165,7 +165,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -187,16 +187,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdateGiftAllocationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/gift-allocations/${id}`
 }
 
 export const updateGiftAllocation = async (id: string,
     updateGiftAllocationBody: UpdateGiftAllocationBody, options?: RequestInit): Promise<GiftAllocation> => {
-
+  
   return customFetch<GiftAllocation>(getUpdateGiftAllocationUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -204,7 +204,7 @@ export const updateGiftAllocation = async (id: string,
       updateGiftAllocationBody,)
   }
 );}
-
+  
 
 
 
@@ -219,7 +219,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateGiftAllocation>>, {id: string;data: BodyType<UpdateGiftAllocationBody>}> = (props) => {
@@ -230,7 +230,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -252,22 +252,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteGiftAllocationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/gift-allocations/${id}`
 }
 
 export const deleteGiftAllocation = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeleteGiftAllocationUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -282,7 +282,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteGiftAllocation>>, {id: string}> = (props) => {
@@ -293,13 +293,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteGiftAllocationMutationResult = NonNullable<Awaited<ReturnType<typeof deleteGiftAllocation>>>
-
+    
     export type DeleteGiftAllocationMutationError = ErrorType<unknown>
 
     export const useDeleteGiftAllocation = <TError = ErrorType<unknown>,
@@ -324,22 +324,22 @@ lives).
 export const getGetGiftAllocationCodingPreviewUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/gift-allocations/${id}/coding-preview`
 }
 
 export const getGiftAllocationCodingPreview = async (id: string, options?: RequestInit): Promise<RevenueCodingPreview> => {
-
+  
   return customFetch<RevenueCodingPreview>(getGetGiftAllocationCodingPreviewUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -350,7 +350,7 @@ export const getGetGiftAllocationCodingPreviewQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetGiftAllocationCodingPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -358,13 +358,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGiftAllocationCodingPreviewQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>> = ({ signal }) => getGiftAllocationCodingPreview(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -379,7 +379,7 @@ export type GetGiftAllocationCodingPreviewQueryError = ErrorType<NotFoundRespons
 
 export function useGetGiftAllocationCodingPreview<TData = Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGiftAllocationCodingPreviewQueryOptions(id,options)
@@ -408,7 +408,7 @@ export const getListRestrictionTextReviewUrl = (params?: ListRestrictionTextRevi
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -420,16 +420,16 @@ export const getListRestrictionTextReviewUrl = (params?: ListRestrictionTextRevi
 }
 
 export const listRestrictionTextReview = async (params?: ListRestrictionTextReviewParams, options?: RequestInit): Promise<RestrictionTextReviewList> => {
-
+  
   return customFetch<RestrictionTextReviewList>(getListRestrictionTextReviewUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -440,7 +440,7 @@ export const getListRestrictionTextReviewQueryKey = (params?: ListRestrictionTex
     ] as const;
     }
 
-
+    
 export const getListRestrictionTextReviewQueryOptions = <TData = Awaited<ReturnType<typeof listRestrictionTextReview>>, TError = ErrorType<ForbiddenResponse>>(params?: ListRestrictionTextReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -448,13 +448,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListRestrictionTextReviewQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listRestrictionTextReview>>> = ({ signal }) => listRestrictionTextReview(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -469,7 +469,7 @@ export type ListRestrictionTextReviewQueryError = ErrorType<ForbiddenResponse>
 
 export function useListRestrictionTextReview<TData = Awaited<ReturnType<typeof listRestrictionTextReview>>, TError = ErrorType<ForbiddenResponse>>(
  params?: ListRestrictionTextReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRestrictionTextReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListRestrictionTextReviewQueryOptions(params,options)

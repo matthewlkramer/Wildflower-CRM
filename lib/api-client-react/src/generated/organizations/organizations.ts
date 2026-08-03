@@ -53,7 +53,7 @@ export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -65,16 +65,16 @@ export const getListOrganizationsUrl = (params?: ListOrganizationsParams,) => {
 }
 
 export const listOrganizations = async (params?: ListOrganizationsParams, options?: RequestInit): Promise<OrganizationList> => {
-
+  
   return customFetch<OrganizationList>(getListOrganizationsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -85,7 +85,7 @@ export const getListOrganizationsQueryKey = (params?: ListOrganizationsParams,) 
     ] as const;
     }
 
-
+    
 export const getListOrganizationsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorType<unknown>>(params?: ListOrganizationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -93,13 +93,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListOrganizationsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizations>>> = ({ signal }) => listOrganizations(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -111,7 +111,7 @@ export type ListOrganizationsQueryError = ErrorType<unknown>
 
 export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrganizations>>, TError = ErrorType<unknown>>(
  params?: ListOrganizationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOrganizations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListOrganizationsQueryOptions(params,options)
@@ -127,15 +127,15 @@ export function useListOrganizations<TData = Awaited<ReturnType<typeof listOrgan
 export const getCreateOrganizationUrl = () => {
 
 
-
+  
 
   return `/api/organizations`
 }
 
 export const createOrganization = async (createOrganizationBody: CreateOrganizationBody, options?: RequestInit): Promise<Organization> => {
-
+  
   return customFetch<Organization>(getCreateOrganizationUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -143,7 +143,7 @@ export const createOrganization = async (createOrganizationBody: CreateOrganizat
       createOrganizationBody,)
   }
 );}
-
+  
 
 
 
@@ -158,7 +158,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOrganization>>, {data: BodyType<CreateOrganizationBody>}> = (props) => {
@@ -169,7 +169,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -191,22 +191,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetOrganizationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/organizations/${id}`
 }
 
 export const getOrganization = async (id: string, options?: RequestInit): Promise<OrganizationDetail> => {
-
+  
   return customFetch<OrganizationDetail>(getGetOrganizationUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -217,7 +217,7 @@ export const getGetOrganizationQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetOrganizationQueryOptions = <TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -225,13 +225,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetOrganizationQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganization>>> = ({ signal }) => getOrganization(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -243,7 +243,7 @@ export type GetOrganizationQueryError = ErrorType<NotFoundResponse>
 
 export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganization>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganization>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetOrganizationQueryOptions(id,options)
@@ -259,16 +259,16 @@ export function useGetOrganization<TData = Awaited<ReturnType<typeof getOrganiza
 export const getUpdateOrganizationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/organizations/${id}`
 }
 
 export const updateOrganization = async (id: string,
     updateOrganizationBody: UpdateOrganizationBody, options?: RequestInit): Promise<Organization> => {
-
+  
   return customFetch<Organization>(getUpdateOrganizationUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -276,7 +276,7 @@ export const updateOrganization = async (id: string,
       updateOrganizationBody,)
   }
 );}
-
+  
 
 
 
@@ -291,7 +291,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOrganization>>, {id: string;data: BodyType<UpdateOrganizationBody>}> = (props) => {
@@ -302,7 +302,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -328,22 +328,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getGetOrganizationRelationshipSummaryUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/organizations/${id}/relationship-summary`
 }
 
 export const getOrganizationRelationshipSummary = async (id: string, options?: RequestInit): Promise<RelationshipSummary> => {
-
+  
   return customFetch<RelationshipSummary>(getGetOrganizationRelationshipSummaryUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -354,7 +354,7 @@ export const getGetOrganizationRelationshipSummaryQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -362,13 +362,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRelationshipSummaryQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -380,7 +380,7 @@ export type GetOrganizationRelationshipSummaryQueryError = ErrorType<NotFoundRes
 
 export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetOrganizationRelationshipSummaryQueryOptions(id,options)
@@ -396,15 +396,15 @@ export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType
 export const getBulkUpdateOrganizationsUrl = () => {
 
 
-
+  
 
   return `/api/organizations/bulk-update`
 }
 
 export const bulkUpdateOrganizations = async (bulkUpdateOrganizationsBody: BulkUpdateOrganizationsBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-
+  
   return customFetch<BulkUpdateResult>(getBulkUpdateOrganizationsUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -412,7 +412,7 @@ export const bulkUpdateOrganizations = async (bulkUpdateOrganizationsBody: BulkU
       bulkUpdateOrganizationsBody,)
   }
 );}
-
+  
 
 
 
@@ -427,7 +427,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdateOrganizations>>, {data: BodyType<BulkUpdateOrganizationsBody>}> = (props) => {
@@ -438,7 +438,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -460,15 +460,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getMergeOrganizationsUrl = () => {
 
 
-
+  
 
   return `/api/organizations/merge`
 }
 
 export const mergeOrganizations = async (mergeOrganizationsBody: MergeOrganizationsBody, options?: RequestInit): Promise<MergeResult> => {
-
+  
   return customFetch<MergeResult>(getMergeOrganizationsUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -476,7 +476,7 @@ export const mergeOrganizations = async (mergeOrganizationsBody: MergeOrganizati
       mergeOrganizationsBody,)
   }
 );}
-
+  
 
 
 
@@ -491,7 +491,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeOrganizations>>, {data: BodyType<MergeOrganizationsBody>}> = (props) => {
@@ -502,7 +502,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -527,15 +527,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getBulkArchiveOrganizationsUrl = () => {
 
 
-
+  
 
   return `/api/organizations/bulk-archive`
 }
 
 export const bulkArchiveOrganizations = async (bulkArchiveBody: BulkArchiveBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-
+  
   return customFetch<BulkUpdateResult>(getBulkArchiveOrganizationsUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -543,7 +543,7 @@ export const bulkArchiveOrganizations = async (bulkArchiveBody: BulkArchiveBody,
       bulkArchiveBody,)
   }
 );}
-
+  
 
 
 
@@ -558,7 +558,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkArchiveOrganizations>>, {data: BodyType<BulkArchiveBody>}> = (props) => {
@@ -569,7 +569,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -594,22 +594,22 @@ export const useBulkArchiveOrganizations = <TError = ErrorType<BadRequestRespons
     export const getArchiveOrganizationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/organizations/${id}/archive`
 }
 
 export const archiveOrganization = async (id: string, options?: RequestInit): Promise<Organization> => {
-
+  
   return customFetch<Organization>(getArchiveOrganizationUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -624,7 +624,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveOrganization>>, {id: string}> = (props) => {
@@ -635,13 +635,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof archiveOrganization>>>
-
+    
     export type ArchiveOrganizationMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveOrganization = <TError = ErrorType<NotFoundResponse>,
@@ -657,22 +657,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveOrganizationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/organizations/${id}/unarchive`
 }
 
 export const unarchiveOrganization = async (id: string, options?: RequestInit): Promise<Organization> => {
-
+  
   return customFetch<Organization>(getUnarchiveOrganizationUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -687,7 +687,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveOrganization>>, {id: string}> = (props) => {
@@ -698,13 +698,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveOrganizationMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveOrganization>>>
-
+    
     export type UnarchiveOrganizationMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveOrganization = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -717,3 +717,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveOrganizationMutationOptions(options));
     }
+    

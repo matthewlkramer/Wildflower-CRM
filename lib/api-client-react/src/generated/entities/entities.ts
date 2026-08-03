@@ -42,22 +42,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getListEntitiesUrl = () => {
 
 
-
+  
 
   return `/api/entities`
 }
 
 export const listEntities = async ( options?: RequestInit): Promise<Entity[]> => {
-
+  
   return customFetch<Entity[]>(getListEntitiesUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -68,7 +68,7 @@ export const getListEntitiesQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getListEntitiesQueryOptions = <TData = Awaited<ReturnType<typeof listEntities>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEntities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -76,13 +76,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListEntitiesQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listEntities>>> = ({ signal }) => listEntities({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEntities>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -94,7 +94,7 @@ export type ListEntitiesQueryError = ErrorType<unknown>
 
 export function useListEntities<TData = Awaited<ReturnType<typeof listEntities>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEntities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListEntitiesQueryOptions(options)
@@ -110,15 +110,15 @@ export function useListEntities<TData = Awaited<ReturnType<typeof listEntities>>
 export const getCreateEntityUrl = () => {
 
 
-
+  
 
   return `/api/entities`
 }
 
 export const createEntity = async (createEntityBody: CreateEntityBody, options?: RequestInit): Promise<Entity> => {
-
+  
   return customFetch<Entity>(getCreateEntityUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -126,7 +126,7 @@ export const createEntity = async (createEntityBody: CreateEntityBody, options?:
       createEntityBody,)
   }
 );}
-
+  
 
 
 
@@ -141,7 +141,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEntity>>, {data: BodyType<CreateEntityBody>}> = (props) => {
@@ -152,7 +152,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -174,22 +174,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetEntityUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/entities/${id}`
 }
 
 export const getEntity = async (id: string, options?: RequestInit): Promise<Entity> => {
-
+  
   return customFetch<Entity>(getGetEntityUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -200,7 +200,7 @@ export const getGetEntityQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetEntityQueryOptions = <TData = Awaited<ReturnType<typeof getEntity>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEntity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -208,13 +208,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetEntityQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getEntity>>> = ({ signal }) => getEntity(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEntity>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -226,7 +226,7 @@ export type GetEntityQueryError = ErrorType<NotFoundResponse>
 
 export function useGetEntity<TData = Awaited<ReturnType<typeof getEntity>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEntity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEntityQueryOptions(id,options)
@@ -242,16 +242,16 @@ export function useGetEntity<TData = Awaited<ReturnType<typeof getEntity>>, TErr
 export const getUpdateEntityUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/entities/${id}`
 }
 
 export const updateEntity = async (id: string,
     updateEntityBody: UpdateEntityBody, options?: RequestInit): Promise<Entity> => {
-
+  
   return customFetch<Entity>(getUpdateEntityUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -259,7 +259,7 @@ export const updateEntity = async (id: string,
       updateEntityBody,)
   }
 );}
-
+  
 
 
 
@@ -274,7 +274,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEntity>>, {id: string;data: BodyType<UpdateEntityBody>}> = (props) => {
@@ -285,7 +285,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -304,3 +304,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateEntityMutationOptions(options));
     }
+    

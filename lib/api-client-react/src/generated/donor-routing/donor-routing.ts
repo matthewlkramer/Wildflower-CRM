@@ -48,23 +48,23 @@ export const getGetGivingRelationshipUrl = (sourceKind: DonorRecordKind,
     sourceId: string,) => {
 
 
-
+  
 
   return `/api/giving-relationships/${sourceKind}/${sourceId}`
 }
 
 export const getGivingRelationship = async (sourceKind: DonorRecordKind,
     sourceId: string, options?: RequestInit): Promise<GivingRelationship> => {
-
+  
   return customFetch<GivingRelationship>(getGetGivingRelationshipUrl(sourceKind,sourceId),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -76,7 +76,7 @@ export const getGetGivingRelationshipQueryKey = (sourceKind: DonorRecordKind,
     ] as const;
     }
 
-
+    
 export const getGetGivingRelationshipQueryOptions = <TData = Awaited<ReturnType<typeof getGivingRelationship>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(sourceKind: DonorRecordKind,
     sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGivingRelationshipQueryKey(sourceKind,sourceId);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGivingRelationship>>> = ({ signal }) => getGivingRelationship(sourceKind,sourceId, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(sourceKind && sourceId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -107,7 +107,7 @@ export type GetGivingRelationshipQueryError = ErrorType<BadRequestResponse | Not
 export function useGetGivingRelationship<TData = Awaited<ReturnType<typeof getGivingRelationship>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  sourceKind: DonorRecordKind,
     sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGivingRelationship>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGivingRelationshipQueryOptions(sourceKind,sourceId,options)
@@ -127,23 +127,23 @@ export const getGetDonorRoutingUrl = (sourceKind: DonorRecordKind,
     sourceId: string,) => {
 
 
-
+  
 
   return `/api/donor-routing/${sourceKind}/${sourceId}`
 }
 
 export const getDonorRouting = async (sourceKind: DonorRecordKind,
     sourceId: string, options?: RequestInit): Promise<DonorRoutingSettings> => {
-
+  
   return customFetch<DonorRoutingSettings>(getGetDonorRoutingUrl(sourceKind,sourceId),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -155,7 +155,7 @@ export const getGetDonorRoutingQueryKey = (sourceKind: DonorRecordKind,
     ] as const;
     }
 
-
+    
 export const getGetDonorRoutingQueryOptions = <TData = Awaited<ReturnType<typeof getDonorRouting>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(sourceKind: DonorRecordKind,
     sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDonorRouting>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -164,13 +164,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetDonorRoutingQueryKey(sourceKind,sourceId);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getDonorRouting>>> = ({ signal }) => getDonorRouting(sourceKind,sourceId, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(sourceKind && sourceId), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getDonorRouting>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -186,7 +186,7 @@ export type GetDonorRoutingQueryError = ErrorType<BadRequestResponse | NotFoundR
 export function useGetDonorRouting<TData = Awaited<ReturnType<typeof getDonorRouting>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
  sourceKind: DonorRecordKind,
     sourceId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getDonorRouting>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDonorRoutingQueryOptions(sourceKind,sourceId,options)
@@ -206,7 +206,7 @@ export const getUpdateDonorRoutingUrl = (sourceKind: DonorRecordKind,
     sourceId: string,) => {
 
 
-
+  
 
   return `/api/donor-routing/${sourceKind}/${sourceId}`
 }
@@ -214,9 +214,9 @@ export const getUpdateDonorRoutingUrl = (sourceKind: DonorRecordKind,
 export const updateDonorRouting = async (sourceKind: DonorRecordKind,
     sourceId: string,
     updateDonorRoutingBody: UpdateDonorRoutingBody, options?: RequestInit): Promise<DonorRoutingSettings> => {
-
+  
   return customFetch<DonorRoutingSettings>(getUpdateDonorRoutingUrl(sourceKind,sourceId),
-  {
+  {      
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -224,7 +224,7 @@ export const updateDonorRouting = async (sourceKind: DonorRecordKind,
       updateDonorRoutingBody,)
   }
 );}
-
+  
 
 
 
@@ -239,7 +239,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDonorRouting>>, {sourceKind: DonorRecordKind;sourceId: string;data: BodyType<UpdateDonorRoutingBody>}> = (props) => {
@@ -250,7 +250,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -272,3 +272,4 @@ export const useUpdateDonorRouting = <TError = ErrorType<BadRequestResponse | No
       > => {
       return useMutation(getUpdateDonorRoutingMutationOptions(options));
     }
+    

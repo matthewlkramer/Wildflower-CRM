@@ -44,22 +44,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetWildflowerUpdateUrl = () => {
 
 
-
+  
 
   return `/api/wildflower-updates`
 }
 
 export const getWildflowerUpdate = async ( options?: RequestInit): Promise<WildflowerUpdateConfig> => {
-
+  
   return customFetch<WildflowerUpdateConfig>(getGetWildflowerUpdateUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -70,7 +70,7 @@ export const getGetWildflowerUpdateQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetWildflowerUpdateQueryOptions = <TData = Awaited<ReturnType<typeof getWildflowerUpdate>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -78,13 +78,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetWildflowerUpdateQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getWildflowerUpdate>>> = ({ signal }) => getWildflowerUpdate({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdate>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -99,7 +99,7 @@ export type GetWildflowerUpdateQueryError = ErrorType<unknown>
 
 export function useGetWildflowerUpdate<TData = Awaited<ReturnType<typeof getWildflowerUpdate>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdate>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetWildflowerUpdateQueryOptions(options)
@@ -118,15 +118,15 @@ export function useGetWildflowerUpdate<TData = Awaited<ReturnType<typeof getWild
 export const getUpdateWildflowerUpdateUrl = () => {
 
 
-
+  
 
   return `/api/wildflower-updates`
 }
 
 export const updateWildflowerUpdate = async (updateWildflowerUpdateBody: UpdateWildflowerUpdateBody, options?: RequestInit): Promise<WildflowerUpdateConfig> => {
-
+  
   return customFetch<WildflowerUpdateConfig>(getUpdateWildflowerUpdateUrl(),
-  {
+  {      
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -134,7 +134,7 @@ export const updateWildflowerUpdate = async (updateWildflowerUpdateBody: UpdateW
       updateWildflowerUpdateBody,)
   }
 );}
-
+  
 
 
 
@@ -149,7 +149,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWildflowerUpdate>>, {data: BodyType<UpdateWildflowerUpdateBody>}> = (props) => {
@@ -160,7 +160,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -182,3 +182,4 @@ export const useUpdateWildflowerUpdate = <TError = ErrorType<BadRequestResponse 
       > => {
       return useMutation(getUpdateWildflowerUpdateMutationOptions(options));
     }
+    

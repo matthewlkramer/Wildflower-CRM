@@ -45,22 +45,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getRunQuickbooksSyncUrl = () => {
 
 
-
+  
 
   return `/api/quickbooks/sync`
 }
 
 export const runQuickbooksSync = async ( options?: RequestInit): Promise<QuickbooksSyncSummary> => {
-
+  
   return customFetch<QuickbooksSyncSummary>(getRunQuickbooksSyncUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -75,24 +75,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof runQuickbooksSync>>, void> = () => {
-
+          
 
           return  runQuickbooksSync(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RunQuickbooksSyncMutationResult = NonNullable<Awaited<ReturnType<typeof runQuickbooksSync>>>
-
+    
     export type RunQuickbooksSyncMutationError = ErrorType<ForbiddenResponse | void>
 
     /**
@@ -114,22 +114,22 @@ export const useRunQuickbooksSync = <TError = ErrorType<ForbiddenResponse | void
 export const getResyncQuickbooksFullUrl = () => {
 
 
-
+  
 
   return `/api/quickbooks/resync-full`
 }
 
 export const resyncQuickbooksFull = async ( options?: RequestInit): Promise<QuickbooksResyncStatus> => {
-
+  
   return customFetch<QuickbooksResyncStatus>(getResyncQuickbooksFullUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -144,24 +144,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resyncQuickbooksFull>>, void> = () => {
-
+          
 
           return  resyncQuickbooksFull(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ResyncQuickbooksFullMutationResult = NonNullable<Awaited<ReturnType<typeof resyncQuickbooksFull>>>
-
+    
     export type ResyncQuickbooksFullMutationError = ErrorType<ForbiddenResponse>
 
     /**
@@ -183,22 +183,22 @@ export const useResyncQuickbooksFull = <TError = ErrorType<ForbiddenResponse>,
 export const getGetQuickbooksResyncStatusUrl = () => {
 
 
-
+  
 
   return `/api/quickbooks/resync-status`
 }
 
 export const getQuickbooksResyncStatus = async ( options?: RequestInit): Promise<QuickbooksResyncStatus> => {
-
+  
   return customFetch<QuickbooksResyncStatus>(getGetQuickbooksResyncStatusUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -209,7 +209,7 @@ export const getGetQuickbooksResyncStatusQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetQuickbooksResyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof getQuickbooksResyncStatus>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -217,13 +217,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetQuickbooksResyncStatusQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuickbooksResyncStatus>>> = ({ signal }) => getQuickbooksResyncStatus({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksResyncStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -238,7 +238,7 @@ export type GetQuickbooksResyncStatusQueryError = ErrorType<ForbiddenResponse>
 
 export function useGetQuickbooksResyncStatus<TData = Awaited<ReturnType<typeof getQuickbooksResyncStatus>>, TError = ErrorType<ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetQuickbooksResyncStatusQueryOptions(options)
@@ -257,22 +257,22 @@ export function useGetQuickbooksResyncStatus<TData = Awaited<ReturnType<typeof g
 export const getRematchStagedPaymentsUrl = () => {
 
 
-
+  
 
   return `/api/quickbooks/rematch`
 }
 
 export const rematchStagedPayments = async ( options?: RequestInit): Promise<QuickbooksRematchSummary> => {
-
+  
   return customFetch<QuickbooksRematchSummary>(getRematchStagedPaymentsUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -287,24 +287,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rematchStagedPayments>>, void> = () => {
-
+          
 
           return  rematchStagedPayments(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RematchStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof rematchStagedPayments>>>
-
+    
     export type RematchStagedPaymentsMutationError = ErrorType<ForbiddenResponse | void>
 
     /**
@@ -326,22 +326,22 @@ export const useRematchStagedPayments = <TError = ErrorType<ForbiddenResponse | 
 export const getReclassifyStagedPaymentsUrl = () => {
 
 
-
+  
 
   return `/api/quickbooks/reclassify`
 }
 
 export const reclassifyStagedPayments = async ( options?: RequestInit): Promise<QuickbooksReclassifySummary> => {
-
+  
   return customFetch<QuickbooksReclassifySummary>(getReclassifyStagedPaymentsUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -356,24 +356,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reclassifyStagedPayments>>, void> = () => {
-
+          
 
           return  reclassifyStagedPayments(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReclassifyStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof reclassifyStagedPayments>>>
-
+    
     export type ReclassifyStagedPaymentsMutationError = ErrorType<ForbiddenResponse | void>
 
     /**
@@ -389,3 +389,4 @@ export const useReclassifyStagedPayments = <TError = ErrorType<ForbiddenResponse
       > => {
       return useMutation(getReclassifyStagedPaymentsMutationOptions(options));
     }
+    

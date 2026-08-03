@@ -44,22 +44,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetInternalEmailDomainsUrl = () => {
 
 
-
+  
 
   return `/api/internal-email-domains`
 }
 
 export const getInternalEmailDomains = async ( options?: RequestInit): Promise<InternalEmailDomainsConfig> => {
-
+  
   return customFetch<InternalEmailDomainsConfig>(getGetInternalEmailDomainsUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -70,7 +70,7 @@ export const getGetInternalEmailDomainsQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetInternalEmailDomainsQueryOptions = <TData = Awaited<ReturnType<typeof getInternalEmailDomains>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInternalEmailDomains>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -78,13 +78,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetInternalEmailDomainsQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getInternalEmailDomains>>> = ({ signal }) => getInternalEmailDomains({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInternalEmailDomains>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -99,7 +99,7 @@ export type GetInternalEmailDomainsQueryError = ErrorType<unknown>
 
 export function useGetInternalEmailDomains<TData = Awaited<ReturnType<typeof getInternalEmailDomains>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInternalEmailDomains>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetInternalEmailDomainsQueryOptions(options)
@@ -118,15 +118,15 @@ export function useGetInternalEmailDomains<TData = Awaited<ReturnType<typeof get
 export const getUpdateInternalEmailDomainsUrl = () => {
 
 
-
+  
 
   return `/api/internal-email-domains`
 }
 
 export const updateInternalEmailDomains = async (updateInternalEmailDomainsBody: UpdateInternalEmailDomainsBody, options?: RequestInit): Promise<InternalEmailDomainsConfig> => {
-
+  
   return customFetch<InternalEmailDomainsConfig>(getUpdateInternalEmailDomainsUrl(),
-  {
+  {      
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -134,7 +134,7 @@ export const updateInternalEmailDomains = async (updateInternalEmailDomainsBody:
       updateInternalEmailDomainsBody,)
   }
 );}
-
+  
 
 
 
@@ -149,7 +149,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInternalEmailDomains>>, {data: BodyType<UpdateInternalEmailDomainsBody>}> = (props) => {
@@ -160,7 +160,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -182,3 +182,4 @@ export const useUpdateInternalEmailDomains = <TError = ErrorType<BadRequestRespo
       > => {
       return useMutation(getUpdateInternalEmailDomainsMutationOptions(options));
     }
+    

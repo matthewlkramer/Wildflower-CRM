@@ -38,15 +38,15 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getRequestUploadUrlUrl = () => {
 
 
-
+  
 
   return `/api/storage/uploads/request-url`
 }
 
 export const requestUploadUrl = async (requestUploadUrlBody: RequestUploadUrlBody, options?: RequestInit): Promise<RequestUploadUrl200> => {
-
+  
   return customFetch<RequestUploadUrl200>(getRequestUploadUrlUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -54,7 +54,7 @@ export const requestUploadUrl = async (requestUploadUrlBody: RequestUploadUrlBod
       requestUploadUrlBody,)
   }
 );}
-
+  
 
 
 
@@ -69,7 +69,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestUploadUrl>>, {data: BodyType<RequestUploadUrlBody>}> = (props) => {
@@ -80,7 +80,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -102,3 +102,4 @@ export const useRequestUploadUrl = <TError = ErrorType<BadRequestResponse>,
       > => {
       return useMutation(getRequestUploadUrlMutationOptions(options));
     }
+    

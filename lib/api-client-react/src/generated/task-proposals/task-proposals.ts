@@ -52,7 +52,7 @@ export const getGetTaskProposalUrl = (params?: GetTaskProposalParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -64,16 +64,16 @@ export const getGetTaskProposalUrl = (params?: GetTaskProposalParams,) => {
 }
 
 export const getTaskProposal = async (params?: GetTaskProposalParams, options?: RequestInit): Promise<TaskProposalResponse> => {
-
+  
   return customFetch<TaskProposalResponse>(getGetTaskProposalUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -84,7 +84,7 @@ export const getGetTaskProposalQueryKey = (params?: GetTaskProposalParams,) => {
     ] as const;
     }
 
-
+    
 export const getGetTaskProposalQueryOptions = <TData = Awaited<ReturnType<typeof getTaskProposal>>, TError = ErrorType<BadRequestResponse>>(params?: GetTaskProposalParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTaskProposal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -92,13 +92,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetTaskProposalQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getTaskProposal>>> = ({ signal }) => getTaskProposal(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTaskProposal>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -113,7 +113,7 @@ export type GetTaskProposalQueryError = ErrorType<BadRequestResponse>
 
 export function useGetTaskProposal<TData = Awaited<ReturnType<typeof getTaskProposal>>, TError = ErrorType<BadRequestResponse>>(
  params?: GetTaskProposalParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTaskProposal>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTaskProposalQueryOptions(params,options)
@@ -132,15 +132,15 @@ export function useGetTaskProposal<TData = Awaited<ReturnType<typeof getTaskProp
 export const getRefreshTaskProposalUrl = () => {
 
 
-
+  
 
   return `/api/task-proposals/refresh`
 }
 
 export const refreshTaskProposal = async (refreshTaskProposalBody: RefreshTaskProposalBody, options?: RequestInit): Promise<TaskProposalResponse> => {
-
+  
   return customFetch<TaskProposalResponse>(getRefreshTaskProposalUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -148,7 +148,7 @@ export const refreshTaskProposal = async (refreshTaskProposalBody: RefreshTaskPr
       refreshTaskProposalBody,)
   }
 );}
-
+  
 
 
 
@@ -163,7 +163,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshTaskProposal>>, {data: BodyType<RefreshTaskProposalBody>}> = (props) => {
@@ -174,7 +174,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -202,16 +202,16 @@ export const useRefreshTaskProposal = <TError = ErrorType<BadRequestResponse>,
 export const getAcceptTaskProposalUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/task-proposals/${id}/accept`
 }
 
 export const acceptTaskProposal = async (id: string,
     acceptTaskProposalBody?: AcceptTaskProposalBody, options?: RequestInit): Promise<AcceptTaskProposalResult> => {
-
+  
   return customFetch<AcceptTaskProposalResult>(getAcceptTaskProposalUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -219,7 +219,7 @@ export const acceptTaskProposal = async (id: string,
       acceptTaskProposalBody,)
   }
 );}
-
+  
 
 
 
@@ -234,7 +234,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptTaskProposal>>, {id: string;data: BodyType<AcceptTaskProposalBody>}> = (props) => {
@@ -245,7 +245,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -273,16 +273,16 @@ export const useAcceptTaskProposal = <TError = ErrorType<BadRequestResponse | No
 export const getDismissTaskProposalUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/task-proposals/${id}/dismiss`
 }
 
 export const dismissTaskProposal = async (id: string,
     dismissTaskProposalBody?: DismissTaskProposalBody, options?: RequestInit): Promise<TaskProposal> => {
-
+  
   return customFetch<TaskProposal>(getDismissTaskProposalUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -290,7 +290,7 @@ export const dismissTaskProposal = async (id: string,
       dismissTaskProposalBody,)
   }
 );}
-
+  
 
 
 
@@ -305,7 +305,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissTaskProposal>>, {id: string;data: BodyType<DismissTaskProposalBody>}> = (props) => {
@@ -316,7 +316,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -344,16 +344,16 @@ export const useDismissTaskProposal = <TError = ErrorType<NotFoundResponse>,
 export const getReviseTaskProposalUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/task-proposals/${id}/revise`
 }
 
 export const reviseTaskProposal = async (id: string,
     reviseTaskProposalBody: ReviseTaskProposalBody, options?: RequestInit): Promise<TaskProposalResponse> => {
-
+  
   return customFetch<TaskProposalResponse>(getReviseTaskProposalUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -361,7 +361,7 @@ export const reviseTaskProposal = async (id: string,
       reviseTaskProposalBody,)
   }
 );}
-
+  
 
 
 
@@ -376,7 +376,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviseTaskProposal>>, {id: string;data: BodyType<ReviseTaskProposalBody>}> = (props) => {
@@ -387,7 +387,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -409,3 +409,4 @@ export const useReviseTaskProposal = <TError = ErrorType<BadRequestResponse | No
       > => {
       return useMutation(getReviseTaskProposalMutationOptions(options));
     }
+    

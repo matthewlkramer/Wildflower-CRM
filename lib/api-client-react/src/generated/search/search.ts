@@ -39,7 +39,7 @@ export const getSearchUrl = (params: SearchParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -51,16 +51,16 @@ export const getSearchUrl = (params: SearchParams,) => {
 }
 
 export const search = async (params: SearchParams, options?: RequestInit): Promise<SearchResults> => {
-
+  
   return customFetch<SearchResults>(getSearchUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -71,7 +71,7 @@ export const getSearchQueryKey = (params?: SearchParams,) => {
     ] as const;
     }
 
-
+    
 export const getSearchQueryOptions = <TData = Awaited<ReturnType<typeof search>>, TError = ErrorType<unknown>>(params: SearchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -79,13 +79,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof search>>> = ({ signal }) => search(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -100,7 +100,7 @@ export type SearchQueryError = ErrorType<unknown>
 
 export function useSearch<TData = Awaited<ReturnType<typeof search>>, TError = ErrorType<unknown>>(
  params: SearchParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof search>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchQueryOptions(params,options)

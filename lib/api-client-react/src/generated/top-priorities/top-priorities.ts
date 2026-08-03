@@ -43,22 +43,22 @@ when the viewer is not the owner or an admin.
 export const getGetTopPrioritiesUrl = () => {
 
 
-
+  
 
   return `/api/top-priorities`
 }
 
 export const getTopPriorities = async ( options?: RequestInit): Promise<TopPriorities> => {
-
+  
   return customFetch<TopPriorities>(getGetTopPrioritiesUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -69,7 +69,7 @@ export const getGetTopPrioritiesQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetTopPrioritiesQueryOptions = <TData = Awaited<ReturnType<typeof getTopPriorities>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTopPriorities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -77,13 +77,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetTopPrioritiesQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getTopPriorities>>> = ({ signal }) => getTopPriorities({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTopPriorities>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -98,7 +98,7 @@ export type GetTopPrioritiesQueryError = ErrorType<unknown>
 
 export function useGetTopPriorities<TData = Awaited<ReturnType<typeof getTopPriorities>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTopPriorities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTopPrioritiesQueryOptions(options)

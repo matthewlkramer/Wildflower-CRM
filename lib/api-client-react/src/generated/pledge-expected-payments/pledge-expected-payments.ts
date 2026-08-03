@@ -45,7 +45,7 @@ export const getListPledgeExpectedPaymentsUrl = (params?: ListPledgeExpectedPaym
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListPledgeExpectedPaymentsUrl = (params?: ListPledgeExpectedPaym
 }
 
 export const listPledgeExpectedPayments = async (params?: ListPledgeExpectedPaymentsParams, options?: RequestInit): Promise<PledgeExpectedPaymentList> => {
-
+  
   return customFetch<PledgeExpectedPaymentList>(getListPledgeExpectedPaymentsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -77,7 +77,7 @@ export const getListPledgeExpectedPaymentsQueryKey = (params?: ListPledgeExpecte
     ] as const;
     }
 
-
+    
 export const getListPledgeExpectedPaymentsQueryOptions = <TData = Awaited<ReturnType<typeof listPledgeExpectedPayments>>, TError = ErrorType<unknown>>(params?: ListPledgeExpectedPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPledgeExpectedPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPledgeExpectedPaymentsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPledgeExpectedPayments>>> = ({ signal }) => listPledgeExpectedPayments(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPledgeExpectedPayments>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListPledgeExpectedPaymentsQueryError = ErrorType<unknown>
 
 export function useListPledgeExpectedPayments<TData = Awaited<ReturnType<typeof listPledgeExpectedPayments>>, TError = ErrorType<unknown>>(
  params?: ListPledgeExpectedPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPledgeExpectedPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPledgeExpectedPaymentsQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListPledgeExpectedPayments<TData = Awaited<ReturnType<typeof 
 export const getCreatePledgeExpectedPaymentUrl = () => {
 
 
-
+  
 
   return `/api/pledge-expected-payments`
 }
 
 export const createPledgeExpectedPayment = async (createPledgeExpectedPaymentBody: CreatePledgeExpectedPaymentBody, options?: RequestInit): Promise<PledgeExpectedPayment> => {
-
+  
   return customFetch<PledgeExpectedPayment>(getCreatePledgeExpectedPaymentUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createPledgeExpectedPayment = async (createPledgeExpectedPaymentBod
       createPledgeExpectedPaymentBody,)
   }
 );}
-
+  
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPledgeExpectedPayment>>, {data: BodyType<CreatePledgeExpectedPaymentBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,16 +183,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdatePledgeExpectedPaymentUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/pledge-expected-payments/${id}`
 }
 
 export const updatePledgeExpectedPayment = async (id: string,
     updatePledgeExpectedPaymentBody: UpdatePledgeExpectedPaymentBody, options?: RequestInit): Promise<PledgeExpectedPayment> => {
-
+  
   return customFetch<PledgeExpectedPayment>(getUpdatePledgeExpectedPaymentUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -200,7 +200,7 @@ export const updatePledgeExpectedPayment = async (id: string,
       updatePledgeExpectedPaymentBody,)
   }
 );}
-
+  
 
 
 
@@ -215,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePledgeExpectedPayment>>, {id: string;data: BodyType<UpdatePledgeExpectedPaymentBody>}> = (props) => {
@@ -226,7 +226,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,22 +248,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeletePledgeExpectedPaymentUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/pledge-expected-payments/${id}`
 }
 
 export const deletePledgeExpectedPayment = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeletePledgeExpectedPaymentUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -278,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePledgeExpectedPayment>>, {id: string}> = (props) => {
@@ -289,13 +289,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeletePledgeExpectedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof deletePledgeExpectedPayment>>>
-
+    
     export type DeletePledgeExpectedPaymentMutationError = ErrorType<unknown>
 
     export const useDeletePledgeExpectedPayment = <TError = ErrorType<unknown>,
@@ -308,3 +308,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeletePledgeExpectedPaymentMutationOptions(options));
     }
+    

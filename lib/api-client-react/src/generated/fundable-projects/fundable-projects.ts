@@ -46,7 +46,7 @@ export const getListFundableProjectsUrl = (params?: ListFundableProjectsParams,)
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -58,16 +58,16 @@ export const getListFundableProjectsUrl = (params?: ListFundableProjectsParams,)
 }
 
 export const listFundableProjects = async (params?: ListFundableProjectsParams, options?: RequestInit): Promise<FundableProject[]> => {
-
+  
   return customFetch<FundableProject[]>(getListFundableProjectsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -78,7 +78,7 @@ export const getListFundableProjectsQueryKey = (params?: ListFundableProjectsPar
     ] as const;
     }
 
-
+    
 export const getListFundableProjectsQueryOptions = <TData = Awaited<ReturnType<typeof listFundableProjects>>, TError = ErrorType<unknown>>(params?: ListFundableProjectsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFundableProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -86,13 +86,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFundableProjectsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listFundableProjects>>> = ({ signal }) => listFundableProjects(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFundableProjects>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -104,7 +104,7 @@ export type ListFundableProjectsQueryError = ErrorType<unknown>
 
 export function useListFundableProjects<TData = Awaited<ReturnType<typeof listFundableProjects>>, TError = ErrorType<unknown>>(
  params?: ListFundableProjectsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFundableProjects>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListFundableProjectsQueryOptions(params,options)
@@ -120,15 +120,15 @@ export function useListFundableProjects<TData = Awaited<ReturnType<typeof listFu
 export const getCreateFundableProjectUrl = () => {
 
 
-
+  
 
   return `/api/fundable-projects`
 }
 
 export const createFundableProject = async (createFundableProjectBody: CreateFundableProjectBody, options?: RequestInit): Promise<FundableProject> => {
-
+  
   return customFetch<FundableProject>(getCreateFundableProjectUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -136,7 +136,7 @@ export const createFundableProject = async (createFundableProjectBody: CreateFun
       createFundableProjectBody,)
   }
 );}
-
+  
 
 
 
@@ -151,7 +151,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createFundableProject>>, {data: BodyType<CreateFundableProjectBody>}> = (props) => {
@@ -162,7 +162,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -184,22 +184,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetFundableProjectUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/fundable-projects/${id}`
 }
 
 export const getFundableProject = async (id: string, options?: RequestInit): Promise<FundableProject> => {
-
+  
   return customFetch<FundableProject>(getGetFundableProjectUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -210,7 +210,7 @@ export const getGetFundableProjectQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetFundableProjectQueryOptions = <TData = Awaited<ReturnType<typeof getFundableProject>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundableProject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -218,13 +218,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetFundableProjectQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getFundableProject>>> = ({ signal }) => getFundableProject(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFundableProject>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -236,7 +236,7 @@ export type GetFundableProjectQueryError = ErrorType<NotFoundResponse>
 
 export function useGetFundableProject<TData = Awaited<ReturnType<typeof getFundableProject>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundableProject>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFundableProjectQueryOptions(id,options)
@@ -252,16 +252,16 @@ export function useGetFundableProject<TData = Awaited<ReturnType<typeof getFunda
 export const getUpdateFundableProjectUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/fundable-projects/${id}`
 }
 
 export const updateFundableProject = async (id: string,
     updateFundableProjectBody: UpdateFundableProjectBody, options?: RequestInit): Promise<FundableProject> => {
-
+  
   return customFetch<FundableProject>(getUpdateFundableProjectUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -269,7 +269,7 @@ export const updateFundableProject = async (id: string,
       updateFundableProjectBody,)
   }
 );}
-
+  
 
 
 
@@ -284,7 +284,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFundableProject>>, {id: string;data: BodyType<UpdateFundableProjectBody>}> = (props) => {
@@ -295,7 +295,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -325,22 +325,22 @@ each project's `fundraisingGoal` to render progress-to-goal.
 export const getGetFundableProjectsProgressUrl = () => {
 
 
-
+  
 
   return `/api/fundable-projects-progress`
 }
 
 export const getFundableProjectsProgress = async ( options?: RequestInit): Promise<FundableProjectProgress[]> => {
-
+  
   return customFetch<FundableProjectProgress[]>(getGetFundableProjectsProgressUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -351,7 +351,7 @@ export const getGetFundableProjectsProgressQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetFundableProjectsProgressQueryOptions = <TData = Awaited<ReturnType<typeof getFundableProjectsProgress>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundableProjectsProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -359,13 +359,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetFundableProjectsProgressQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getFundableProjectsProgress>>> = ({ signal }) => getFundableProjectsProgress({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFundableProjectsProgress>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -380,7 +380,7 @@ export type GetFundableProjectsProgressQueryError = ErrorType<unknown>
 
 export function useGetFundableProjectsProgress<TData = Awaited<ReturnType<typeof getFundableProjectsProgress>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundableProjectsProgress>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFundableProjectsProgressQueryOptions(options)
@@ -396,22 +396,22 @@ export function useGetFundableProjectsProgress<TData = Awaited<ReturnType<typeof
 export const getArchiveFundableProjectUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/fundable-projects/${id}/archive`
 }
 
 export const archiveFundableProject = async (id: string, options?: RequestInit): Promise<FundableProject> => {
-
+  
   return customFetch<FundableProject>(getArchiveFundableProjectUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -426,7 +426,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveFundableProject>>, {id: string}> = (props) => {
@@ -437,13 +437,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveFundableProjectMutationResult = NonNullable<Awaited<ReturnType<typeof archiveFundableProject>>>
-
+    
     export type ArchiveFundableProjectMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveFundableProject = <TError = ErrorType<NotFoundResponse>,
@@ -459,22 +459,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveFundableProjectUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/fundable-projects/${id}/unarchive`
 }
 
 export const unarchiveFundableProject = async (id: string, options?: RequestInit): Promise<FundableProject> => {
-
+  
   return customFetch<FundableProject>(getUnarchiveFundableProjectUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -489,7 +489,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveFundableProject>>, {id: string}> = (props) => {
@@ -500,13 +500,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveFundableProjectMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveFundableProject>>>
-
+    
     export type UnarchiveFundableProjectMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveFundableProject = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -519,3 +519,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveFundableProjectMutationOptions(options));
     }
+    

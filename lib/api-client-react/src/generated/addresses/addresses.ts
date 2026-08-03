@@ -45,7 +45,7 @@ export const getListAddressesUrl = (params?: ListAddressesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListAddressesUrl = (params?: ListAddressesParams,) => {
 }
 
 export const listAddresses = async (params?: ListAddressesParams, options?: RequestInit): Promise<AddressList> => {
-
+  
   return customFetch<AddressList>(getListAddressesUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -77,7 +77,7 @@ export const getListAddressesQueryKey = (params?: ListAddressesParams,) => {
     ] as const;
     }
 
-
+    
 export const getListAddressesQueryOptions = <TData = Awaited<ReturnType<typeof listAddresses>>, TError = ErrorType<unknown>>(params?: ListAddressesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAddresses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListAddressesQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listAddresses>>> = ({ signal }) => listAddresses(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAddresses>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListAddressesQueryError = ErrorType<unknown>
 
 export function useListAddresses<TData = Awaited<ReturnType<typeof listAddresses>>, TError = ErrorType<unknown>>(
  params?: ListAddressesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAddresses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListAddressesQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListAddresses<TData = Awaited<ReturnType<typeof listAddresses
 export const getCreateAddressUrl = () => {
 
 
-
+  
 
   return `/api/addresses`
 }
 
 export const createAddress = async (createAddressBody: CreateAddressBody, options?: RequestInit): Promise<Address> => {
-
+  
   return customFetch<Address>(getCreateAddressUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createAddress = async (createAddressBody: CreateAddressBody, option
       createAddressBody,)
   }
 );}
-
+  
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAddress>>, {data: BodyType<CreateAddressBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,16 +183,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdateAddressUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/addresses/${id}`
 }
 
 export const updateAddress = async (id: string,
     updateAddressBody: UpdateAddressBody, options?: RequestInit): Promise<Address> => {
-
+  
   return customFetch<Address>(getUpdateAddressUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -200,7 +200,7 @@ export const updateAddress = async (id: string,
       updateAddressBody,)
   }
 );}
-
+  
 
 
 
@@ -215,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAddress>>, {id: string;data: BodyType<UpdateAddressBody>}> = (props) => {
@@ -226,7 +226,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,22 +248,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteAddressUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/addresses/${id}`
 }
 
 export const deleteAddress = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeleteAddressUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -278,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteAddress>>, {id: string}> = (props) => {
@@ -289,13 +289,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteAddressMutationResult = NonNullable<Awaited<ReturnType<typeof deleteAddress>>>
-
+    
     export type DeleteAddressMutationError = ErrorType<unknown>
 
     export const useDeleteAddress = <TError = ErrorType<unknown>,
@@ -308,3 +308,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteAddressMutationOptions(options));
     }
+    

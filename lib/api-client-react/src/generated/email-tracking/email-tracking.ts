@@ -55,7 +55,7 @@ export const getListTrackedEmailsUrl = (params?: ListTrackedEmailsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -67,16 +67,16 @@ export const getListTrackedEmailsUrl = (params?: ListTrackedEmailsParams,) => {
 }
 
 export const listTrackedEmails = async (params?: ListTrackedEmailsParams, options?: RequestInit): Promise<TrackedEmailList> => {
-
+  
   return customFetch<TrackedEmailList>(getListTrackedEmailsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -87,7 +87,7 @@ export const getListTrackedEmailsQueryKey = (params?: ListTrackedEmailsParams,) 
     ] as const;
     }
 
-
+    
 export const getListTrackedEmailsQueryOptions = <TData = Awaited<ReturnType<typeof listTrackedEmails>>, TError = ErrorType<unknown>>(params?: ListTrackedEmailsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -95,13 +95,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListTrackedEmailsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrackedEmails>>> = ({ signal }) => listTrackedEmails(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmails>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -113,7 +113,7 @@ export type ListTrackedEmailsQueryError = ErrorType<unknown>
 
 export function useListTrackedEmails<TData = Awaited<ReturnType<typeof listTrackedEmails>>, TError = ErrorType<unknown>>(
  params?: ListTrackedEmailsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTrackedEmailsQueryOptions(params,options)
@@ -132,15 +132,15 @@ export function useListTrackedEmails<TData = Awaited<ReturnType<typeof listTrack
 export const getCreateTrackedEmailUrl = () => {
 
 
-
+  
 
   return `/api/email-tracking`
 }
 
 export const createTrackedEmail = async (createTrackedEmailBody: CreateTrackedEmailBody, options?: RequestInit): Promise<TrackedEmail> => {
-
+  
   return customFetch<TrackedEmail>(getCreateTrackedEmailUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -148,7 +148,7 @@ export const createTrackedEmail = async (createTrackedEmailBody: CreateTrackedEm
       createTrackedEmailBody,)
   }
 );}
-
+  
 
 
 
@@ -163,7 +163,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTrackedEmail>>, {data: BodyType<CreateTrackedEmailBody>}> = (props) => {
@@ -174,7 +174,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -199,15 +199,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getSendTrackedEmailUrl = () => {
 
 
-
+  
 
   return `/api/email-tracking/send`
 }
 
 export const sendTrackedEmail = async (sendTrackedEmailBody: SendTrackedEmailBody, options?: RequestInit): Promise<SendTrackedEmailResult> => {
-
+  
   return customFetch<SendTrackedEmailResult>(getSendTrackedEmailUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -215,7 +215,7 @@ export const sendTrackedEmail = async (sendTrackedEmailBody: SendTrackedEmailBod
       sendTrackedEmailBody,)
   }
 );}
-
+  
 
 
 
@@ -230,7 +230,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendTrackedEmail>>, {data: BodyType<SendTrackedEmailBody>}> = (props) => {
@@ -241,7 +241,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -267,7 +267,7 @@ export const getSearchTrackedEmailUrl = (params: SearchTrackedEmailParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -279,16 +279,16 @@ export const getSearchTrackedEmailUrl = (params: SearchTrackedEmailParams,) => {
 }
 
 export const searchTrackedEmail = async (params: SearchTrackedEmailParams, options?: RequestInit): Promise<TrackedEmailWithViews | null> => {
-
+  
   return customFetch<TrackedEmailWithViews | null>(getSearchTrackedEmailUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -299,7 +299,7 @@ export const getSearchTrackedEmailQueryKey = (params?: SearchTrackedEmailParams,
     ] as const;
     }
 
-
+    
 export const getSearchTrackedEmailQueryOptions = <TData = Awaited<ReturnType<typeof searchTrackedEmail>>, TError = ErrorType<unknown>>(params: SearchTrackedEmailParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchTrackedEmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -307,13 +307,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchTrackedEmailQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof searchTrackedEmail>>> = ({ signal }) => searchTrackedEmail(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchTrackedEmail>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -325,7 +325,7 @@ export type SearchTrackedEmailQueryError = ErrorType<unknown>
 
 export function useSearchTrackedEmail<TData = Awaited<ReturnType<typeof searchTrackedEmail>>, TError = ErrorType<unknown>>(
  params: SearchTrackedEmailParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchTrackedEmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchTrackedEmailQueryOptions(params,options)
@@ -344,22 +344,22 @@ export function useSearchTrackedEmail<TData = Awaited<ReturnType<typeof searchTr
 export const getListTrackedEmailStatusesUrl = () => {
 
 
-
+  
 
   return `/api/email-tracking/status`
 }
 
 export const listTrackedEmailStatuses = async ( options?: RequestInit): Promise<TrackedEmailStatus[]> => {
-
+  
   return customFetch<TrackedEmailStatus[]>(getListTrackedEmailStatusesUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -370,7 +370,7 @@ export const getListTrackedEmailStatusesQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getListTrackedEmailStatusesQueryOptions = <TData = Awaited<ReturnType<typeof listTrackedEmailStatuses>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailStatuses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -378,13 +378,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListTrackedEmailStatusesQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrackedEmailStatuses>>> = ({ signal }) => listTrackedEmailStatuses({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailStatuses>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -396,7 +396,7 @@ export type ListTrackedEmailStatusesQueryError = ErrorType<unknown>
 
 export function useListTrackedEmailStatuses<TData = Awaited<ReturnType<typeof listTrackedEmailStatuses>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailStatuses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTrackedEmailStatusesQueryOptions(options)
@@ -416,7 +416,7 @@ export const getListTrackedEmailsByContactUrl = (params?: ListTrackedEmailsByCon
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -428,16 +428,16 @@ export const getListTrackedEmailsByContactUrl = (params?: ListTrackedEmailsByCon
 }
 
 export const listTrackedEmailsByContact = async (params?: ListTrackedEmailsByContactParams, options?: RequestInit): Promise<TrackedEmailList> => {
-
+  
   return customFetch<TrackedEmailList>(getListTrackedEmailsByContactUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -448,7 +448,7 @@ export const getListTrackedEmailsByContactQueryKey = (params?: ListTrackedEmails
     ] as const;
     }
 
-
+    
 export const getListTrackedEmailsByContactQueryOptions = <TData = Awaited<ReturnType<typeof listTrackedEmailsByContact>>, TError = ErrorType<BadRequestResponse>>(params?: ListTrackedEmailsByContactParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailsByContact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -456,13 +456,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListTrackedEmailsByContactQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrackedEmailsByContact>>> = ({ signal }) => listTrackedEmailsByContact(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailsByContact>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -474,7 +474,7 @@ export type ListTrackedEmailsByContactQueryError = ErrorType<BadRequestResponse>
 
 export function useListTrackedEmailsByContact<TData = Awaited<ReturnType<typeof listTrackedEmailsByContact>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListTrackedEmailsByContactParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedEmailsByContact>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTrackedEmailsByContactQueryOptions(params,options)
@@ -493,22 +493,22 @@ export function useListTrackedEmailsByContact<TData = Awaited<ReturnType<typeof 
 export const getGetExtensionTokenUrl = () => {
 
 
-
+  
 
   return `/api/email-tracking/extension-token`
 }
 
 export const getExtensionToken = async ( options?: RequestInit): Promise<ExtensionTokenResponse> => {
-
+  
   return customFetch<ExtensionTokenResponse>(getGetExtensionTokenUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -519,7 +519,7 @@ export const getGetExtensionTokenQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetExtensionTokenQueryOptions = <TData = Awaited<ReturnType<typeof getExtensionToken>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExtensionToken>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -527,13 +527,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetExtensionTokenQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getExtensionToken>>> = ({ signal }) => getExtensionToken({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getExtensionToken>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -545,7 +545,7 @@ export type GetExtensionTokenQueryError = ErrorType<unknown>
 
 export function useGetExtensionToken<TData = Awaited<ReturnType<typeof getExtensionToken>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getExtensionToken>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetExtensionTokenQueryOptions(options)
@@ -564,22 +564,22 @@ export function useGetExtensionToken<TData = Awaited<ReturnType<typeof getExtens
 export const getRotateExtensionTokenUrl = () => {
 
 
-
+  
 
   return `/api/email-tracking/extension-token`
 }
 
 export const rotateExtensionToken = async ( options?: RequestInit): Promise<ExtensionTokenResponse> => {
-
+  
   return customFetch<ExtensionTokenResponse>(getRotateExtensionTokenUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -594,24 +594,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rotateExtensionToken>>, void> = () => {
-
+          
 
           return  rotateExtensionToken(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RotateExtensionTokenMutationResult = NonNullable<Awaited<ReturnType<typeof rotateExtensionToken>>>
-
+    
     export type RotateExtensionTokenMutationError = ErrorType<unknown>
 
     export const useRotateExtensionToken = <TError = ErrorType<unknown>,
@@ -630,22 +630,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getGetTrackedEmailUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/email-tracking/${id}`
 }
 
 export const getTrackedEmail = async (id: string, options?: RequestInit): Promise<TrackedEmailWithViews> => {
-
+  
   return customFetch<TrackedEmailWithViews>(getGetTrackedEmailUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -656,7 +656,7 @@ export const getGetTrackedEmailQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetTrackedEmailQueryOptions = <TData = Awaited<ReturnType<typeof getTrackedEmail>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrackedEmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -664,13 +664,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetTrackedEmailQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getTrackedEmail>>> = ({ signal }) => getTrackedEmail(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTrackedEmail>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -682,7 +682,7 @@ export type GetTrackedEmailQueryError = ErrorType<NotFoundResponse>
 
 export function useGetTrackedEmail<TData = Awaited<ReturnType<typeof getTrackedEmail>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTrackedEmail>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTrackedEmailQueryOptions(id,options)
@@ -701,22 +701,22 @@ export function useGetTrackedEmail<TData = Awaited<ReturnType<typeof getTrackedE
 export const getDeleteLatestTrackedEmailViewUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/email-tracking/${id}/views/latest`
 }
 
 export const deleteLatestTrackedEmailView = async (id: string, options?: RequestInit): Promise<DeleteLatestTrackedEmailView200> => {
-
+  
   return customFetch<DeleteLatestTrackedEmailView200>(getDeleteLatestTrackedEmailViewUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -731,7 +731,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>, {id: string}> = (props) => {
@@ -742,13 +742,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteLatestTrackedEmailViewMutationResult = NonNullable<Awaited<ReturnType<typeof deleteLatestTrackedEmailView>>>
-
+    
     export type DeleteLatestTrackedEmailViewMutationError = ErrorType<unknown>
 
     export const useDeleteLatestTrackedEmailView = <TError = ErrorType<unknown>,
@@ -761,3 +761,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteLatestTrackedEmailViewMutationOptions(options));
     }
+    

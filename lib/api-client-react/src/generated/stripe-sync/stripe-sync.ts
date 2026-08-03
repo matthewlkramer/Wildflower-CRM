@@ -46,22 +46,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getRunStripeSyncUrl = () => {
 
 
-
+  
 
   return `/api/stripe/sync`
 }
 
 export const runStripeSync = async ( options?: RequestInit): Promise<StripeSyncSummary> => {
-
+  
   return customFetch<StripeSyncSummary>(getRunStripeSyncUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -76,24 +76,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof runStripeSync>>, void> = () => {
-
+          
 
           return  runStripeSync(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RunStripeSyncMutationResult = NonNullable<Awaited<ReturnType<typeof runStripeSync>>>
-
+    
     export type RunStripeSyncMutationError = ErrorType<ForbiddenResponse | void>
 
     /**
@@ -115,22 +115,22 @@ export const useRunStripeSync = <TError = ErrorType<ForbiddenResponse | void>,
 export const getRematchStripeChargesUrl = () => {
 
 
-
+  
 
   return `/api/stripe/rematch`
 }
 
 export const rematchStripeCharges = async ( options?: RequestInit): Promise<StripeRematchSummary> => {
-
+  
   return customFetch<StripeRematchSummary>(getRematchStripeChargesUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -145,24 +145,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rematchStripeCharges>>, void> = () => {
-
+          
 
           return  rematchStripeCharges(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RematchStripeChargesMutationResult = NonNullable<Awaited<ReturnType<typeof rematchStripeCharges>>>
-
+    
     export type RematchStripeChargesMutationError = ErrorType<ForbiddenResponse | void>
 
     /**
@@ -184,22 +184,22 @@ export const useRematchStripeCharges = <TError = ErrorType<ForbiddenResponse | v
 export const getGetStripeSyncStatusUrl = () => {
 
 
-
+  
 
   return `/api/stripe/sync-status`
 }
 
 export const getStripeSyncStatus = async ( options?: RequestInit): Promise<StripeSyncStatus> => {
-
+  
   return customFetch<StripeSyncStatus>(getGetStripeSyncStatusUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -210,7 +210,7 @@ export const getGetStripeSyncStatusQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetStripeSyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof getStripeSyncStatus>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -218,13 +218,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetStripeSyncStatusQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeSyncStatus>>> = ({ signal }) => getStripeSyncStatus({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeSyncStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -239,7 +239,7 @@ export type GetStripeSyncStatusQueryError = ErrorType<ForbiddenResponse>
 
 export function useGetStripeSyncStatus<TData = Awaited<ReturnType<typeof getStripeSyncStatus>>, TError = ErrorType<ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStripeSyncStatusQueryOptions(options)
@@ -258,22 +258,22 @@ export function useGetStripeSyncStatus<TData = Awaited<ReturnType<typeof getStri
 export const getResyncStripeFullUrl = () => {
 
 
-
+  
 
   return `/api/stripe/resync-full`
 }
 
 export const resyncStripeFull = async ( options?: RequestInit): Promise<StripeResyncStatus> => {
-
+  
   return customFetch<StripeResyncStatus>(getResyncStripeFullUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -288,24 +288,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resyncStripeFull>>, void> = () => {
-
+          
 
           return  resyncStripeFull(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ResyncStripeFullMutationResult = NonNullable<Awaited<ReturnType<typeof resyncStripeFull>>>
-
+    
     export type ResyncStripeFullMutationError = ErrorType<ForbiddenResponse>
 
     /**
@@ -327,22 +327,22 @@ export const useResyncStripeFull = <TError = ErrorType<ForbiddenResponse>,
 export const getGetStripeResyncStatusUrl = () => {
 
 
-
+  
 
   return `/api/stripe/resync-status`
 }
 
 export const getStripeResyncStatus = async ( options?: RequestInit): Promise<StripeResyncStatus> => {
-
+  
   return customFetch<StripeResyncStatus>(getGetStripeResyncStatusUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -353,7 +353,7 @@ export const getGetStripeResyncStatusQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetStripeResyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof getStripeResyncStatus>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -361,13 +361,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetStripeResyncStatusQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeResyncStatus>>> = ({ signal }) => getStripeResyncStatus({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -382,7 +382,7 @@ export type GetStripeResyncStatusQueryError = ErrorType<ForbiddenResponse>
 
 export function useGetStripeResyncStatus<TData = Awaited<ReturnType<typeof getStripeResyncStatus>>, TError = ErrorType<ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeResyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStripeResyncStatusQueryOptions(options)
@@ -401,22 +401,22 @@ export function useGetStripeResyncStatus<TData = Awaited<ReturnType<typeof getSt
 export const getGetUntiedStripePayoutDiagnosticUrl = () => {
 
 
-
+  
 
   return `/api/stripe/reconciliation/untied-diagnostic`
 }
 
 export const getUntiedStripePayoutDiagnostic = async ( options?: RequestInit): Promise<StripeUntiedPayoutDiagnostic> => {
-
+  
   return customFetch<StripeUntiedPayoutDiagnostic>(getGetUntiedStripePayoutDiagnosticUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -427,7 +427,7 @@ export const getGetUntiedStripePayoutDiagnosticQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetUntiedStripePayoutDiagnosticQueryOptions = <TData = Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -435,13 +435,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetUntiedStripePayoutDiagnosticQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>> = ({ signal }) => getUntiedStripePayoutDiagnostic({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -456,7 +456,7 @@ export type GetUntiedStripePayoutDiagnosticQueryError = ErrorType<ForbiddenRespo
 
 export function useGetUntiedStripePayoutDiagnostic<TData = Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError = ErrorType<ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getUntiedStripePayoutDiagnostic>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetUntiedStripePayoutDiagnosticQueryOptions(options)

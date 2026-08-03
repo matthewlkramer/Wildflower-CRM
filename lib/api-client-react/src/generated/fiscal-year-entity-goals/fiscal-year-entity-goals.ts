@@ -44,7 +44,7 @@ export const getListFiscalYearEntityGoalsUrl = (params?: ListFiscalYearEntityGoa
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -56,16 +56,16 @@ export const getListFiscalYearEntityGoalsUrl = (params?: ListFiscalYearEntityGoa
 }
 
 export const listFiscalYearEntityGoals = async (params?: ListFiscalYearEntityGoalsParams, options?: RequestInit): Promise<FiscalYearEntityGoal[]> => {
-
+  
   return customFetch<FiscalYearEntityGoal[]>(getListFiscalYearEntityGoalsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -76,7 +76,7 @@ export const getListFiscalYearEntityGoalsQueryKey = (params?: ListFiscalYearEnti
     ] as const;
     }
 
-
+    
 export const getListFiscalYearEntityGoalsQueryOptions = <TData = Awaited<ReturnType<typeof listFiscalYearEntityGoals>>, TError = ErrorType<unknown>>(params?: ListFiscalYearEntityGoalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFiscalYearEntityGoals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -84,13 +84,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFiscalYearEntityGoalsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listFiscalYearEntityGoals>>> = ({ signal }) => listFiscalYearEntityGoals(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFiscalYearEntityGoals>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -102,7 +102,7 @@ export type ListFiscalYearEntityGoalsQueryError = ErrorType<unknown>
 
 export function useListFiscalYearEntityGoals<TData = Awaited<ReturnType<typeof listFiscalYearEntityGoals>>, TError = ErrorType<unknown>>(
  params?: ListFiscalYearEntityGoalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFiscalYearEntityGoals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListFiscalYearEntityGoalsQueryOptions(params,options)
@@ -120,7 +120,7 @@ export const getUpsertFiscalYearEntityGoalUrl = (fyId: string,
     category: GoalCategoryParam,) => {
 
 
-
+  
 
   return `/api/fiscal-year-entity-goals/${fyId}/${entityId}/${category}`
 }
@@ -129,9 +129,9 @@ export const upsertFiscalYearEntityGoal = async (fyId: string,
     entityId: string,
     category: GoalCategoryParam,
     upsertFiscalYearEntityGoalBody: UpsertFiscalYearEntityGoalBody, options?: RequestInit): Promise<FiscalYearEntityGoal> => {
-
+  
   return customFetch<FiscalYearEntityGoal>(getUpsertFiscalYearEntityGoalUrl(fyId,entityId,category),
-  {
+  {      
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -139,7 +139,7 @@ export const upsertFiscalYearEntityGoal = async (fyId: string,
       upsertFiscalYearEntityGoalBody,)
   }
 );}
-
+  
 
 
 
@@ -154,7 +154,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertFiscalYearEntityGoal>>, {fyId: string;entityId: string;category: GoalCategoryParam;data: BodyType<UpsertFiscalYearEntityGoalBody>}> = (props) => {
@@ -165,7 +165,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -189,7 +189,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     category: GoalCategoryParam,) => {
 
 
-
+  
 
   return `/api/fiscal-year-entity-goals/${fyId}/${entityId}/${category}`
 }
@@ -197,16 +197,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const deleteFiscalYearEntityGoal = async (fyId: string,
     entityId: string,
     category: GoalCategoryParam, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeleteFiscalYearEntityGoalUrl(fyId,entityId,category),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -221,7 +221,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>, {fyId: string;entityId: string;category: GoalCategoryParam}> = (props) => {
@@ -232,13 +232,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteFiscalYearEntityGoalMutationResult = NonNullable<Awaited<ReturnType<typeof deleteFiscalYearEntityGoal>>>
-
+    
     export type DeleteFiscalYearEntityGoalMutationError = ErrorType<unknown>
 
     export const useDeleteFiscalYearEntityGoal = <TError = ErrorType<unknown>,
@@ -251,3 +251,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteFiscalYearEntityGoalMutationOptions(options));
     }
+    

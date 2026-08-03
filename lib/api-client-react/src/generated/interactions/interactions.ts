@@ -45,7 +45,7 @@ export const getListInteractionsUrl = (params?: ListInteractionsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListInteractionsUrl = (params?: ListInteractionsParams,) => {
 }
 
 export const listInteractions = async (params?: ListInteractionsParams, options?: RequestInit): Promise<InteractionList> => {
-
+  
   return customFetch<InteractionList>(getListInteractionsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -77,7 +77,7 @@ export const getListInteractionsQueryKey = (params?: ListInteractionsParams,) =>
     ] as const;
     }
 
-
+    
 export const getListInteractionsQueryOptions = <TData = Awaited<ReturnType<typeof listInteractions>>, TError = ErrorType<unknown>>(params?: ListInteractionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListInteractionsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listInteractions>>> = ({ signal }) => listInteractions(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInteractions>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListInteractionsQueryError = ErrorType<unknown>
 
 export function useListInteractions<TData = Awaited<ReturnType<typeof listInteractions>>, TError = ErrorType<unknown>>(
  params?: ListInteractionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listInteractions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListInteractionsQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListInteractions<TData = Awaited<ReturnType<typeof listIntera
 export const getCreateInteractionUrl = () => {
 
 
-
+  
 
   return `/api/interactions`
 }
 
 export const createInteraction = async (createInteractionBody: CreateInteractionBody, options?: RequestInit): Promise<Interaction> => {
-
+  
   return customFetch<Interaction>(getCreateInteractionUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createInteraction = async (createInteractionBody: CreateInteraction
       createInteractionBody,)
   }
 );}
-
+  
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createInteraction>>, {data: BodyType<CreateInteractionBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,22 +183,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetInteractionUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/interactions/${id}`
 }
 
 export const getInteraction = async (id: string, options?: RequestInit): Promise<Interaction> => {
-
+  
   return customFetch<Interaction>(getGetInteractionUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -209,7 +209,7 @@ export const getGetInteractionQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetInteractionQueryOptions = <TData = Awaited<ReturnType<typeof getInteraction>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInteraction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -217,13 +217,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetInteractionQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getInteraction>>> = ({ signal }) => getInteraction(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInteraction>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -235,7 +235,7 @@ export type GetInteractionQueryError = ErrorType<NotFoundResponse>
 
 export function useGetInteraction<TData = Awaited<ReturnType<typeof getInteraction>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getInteraction>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetInteractionQueryOptions(id,options)
@@ -251,16 +251,16 @@ export function useGetInteraction<TData = Awaited<ReturnType<typeof getInteracti
 export const getUpdateInteractionUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/interactions/${id}`
 }
 
 export const updateInteraction = async (id: string,
     updateInteractionBody: UpdateInteractionBody, options?: RequestInit): Promise<Interaction> => {
-
+  
   return customFetch<Interaction>(getUpdateInteractionUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -268,7 +268,7 @@ export const updateInteraction = async (id: string,
       updateInteractionBody,)
   }
 );}
-
+  
 
 
 
@@ -283,7 +283,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateInteraction>>, {id: string;data: BodyType<UpdateInteractionBody>}> = (props) => {
@@ -294,7 +294,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -316,22 +316,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteInteractionUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/interactions/${id}`
 }
 
 export const deleteInteraction = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeleteInteractionUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -346,7 +346,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteInteraction>>, {id: string}> = (props) => {
@@ -357,13 +357,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteInteractionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteInteraction>>>
-
+    
     export type DeleteInteractionMutationError = ErrorType<unknown>
 
     export const useDeleteInteraction = <TError = ErrorType<unknown>,
@@ -376,3 +376,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteInteractionMutationOptions(options));
     }
+    

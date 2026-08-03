@@ -42,7 +42,7 @@ export const getListUnrecognizedCorrespondentsUrl = (params?: ListUnrecognizedCo
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -54,16 +54,16 @@ export const getListUnrecognizedCorrespondentsUrl = (params?: ListUnrecognizedCo
 }
 
 export const listUnrecognizedCorrespondents = async (params?: ListUnrecognizedCorrespondentsParams, options?: RequestInit): Promise<UnrecognizedCorrespondentList> => {
-
+  
   return customFetch<UnrecognizedCorrespondentList>(getListUnrecognizedCorrespondentsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -74,7 +74,7 @@ export const getListUnrecognizedCorrespondentsQueryKey = (params?: ListUnrecogni
     ] as const;
     }
 
-
+    
 export const getListUnrecognizedCorrespondentsQueryOptions = <TData = Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>, TError = ErrorType<unknown>>(params?: ListUnrecognizedCorrespondentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -82,13 +82,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListUnrecognizedCorrespondentsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>> = ({ signal }) => listUnrecognizedCorrespondents(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -100,7 +100,7 @@ export type ListUnrecognizedCorrespondentsQueryError = ErrorType<unknown>
 
 export function useListUnrecognizedCorrespondents<TData = Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>, TError = ErrorType<unknown>>(
  params?: ListUnrecognizedCorrespondentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUnrecognizedCorrespondents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListUnrecognizedCorrespondentsQueryOptions(params,options)
@@ -116,15 +116,15 @@ export function useListUnrecognizedCorrespondents<TData = Awaited<ReturnType<typ
 export const getCreateCorrespondentIgnoreUrl = () => {
 
 
-
+  
 
   return `/api/correspondent-ignore`
 }
 
 export const createCorrespondentIgnore = async (createCorrespondentIgnoreBody: CreateCorrespondentIgnoreBody, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getCreateCorrespondentIgnoreUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -132,7 +132,7 @@ export const createCorrespondentIgnore = async (createCorrespondentIgnoreBody: C
       createCorrespondentIgnoreBody,)
   }
 );}
-
+  
 
 
 
@@ -147,7 +147,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCorrespondentIgnore>>, {data: BodyType<CreateCorrespondentIgnoreBody>}> = (props) => {
@@ -158,7 +158,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -177,3 +177,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getCreateCorrespondentIgnoreMutationOptions(options));
     }
+    

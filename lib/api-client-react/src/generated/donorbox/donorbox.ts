@@ -51,7 +51,7 @@ export const getListDonorboxReviewUrl = (params?: ListDonorboxReviewParams,) => 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -63,16 +63,16 @@ export const getListDonorboxReviewUrl = (params?: ListDonorboxReviewParams,) => 
 }
 
 export const listDonorboxReview = async (params?: ListDonorboxReviewParams, options?: RequestInit): Promise<DonorboxReviewList> => {
-
+  
   return customFetch<DonorboxReviewList>(getListDonorboxReviewUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -83,7 +83,7 @@ export const getListDonorboxReviewQueryKey = (params?: ListDonorboxReviewParams,
     ] as const;
     }
 
-
+    
 export const getListDonorboxReviewQueryOptions = <TData = Awaited<ReturnType<typeof listDonorboxReview>>, TError = ErrorType<unknown>>(params?: ListDonorboxReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorboxReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -91,13 +91,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListDonorboxReviewQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listDonorboxReview>>> = ({ signal }) => listDonorboxReview(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDonorboxReview>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -112,7 +112,7 @@ export type ListDonorboxReviewQueryError = ErrorType<unknown>
 
 export function useListDonorboxReview<TData = Awaited<ReturnType<typeof listDonorboxReview>>, TError = ErrorType<unknown>>(
  params?: ListDonorboxReviewParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorboxReview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListDonorboxReviewQueryOptions(params,options)
@@ -131,16 +131,16 @@ export function useListDonorboxReview<TData = Awaited<ReturnType<typeof listDono
 export const getLinkDonorboxDonationToGiftUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/donorbox/donations/${id}/link-gift`
 }
 
 export const linkDonorboxDonationToGift = async (id: string,
     donorboxLinkGiftBody: DonorboxLinkGiftBody, options?: RequestInit): Promise<DonorboxReviewRow> => {
-
+  
   return customFetch<DonorboxReviewRow>(getLinkDonorboxDonationToGiftUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -148,7 +148,7 @@ export const linkDonorboxDonationToGift = async (id: string,
       donorboxLinkGiftBody,)
   }
 );}
-
+  
 
 
 
@@ -163,7 +163,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkDonorboxDonationToGift>>, {id: string;data: BodyType<DonorboxLinkGiftBody>}> = (props) => {
@@ -174,7 +174,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -202,16 +202,16 @@ export const useLinkDonorboxDonationToGift = <TError = ErrorType<BadRequestRespo
 export const getCreateGiftFromDonorboxDonationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/donorbox/donations/${id}/create-gift`
 }
 
 export const createGiftFromDonorboxDonation = async (id: string,
     donorboxCreateGiftBody: DonorboxCreateGiftBody, options?: RequestInit): Promise<DonorboxCreateGiftResponse> => {
-
+  
   return customFetch<DonorboxCreateGiftResponse>(getCreateGiftFromDonorboxDonationUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -219,7 +219,7 @@ export const createGiftFromDonorboxDonation = async (id: string,
       donorboxCreateGiftBody,)
   }
 );}
-
+  
 
 
 
@@ -234,7 +234,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromDonorboxDonation>>, {id: string;data: BodyType<DonorboxCreateGiftBody>}> = (props) => {
@@ -245,7 +245,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -273,16 +273,16 @@ export const useCreateGiftFromDonorboxDonation = <TError = ErrorType<BadRequestR
 export const getExcludeDonorboxDonationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/donorbox/donations/${id}/exclude`
 }
 
 export const excludeDonorboxDonation = async (id: string,
     donorboxExcludeBody: DonorboxExcludeBody, options?: RequestInit): Promise<DonorboxReviewRow> => {
-
+  
   return customFetch<DonorboxReviewRow>(getExcludeDonorboxDonationUrl(id),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -290,7 +290,7 @@ export const excludeDonorboxDonation = async (id: string,
       donorboxExcludeBody,)
   }
 );}
-
+  
 
 
 
@@ -305,7 +305,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof excludeDonorboxDonation>>, {id: string;data: BodyType<DonorboxExcludeBody>}> = (props) => {
@@ -316,7 +316,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -344,22 +344,22 @@ export const useExcludeDonorboxDonation = <TError = ErrorType<BadRequestResponse
 export const getReIncludeDonorboxDonationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/donorbox/donations/${id}/re-include`
 }
 
 export const reIncludeDonorboxDonation = async (id: string, options?: RequestInit): Promise<DonorboxReviewRow> => {
-
+  
   return customFetch<DonorboxReviewRow>(getReIncludeDonorboxDonationUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -374,7 +374,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reIncludeDonorboxDonation>>, {id: string}> = (props) => {
@@ -385,13 +385,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReIncludeDonorboxDonationMutationResult = NonNullable<Awaited<ReturnType<typeof reIncludeDonorboxDonation>>>
-
+    
     export type ReIncludeDonorboxDonationMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -407,3 +407,4 @@ export const useReIncludeDonorboxDonation = <TError = ErrorType<NotFoundResponse
       > => {
       return useMutation(getReIncludeDonorboxDonationMutationOptions(options));
     }
+    

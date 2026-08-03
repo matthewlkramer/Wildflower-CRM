@@ -49,7 +49,7 @@ export const getListHouseholdsUrl = (params?: ListHouseholdsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -61,16 +61,16 @@ export const getListHouseholdsUrl = (params?: ListHouseholdsParams,) => {
 }
 
 export const listHouseholds = async (params?: ListHouseholdsParams, options?: RequestInit): Promise<HouseholdList> => {
-
+  
   return customFetch<HouseholdList>(getListHouseholdsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -81,7 +81,7 @@ export const getListHouseholdsQueryKey = (params?: ListHouseholdsParams,) => {
     ] as const;
     }
 
-
+    
 export const getListHouseholdsQueryOptions = <TData = Awaited<ReturnType<typeof listHouseholds>>, TError = ErrorType<unknown>>(params?: ListHouseholdsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHouseholds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -89,13 +89,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListHouseholdsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listHouseholds>>> = ({ signal }) => listHouseholds(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listHouseholds>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -107,7 +107,7 @@ export type ListHouseholdsQueryError = ErrorType<unknown>
 
 export function useListHouseholds<TData = Awaited<ReturnType<typeof listHouseholds>>, TError = ErrorType<unknown>>(
  params?: ListHouseholdsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listHouseholds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListHouseholdsQueryOptions(params,options)
@@ -123,15 +123,15 @@ export function useListHouseholds<TData = Awaited<ReturnType<typeof listHousehol
 export const getCreateHouseholdUrl = () => {
 
 
-
+  
 
   return `/api/households`
 }
 
 export const createHousehold = async (createHouseholdBody: CreateHouseholdBody, options?: RequestInit): Promise<Household> => {
-
+  
   return customFetch<Household>(getCreateHouseholdUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -139,7 +139,7 @@ export const createHousehold = async (createHouseholdBody: CreateHouseholdBody, 
       createHouseholdBody,)
   }
 );}
-
+  
 
 
 
@@ -154,7 +154,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createHousehold>>, {data: BodyType<CreateHouseholdBody>}> = (props) => {
@@ -165,7 +165,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -187,22 +187,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetHouseholdUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/households/${id}`
 }
 
 export const getHousehold = async (id: string, options?: RequestInit): Promise<HouseholdDetail> => {
-
+  
   return customFetch<HouseholdDetail>(getGetHouseholdUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -213,7 +213,7 @@ export const getGetHouseholdQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetHouseholdQueryOptions = <TData = Awaited<ReturnType<typeof getHousehold>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHousehold>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -221,13 +221,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetHouseholdQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getHousehold>>> = ({ signal }) => getHousehold(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getHousehold>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -239,7 +239,7 @@ export type GetHouseholdQueryError = ErrorType<NotFoundResponse>
 
 export function useGetHousehold<TData = Awaited<ReturnType<typeof getHousehold>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHousehold>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetHouseholdQueryOptions(id,options)
@@ -255,16 +255,16 @@ export function useGetHousehold<TData = Awaited<ReturnType<typeof getHousehold>>
 export const getUpdateHouseholdUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/households/${id}`
 }
 
 export const updateHousehold = async (id: string,
     updateHouseholdBody: UpdateHouseholdBody, options?: RequestInit): Promise<Household> => {
-
+  
   return customFetch<Household>(getUpdateHouseholdUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -272,7 +272,7 @@ export const updateHousehold = async (id: string,
       updateHouseholdBody,)
   }
 );}
-
+  
 
 
 
@@ -287,7 +287,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateHousehold>>, {id: string;data: BodyType<UpdateHouseholdBody>}> = (props) => {
@@ -298,7 +298,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -320,15 +320,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getBulkUpdateHouseholdsUrl = () => {
 
 
-
+  
 
   return `/api/households/bulk-update`
 }
 
 export const bulkUpdateHouseholds = async (bulkUpdateHouseholdsBody: BulkUpdateHouseholdsBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-
+  
   return customFetch<BulkUpdateResult>(getBulkUpdateHouseholdsUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -336,7 +336,7 @@ export const bulkUpdateHouseholds = async (bulkUpdateHouseholdsBody: BulkUpdateH
       bulkUpdateHouseholdsBody,)
   }
 );}
-
+  
 
 
 
@@ -351,7 +351,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdateHouseholds>>, {data: BodyType<BulkUpdateHouseholdsBody>}> = (props) => {
@@ -362,7 +362,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -384,22 +384,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getArchiveHouseholdUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/households/${id}/archive`
 }
 
 export const archiveHousehold = async (id: string, options?: RequestInit): Promise<Household> => {
-
+  
   return customFetch<Household>(getArchiveHouseholdUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -414,7 +414,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveHousehold>>, {id: string}> = (props) => {
@@ -425,13 +425,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveHouseholdMutationResult = NonNullable<Awaited<ReturnType<typeof archiveHousehold>>>
-
+    
     export type ArchiveHouseholdMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveHousehold = <TError = ErrorType<NotFoundResponse>,
@@ -447,22 +447,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveHouseholdUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/households/${id}/unarchive`
 }
 
 export const unarchiveHousehold = async (id: string, options?: RequestInit): Promise<Household> => {
-
+  
   return customFetch<Household>(getUnarchiveHouseholdUrl(id),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -477,7 +477,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveHousehold>>, {id: string}> = (props) => {
@@ -488,13 +488,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveHouseholdMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveHousehold>>>
-
+    
     export type UnarchiveHouseholdMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveHousehold = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -507,3 +507,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveHouseholdMutationOptions(options));
     }
+    

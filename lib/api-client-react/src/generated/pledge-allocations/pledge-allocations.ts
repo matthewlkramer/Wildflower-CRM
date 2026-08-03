@@ -46,7 +46,7 @@ export const getListPledgeAllocationsUrl = (params?: ListPledgeAllocationsParams
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -58,16 +58,16 @@ export const getListPledgeAllocationsUrl = (params?: ListPledgeAllocationsParams
 }
 
 export const listPledgeAllocations = async (params?: ListPledgeAllocationsParams, options?: RequestInit): Promise<PledgeAllocationList> => {
-
+  
   return customFetch<PledgeAllocationList>(getListPledgeAllocationsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -78,7 +78,7 @@ export const getListPledgeAllocationsQueryKey = (params?: ListPledgeAllocationsP
     ] as const;
     }
 
-
+    
 export const getListPledgeAllocationsQueryOptions = <TData = Awaited<ReturnType<typeof listPledgeAllocations>>, TError = ErrorType<unknown>>(params?: ListPledgeAllocationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPledgeAllocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -86,13 +86,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPledgeAllocationsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPledgeAllocations>>> = ({ signal }) => listPledgeAllocations(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPledgeAllocations>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -104,7 +104,7 @@ export type ListPledgeAllocationsQueryError = ErrorType<unknown>
 
 export function useListPledgeAllocations<TData = Awaited<ReturnType<typeof listPledgeAllocations>>, TError = ErrorType<unknown>>(
  params?: ListPledgeAllocationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPledgeAllocations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPledgeAllocationsQueryOptions(params,options)
@@ -120,15 +120,15 @@ export function useListPledgeAllocations<TData = Awaited<ReturnType<typeof listP
 export const getCreatePledgeAllocationUrl = () => {
 
 
-
+  
 
   return `/api/pledge-allocations`
 }
 
 export const createPledgeAllocation = async (createPledgeAllocationBody: CreatePledgeAllocationBody, options?: RequestInit): Promise<PledgeAllocation> => {
-
+  
   return customFetch<PledgeAllocation>(getCreatePledgeAllocationUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -136,7 +136,7 @@ export const createPledgeAllocation = async (createPledgeAllocationBody: CreateP
       createPledgeAllocationBody,)
   }
 );}
-
+  
 
 
 
@@ -151,7 +151,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPledgeAllocation>>, {data: BodyType<CreatePledgeAllocationBody>}> = (props) => {
@@ -162,7 +162,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -184,16 +184,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdatePledgeAllocationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/pledge-allocations/${id}`
 }
 
 export const updatePledgeAllocation = async (id: string,
     updatePledgeAllocationBody: UpdatePledgeAllocationBody, options?: RequestInit): Promise<PledgeAllocation> => {
-
+  
   return customFetch<PledgeAllocation>(getUpdatePledgeAllocationUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -201,7 +201,7 @@ export const updatePledgeAllocation = async (id: string,
       updatePledgeAllocationBody,)
   }
 );}
-
+  
 
 
 
@@ -216,7 +216,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePledgeAllocation>>, {id: string;data: BodyType<UpdatePledgeAllocationBody>}> = (props) => {
@@ -227,7 +227,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -249,22 +249,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeletePledgeAllocationUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/pledge-allocations/${id}`
 }
 
 export const deletePledgeAllocation = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeletePledgeAllocationUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -279,7 +279,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePledgeAllocation>>, {id: string}> = (props) => {
@@ -290,13 +290,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeletePledgeAllocationMutationResult = NonNullable<Awaited<ReturnType<typeof deletePledgeAllocation>>>
-
+    
     export type DeletePledgeAllocationMutationError = ErrorType<unknown>
 
     export const useDeletePledgeAllocation = <TError = ErrorType<unknown>,
@@ -321,22 +321,22 @@ gift and its money is coded on the linked staged_payments row.
 export const getGetPledgeAllocationCodingPreviewUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/pledge-allocations/${id}/coding-preview`
 }
 
 export const getPledgeAllocationCodingPreview = async (id: string, options?: RequestInit): Promise<RevenueCodingPreview> => {
-
+  
   return customFetch<RevenueCodingPreview>(getGetPledgeAllocationCodingPreviewUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -347,7 +347,7 @@ export const getGetPledgeAllocationCodingPreviewQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetPledgeAllocationCodingPreviewQueryOptions = <TData = Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -355,13 +355,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetPledgeAllocationCodingPreviewQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>> = ({ signal }) => getPledgeAllocationCodingPreview(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -376,7 +376,7 @@ export type GetPledgeAllocationCodingPreviewQueryError = ErrorType<NotFoundRespo
 
 export function useGetPledgeAllocationCodingPreview<TData = Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPledgeAllocationCodingPreview>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPledgeAllocationCodingPreviewQueryOptions(id,options)

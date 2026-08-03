@@ -45,7 +45,7 @@ export const getListEmailMessagesUrl = (params?: ListEmailMessagesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListEmailMessagesUrl = (params?: ListEmailMessagesParams,) => {
 }
 
 export const listEmailMessages = async (params?: ListEmailMessagesParams, options?: RequestInit): Promise<EmailMessageList> => {
-
+  
   return customFetch<EmailMessageList>(getListEmailMessagesUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -77,7 +77,7 @@ export const getListEmailMessagesQueryKey = (params?: ListEmailMessagesParams,) 
     ] as const;
     }
 
-
+    
 export const getListEmailMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listEmailMessages>>, TError = ErrorType<unknown>>(params?: ListEmailMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmailMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListEmailMessagesQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmailMessages>>> = ({ signal }) => listEmailMessages(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmailMessages>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListEmailMessagesQueryError = ErrorType<unknown>
 
 export function useListEmailMessages<TData = Awaited<ReturnType<typeof listEmailMessages>>, TError = ErrorType<unknown>>(
  params?: ListEmailMessagesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmailMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListEmailMessagesQueryOptions(params,options)
@@ -119,22 +119,22 @@ export function useListEmailMessages<TData = Awaited<ReturnType<typeof listEmail
 export const getGetEmailMessageUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/email-messages/${id}`
 }
 
 export const getEmailMessage = async (id: string, options?: RequestInit): Promise<EmailMessageDetail> => {
-
+  
   return customFetch<EmailMessageDetail>(getGetEmailMessageUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -145,7 +145,7 @@ export const getGetEmailMessageQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getGetEmailMessageQueryOptions = <TData = Awaited<ReturnType<typeof getEmailMessage>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmailMessage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -153,13 +153,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetEmailMessageQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmailMessage>>> = ({ signal }) => getEmailMessage(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmailMessage>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -171,7 +171,7 @@ export type GetEmailMessageQueryError = ErrorType<NotFoundResponse>
 
 export function useGetEmailMessage<TData = Awaited<ReturnType<typeof getEmailMessage>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmailMessage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEmailMessageQueryOptions(id,options)
@@ -187,16 +187,16 @@ export function useGetEmailMessage<TData = Awaited<ReturnType<typeof getEmailMes
 export const getUpdateEmailMessagePrivacyUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/email-messages/${id}/privacy`
 }
 
 export const updateEmailMessagePrivacy = async (id: string,
     updateEmailMessagePrivacyBody: UpdateEmailMessagePrivacyBody, options?: RequestInit): Promise<EmailMessage> => {
-
+  
   return customFetch<EmailMessage>(getUpdateEmailMessagePrivacyUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -204,7 +204,7 @@ export const updateEmailMessagePrivacy = async (id: string,
       updateEmailMessagePrivacyBody,)
   }
 );}
-
+  
 
 
 
@@ -219,7 +219,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEmailMessagePrivacy>>, {id: string;data: BodyType<UpdateEmailMessagePrivacyBody>}> = (props) => {
@@ -230,7 +230,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -252,22 +252,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDownloadEmailAttachmentUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/email-attachments/${id}/download`
 }
 
 export const downloadEmailAttachment = async (id: string, options?: RequestInit): Promise<Blob> => {
-
+  
   return customFetch<Blob>(getDownloadEmailAttachmentUrl(id),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -278,7 +278,7 @@ export const getDownloadEmailAttachmentQueryKey = (id: string,) => {
     ] as const;
     }
 
-
+    
 export const getDownloadEmailAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof downloadEmailAttachment>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadEmailAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -286,13 +286,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getDownloadEmailAttachmentQueryKey(id);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadEmailAttachment>>> = ({ signal }) => downloadEmailAttachment(id, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadEmailAttachment>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -304,7 +304,7 @@ export type DownloadEmailAttachmentQueryError = ErrorType<NotFoundResponse>
 
 export function useDownloadEmailAttachment<TData = Awaited<ReturnType<typeof downloadEmailAttachment>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadEmailAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getDownloadEmailAttachmentQueryOptions(id,options)

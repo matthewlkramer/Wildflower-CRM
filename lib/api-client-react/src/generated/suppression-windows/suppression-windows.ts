@@ -49,7 +49,7 @@ export const getListPersonSuppressionWindowsUrl = (params?: ListPersonSuppressio
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -61,16 +61,16 @@ export const getListPersonSuppressionWindowsUrl = (params?: ListPersonSuppressio
 }
 
 export const listPersonSuppressionWindows = async (params?: ListPersonSuppressionWindowsParams, options?: RequestInit): Promise<PersonSuppressionWindowList> => {
-
+  
   return customFetch<PersonSuppressionWindowList>(getListPersonSuppressionWindowsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -81,7 +81,7 @@ export const getListPersonSuppressionWindowsQueryKey = (params?: ListPersonSuppr
     ] as const;
     }
 
-
+    
 export const getListPersonSuppressionWindowsQueryOptions = <TData = Awaited<ReturnType<typeof listPersonSuppressionWindows>>, TError = ErrorType<unknown>>(params?: ListPersonSuppressionWindowsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonSuppressionWindows>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -89,13 +89,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPersonSuppressionWindowsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPersonSuppressionWindows>>> = ({ signal }) => listPersonSuppressionWindows(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPersonSuppressionWindows>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -110,7 +110,7 @@ export type ListPersonSuppressionWindowsQueryError = ErrorType<unknown>
 
 export function useListPersonSuppressionWindows<TData = Awaited<ReturnType<typeof listPersonSuppressionWindows>>, TError = ErrorType<unknown>>(
  params?: ListPersonSuppressionWindowsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonSuppressionWindows>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPersonSuppressionWindowsQueryOptions(params,options)
@@ -129,15 +129,15 @@ export function useListPersonSuppressionWindows<TData = Awaited<ReturnType<typeo
 export const getCreatePersonSuppressionWindowUrl = () => {
 
 
-
+  
 
   return `/api/person-suppression-windows`
 }
 
 export const createPersonSuppressionWindow = async (createPersonSuppressionWindowBody: CreatePersonSuppressionWindowBody, options?: RequestInit): Promise<PersonSuppressionWindow> => {
-
+  
   return customFetch<PersonSuppressionWindow>(getCreatePersonSuppressionWindowUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -145,7 +145,7 @@ export const createPersonSuppressionWindow = async (createPersonSuppressionWindo
       createPersonSuppressionWindowBody,)
   }
 );}
-
+  
 
 
 
@@ -160,7 +160,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPersonSuppressionWindow>>, {data: BodyType<CreatePersonSuppressionWindowBody>}> = (props) => {
@@ -171,7 +171,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -199,16 +199,16 @@ export const useCreatePersonSuppressionWindow = <TError = ErrorType<BadRequestRe
 export const getUpdatePersonSuppressionWindowUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/person-suppression-windows/${id}`
 }
 
 export const updatePersonSuppressionWindow = async (id: string,
     updatePersonSuppressionWindowBody: UpdatePersonSuppressionWindowBody, options?: RequestInit): Promise<PersonSuppressionWindow> => {
-
+  
   return customFetch<PersonSuppressionWindow>(getUpdatePersonSuppressionWindowUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -216,7 +216,7 @@ export const updatePersonSuppressionWindow = async (id: string,
       updatePersonSuppressionWindowBody,)
   }
 );}
-
+  
 
 
 
@@ -231,7 +231,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePersonSuppressionWindow>>, {id: string;data: BodyType<UpdatePersonSuppressionWindowBody>}> = (props) => {
@@ -242,7 +242,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -270,22 +270,22 @@ export const useUpdatePersonSuppressionWindow = <TError = ErrorType<BadRequestRe
 export const getDeletePersonSuppressionWindowUrl = (id: string,) => {
 
 
-
+  
 
   return `/api/person-suppression-windows/${id}`
 }
 
 export const deletePersonSuppressionWindow = async (id: string, options?: RequestInit): Promise<void> => {
-
+  
   return customFetch<void>(getDeletePersonSuppressionWindowUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -300,7 +300,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePersonSuppressionWindow>>, {id: string}> = (props) => {
@@ -311,13 +311,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeletePersonSuppressionWindowMutationResult = NonNullable<Awaited<ReturnType<typeof deletePersonSuppressionWindow>>>
-
+    
     export type DeletePersonSuppressionWindowMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     /**
@@ -333,3 +333,4 @@ export const useDeletePersonSuppressionWindow = <TError = ErrorType<ForbiddenRes
       > => {
       return useMutation(getDeletePersonSuppressionWindowMutationOptions(options));
     }
+    

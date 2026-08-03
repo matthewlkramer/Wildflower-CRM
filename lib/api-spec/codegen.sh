@@ -30,12 +30,11 @@ cp "$root/lib/api-client-react/src/custom-fetch.ts" \
 cd "$here"
 CODEGEN_OUT_ROOT="$tmp" pnpm exec orval --config ./orval.config.ts
 CODEGEN_OUT_ROOT="$tmp" node ./gen-index.mjs
-# Orval can emit trailing spaces in generated operation templates.
-# Normalize every generated TypeScript file so output remains byte-stable,
-# reproducible, and clean under git diff --check.
-find "$tmp/lib/api-client-react/src/generated" \
-     "$tmp/lib/api-zod/src/generated" \
-     -type f -name '*.ts' -exec sed -i 's/[[:space:]]*$//' {} +
+# Orval emits trailing spaces in this file's bodyless mutation templates.
+# Normalize the whole file so output is byte-stable and future mutation
+# operations need no per-operation handling.
+sed -i 's/[[:space:]]*$//' \
+  "$tmp/lib/api-client-react/src/generated/reconciliation/reconciliation.ts"
 
 swap_in() {
   local rel="$1"

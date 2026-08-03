@@ -48,7 +48,7 @@ export const getListFinancialCorrectionsUrl = (params?: ListFinancialCorrections
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -60,16 +60,16 @@ export const getListFinancialCorrectionsUrl = (params?: ListFinancialCorrections
 }
 
 export const listFinancialCorrections = async (params?: ListFinancialCorrectionsParams, options?: RequestInit): Promise<FinancialCorrectionList> => {
-
+  
   return customFetch<FinancialCorrectionList>(getListFinancialCorrectionsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -80,7 +80,7 @@ export const getListFinancialCorrectionsQueryKey = (params?: ListFinancialCorrec
     ] as const;
     }
 
-
+    
 export const getListFinancialCorrectionsQueryOptions = <TData = Awaited<ReturnType<typeof listFinancialCorrections>>, TError = ErrorType<ForbiddenResponse>>(params?: ListFinancialCorrectionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFinancialCorrections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -88,13 +88,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFinancialCorrectionsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listFinancialCorrections>>> = ({ signal }) => listFinancialCorrections(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFinancialCorrections>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -109,7 +109,7 @@ export type ListFinancialCorrectionsQueryError = ErrorType<ForbiddenResponse>
 
 export function useListFinancialCorrections<TData = Awaited<ReturnType<typeof listFinancialCorrections>>, TError = ErrorType<ForbiddenResponse>>(
  params?: ListFinancialCorrectionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFinancialCorrections>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListFinancialCorrectionsQueryOptions(params,options)
@@ -128,15 +128,15 @@ export function useListFinancialCorrections<TData = Awaited<ReturnType<typeof li
 export const getApplyFinancialCorrectionUrl = () => {
 
 
-
+  
 
   return `/api/financial-corrections/apply`
 }
 
 export const applyFinancialCorrection = async (applyFinancialCorrectionBody: ApplyFinancialCorrectionBody, options?: RequestInit): Promise<ApplyFinancialCorrectionResult> => {
-
+  
   return customFetch<ApplyFinancialCorrectionResult>(getApplyFinancialCorrectionUrl(),
-  {
+  {      
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -144,7 +144,7 @@ export const applyFinancialCorrection = async (applyFinancialCorrectionBody: App
       applyFinancialCorrectionBody,)
   }
 );}
-
+  
 
 
 
@@ -159,7 +159,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyFinancialCorrection>>, {data: BodyType<ApplyFinancialCorrectionBody>}> = (props) => {
@@ -170,7 +170,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -192,3 +192,4 @@ export const useApplyFinancialCorrection = <TError = ErrorType<BadRequestRespons
       > => {
       return useMutation(getApplyFinancialCorrectionMutationOptions(options));
     }
+    

@@ -49,7 +49,7 @@ export const getGetRevenueExtractorReportUrl = (params: GetRevenueExtractorRepor
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -61,16 +61,16 @@ export const getGetRevenueExtractorReportUrl = (params: GetRevenueExtractorRepor
 }
 
 export const getRevenueExtractorReport = async (params: GetRevenueExtractorReportParams, options?: RequestInit): Promise<RevenueExtractorReport> => {
-
+  
   return customFetch<RevenueExtractorReport>(getGetRevenueExtractorReportUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -81,7 +81,7 @@ export const getGetRevenueExtractorReportQueryKey = (params?: GetRevenueExtracto
     ] as const;
     }
 
-
+    
 export const getGetRevenueExtractorReportQueryOptions = <TData = Awaited<ReturnType<typeof getRevenueExtractorReport>>, TError = ErrorType<BadRequestResponse>>(params: GetRevenueExtractorReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRevenueExtractorReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -89,13 +89,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetRevenueExtractorReportQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getRevenueExtractorReport>>> = ({ signal }) => getRevenueExtractorReport(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRevenueExtractorReport>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -110,7 +110,7 @@ export type GetRevenueExtractorReportQueryError = ErrorType<BadRequestResponse>
 
 export function useGetRevenueExtractorReport<TData = Awaited<ReturnType<typeof getRevenueExtractorReport>>, TError = ErrorType<BadRequestResponse>>(
  params: GetRevenueExtractorReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRevenueExtractorReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetRevenueExtractorReportQueryOptions(params,options)

@@ -39,22 +39,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetGoogleOauthStatusUrl = () => {
 
 
-
+  
 
   return `/api/google-oauth/status`
 }
 
 export const getGoogleOauthStatus = async ( options?: RequestInit): Promise<GoogleOauthStatus> => {
-
+  
   return customFetch<GoogleOauthStatus>(getGetGoogleOauthStatusUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -65,7 +65,7 @@ export const getGetGoogleOauthStatusQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetGoogleOauthStatusQueryOptions = <TData = Awaited<ReturnType<typeof getGoogleOauthStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGoogleOauthStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -73,13 +73,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGoogleOauthStatusQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoogleOauthStatus>>> = ({ signal }) => getGoogleOauthStatus({ signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGoogleOauthStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -91,7 +91,7 @@ export type GetGoogleOauthStatusQueryError = ErrorType<unknown>
 
 export function useGetGoogleOauthStatus<TData = Awaited<ReturnType<typeof getGoogleOauthStatus>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGoogleOauthStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGoogleOauthStatusQueryOptions(options)
@@ -107,22 +107,22 @@ export function useGetGoogleOauthStatus<TData = Awaited<ReturnType<typeof getGoo
 export const getDisconnectGoogleOauthUrl = () => {
 
 
-
+  
 
   return `/api/google-oauth/disconnect`
 }
 
 export const disconnectGoogleOauth = async ( options?: RequestInit): Promise<DisconnectGoogleOauth200> => {
-
+  
   return customFetch<DisconnectGoogleOauth200>(getDisconnectGoogleOauthUrl(),
-  {
+  {      
     ...options,
     method: 'POST'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -137,24 +137,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectGoogleOauth>>, void> = () => {
-
+          
 
           return  disconnectGoogleOauth(requestOptions)
         }
 
 
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DisconnectGoogleOauthMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectGoogleOauth>>>
-
+    
     export type DisconnectGoogleOauthMutationError = ErrorType<unknown>
 
     export const useDisconnectGoogleOauth = <TError = ErrorType<unknown>,
@@ -167,3 +167,4 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDisconnectGoogleOauthMutationOptions(options));
     }
+    

@@ -39,7 +39,7 @@ export const getListRevenueAccountsUrl = (params?: ListRevenueAccountsParams,) =
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-
+    
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -51,16 +51,16 @@ export const getListRevenueAccountsUrl = (params?: ListRevenueAccountsParams,) =
 }
 
 export const listRevenueAccounts = async (params?: ListRevenueAccountsParams, options?: RequestInit): Promise<RevenueAccount[]> => {
-
+  
   return customFetch<RevenueAccount[]>(getListRevenueAccountsUrl(params),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
-
+  
 
 
 
@@ -71,7 +71,7 @@ export const getListRevenueAccountsQueryKey = (params?: ListRevenueAccountsParam
     ] as const;
     }
 
-
+    
 export const getListRevenueAccountsQueryOptions = <TData = Awaited<ReturnType<typeof listRevenueAccounts>>, TError = ErrorType<unknown>>(params?: ListRevenueAccountsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRevenueAccounts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -79,13 +79,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListRevenueAccountsQueryKey(params);
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listRevenueAccounts>>> = ({ signal }) => listRevenueAccounts(params, { signal, ...requestOptions });
 
+      
 
-
-
+      
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRevenueAccounts>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -100,7 +100,7 @@ export type ListRevenueAccountsQueryError = ErrorType<unknown>
 
 export function useListRevenueAccounts<TData = Awaited<ReturnType<typeof listRevenueAccounts>>, TError = ErrorType<unknown>>(
  params?: ListRevenueAccountsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRevenueAccounts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-
+  
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListRevenueAccountsQueryOptions(params,options)
