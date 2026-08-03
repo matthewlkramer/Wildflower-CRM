@@ -1,0 +1,196 @@
+--- a/lib/api-spec/openapi.yaml
++++ b/lib/api-spec/openapi.yaml
+@@ -1772,6 +1772,56 @@
+         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
+         "400": { $ref: "#/components/responses/BadRequest" }
+         "404": { $ref: "#/components/responses/NotFound" }
++
++  /opportunities-and-pledges/{id}/convert-to-standalone-gift:
++    post:
++      operationId: convertPledgeToStandaloneGift
++      tags: [opportunities-and-pledges]
++      summary: Correct a one-payment pledge that should always have been a stand-alone gift.
++      description: >-
++        Admin-only data correction. Requires a finalized fixed-commitment pledge
++        with exactly one linked gift and exactly one received payment unit, where
++        the payment, gift, and pledge amounts agree. Rewrites the lifecycle as
++        though the donor had always committed to one stand-alone gift, keeps the
++        gift linked to its originating opportunity, removes the obsolete pledge
++        schedule and boundary, and preserves all payment and accounting evidence.
++      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
++      requestBody:
++        required: false
++        content: { application/json: { schema: { $ref: "#/components/schemas/CorrectionReasonBody" } } }
++      responses:
++        "200": { description: Converted, content: { application/json: { schema: { $ref: "#/components/schemas/ConvertPledgeToGiftResult" } } } }
++        "403": { $ref: "#/components/responses/Forbidden" }
++        "404": { $ref: "#/components/responses/NotFound" }
++        "409": { description: "The pledge is not eligible for the narrow one-payment correction." }
++  /opportunities-and-pledges/{id}/revert-to-verbal-gift:
++    post:
++      operationId: revertPledgeToVerbalGift
++      tags: [opportunities-and-pledges]
++      summary: Revert a mischaracterized pledge to a verbally committed gift opportunity awaiting payment.
++      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
++      requestBody:
++        required: true
++        content: { application/json: { schema: { $ref: "#/components/schemas/RevertPledgeToVerbalGiftBody" } } }
++      responses:
++        "200": { description: Reverted, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
++        "403": { $ref: "#/components/responses/Forbidden" }
++        "404": { $ref: "#/components/responses/NotFound" }
++        "409": { description: "The pledge already has a linked payment or is otherwise not reversible." }
++  /opportunities-and-pledges/{id}/revert-to-opportunity:
++    post:
++      operationId: revertPledgeToOpportunity
++      tags: [opportunities-and-pledges]
++      summary: Revert a mischaracterized pledge to a general fundraising opportunity.
++      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
++      requestBody:
++        required: true
++        content: { application/json: { schema: { $ref: "#/components/schemas/RevertPledgeToOpportunityBody" } } }
++      responses:
++        "200": { description: Reverted, content: { application/json: { schema: { $ref: "#/components/schemas/OpportunityOrPledge" } } } }
++        "403": { $ref: "#/components/responses/Forbidden" }
++        "404": { $ref: "#/components/responses/NotFound" }
++        "409": { description: "The pledge already has a linked payment or is otherwise not reversible." }
+ 
+   # ─── Pledge allocations ────────────────────────────────────────────────────
+   /pledge-allocations:
+@@ -2018,7 +2068,26 @@
+         "400": { $ref: "#/components/responses/BadRequest" }
+         "403": { description: "finance_role_required — offBooksException requires the finance (or admin) role." }
+         "404": { $ref: "#/components/responses/NotFound" }
+-        "409": { description: "manual_gift_on_pledge_blocked — pointing an existing gift at a pledge/opportunity via PATCH is evidence-only (Task #788), the same policy as manual creation. Pass offBooksException=true (finance-permitted) for money that never hits QuickBooks. Clearing the link (null) is always allowed." }
++        "409": { description: "gift_pledge_link_correction_required — attaching or detaching a gift from an opportunity/pledge requires an explicit correction action; generic PATCH cannot change opportunityId. A linked gift's donor also cannot be changed away from its opportunity/pledge donor." }
++
++  /gifts-and-payments/{id}/detach-from-pledge:
++    post:
++      operationId: detachGiftFromPledge
++      tags: [gifts-and-payments]
++      summary: Admin correction that detaches a mislinked pledge payment and treats it as a stand-alone gift.
++      description: >-
++        Clears only gift.opportunityId and re-derives the former pledge. The gift,
++        allocations, payment units, QuickBooks/Stripe/Donorbox evidence, amount,
++        date, and intermediary remain unchanged.
++      parameters: [ { $ref: "#/components/parameters/IdPath" } ]
++      requestBody:
++        required: false
++        content: { application/json: { schema: { $ref: "#/components/schemas/CorrectionReasonBody" } } }
++      responses:
++        "200": { description: Detached, content: { application/json: { schema: { $ref: "#/components/schemas/DetachGiftFromPledgeResult" } } } }
++        "403": { $ref: "#/components/responses/Forbidden" }
++        "404": { $ref: "#/components/responses/NotFound" }
++        "409": { description: "Gift is not linked to a finalized pledge." }
+   /gifts-and-payments/{id}/candidate-thank-you-emails:
+     get:
+       operationId: listCandidateThankYouEmails
+@@ -3235,10 +3304,11 @@
+       tags: [staged-payments]
+       summary: Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
+       description: >-
+-        Duplicate guard for manual gift entry: returns the still-pending staged
+-        payments (QuickBooks) and Stripe charges already matched to the given
+-        donor, so a fundraiser doesn't hand-key a gift for money that is about to
+-        be booked via reconciliation. Read-only.
++        Record-local payment selector: returns the still-pending QuickBooks
++        payments and Stripe charges already matched to the given donor. A received
++        gift or pledge payment must select one of these source records; the action
++        then mints or links the CRM gift without opening the reconciliation workbench.
++        Read-only.
+       parameters:
+         - { name: donorType, in: query, required: true, schema: { type: string, enum: [organization, individual, household] }, description: "Donor kind." }
+         - { name: donorId, in: query, required: true, schema: { type: string }, description: "Donor record id." }
+@@ -7115,6 +7185,35 @@
+         pledgeCommittedAt:
+           type: string
+           format: date
++    CorrectionReasonBody:
++      type: object
++      properties:
++        reason: { type: string, nullable: true, description: "Optional explanation stored in the audit history." }
++    ConvertPledgeToGiftResult:
++      type: object
++      required: [giftId, opportunityId]
++      properties:
++        giftId: { type: string }
++        opportunityId: { type: string, description: "The rewritten originating opportunity, now completed as a gift outcome." }
++    RevertPledgeToVerbalGiftBody:
++      type: object
++      required: [commitmentDate]
++      properties:
++        commitmentDate: { type: string, format: date }
++        expectedDate: { type: string, format: date, nullable: true }
++        reason: { type: string, nullable: true }
++    RevertPledgeToOpportunityBody:
++      type: object
++      properties:
++        stage: { allOf: [ { $ref: "#/components/schemas/OpportunityStage" } ], nullable: true, description: "Open funnel stage after correction; defaults to in_conversation." }
++        projectedCloseDate: { type: string, format: date, nullable: true }
++        reason: { type: string, nullable: true }
++    DetachGiftFromPledgeResult:
++      type: object
++      required: [giftId, formerOpportunityId]
++      properties:
++        giftId: { type: string }
++        formerOpportunityId: { type: string }
+     OpportunityCommitmentResult:
+       type: object
+       required:
+@@ -7338,6 +7437,8 @@
+         actualCompletionDate:       { type: string, format: date }
+         winProbability:             { type: string }
+         stage:                      { $ref: "#/components/schemas/OpportunityStage" }
++        commitmentPath:             { $ref: "#/components/schemas/OpportunityCommitmentPath" }
++        verbalCommitmentAt:          { type: string, format: date }
+         lossReason:                 { type: string }
+         applicationDeadline:        { type: string, format: date }
+         paymentDetails:             { type: string }
+@@ -7549,7 +7650,7 @@
+         organizationId:                   { type: string, nullable: true }
+         individualGiverPersonId:    { type: string, nullable: true }
+         householdId:                { type: string, nullable: true }
+-        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], readOnly: true, description: "Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity/advisor/matched-gift links." }
++        type:                       { allOf: [ { $ref: "#/components/schemas/GiftType" } ], readOnly: true, description: "Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly." }
+         opportunityId:          { type: string, nullable: true }
+         advisorPersonId:            { type: string, nullable: true }
+         giftBeingMatchedId:         { type: string, nullable: true }
+@@ -10360,12 +10461,15 @@
+         data: { type: array, items: { $ref: "#/components/schemas/DonorSearchResult" } }
+     PendingDonorMoneyItem:
+       type: object
+-      required: [source, amount, dateReceived, payerName]
++      required: [id, source, amount, dateReceived, payerName]
+       properties:
+-        source:       { type: string, enum: [quickbooks, stripe], description: "Where the pending money came from." }
+-        amount:       { type: string, nullable: true, description: "Numeric amount as a string (gross for Stripe)." }
+-        dateReceived: { type: string, nullable: true, description: "Date the money landed (YYYY-MM-DD), if known." }
+-        payerName:    { type: string, nullable: true, description: "Payer label from the source record." }
++        id:                    { type: string, description: "Source-record id used to create or link the gift." }
++        source:                { type: string, enum: [quickbooks, stripe], description: "Where the pending money came from." }
++        amount:                { type: string, nullable: true, description: "Numeric amount as a string (gross for Stripe)." }
++        dateReceived:          { type: string, nullable: true, description: "Date the money landed (YYYY-MM-DD), if known." }
++        payerName:             { type: string, nullable: true, description: "Payer label from the source record." }
++        description:           { type: string, nullable: true, description: "Memo or line description from the source record." }
++        paymentIntermediaryId: { type: string, nullable: true, description: "Resolved payment intermediary, when any." }
+     PendingDonorMoney:
+       type: object
+       required: [count, items]
+@@ -10654,7 +10758,7 @@
+       description: >-
+         Flag a record for research. reason_code is always 'needs_research'.
+       properties:
+-        targetType: { type: string, enum: [opportunity, pledge, organization, person, gift, staged_payment, stripe_payout], description: "Kind of record being flagged." }
++        targetType: { type: string, enum: [opportunity, pledge, organization, person, household, gift, staged_payment, stripe_payout], description: "Kind of record being flagged." }
+         targetId:   { type: string, minLength: 1, description: "Id of the record being flagged." }
+         note:       { type: string, minLength: 1, description: "What needs research / follow-up on this record." }
+     UpdateCleanupItemBody:
+@@ -10979,7 +11083,7 @@
+         - type: object
+           description: "Overrides for the per-charge mint. Optionally set opportunityId to book the charge as a payment on a pledge — the donor then DERIVES from the pledge (the charge row's resolved donor is ignored)."
+           properties:
+-            opportunityId: { type: string, nullable: true, description: "Book this charge's GROSS ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge, and its allocations seed from the pledge's allocation plan scaled to the charge GROSS. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit." }
++            opportunityId: { type: string, nullable: true, description: "Record this charge's GROSS as the received gift produced by an opportunity or as a payment on a finalized pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. The record must be active (not archived/lost/dormant). It is classified as a pledge payment only when pledgeCommittedAt was already set." }
+     PaymentUnitGiftResponse:
+       type: object
+       required: [gift, paymentUnitId]
