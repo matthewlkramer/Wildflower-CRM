@@ -1,0 +1,41 @@
+name: Export PR 106 source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/export-pr106-source-trigger.txt
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/detail-action-lifecycle-v2
+          fetch-depth: 0
+
+      - name: Create source archive
+        run: tar --exclude=.git -czf /tmp/pr106-source.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr106-source
+          path: /tmp/pr106-source.tar.gz
+          retention-days: 1
+
+      - name: Record run id
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          file=.github/export-pr106-source-run.txt
+          payload=$(printf 'run_id=%s\nbranch_head=%s\n' "$GITHUB_RUN_ID" "$(git rev-parse HEAD)")
+          content=$(printf '%s' "$payload" | base64 -w0)
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$file?ref=main" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/$GITHUB_REPOSITORY/contents/$file" -f message='Record temporary PR 106 source export run' -f content="$content" -f branch=main)
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}"
