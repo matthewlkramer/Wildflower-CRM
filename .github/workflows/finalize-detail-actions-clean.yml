@@ -1,0 +1,213 @@
+name: Finalize clean detail actions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/finalize-detail-actions-trigger.txt
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: finalize-clean-detail-actions
+  cancel-in-progress: false
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_detail_actions_final
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_detail_actions_final"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      TARGET_BRANCH: agent/detail-action-lifecycle-final
+      SOURCE_BRANCH: agent/detail-action-lifecycle-v2
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_detail_actions_final
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: detail-actions-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 0
+
+      - name: Record run id
+        shell: bash
+        run: |
+          file=.github/finalize-detail-actions-run.txt
+          payload=$(printf 'run_id=%s\nstatus=in_progress\ntarget=%s\nsource=%s\n' "$GITHUB_RUN_ID" "$TARGET_BRANCH" "$SOURCE_BRANCH")
+          content=$(printf '%s' "$payload" | base64 -w0)
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$file?ref=main" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/$GITHUB_REPOSITORY/contents/$file" -f message='Record clean detail action finalization run' -f content="$content" -f branch=main)
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}"
+
+      - name: Assemble clean implementation from reviewed source
+        shell: bash
+        run: |
+          git fetch origin main "$SOURCE_BRANCH"
+          files=(
+            artifacts/api-server/src/__tests__/fundraising-record-actions.integration.test.ts
+            artifacts/api-server/src/lib/giftTypeDerived.ts
+            artifacts/api-server/src/routes/fundraisingRecordActions.ts
+            artifacts/api-server/src/routes/giftsAndPayments.ts
+            artifacts/api-server/src/routes/index.ts
+            artifacts/api-server/src/routes/opportunitiesAndPledges.ts
+            artifacts/api-server/src/routes/quickbooks/actions.ts
+            artifacts/api-server/src/routes/quickbooks/candidates.ts
+            artifacts/api-server/src/routes/reconciliation/approve.ts
+            artifacts/api-server/src/routes/stripe.ts
+            artifacts/wildflower-crm/src/components/commitment-action-dialogs.tsx
+            artifacts/wildflower-crm/src/components/commitment-lifecycle-card.tsx
+            artifacts/wildflower-crm/src/components/create-opportunity-dialog.tsx
+            artifacts/wildflower-crm/src/components/donor-record-actions.tsx
+            artifacts/wildflower-crm/src/components/entity-picker.tsx
+            artifacts/wildflower-crm/src/components/flag-for-research-dialog.tsx
+            artifacts/wildflower-crm/src/components/fundraising-correction-dialogs.tsx
+            artifacts/wildflower-crm/src/components/gift-form-dialog.tsx
+            artifacts/wildflower-crm/src/components/gift-merge-dialogs.tsx
+            artifacts/wildflower-crm/src/components/giving-pipeline-card.tsx
+            artifacts/wildflower-crm/src/components/linked-records.tsx
+            artifacts/wildflower-crm/src/components/payment-evidence-picker-dialog.tsx
+            artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
+            artifacts/wildflower-crm/src/components/record-received-gift-dialog.tsx
+            artifacts/wildflower-crm/src/pages/audit-log.tsx
+            artifacts/wildflower-crm/src/pages/funding-entity-detail.tsx
+            artifacts/wildflower-crm/src/pages/gift-detail.tsx
+            artifacts/wildflower-crm/src/pages/gifts.tsx
+            artifacts/wildflower-crm/src/pages/household-detail.tsx
+            artifacts/wildflower-crm/src/pages/individual-detail.tsx
+            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          )
+          git checkout "origin/$SOURCE_BRANCH" -- "${files[@]}"
+          git show origin/main:.github/detail-actions-openapi-clean.patch > /tmp/detail-actions-openapi.patch
+          git apply --check /tmp/detail-actions-openapi.patch
+          git apply /tmp/detail-actions-openapi.patch
+          git show origin/main:.github/finalize-detail-actions.py > /tmp/finalize-detail-actions.py
+          python3 /tmp/finalize-detail-actions.py
+          bash -n lib/api-spec/codegen.sh
+          bash -n lib/api-spec/codegen-check.sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format hand-edited TypeScript
+        shell: bash
+        run: |
+          mapfile -t files < <(
+            git diff --name-only --diff-filter=ACMRTUXB |
+              grep -E '\.(ts|tsx)$' |
+              grep -v '/generated/' || true
+          )
+          if ((${#files[@]})); then
+            pnpm exec prettier --write "${files[@]}"
+            pnpm exec prettier --check "${files[@]}"
+          fi
+
+      - name: Generate and verify API clients
+        run: |
+          pnpm --filter @workspace/api-spec run codegen
+          pnpm --filter @workspace/api-spec run codegen:check
+
+      - name: Establish disposable schema
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Typecheck API and web
+        run: |
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/wildflower-crm run typecheck
+
+      - name: Run focused database-backed tests
+        shell: bash
+        run: |
+          files=(
+            src/__tests__/fundraising-record-actions.integration.test.ts
+            src/__tests__/gift-revert-to-opportunity.integration.test.ts
+            src/__tests__/donor-attribution-phase3.integration.test.ts
+            src/__tests__/donor-routing.integration.test.ts
+            src/__tests__/donor-routing-gift-trigger.integration.test.ts
+            src/__tests__/opportunity-commitment-reconstruction.integration.test.ts
+            src/__tests__/create-gift-overrides.integration.test.ts
+            src/__tests__/stripe-link-gift.integration.test.ts
+            src/__tests__/reconciliation-qb-search-stripe.integration.test.ts
+            src/__tests__/gift-merge.integration.test.ts
+          )
+          existing=()
+          for file in "${files[@]}"; do
+            [ -f "artifacts/api-server/$file" ] && existing+=("$file")
+          done
+          printf 'Running %s focused test files\n' "${#existing[@]}"
+          pnpm --filter @workspace/api-server exec vitest run "${existing[@]}" --reporter=verbose
+
+      - name: Verify action model and diff integrity
+        shell: bash
+        run: |
+          test -f artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          test -f artifacts/wildflower-crm/src/components/payment-evidence-picker-dialog.tsx
+          grep -q 'convert-to-standalone-gift' artifacts/api-server/src/routes/fundraisingRecordActions.ts
+          grep -q 'Revert pledge to verbal gift commitment' artifacts/wildflower-crm/src/components/fundraising-correction-dialogs.tsx
+          grep -q 'Link reimbursement payment' artifacts/wildflower-crm/src/pages/opportunity-detail.tsx
+          grep -q 'Split into pledge' artifacts/wildflower-crm/src/pages/gift-detail.tsx
+          ! grep -Eq "navigate\(['\"]\/reconciliation|href=['\"]\/reconciliation" \
+            artifacts/wildflower-crm/src/pages/opportunity-detail.tsx \
+            artifacts/wildflower-crm/src/pages/gift-detail.tsx \
+            artifacts/wildflower-crm/src/components/payment-evidence-picker-dialog.tsx \
+            artifacts/wildflower-crm/src/components/record-received-gift-dialog.tsx \
+            artifacts/wildflower-crm/src/components/pending-gift-dialog.tsx
+          git diff --check
+          test -z "$(git diff --name-only -- lib/db/migrations)"
+          count=$(git diff --name-only -- lib/api-client-react/src/generated lib/api-zod/src/generated | wc -l)
+          echo "Generated files changed: $count"
+          test "$count" -le 12
+          echo "Final diff summary:"
+          git diff --stat
+
+      - name: Commit and push validated final branch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "Modernize record-local donor and fundraising actions"
+          git push --force-with-lease origin HEAD:"$TARGET_BRANCH"
+
+      - name: Record final result
+        if: always()
+        shell: bash
+        env:
+          RESULT: ${{ job.status }}
+        run: |
+          branch_head=$(git rev-parse HEAD 2>/dev/null || true)
+          file=.github/finalize-detail-actions-run.txt
+          payload=$(printf 'run_id=%s\nstatus=%s\nbranch_head=%s\ntarget=%s\n' "$GITHUB_RUN_ID" "$RESULT" "$branch_head" "$TARGET_BRANCH")
+          content=$(printf '%s' "$payload" | base64 -w0)
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$file?ref=main" --jq .sha 2>/dev/null || true)
+          args=(--method PUT "repos/$GITHUB_REPOSITORY/contents/$file" -f message="Record clean detail action finalization: $RESULT" -f content="$content" -f branch=main)
+          if [ -n "$sha" ]; then args+=(-f sha="$sha"); fi
+          gh api "${args[@]}"
