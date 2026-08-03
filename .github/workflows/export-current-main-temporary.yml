@@ -9,8 +9,6 @@ on:
 permissions:
   contents: write
 
-actions:
-
 jobs:
   export:
     runs-on: ubuntu-latest
