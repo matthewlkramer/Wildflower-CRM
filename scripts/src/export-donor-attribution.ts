@@ -9,6 +9,7 @@ import {
   donorPaymentIntermediaries,
   donorRoutingPreferences,
   giftsAndPayments,
+  opportunitiesAndPledges,
   households,
   organizations,
   paymentIntermediaries,
@@ -123,6 +124,7 @@ try {
     intermediaryRows,
     donorIntermediaryRows,
     giftRows,
+    opportunityRows,
     unitRows,
     stagedRows,
     chargeRows,
@@ -189,6 +191,30 @@ try {
         archivedAt: giftsAndPayments.archivedAt,
       })
       .from(giftsAndPayments),
+    db
+      .select({
+        id: opportunitiesAndPledges.id,
+        name: opportunitiesAndPledges.name,
+        askAmount: opportunitiesAndPledges.askAmount,
+        awardedAmount: opportunitiesAndPledges.awardedAmount,
+        paid: opportunitiesAndPledges.paid,
+        status: opportunitiesAndPledges.status,
+        stage: opportunitiesAndPledges.stage,
+        commitmentPath: opportunitiesAndPledges.commitmentPath,
+        verbalCommitmentAt: opportunitiesAndPledges.verbalCommitmentAt,
+        pledgeCommittedAt: opportunitiesAndPledges.pledgeCommittedAt,
+        projectedCloseDate: opportunitiesAndPledges.projectedCloseDate,
+        actualCompletionDate: opportunitiesAndPledges.actualCompletionDate,
+        organizationId: opportunitiesAndPledges.organizationId,
+        individualGiverPersonId:
+          opportunitiesAndPledges.individualGiverPersonId,
+        householdId: opportunitiesAndPledges.householdId,
+        individualAdvisorPersonId:
+          opportunitiesAndPledges.individualAdvisorPersonId,
+        primaryContactPersonId: opportunitiesAndPledges.primaryContactPersonId,
+        archivedAt: opportunitiesAndPledges.archivedAt,
+      })
+      .from(opportunitiesAndPledges),
     db
       .select({
         id: paymentUnits.id,
@@ -259,8 +285,10 @@ try {
   const document = {
     metadata: {
       exportedAt: new Date().toISOString(),
-      purpose: "donor attribution and preferred-pathway analysis",
-      pathwaySchemaPresent: routeRows.length > 0 ||
+      purpose:
+        "gift, opportunity, and pledge attribution and preferred-pathway analysis",
+      pathwaySchemaPresent:
+        routeRows.length > 0 ||
         (await tableExists("donor_routing_preferences")),
       excludes: [
         "emails",
@@ -280,6 +308,7 @@ try {
     paymentIntermediaries: intermediaryRows,
     donorPaymentIntermediaries: donorIntermediaryRows,
     gifts: giftRows,
+    opportunitiesAndPledges: opportunityRows,
     paymentUnits: unitRows,
     stagedPayments: stagedRows,
     stripeCharges: chargeRows,
