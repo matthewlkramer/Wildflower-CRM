@@ -286,7 +286,7 @@ export function useSearchStagedPaymentDonors<TData = Awaited<ReturnType<typeof s
 
 
 /**
- * Duplicate guard for manual gift entry: returns the still-pending staged payments (QuickBooks) and Stripe charges already matched to the given donor, so a fundraiser doesn't hand-key a gift for money that is about to be booked via reconciliation. Read-only.
+ * Record-local payment selector: returns the still-pending QuickBooks payments and Stripe charges already matched to the given donor. A received gift or pledge payment must select one of these source records; the action then mints or links the CRM gift without opening the reconciliation workbench. Read-only.
  * @summary Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
  */
 export const getGetPendingStagedMoneyForDonorUrl = (params: GetPendingStagedMoneyForDonorParams,) => {
