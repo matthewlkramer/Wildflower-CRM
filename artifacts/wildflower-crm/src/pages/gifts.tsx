@@ -38,9 +38,20 @@ import { Badge } from "@/components/ui/badge";
 import { SavedViewsBar } from "@/components/saved-views-bar";
 import { ColumnsMenu } from "@/components/columns-menu";
 import { FiltersMenu } from "@/components/filters-menu";
-import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
-import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
-import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
+import {
+  resolveColumns,
+  type ColumnDef,
+  type ColumnsState,
+} from "@/lib/columns";
+import {
+  resolveFilters,
+  type FilterDef,
+  type FiltersState,
+} from "@/lib/filters";
+import {
+  PresenceFilter,
+  type PresenceValue,
+} from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -81,7 +92,14 @@ import {
 import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { X, ChevronDown, ChevronRight, FolderOpen, Trash2, Check } from "lucide-react";
+import {
+  X,
+  ChevronDown,
+  ChevronRight,
+  FolderOpen,
+  Trash2,
+  Check,
+} from "lucide-react";
 import { MultiFilterSelect } from "@/components/multi-filter-select";
 import { FiscalYearMultiSelect } from "@/components/fiscal-year-multi-select";
 import {
@@ -93,7 +111,7 @@ import {
 } from "@/components/ui/pagination";
 import { PageJumper } from "@/components/page-jumper";
 import { DonorCell } from "@/components/donor-cell";
-import { GiftFormDialog } from "@/components/gift-form-dialog";
+import { RecordReceivedGiftDialog } from "@/components/record-received-gift-dialog";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 
@@ -262,7 +280,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       sortable: false,
       tdClassName: "text-xs text-muted-foreground max-w-[200px]",
       cell: (g) => {
-        const names = (g.regionIds ?? []).map((id) => ctx.regionNames.get(id) ?? id);
+        const names = (g.regionIds ?? []).map(
+          (id) => ctx.regionNames.get(id) ?? id,
+        );
         return names.length === 0 ? "—" : names.join(", ");
       },
     },
@@ -271,7 +291,9 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       label: "Owner",
       tdClassName: "text-sm text-muted-foreground",
       cell: (g) =>
-        g.ownerUserId ? (ctx.userNames.get(g.ownerUserId) ?? g.ownerUserId) : "—",
+        g.ownerUserId
+          ? (ctx.userNames.get(g.ownerUserId) ?? g.ownerUserId)
+          : "—",
     },
     {
       key: "paymentMethod",
@@ -322,7 +344,8 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
       label: "Purpose verbatim",
       defaultVisible: false,
       sortable: false,
-      tdClassName: "text-xs text-muted-foreground max-w-[300px] whitespace-normal",
+      tdClassName:
+        "text-xs text-muted-foreground max-w-[300px] whitespace-normal",
       cell: (g) => {
         const vals = g.purposeVerbatims ?? [];
         return vals.length === 0 ? "—" : vals.join("; ");
@@ -413,36 +436,84 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
 export default function Gifts() {
   // Filter state is persisted per-tab so back-navigation from a gift
   // detail page restores the same filtered/paginated view.
-  const [search, setSearch] = usePersistedState<string>("wf.list.gifts.search", "");
+  const [search, setSearch] = usePersistedState<string>(
+    "wf.list.gifts.search",
+    "",
+  );
   const debouncedSearch = useDebounce(search, 250);
-  const [types, setTypes] = usePersistedState<string[]>("wf.list.gifts.types", []);
-  const [owners, setOwners] = usePersistedState<string[]>("wf.list.gifts.owners", []);
-  const [fiscalYears, setFiscalYears] = usePersistedState<string[]>("wf.list.gifts.fiscalYears", []);
-  const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.entities", undefined);
-  const [usagesPresence, setUsagesPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.usages", undefined);
-  const [grantYearsPresence, setGrantYearsPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.grantYears", undefined);
-  const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>("wf.list.gifts.paymentMethods", []);
-  const [thankYouPresence, setThankYouPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.thankYouSentAt", undefined);
-  const [awaitingEvidence, setAwaitingEvidence] = usePersistedState<boolean>("wf.list.gifts.f.awaitingEvidence", false);
-  const [donorboxBacked, setDonorboxBacked] = usePersistedState<boolean>("wf.list.gifts.f.donorboxBacked", false);
-  const [codingForm, setCodingForm] = usePersistedState<boolean>("wf.list.gifts.f.codingForm", false);
-  const [dateReceivedPresence, setDateReceivedPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.dateReceived", undefined);
-  const [purposeVerbatimPresence, setPurposeVerbatimPresence] = usePersistedState<PresenceValue>("wf.list.gifts.f.purposeVerbatim", undefined);
-  const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>("wf.list.gifts.f.restrictionLabels", []);
-  const [regionalRestrictionTypes, setRegionalRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.regionalRestrictionTypes", []);
-  const [otherRestrictionTypes, setOtherRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.otherRestrictionTypes", []);
-  const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<string[]>("wf.list.gifts.f.timeRestrictionTypes", []);
-  const [fundableProjects, setFundableProjects] = usePersistedState<string[]>("wf.list.gifts.fundableProjects", []);
-  const [campaignSlugs, setCampaignSlugs] = usePersistedState<string[]>("wf.list.gifts.campaignSlugs", []);
+  const [types, setTypes] = usePersistedState<string[]>(
+    "wf.list.gifts.types",
+    [],
+  );
+  const [owners, setOwners] = usePersistedState<string[]>(
+    "wf.list.gifts.owners",
+    [],
+  );
+  const [fiscalYears, setFiscalYears] = usePersistedState<string[]>(
+    "wf.list.gifts.fiscalYears",
+    [],
+  );
+  const [entitiesPresence, setEntitiesPresence] =
+    usePersistedState<PresenceValue>("wf.list.gifts.f.entities", undefined);
+  const [usagesPresence, setUsagesPresence] = usePersistedState<PresenceValue>(
+    "wf.list.gifts.f.usages",
+    undefined,
+  );
+  const [grantYearsPresence, setGrantYearsPresence] =
+    usePersistedState<PresenceValue>("wf.list.gifts.f.grantYears", undefined);
+  const [paymentMethods, setPaymentMethods] = usePersistedState<string[]>(
+    "wf.list.gifts.paymentMethods",
+    [],
+  );
+  const [thankYouPresence, setThankYouPresence] =
+    usePersistedState<PresenceValue>(
+      "wf.list.gifts.f.thankYouSentAt",
+      undefined,
+    );
+  const [awaitingEvidence, setAwaitingEvidence] = usePersistedState<boolean>(
+    "wf.list.gifts.f.awaitingEvidence",
+    false,
+  );
+  const [donorboxBacked, setDonorboxBacked] = usePersistedState<boolean>(
+    "wf.list.gifts.f.donorboxBacked",
+    false,
+  );
+  const [codingForm, setCodingForm] = usePersistedState<boolean>(
+    "wf.list.gifts.f.codingForm",
+    false,
+  );
+  const [dateReceivedPresence, setDateReceivedPresence] =
+    usePersistedState<PresenceValue>("wf.list.gifts.f.dateReceived", undefined);
+  const [purposeVerbatimPresence, setPurposeVerbatimPresence] =
+    usePersistedState<PresenceValue>(
+      "wf.list.gifts.f.purposeVerbatim",
+      undefined,
+    );
+  const [restrictionLabels, setRestrictionLabels] = usePersistedState<string[]>(
+    "wf.list.gifts.f.restrictionLabels",
+    [],
+  );
+  const [regionalRestrictionTypes, setRegionalRestrictionTypes] =
+    usePersistedState<string[]>("wf.list.gifts.f.regionalRestrictionTypes", []);
+  const [otherRestrictionTypes, setOtherRestrictionTypes] = usePersistedState<
+    string[]
+  >("wf.list.gifts.f.otherRestrictionTypes", []);
+  const [timeRestrictionTypes, setTimeRestrictionTypes] = usePersistedState<
+    string[]
+  >("wf.list.gifts.f.timeRestrictionTypes", []);
+  const [fundableProjects, setFundableProjects] = usePersistedState<string[]>(
+    "wf.list.gifts.fundableProjects",
+    [],
+  );
+  const [campaignSlugs, setCampaignSlugs] = usePersistedState<string[]>(
+    "wf.list.gifts.campaignSlugs",
+    [],
+  );
   const [page, setPage] = usePersistedState<number>("wf.list.gifts.page", 1);
-  const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
-    "wf.list.gifts.columns",
-    null,
-  );
-  const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>(
-    "wf.list.gifts.filters",
-    null,
-  );
+  const [columnsState, setColumnsState] =
+    usePersistedState<ColumnsState | null>("wf.list.gifts.columns", null);
+  const [filtersState, setFiltersState] =
+    usePersistedState<FiltersState | null>("wf.list.gifts.filters", null);
   const selection = useRowSelection();
   const [, navigate] = useLocation();
   // Donor-lifecycle worklist preset, read from the URL (?worklist=...). Set by
@@ -453,7 +524,9 @@ export default function Gifts() {
   const rawWorklist = new URLSearchParams(urlSearch).get("worklist");
   const worklist: ListGiftsAndPaymentsWorklist | undefined =
     rawWorklist &&
-    (Object.values(ListGiftsAndPaymentsWorklist) as string[]).includes(rawWorklist)
+    (Object.values(ListGiftsAndPaymentsWorklist) as string[]).includes(
+      rawWorklist,
+    )
       ? (rawWorklist as ListGiftsAndPaymentsWorklist)
       : undefined;
   const { toast } = useToast();
@@ -497,19 +570,49 @@ export default function Gifts() {
     ...(entitiesPresence ? { entitiesPresence } : {}),
     ...(usagesPresence ? { usagesPresence } : {}),
     ...(grantYearsPresence ? { grantYearsPresence } : {}),
-    ...(paymentMethods.length > 0 ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] } : {}),
+    ...(paymentMethods.length > 0
+      ? { paymentMethod: [...paymentMethods].sort() as GiftPaymentMethod[] }
+      : {}),
     ...(thankYouPresence ? { thankYouSentAtPresence: thankYouPresence } : {}),
     ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
     ...(donorboxBacked ? { donorboxBacked: true } : {}),
     ...(codingForm ? { codingForm: true } : {}),
     ...(dateReceivedPresence ? { dateReceivedPresence } : {}),
     ...(purposeVerbatimPresence ? { purposeVerbatimPresence } : {}),
-    ...(restrictionLabels.length > 0 ? { restrictionLabels: [...restrictionLabels].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[] } : {}),
-    ...(regionalRestrictionTypes.length > 0 ? { regionalRestrictionTypes: [...regionalRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
-    ...(otherRestrictionTypes.length > 0 ? { otherRestrictionTypes: [...otherRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
-    ...(timeRestrictionTypes.length > 0 ? { timeRestrictionTypes: [...timeRestrictionTypes].sort() as RestrictionAxisType[] } : {}),
-    ...(fundableProjects.length > 0 ? { fundableProjectId: [...fundableProjects].sort() } : {}),
-    ...(campaignSlugs.length > 0 ? { campaignSlugs: [...campaignSlugs].sort() } : {}),
+    ...(restrictionLabels.length > 0
+      ? {
+          restrictionLabels: [
+            ...restrictionLabels,
+          ].sort() as ListGiftsAndPaymentsRestrictionLabelsItem[],
+        }
+      : {}),
+    ...(regionalRestrictionTypes.length > 0
+      ? {
+          regionalRestrictionTypes: [
+            ...regionalRestrictionTypes,
+          ].sort() as RestrictionAxisType[],
+        }
+      : {}),
+    ...(otherRestrictionTypes.length > 0
+      ? {
+          otherRestrictionTypes: [
+            ...otherRestrictionTypes,
+          ].sort() as RestrictionAxisType[],
+        }
+      : {}),
+    ...(timeRestrictionTypes.length > 0
+      ? {
+          timeRestrictionTypes: [
+            ...timeRestrictionTypes,
+          ].sort() as RestrictionAxisType[],
+        }
+      : {}),
+    ...(fundableProjects.length > 0
+      ? { fundableProjectId: [...fundableProjects].sort() }
+      : {}),
+    ...(campaignSlugs.length > 0
+      ? { campaignSlugs: [...campaignSlugs].sort() }
+      : {}),
   };
 
   const { data, isLoading, isError, error } = useListGiftsAndPayments(params, {
@@ -521,18 +624,27 @@ export default function Gifts() {
     query: { queryKey: getListEntitiesQueryKey(), staleTime: 5 * 60_000 },
   });
   const entityNameById = useMemo(
-    () => new Map<string, string>((entitiesQ.data ?? []).map((e) => [e.id, e.name])),
+    () =>
+      new Map<string, string>(
+        (entitiesQ.data ?? []).map((e) => [e.id, e.name]),
+      ),
     [entitiesQ.data],
   );
   const regionNames = useRegionNameMap();
   const fundableProjectsQ = useListFundableProjects();
   const fundableProjectNameById = useMemo(
-    () => new Map<string, string>((fundableProjectsQ.data ?? []).map((p) => [p.id, p.name])),
+    () =>
+      new Map<string, string>(
+        (fundableProjectsQ.data ?? []).map((p) => [p.id, p.name]),
+      ),
     [fundableProjectsQ.data],
   );
   const campaignsQ = useListFundraisingCampaigns();
   const campaignNameBySlug = useMemo(
-    () => new Map<string, string>((campaignsQ.data ?? []).map((c) => [c.slug, c.name])),
+    () =>
+      new Map<string, string>(
+        (campaignsQ.data ?? []).map((c) => [c.slug, c.name]),
+      ),
     [campaignsQ.data],
   );
 
@@ -625,7 +737,16 @@ export default function Gifts() {
         onUnarchive: unarchiveGift,
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [userNames, entityNameById, regionNames, fundableProjectNameById, campaignNameBySlug, isAdmin, inlineEdit, navigate],
+    [
+      userNames,
+      entityNameById,
+      regionNames,
+      fundableProjectNameById,
+      campaignNameBySlug,
+      isAdmin,
+      inlineEdit,
+      navigate,
+    ],
   );
   const visibleCols = useMemo(
     () => resolveColumns(registry, columnsState),
@@ -642,12 +763,20 @@ export default function Gifts() {
         key: "type",
         label: "Type",
         active: types.length > 0,
-        clear: () => { setTypes([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setTypes([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Type"
             selected={types}
-            onChange={(v) => { setTypes(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setTypes(v);
+              setPage(1);
+              selection.clear();
+            }}
             options={TYPES}
             testId="select-gift-type"
             includeBlank
@@ -658,11 +787,19 @@ export default function Gifts() {
         key: "owner",
         label: "Owner",
         active: owners.length > 0,
-        clear: () => { setOwners([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setOwners([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <OwnerMultiFilter
             selected={owners}
-            onChange={(v) => { setOwners(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setOwners(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="select-gift-owner"
           />
         ),
@@ -671,11 +808,19 @@ export default function Gifts() {
         key: "fiscalYear",
         label: "Fiscal year",
         active: fiscalYears.length > 0,
-        clear: () => { setFiscalYears([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setFiscalYears([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <FiscalYearMultiSelect
             selected={fiscalYears}
-            onChange={(v) => { setFiscalYears(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setFiscalYears(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="select-gift-fiscal-year"
           />
         ),
@@ -685,13 +830,24 @@ export default function Gifts() {
         label: "Campaign",
         defaultVisible: false,
         active: campaignSlugs.length > 0,
-        clear: () => { setCampaignSlugs([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setCampaignSlugs([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Campaign"
             selected={campaignSlugs}
-            onChange={(v) => { setCampaignSlugs(v); setPage(1); selection.clear(); }}
-            options={(campaignsQ.data ?? []).map((c) => ({ value: c.slug, label: c.name }))}
+            onChange={(v) => {
+              setCampaignSlugs(v);
+              setPage(1);
+              selection.clear();
+            }}
+            options={(campaignsQ.data ?? []).map((c) => ({
+              value: c.slug,
+              label: c.name,
+            }))}
             testId="select-gift-campaign"
           />
         ),
@@ -701,13 +857,24 @@ export default function Gifts() {
         label: "Fundable project",
         defaultVisible: false,
         active: fundableProjects.length > 0,
-        clear: () => { setFundableProjects([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setFundableProjects([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Fundable project"
             selected={fundableProjects}
-            onChange={(v) => { setFundableProjects(v); setPage(1); selection.clear(); }}
-            options={(fundableProjectsQ.data ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            onChange={(v) => {
+              setFundableProjects(v);
+              setPage(1);
+              selection.clear();
+            }}
+            options={(fundableProjectsQ.data ?? []).map((p) => ({
+              value: p.id,
+              label: p.name,
+            }))}
             testId="select-gift-fundable-project"
           />
         ),
@@ -717,12 +884,20 @@ export default function Gifts() {
         label: "Entities",
         defaultVisible: false,
         active: !!entitiesPresence,
-        clear: () => { setEntitiesPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setEntitiesPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Entities"
             value={entitiesPresence}
-            onChange={(v) => { setEntitiesPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setEntitiesPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-entities"
           />
         ),
@@ -732,12 +907,20 @@ export default function Gifts() {
         label: "Usages",
         defaultVisible: false,
         active: !!usagesPresence,
-        clear: () => { setUsagesPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setUsagesPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Usages"
             value={usagesPresence}
-            onChange={(v) => { setUsagesPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setUsagesPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-usages"
           />
         ),
@@ -747,12 +930,20 @@ export default function Gifts() {
         label: "Grant years",
         defaultVisible: false,
         active: !!grantYearsPresence,
-        clear: () => { setGrantYearsPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setGrantYearsPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Grant years"
             value={grantYearsPresence}
-            onChange={(v) => { setGrantYearsPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setGrantYearsPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-grant-years"
           />
         ),
@@ -762,12 +953,20 @@ export default function Gifts() {
         label: "Payment method",
         defaultVisible: false,
         active: paymentMethods.length > 0,
-        clear: () => { setPaymentMethods([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setPaymentMethods([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Payment method"
             selected={paymentMethods}
-            onChange={(v) => { setPaymentMethods(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setPaymentMethods(v);
+              setPage(1);
+              selection.clear();
+            }}
             options={PAYMENT_METHODS}
             testId="select-payment-method"
             includeBlank
@@ -779,12 +978,20 @@ export default function Gifts() {
         label: "Thank-you sent",
         defaultVisible: false,
         active: !!thankYouPresence,
-        clear: () => { setThankYouPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setThankYouPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Thank-you sent"
             value={thankYouPresence}
-            onChange={(v) => { setThankYouPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setThankYouPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-thank-you-sent"
           />
         ),
@@ -796,7 +1003,11 @@ export default function Gifts() {
         label: "Awaiting evidence",
         defaultVisible: false,
         active: awaitingEvidence,
-        clear: () => { setAwaitingEvidence(false); setPage(1); selection.clear(); },
+        clear: () => {
+          setAwaitingEvidence(false);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">
@@ -806,7 +1017,11 @@ export default function Gifts() {
               <Checkbox
                 id="filter-awaiting-evidence"
                 checked={awaitingEvidence}
-                onCheckedChange={(c) => { setAwaitingEvidence(c === true); setPage(1); selection.clear(); }}
+                onCheckedChange={(c) => {
+                  setAwaitingEvidence(c === true);
+                  setPage(1);
+                  selection.clear();
+                }}
                 data-testid="filter-awaiting-evidence"
               />
               <label htmlFor="filter-awaiting-evidence" className="text-sm">
@@ -821,7 +1036,11 @@ export default function Gifts() {
         label: "Donorbox match",
         defaultVisible: false,
         active: donorboxBacked,
-        clear: () => { setDonorboxBacked(false); setPage(1); selection.clear(); },
+        clear: () => {
+          setDonorboxBacked(false);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">
@@ -831,7 +1050,11 @@ export default function Gifts() {
               <Checkbox
                 id="filter-donorbox-backed"
                 checked={donorboxBacked}
-                onCheckedChange={(c) => { setDonorboxBacked(c === true); setPage(1); selection.clear(); }}
+                onCheckedChange={(c) => {
+                  setDonorboxBacked(c === true);
+                  setPage(1);
+                  selection.clear();
+                }}
                 data-testid="filter-donorbox-backed"
               />
               <label htmlFor="filter-donorbox-backed" className="text-sm">
@@ -846,7 +1069,11 @@ export default function Gifts() {
         label: "Coding form match",
         defaultVisible: false,
         active: codingForm,
-        clear: () => { setCodingForm(false); setPage(1); selection.clear(); },
+        clear: () => {
+          setCodingForm(false);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-muted-foreground">
@@ -856,7 +1083,11 @@ export default function Gifts() {
               <Checkbox
                 id="filter-coding-form"
                 checked={codingForm}
-                onCheckedChange={(c) => { setCodingForm(c === true); setPage(1); selection.clear(); }}
+                onCheckedChange={(c) => {
+                  setCodingForm(c === true);
+                  setPage(1);
+                  selection.clear();
+                }}
                 data-testid="filter-coding-form"
               />
               <label htmlFor="filter-coding-form" className="text-sm">
@@ -871,12 +1102,20 @@ export default function Gifts() {
         label: "Date received",
         defaultVisible: false,
         active: !!dateReceivedPresence,
-        clear: () => { setDateReceivedPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setDateReceivedPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Date received"
             value={dateReceivedPresence}
-            onChange={(v) => { setDateReceivedPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setDateReceivedPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-date-received"
           />
         ),
@@ -886,12 +1125,20 @@ export default function Gifts() {
         label: "Restriction language (verbatim)",
         defaultVisible: false,
         active: !!purposeVerbatimPresence,
-        clear: () => { setPurposeVerbatimPresence(undefined); setPage(1); selection.clear(); },
+        clear: () => {
+          setPurposeVerbatimPresence(undefined);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <PresenceFilter
             label="Restriction language (verbatim)"
             value={purposeVerbatimPresence}
-            onChange={(v) => { setPurposeVerbatimPresence(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setPurposeVerbatimPresence(v);
+              setPage(1);
+              selection.clear();
+            }}
             testId="filter-purpose-verbatim"
           />
         ),
@@ -901,12 +1148,20 @@ export default function Gifts() {
         label: "Restriction",
         defaultVisible: false,
         active: restrictionLabels.length > 0,
-        clear: () => { setRestrictionLabels([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setRestrictionLabels([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Restriction"
             selected={restrictionLabels}
-            onChange={(v) => { setRestrictionLabels(v); setPage(1); selection.clear(); }}
+            onChange={(v) => {
+              setRestrictionLabels(v);
+              setPage(1);
+              selection.clear();
+            }}
             options={[
               { value: "restricted", label: "Restricted" },
               { value: "unrestricted", label: "Unrestricted" },
@@ -920,13 +1175,24 @@ export default function Gifts() {
         label: "Regional restriction",
         defaultVisible: false,
         active: regionalRestrictionTypes.length > 0,
-        clear: () => { setRegionalRestrictionTypes([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setRegionalRestrictionTypes([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Regional restriction"
             selected={regionalRestrictionTypes}
-            onChange={(v) => { setRegionalRestrictionTypes(v); setPage(1); selection.clear(); }}
-            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            onChange={(v) => {
+              setRegionalRestrictionTypes(v);
+              setPage(1);
+              selection.clear();
+            }}
+            options={Object.values(RestrictionAxis).map((v) => ({
+              value: v,
+              label: formatEnum(v),
+            }))}
             testId="select-regional-restriction-types"
           />
         ),
@@ -936,13 +1202,24 @@ export default function Gifts() {
         label: "Other restriction",
         defaultVisible: false,
         active: otherRestrictionTypes.length > 0,
-        clear: () => { setOtherRestrictionTypes([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setOtherRestrictionTypes([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Other restriction"
             selected={otherRestrictionTypes}
-            onChange={(v) => { setOtherRestrictionTypes(v); setPage(1); selection.clear(); }}
-            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            onChange={(v) => {
+              setOtherRestrictionTypes(v);
+              setPage(1);
+              selection.clear();
+            }}
+            options={Object.values(RestrictionAxis).map((v) => ({
+              value: v,
+              label: formatEnum(v),
+            }))}
             testId="select-usage-restriction-types"
           />
         ),
@@ -952,20 +1229,51 @@ export default function Gifts() {
         label: "Time restriction",
         defaultVisible: false,
         active: timeRestrictionTypes.length > 0,
-        clear: () => { setTimeRestrictionTypes([]); setPage(1); selection.clear(); },
+        clear: () => {
+          setTimeRestrictionTypes([]);
+          setPage(1);
+          selection.clear();
+        },
         render: () => (
           <MultiFilterSelect
             label="Time restriction"
             selected={timeRestrictionTypes}
-            onChange={(v) => { setTimeRestrictionTypes(v); setPage(1); selection.clear(); }}
-            options={Object.values(RestrictionAxis).map((v) => ({ value: v, label: formatEnum(v) }))}
+            onChange={(v) => {
+              setTimeRestrictionTypes(v);
+              setPage(1);
+              selection.clear();
+            }}
+            options={Object.values(RestrictionAxis).map((v) => ({
+              value: v,
+              label: formatEnum(v),
+            }))}
             testId="select-time-restriction-types"
           />
         ),
       },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [types, owners, fiscalYears, fundableProjects, campaignSlugs, entitiesPresence, usagesPresence, grantYearsPresence, paymentMethods, thankYouPresence, awaitingEvidence, donorboxBacked, codingForm, dateReceivedPresence, purposeVerbatimPresence, restrictionLabels, regionalRestrictionTypes, otherRestrictionTypes, timeRestrictionTypes],
+    [
+      types,
+      owners,
+      fiscalYears,
+      fundableProjects,
+      campaignSlugs,
+      entitiesPresence,
+      usagesPresence,
+      grantYearsPresence,
+      paymentMethods,
+      thankYouPresence,
+      awaitingEvidence,
+      donorboxBacked,
+      codingForm,
+      dateReceivedPresence,
+      purposeVerbatimPresence,
+      restrictionLabels,
+      regionalRestrictionTypes,
+      otherRestrictionTypes,
+      timeRestrictionTypes,
+    ],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1006,17 +1314,24 @@ export default function Gifts() {
   const mergeLoadError = mergeQueries.some((q) => q.isError);
 
   // Expand/collapse: fetch the gift detail for expanded rows to show allocations.
-  const [expandedGiftIds, setExpandedGiftIds] = useState<Set<string>>(new Set());
+  const [expandedGiftIds, setExpandedGiftIds] = useState<Set<string>>(
+    new Set(),
+  );
   const toggleExpandGift = (id: string) =>
     setExpandedGiftIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   const expandGiftQueries = useQueries({
     queries: [...expandedGiftIds].map((id) =>
       getGetGiftOrPaymentQueryOptions(id, {
-        query: { enabled: true, staleTime: 60_000, queryKey: getGetGiftOrPaymentQueryKey(id) },
+        query: {
+          enabled: true,
+          staleTime: 60_000,
+          queryKey: getGetGiftOrPaymentQueryKey(id),
+        },
       }),
     ),
   });
@@ -1034,10 +1349,18 @@ export default function Gifts() {
       timeRestrictionType: a.timeRestrictionType,
     });
   };
-  const cancelAllocEdit = () => { setEditingAllocId(null); setAllocDraft({}); };
+  const cancelAllocEdit = () => {
+    setEditingAllocId(null);
+    setAllocDraft({});
+  };
   const saveAllocEdit = async (giftId: string) => {
-    await updateGiftAllocMut.mutateAsync({ id: editingAllocId!, data: allocDraft });
-    void queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(giftId) });
+    await updateGiftAllocMut.mutateAsync({
+      id: editingAllocId!,
+      data: allocDraft,
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getGetGiftOrPaymentQueryKey(giftId),
+    });
     setEditingAllocId(null);
     setAllocDraft({});
   };
@@ -1057,7 +1380,12 @@ export default function Gifts() {
         {
           name: (r) => (r.name ?? "").toLowerCase(),
           donor: (r) =>
-            (r.organizationName ?? r.householdName ?? r.individualGiverPersonName ?? "").toLowerCase(),
+            (
+              r.organizationName ??
+              r.householdName ??
+              r.individualGiverPersonName ??
+              ""
+            ).toLowerCase(),
           dateReceived: (r) => r.dateReceived ?? null,
           type: (r) => r.type ?? null,
           amount: (r) => (r.amount != null ? Number(r.amount) : null),
@@ -1236,8 +1564,14 @@ export default function Gifts() {
     <div className="space-y-6">
       <ListPageHeader
         title="Gifts & payments"
-        subtitle={isLoading ? <Skeleton className="h-4 w-20" /> : `${total.toLocaleString()} total`}
-        addAction={<GiftFormDialog />}
+        subtitle={
+          isLoading ? (
+            <Skeleton className="h-4 w-20" />
+          ) : (
+            `${total.toLocaleString()} total`
+          )
+        }
+        addAction={<RecordReceivedGiftDialog />}
         controls={
           <>
             <ShowArchivedToggle
@@ -1265,7 +1599,12 @@ export default function Gifts() {
 
       <SavedViewsBar
         controller={viewsCtrl}
-        canSave={hasActiveFilters || ts.sort.key !== null || columnsState !== null || filtersState !== null}
+        canSave={
+          hasActiveFilters ||
+          ts.sort.key !== null ||
+          columnsState !== null ||
+          filtersState !== null
+        }
         onClearAll={clearAll}
       />
 
@@ -1295,7 +1634,11 @@ export default function Gifts() {
             <Input
               placeholder="Search by name…"
               value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); selection.clear(); }}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+                selection.clear();
+              }}
               aria-label="Search gifts by name"
               data-testid="input-search-gifts"
               className="pr-8"
@@ -1306,7 +1649,11 @@ export default function Gifts() {
                 variant="ghost"
                 size="icon"
                 className="no-default-hover-elevate no-default-active-elevate absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                onClick={() => { setSearch(""); setPage(1); selection.clear(); }}
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                  selection.clear();
+                }}
                 aria-label="Clear search"
                 data-testid="button-clear-search-gifts"
               >
@@ -1356,7 +1703,9 @@ export default function Gifts() {
                     pagedRows.length > 0 &&
                     pagedRows.every((r) => selection.isSelected(r.id))
                   }
-                  onCheckedChange={() => selection.toggleVisible(pagedRows.map((r) => r.id))}
+                  onCheckedChange={() =>
+                    selection.toggleVisible(pagedRows.map((r) => r.id))
+                  }
                   aria-label="Select all gifts on this page"
                   data-testid="checkbox-select-all-gifts"
                 />
@@ -1380,32 +1729,58 @@ export default function Gifts() {
               <SkeletonRows cols={colSpan} />
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={colSpan} className="text-center h-24 text-destructive">
-                  {error instanceof Error ? error.message : "Failed to load gifts."}
+                <TableCell
+                  colSpan={colSpan}
+                  className="text-center h-24 text-destructive"
+                >
+                  {error instanceof Error
+                    ? error.message
+                    : "Failed to load gifts."}
                 </TableCell>
               </TableRow>
             ) : pagedRows.length === 0 ? (
-              <TableRow><TableCell colSpan={colSpan} className="text-center h-24 text-muted-foreground">No gifts match these filters.</TableCell></TableRow>
+              <TableRow>
+                <TableCell
+                  colSpan={colSpan}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  No gifts match these filters.
+                </TableCell>
+              </TableRow>
             ) : (
               pagedRows.map((g) => (
                 <Fragment key={g.id}>
-                  <TableRow className="cursor-pointer hover:bg-muted/50 transition-colors" data-testid={`row-gift-${g.id}`}>
-                    <TableCell className="w-6 px-1" onClick={(e) => e.stopPropagation()}>
+                  <TableRow
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    data-testid={`row-gift-${g.id}`}
+                  >
+                    <TableCell
+                      className="w-6 px-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-5 w-5 p-0 text-muted-foreground"
                         onClick={() => toggleExpandGift(g.id)}
-                        aria-label={expandedGiftIds.has(g.id) ? "Collapse allocations" : "Expand allocations"}
+                        aria-label={
+                          expandedGiftIds.has(g.id)
+                            ? "Collapse allocations"
+                            : "Expand allocations"
+                        }
                         tabIndex={-1}
                       >
-                        {expandedGiftIds.has(g.id)
-                          ? <ChevronDown className="h-3 w-3" />
-                          : <ChevronRight className="h-3 w-3" />
-                        }
+                        {expandedGiftIds.has(g.id) ? (
+                          <ChevronDown className="h-3 w-3" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3" />
+                        )}
                       </Button>
                     </TableCell>
-                    <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                    <TableCell
+                      className="w-8"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Checkbox
                         checked={selection.isSelected(g.id)}
                         onCheckedChange={() => selection.toggle(g.id)}
@@ -1417,115 +1792,348 @@ export default function Gifts() {
                       <TableCell
                         key={c.key}
                         className={c.tdClassName}
-                        onClick={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(g.id) && !g.archivedAt ? () => inlineEdit.start(g) : undefined}
-                        style={c.key !== "name" && c.key !== "actions" && !inlineEdit.isEditing(g.id) && !g.archivedAt ? { cursor: "text" } : undefined}
+                        onClick={
+                          c.key !== "name" &&
+                          c.key !== "actions" &&
+                          !inlineEdit.isEditing(g.id) &&
+                          !g.archivedAt
+                            ? () => inlineEdit.start(g)
+                            : undefined
+                        }
+                        style={
+                          c.key !== "name" &&
+                          c.key !== "actions" &&
+                          !inlineEdit.isEditing(g.id) &&
+                          !g.archivedAt
+                            ? { cursor: "text" }
+                            : undefined
+                        }
                       >
                         {c.cell(g)}
                       </TableCell>
                     ))}
                   </TableRow>
-                  {expandedGiftIds.has(g.id) && (() => {
-                    const detail = expandedGiftDetailsById.get(g.id);
-                    if (!detail) return (
-                      <TableRow className="bg-muted/30">
-                        <TableCell /><TableCell />
-                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">Loading…</TableCell>
-                      </TableRow>
-                    );
-                    const allocs = detail.allocations ?? [];
-                    if (allocs.length === 0) return (
-                      <TableRow className="bg-muted/30">
-                        <TableCell /><TableCell />
-                        <TableCell colSpan={visibleCols.length} className="py-2 text-xs text-muted-foreground italic">No allocations</TableCell>
-                      </TableRow>
-                    );
-                    const EDITABLE_COLS = new Set(["entities", "amount", "grantYears", "purposeVerbatims", "regionalRestrictionTypes", "otherRestrictionTypes", "timeRestrictionTypes"]);
-                    return allocs.map((a) => {
-                      const isEditing = editingAllocId === a.id;
-                      return (
-                        <TableRow key={a.id} className="bg-muted/30 hover:bg-muted/40">
-                          <TableCell className="py-0.5 px-1" />
-                          <TableCell className="py-0.5" />
-                          {visibleCols.map((c) => {
-                            let content: React.ReactNode = null;
-                            if (c.key === "actions") {
-                              content = isEditing ? (
-                                <div className="flex gap-0.5">
-                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-green-600" onClick={() => void saveAllocEdit(g.id)} disabled={updateGiftAllocMut.isPending}><Check className="h-3 w-3" /></Button>
-                                  <Button size="icon" variant="ghost" className="h-6 w-6" onClick={cancelAllocEdit}><X className="h-3 w-3" /></Button>
-                                </div>
-                              ) : (
-                                <div className="flex gap-0.5">
-                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground" onClick={() => navigate(`/gifts/${g.id}`)}><FolderOpen className="h-3 w-3" /></Button>
-                                  <Button size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={async () => { await deleteGiftAllocMut.mutateAsync({ id: a.id }); void queryClient.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(g.id) }); }} disabled={deleteGiftAllocMut.isPending}><Trash2 className="h-3 w-3" /></Button>
-                                </div>
-                              );
-                            } else if (isEditing && c.key === "entities") {
-                              content = (
-                                <select
-                                  className="h-6 text-xs rounded border border-input bg-background px-1 max-w-[180px]"
-                                  value={allocDraft.entityId ?? ""}
-                                  onChange={e => setAllocDraft(d => ({ ...d, entityId: e.target.value || null }))}
-                                  onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }}
+                  {expandedGiftIds.has(g.id) &&
+                    (() => {
+                      const detail = expandedGiftDetailsById.get(g.id);
+                      if (!detail)
+                        return (
+                          <TableRow className="bg-muted/30">
+                            <TableCell />
+                            <TableCell />
+                            <TableCell
+                              colSpan={visibleCols.length}
+                              className="py-2 text-xs text-muted-foreground italic"
+                            >
+                              Loading…
+                            </TableCell>
+                          </TableRow>
+                        );
+                      const allocs = detail.allocations ?? [];
+                      if (allocs.length === 0)
+                        return (
+                          <TableRow className="bg-muted/30">
+                            <TableCell />
+                            <TableCell />
+                            <TableCell
+                              colSpan={visibleCols.length}
+                              className="py-2 text-xs text-muted-foreground italic"
+                            >
+                              No allocations
+                            </TableCell>
+                          </TableRow>
+                        );
+                      const EDITABLE_COLS = new Set([
+                        "entities",
+                        "amount",
+                        "grantYears",
+                        "purposeVerbatims",
+                        "regionalRestrictionTypes",
+                        "otherRestrictionTypes",
+                        "timeRestrictionTypes",
+                      ]);
+                      return allocs.map((a) => {
+                        const isEditing = editingAllocId === a.id;
+                        return (
+                          <TableRow
+                            key={a.id}
+                            className="bg-muted/30 hover:bg-muted/40"
+                          >
+                            <TableCell className="py-0.5 px-1" />
+                            <TableCell className="py-0.5" />
+                            {visibleCols.map((c) => {
+                              let content: React.ReactNode = null;
+                              if (c.key === "actions") {
+                                content = isEditing ? (
+                                  <div className="flex gap-0.5">
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 text-green-600"
+                                      onClick={() => void saveAllocEdit(g.id)}
+                                      disabled={updateGiftAllocMut.isPending}
+                                    >
+                                      <Check className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6"
+                                      onClick={cancelAllocEdit}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="flex gap-0.5">
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 text-muted-foreground"
+                                      onClick={() => navigate(`/gifts/${g.id}`)}
+                                    >
+                                      <FolderOpen className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                      onClick={async () => {
+                                        await deleteGiftAllocMut.mutateAsync({
+                                          id: a.id,
+                                        });
+                                        void queryClient.invalidateQueries({
+                                          queryKey: getGetGiftOrPaymentQueryKey(
+                                            g.id,
+                                          ),
+                                        });
+                                      }}
+                                      disabled={deleteGiftAllocMut.isPending}
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
+                                );
+                              } else if (isEditing && c.key === "entities") {
+                                content = (
+                                  <select
+                                    className="h-6 text-xs rounded border border-input bg-background px-1 max-w-[180px]"
+                                    value={allocDraft.entityId ?? ""}
+                                    onChange={(e) =>
+                                      setAllocDraft((d) => ({
+                                        ...d,
+                                        entityId: e.target.value || null,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        void saveAllocEdit(g.id);
+                                      if (e.key === "Escape") cancelAllocEdit();
+                                    }}
+                                  >
+                                    <option value="">—</option>
+                                    {[...entityNameById.entries()].map(
+                                      ([id, name]) => (
+                                        <option key={id} value={id}>
+                                          {name}
+                                        </option>
+                                      ),
+                                    )}
+                                  </select>
+                                );
+                              } else if (isEditing && c.key === "amount") {
+                                content = (
+                                  <Input
+                                    className="h-6 text-xs w-28"
+                                    value={allocDraft.subAmount ?? ""}
+                                    onChange={(e) =>
+                                      setAllocDraft((d) => ({
+                                        ...d,
+                                        subAmount: e.target.value || null,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        void saveAllocEdit(g.id);
+                                      if (e.key === "Escape") cancelAllocEdit();
+                                    }}
+                                  />
+                                );
+                              } else if (isEditing && c.key === "grantYears") {
+                                content = (
+                                  <Input
+                                    className="h-6 text-xs w-24"
+                                    value={allocDraft.grantYear ?? ""}
+                                    onChange={(e) =>
+                                      setAllocDraft((d) => ({
+                                        ...d,
+                                        grantYear: e.target.value || null,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        void saveAllocEdit(g.id);
+                                      if (e.key === "Escape") cancelAllocEdit();
+                                    }}
+                                  />
+                                );
+                              } else if (
+                                isEditing &&
+                                c.key === "purposeVerbatims"
+                              ) {
+                                content = (
+                                  <Input
+                                    className="h-6 text-xs w-48"
+                                    value={allocDraft.purposeVerbatim ?? ""}
+                                    onChange={(e) =>
+                                      setAllocDraft((d) => ({
+                                        ...d,
+                                        purposeVerbatim: e.target.value || null,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        void saveAllocEdit(g.id);
+                                      if (e.key === "Escape") cancelAllocEdit();
+                                    }}
+                                  />
+                                );
+                              } else if (
+                                isEditing &&
+                                (c.key === "regionalRestrictionTypes" ||
+                                  c.key === "otherRestrictionTypes" ||
+                                  c.key === "timeRestrictionTypes")
+                              ) {
+                                const draftKey =
+                                  c.key === "regionalRestrictionTypes"
+                                    ? "regionalRestrictionType"
+                                    : c.key === "otherRestrictionTypes"
+                                      ? "otherRestrictionType"
+                                      : "timeRestrictionType";
+                                content = (
+                                  <select
+                                    className="h-6 text-xs rounded border border-input bg-background px-1"
+                                    value={allocDraft[draftKey] ?? ""}
+                                    onChange={(e) =>
+                                      setAllocDraft((d) => ({
+                                        ...d,
+                                        [draftKey]: e.target
+                                          .value as RestrictionAxisType,
+                                      }))
+                                    }
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        void saveAllocEdit(g.id);
+                                      if (e.key === "Escape") cancelAllocEdit();
+                                    }}
+                                  >
+                                    {(
+                                      Object.values(
+                                        RestrictionAxis,
+                                      ) as RestrictionAxisType[]
+                                    ).map((v) => (
+                                      <option key={v} value={v}>
+                                        {formatEnum(v)}
+                                      </option>
+                                    ))}
+                                  </select>
+                                );
+                              } else if (c.key === "amount") {
+                                content =
+                                  a.subAmount != null ? (
+                                    <span className="text-xs tabular-nums">
+                                      ${Number(a.subAmount).toLocaleString()}
+                                    </span>
+                                  ) : null;
+                              } else if (c.key === "entities") {
+                                content = a.entityId ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    {entityNameById.get(a.entityId) ??
+                                      a.entityId}
+                                  </span>
+                                ) : null;
+                              } else if (c.key === "grantYears") {
+                                content = a.grantYear ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    {a.grantYear.toUpperCase()}
+                                  </span>
+                                ) : null;
+                              } else if (c.key === "regions") {
+                                const names = (a.regionIds ?? []).map(
+                                  (id) => regionNames.get(id) ?? id,
+                                );
+                                content =
+                                  names.length > 0 ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      {names.join(", ")}
+                                    </span>
+                                  ) : null;
+                              } else if (c.key === "usages") {
+                                content = a.displayUsage ? (
+                                  <span className="text-xs text-muted-foreground">
+                                    {a.displayUsage}
+                                  </span>
+                                ) : null;
+                              } else if (c.key === "purposeVerbatims") {
+                                content = a.purposeVerbatim ? (
+                                  <span className="text-xs text-muted-foreground max-w-[200px] truncate block">
+                                    {a.purposeVerbatim}
+                                  </span>
+                                ) : null;
+                              } else if (c.key === "regionalRestrictionTypes") {
+                                content = (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatEnum(a.regionalRestrictionType)}
+                                  </span>
+                                );
+                              } else if (c.key === "otherRestrictionTypes") {
+                                content = (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatEnum(a.otherRestrictionType)}
+                                  </span>
+                                );
+                              } else if (c.key === "timeRestrictionTypes") {
+                                content = (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatEnum(a.timeRestrictionType)}
+                                  </span>
+                                );
+                              }
+                              const canStartEdit =
+                                !isEditing &&
+                                EDITABLE_COLS.has(c.key) &&
+                                !updateGiftAllocMut.isPending;
+                              const isSelectCol =
+                                c.key === "regionalRestrictionTypes" ||
+                                c.key === "otherRestrictionTypes" ||
+                                c.key === "timeRestrictionTypes";
+                              return (
+                                <TableCell
+                                  key={c.key}
+                                  className={`${c.tdClassName ?? ""} py-0.5`}
+                                  onClick={
+                                    canStartEdit
+                                      ? () => startAllocEdit(a)
+                                      : undefined
+                                  }
+                                  style={
+                                    canStartEdit
+                                      ? {
+                                          cursor: isSelectCol
+                                            ? "pointer"
+                                            : "text",
+                                        }
+                                      : undefined
+                                  }
                                 >
-                                  <option value="">—</option>
-                                  {[...entityNameById.entries()].map(([id, name]) => (
-                                    <option key={id} value={id}>{name}</option>
-                                  ))}
-                                </select>
+                                  {content}
+                                </TableCell>
                               );
-                            } else if (isEditing && c.key === "amount") {
-                              content = <Input className="h-6 text-xs w-28" value={allocDraft.subAmount ?? ""} onChange={e => setAllocDraft(d => ({ ...d, subAmount: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
-                            } else if (isEditing && c.key === "grantYears") {
-                              content = <Input className="h-6 text-xs w-24" value={allocDraft.grantYear ?? ""} onChange={e => setAllocDraft(d => ({ ...d, grantYear: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
-                            } else if (isEditing && c.key === "purposeVerbatims") {
-                              content = <Input className="h-6 text-xs w-48" value={allocDraft.purposeVerbatim ?? ""} onChange={e => setAllocDraft(d => ({ ...d, purposeVerbatim: e.target.value || null }))} onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }} />;
-                            } else if (isEditing && (c.key === "regionalRestrictionTypes" || c.key === "otherRestrictionTypes" || c.key === "timeRestrictionTypes")) {
-                              const draftKey = c.key === "regionalRestrictionTypes" ? "regionalRestrictionType" : c.key === "otherRestrictionTypes" ? "otherRestrictionType" : "timeRestrictionType";
-                              content = (
-                                <select
-                                  className="h-6 text-xs rounded border border-input bg-background px-1"
-                                  value={allocDraft[draftKey] ?? ""}
-                                  onChange={e => setAllocDraft(d => ({ ...d, [draftKey]: e.target.value as RestrictionAxisType }))}
-                                  onKeyDown={e => { if (e.key === "Enter") void saveAllocEdit(g.id); if (e.key === "Escape") cancelAllocEdit(); }}
-                                >
-                                  {(Object.values(RestrictionAxis) as RestrictionAxisType[]).map(v => (
-                                    <option key={v} value={v}>{formatEnum(v)}</option>
-                                  ))}
-                                </select>
-                              );
-                            } else if (c.key === "amount") {
-                              content = a.subAmount != null ? <span className="text-xs tabular-nums">${Number(a.subAmount).toLocaleString()}</span> : null;
-                            } else if (c.key === "entities") {
-                              content = a.entityId ? <span className="text-xs text-muted-foreground">{entityNameById.get(a.entityId) ?? a.entityId}</span> : null;
-                            } else if (c.key === "grantYears") {
-                              content = a.grantYear ? <span className="text-xs text-muted-foreground">{a.grantYear.toUpperCase()}</span> : null;
-                            } else if (c.key === "regions") {
-                              const names = (a.regionIds ?? []).map((id) => regionNames.get(id) ?? id);
-                              content = names.length > 0 ? <span className="text-xs text-muted-foreground">{names.join(", ")}</span> : null;
-                            } else if (c.key === "usages") {
-                              content = a.displayUsage ? <span className="text-xs text-muted-foreground">{a.displayUsage}</span> : null;
-                            } else if (c.key === "purposeVerbatims") {
-                              content = a.purposeVerbatim ? <span className="text-xs text-muted-foreground max-w-[200px] truncate block">{a.purposeVerbatim}</span> : null;
-                            } else if (c.key === "regionalRestrictionTypes") {
-                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.regionalRestrictionType)}</span>;
-                            } else if (c.key === "otherRestrictionTypes") {
-                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.otherRestrictionType)}</span>;
-                            } else if (c.key === "timeRestrictionTypes") {
-                              content = <span className="text-xs text-muted-foreground">{formatEnum(a.timeRestrictionType)}</span>;
-                            }
-                            const canStartEdit = !isEditing && EDITABLE_COLS.has(c.key) && !updateGiftAllocMut.isPending;
-                            const isSelectCol = c.key === "regionalRestrictionTypes" || c.key === "otherRestrictionTypes" || c.key === "timeRestrictionTypes";
-                            return (
-                              <TableCell key={c.key} className={`${c.tdClassName ?? ""} py-0.5`} onClick={canStartEdit ? () => startAllocEdit(a) : undefined} style={canStartEdit ? { cursor: isSelectCol ? "pointer" : "text" } : undefined}>
-                                {content}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      );
-                    });
-                  })()}
+                            })}
+                          </TableRow>
+                        );
+                      });
+                    })()}
                 </Fragment>
               ))
             )}
@@ -1545,17 +2153,21 @@ export default function Gifts() {
               size="sm"
               variant="secondary"
               onClick={() => setMergeGiftOpen(true)}
+              disabled={!isAdmin}
+              title={!isAdmin ? "Admin role required" : undefined}
               data-testid="button-bulk-merge-gift"
             >
-              Merge into one gift
+              Merge into one gift{!isAdmin ? " (admin only)" : ""}
             </Button>
             <Button
               size="sm"
               variant="secondary"
               onClick={() => setMergePledgeOpen(true)}
+              disabled={!isAdmin}
+              title={!isAdmin ? "Admin role required" : undefined}
               data-testid="button-bulk-merge-pledge"
             >
-              Merge into one pledge
+              Merge into one pledge{!isAdmin ? " (admin only)" : ""}
             </Button>
           </>
         }
@@ -1608,7 +2220,17 @@ export default function Gifts() {
         <Pagination>
           <PaginationContent>
             <PaginationItem>
-              <PaginationPrevious href="#" onClick={(e) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }} aria-disabled={page <= 1} className={page <= 1 ? "pointer-events-none opacity-50" : undefined} />
+              <PaginationPrevious
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPage((p) => Math.max(1, p - 1));
+                }}
+                aria-disabled={page <= 1}
+                className={
+                  page <= 1 ? "pointer-events-none opacity-50" : undefined
+                }
+              />
             </PaginationItem>
             <PaginationItem>
               <PageJumper
@@ -1619,7 +2241,19 @@ export default function Gifts() {
               />
             </PaginationItem>
             <PaginationItem>
-              <PaginationNext href="#" onClick={(e) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }} aria-disabled={page >= totalPages} className={page >= totalPages ? "pointer-events-none opacity-50" : undefined} />
+              <PaginationNext
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setPage((p) => Math.min(totalPages, p + 1));
+                }}
+                aria-disabled={page >= totalPages}
+                className={
+                  page >= totalPages
+                    ? "pointer-events-none opacity-50"
+                    : undefined
+                }
+              />
             </PaginationItem>
           </PaginationContent>
         </Pagination>

@@ -1997,6 +1997,35 @@ export interface FinalizePledgeBody {
   pledgeCommittedAt: string;
 }
 
+export interface CorrectionReasonBody {
+  /** Optional explanation stored in the audit history. */
+  reason?: string | null;
+}
+
+export interface ConvertPledgeToGiftResult {
+  giftId: string;
+  /** The rewritten originating opportunity, now completed as a gift outcome. */
+  opportunityId: string;
+}
+
+export interface RevertPledgeToVerbalGiftBody {
+  commitmentDate: string;
+  expectedDate?: string | null;
+  reason?: string | null;
+}
+
+export interface RevertPledgeToOpportunityBody {
+  /** Open funnel stage after correction; defaults to in_conversation. */
+  stage?: OpportunityStage | null;
+  projectedCloseDate?: string | null;
+  reason?: string | null;
+}
+
+export interface DetachGiftFromPledgeResult {
+  giftId: string;
+  formerOpportunityId: string;
+}
+
 export interface OpportunityCommitmentResult {
   id: string;
   commitmentPath?: OpportunityCommitmentPath | null;
@@ -2223,7 +2252,7 @@ export interface GiftOrPayment {
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
-  /** Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity/advisor/matched-gift links. */
+  /** Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly. */
   readonly type?: GiftType;
   opportunityId?: string | null;
   advisorPersonId?: string | null;
@@ -2381,6 +2410,8 @@ export interface CreateOpportunityOrPledgeBody {
   actualCompletionDate?: string;
   winProbability?: string;
   stage?: OpportunityStage;
+  commitmentPath?: OpportunityCommitmentPath;
+  verbalCommitmentAt?: string;
   lossReason?: string;
   applicationDeadline?: string;
   paymentDetails?: string;
@@ -6674,6 +6705,8 @@ export const PendingDonorMoneyItemSource = {
 } as const;
 
 export interface PendingDonorMoneyItem {
+  /** Source-record id used to create or link the gift. */
+  id: string;
   /** Where the pending money came from. */
   source: PendingDonorMoneyItemSource;
   /** Numeric amount as a string (gross for Stripe). */
@@ -6682,6 +6715,10 @@ export interface PendingDonorMoneyItem {
   dateReceived: string | null;
   /** Payer label from the source record. */
   payerName: string | null;
+  /** Memo or line description from the source record. */
+  description?: string | null;
+  /** Resolved payment intermediary, when any. */
+  paymentIntermediaryId?: string | null;
 }
 
 export interface PendingDonorMoney {
@@ -7075,6 +7112,7 @@ export const FlagForResearchBodyTargetType = {
   pledge: 'pledge',
   organization: 'organization',
   person: 'person',
+  household: 'household',
   gift: 'gift',
   staged_payment: 'staged_payment',
   stripe_payout: 'stripe_payout',
@@ -7585,7 +7623,7 @@ export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
 });
 
 export type StripeChargeCreateGiftBody = MintGiftOverridesBody & ({
-  /** Book this charge's GROSS ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge, and its allocations seed from the pledge's allocation plan scaled to the charge GROSS. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit. */
+  /** Record this charge's GROSS as the received gift produced by an opportunity or as a payment on a finalized pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. The record must be active (not archived/lost/dormant). It is classified as a pledge payment only when pledgeCommittedAt was already set. */
   opportunityId?: string | null;
 });
 

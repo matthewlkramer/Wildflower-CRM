@@ -248,6 +248,7 @@ import { executeBulkUpdate } from "../lib/bulkUpdate";
 import {
   activeOnlyUnlessAdmin,
   archiveOne,
+  requireAdmin,
   executeBulkArchive,
   unarchiveOne,
 } from "../lib/archive";
@@ -1144,24 +1145,19 @@ router.patch(
       .then((r) => r[0]);
     if (!existing) return notFound(res, "gift");
 
-    // Evidence-only enforcement also covers PATCH (Task #788): creating a
-    // manual gift WITHOUT a pledge link, then PATCHing opportunityId onto it,
-    // is the same bypass as manual creation against a pledge. Pointing the
-    // gift at a (new) pledge requires the same finance-gated off-books
-    // exception; clearing the link (null) is always allowed.
+    // A pledge/opportunity link is a lifecycle correction, not an ordinary
+    // field edit. Attaching and detaching both require the explicit correction
+    // actions so payment evidence and pledge coverage are revalidated and
+    // audited in one transaction.
     if (
       body.opportunityId !== undefined &&
-      body.opportunityId != null &&
       body.opportunityId !== existing.opportunityId
     ) {
-      if (!body.offBooksException) {
-        return res.status(409).json({
-          error: "manual_gift_on_pledge_blocked",
-          message:
-            "Pointing a gift at a pledge is blocked — payments are minted from QuickBooks evidence via reconciliation. Use offBooksException=true (finance only) for money that never hits QuickBooks.",
-        });
-      }
-      if (!requireFinance(req, res)) return;
+      return res.status(409).json({
+        error: "gift_pledge_link_correction_required",
+        message:
+          "Use an explicit pledge-payment correction action to attach or detach this gift.",
+      });
     }
 
     // Validate merged post-update state so partial PATCHes can't bypass the
@@ -1173,6 +1169,36 @@ router.patch(
       householdId: merged.householdId,
     });
     if (issues.length) return respondInvariantFailure(res, issues);
+
+    // A payment gift and its opportunity/pledge must always have the same donor.
+    // Generic PATCH may still edit the intermediary, owner, name, etc., but a
+    // donor correction must first be made on the pledge or through an explicit
+    // correction workflow rather than silently severing the relationship.
+    if (existing.opportunityId) {
+      const linked = await db
+        .select({
+          organizationId: opportunitiesAndPledges.organizationId,
+          individualGiverPersonId:
+            opportunitiesAndPledges.individualGiverPersonId,
+          householdId: opportunitiesAndPledges.householdId,
+        })
+        .from(opportunitiesAndPledges)
+        .where(eq(opportunitiesAndPledges.id, existing.opportunityId))
+        .then((rows) => rows[0]);
+      if (
+        !linked ||
+        linked.organizationId !== (merged.organizationId ?? null) ||
+        linked.individualGiverPersonId !==
+          (merged.individualGiverPersonId ?? null) ||
+        linked.householdId !== (merged.householdId ?? null)
+      ) {
+        return res.status(409).json({
+          error: "gift_pledge_donor_conflict",
+          message:
+            "A pledge payment must use the same donor as its opportunity or pledge. Correct the pledge donor or detach the gift through the explicit correction action.",
+        });
+      }
+    }
 
     // Freeze guard: block edits to a gift whose governing FY is audit-closed, and
     // block moving date_received into a closed FY.
@@ -1297,6 +1323,7 @@ function donorKeyOf(r: {
 router.post(
   "/gifts-and-payments/merge",
   asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const body = parseOrBadRequest(MergeGiftsAndPaymentsBody, req.body, res);
     if (!body) return;
     const primaryId = body.primaryId;
@@ -1532,6 +1559,7 @@ router.post(
 router.post(
   "/gifts-and-payments/merge-into-pledge",
   asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const body = parseOrBadRequest(MergeGiftsIntoPledgeBody, req.body, res);
     if (!body) return;
 
@@ -1545,12 +1573,10 @@ router.post(
       }
     }
     if (giftIds.length === 0) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "giftIds must not be empty",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "giftIds must not be empty",
+      });
       return;
     }
 
@@ -1822,6 +1848,7 @@ router.post(
 router.post(
   "/gifts-and-payments/:id/split-into-pledge",
   asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const id = paramId(req);
     const body = parseOrBadRequest(
       SplitGiftIntoPledgeBody,
@@ -2123,6 +2150,7 @@ router.post(
 router.post(
   "/gifts-and-payments/:id/revert-to-opportunity",
   asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
     const id = paramId(req);
     const body = parseOrBadRequest(
       RevertGiftToOpportunityBody,

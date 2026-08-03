@@ -1,0 +1,1 @@
+Finalize the clean detail-action branch from reviewed source.

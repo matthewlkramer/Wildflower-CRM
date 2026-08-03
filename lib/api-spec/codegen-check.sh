@@ -25,8 +25,17 @@ cp "$root/lib/api-client-react/src/custom-fetch.ts" \
 cd "$here"
 CODEGEN_OUT_ROOT="$tmp" pnpm exec orval --config ./orval.config.ts
 CODEGEN_OUT_ROOT="$tmp" node ./gen-index.mjs
-sed -i 's/[[:space:]]*$//' \
-  "$tmp/lib/api-client-react/src/generated/reconciliation/reconciliation.ts"
+# Orval emits trailing spaces in some bodyless operation templates.
+# Normalize the generated files affected by this contract change, plus the
+# historical reconciliation file, while leaving unrelated generated files
+# byte-identical to the existing baseline.
+for rel in \
+  reconciliation/reconciliation.ts \
+  gifts-and-payments/gifts-and-payments.ts \
+  opportunities-and-pledges/opportunities-and-pledges.ts; do
+  file="$tmp/lib/api-client-react/src/generated/$rel"
+  [ -f "$file" ] && sed -i 's/[[:space:]]*$//' "$file"
+done
 
 status=0
 diff -ru "$root/lib/api-client-react/src/generated" \

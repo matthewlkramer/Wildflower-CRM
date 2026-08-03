@@ -49,7 +49,8 @@ import {
 
 /** Donor (type, id) for a gift, or null when the gift has no donor set. */
 function donorOf(g: GiftOrPayment): { type: DonorType; id: string } | null {
-  if (g.organizationId != null) return { type: "organization", id: g.organizationId };
+  if (g.organizationId != null)
+    return { type: "organization", id: g.organizationId };
   if (g.individualGiverPersonId != null)
     return { type: "individual", id: g.individualGiverPersonId };
   if (g.householdId != null) return { type: "household", id: g.householdId };
@@ -99,7 +100,7 @@ export function MergeGiftsDialog({
   expectedCount: number;
   /** True when any selected gift failed to load. */
   loadError?: boolean;
-  onDone?: () => void;
+  onDone?: (survivingGiftId: string) => void;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -173,11 +174,12 @@ export function MergeGiftsDialog({
         } merged into one (${formatCurrency(String(summed))}).`,
       });
       onOpenChange(false);
-      onDone?.();
+      onDone?.(primary.id);
     } catch (err) {
       toast({
         title: "Merge failed",
-        description: err instanceof Error ? err.message : "Something went wrong.",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
         variant: "destructive",
       });
     }
@@ -269,9 +271,7 @@ export function MergeGiftsDialog({
 
           {combinedAllocations.length > 0 && (
             <div className="space-y-2">
-              <Label>
-                Combined allocations ({combinedAllocations.length})
-              </Label>
+              <Label>Combined allocations ({combinedAllocations.length})</Label>
               <div
                 className="max-h-40 divide-y overflow-auto rounded-md border text-sm"
                 data-testid="list-merge-gift-allocations"
@@ -438,9 +438,10 @@ export function MergeIntoPledgeDialog({
   const [name, setName] = useState("");
   const [donorType, setDonorType] = useState<DonorType>("organization");
   const [donorId, setDonorId] = useState<string | null>(null);
-  const [existing, setExisting] = useState<{ id: string; name: string | null } | null>(
-    null,
-  );
+  const [existing, setExisting] = useState<{
+    id: string;
+    name: string | null;
+  } | null>(null);
 
   const giftKey = useMemo(() => gifts.map((g) => g.id).join(","), [gifts]);
 
@@ -467,9 +468,7 @@ export function MergeIntoPledgeDialog({
   const donorMismatch = !donorsAllAgree(gifts);
   const submitting = mut.isPending;
   const canSubmit =
-    allLoaded &&
-    !submitting &&
-    (mode === "existing" ? !!existing : !!donorId);
+    allLoaded && !submitting && (mode === "existing" ? !!existing : !!donorId);
 
   const handleSubmit = async () => {
     if (!allLoaded) return;
@@ -502,7 +501,8 @@ export function MergeIntoPledgeDialog({
     } catch (err) {
       toast({
         title: "Could not create pledge",
-        description: err instanceof Error ? err.message : "Something went wrong.",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
         variant: "destructive",
       });
     }
@@ -556,7 +556,10 @@ export function MergeIntoPledgeDialog({
               htmlFor="merge-pledge-mode-existing"
               className="flex cursor-pointer items-center gap-3 rounded-md border p-2 text-sm hover:bg-muted/50"
             >
-              <RadioGroupItem value="existing" id="merge-pledge-mode-existing" />
+              <RadioGroupItem
+                value="existing"
+                id="merge-pledge-mode-existing"
+              />
               <span>Attach to an existing pledge</span>
             </label>
           </RadioGroup>
@@ -564,7 +567,9 @@ export function MergeIntoPledgeDialog({
           {mode === "new" ? (
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="merge-pledge-name">Pledge name (optional)</Label>
+                <Label htmlFor="merge-pledge-name">
+                  Pledge name (optional)
+                </Label>
                 <Input
                   id="merge-pledge-name"
                   value={name}
@@ -670,7 +675,10 @@ export function SplitGiftIntoPledgeDialog({
     "this donor";
 
   const giftCents = toCents(gift.amount);
-  const allocCents = allocations.reduce((acc, a) => acc + toCents(a.subAmount), 0);
+  const allocCents = allocations.reduce(
+    (acc, a) => acc + toCents(a.subAmount),
+    0,
+  );
   const sumMatches = allocCents === giftCents;
   const anyNonPositive = allocations.some((a) => toCents(a.subAmount) <= 0);
 
@@ -694,7 +702,9 @@ export function SplitGiftIntoPledgeDialog({
         qc.invalidateQueries({
           queryKey: getListOpportunitiesAndPledgesQueryKey(),
         }),
-        qc.invalidateQueries({ queryKey: getGetGiftOrPaymentQueryKey(gift.id) }),
+        qc.invalidateQueries({
+          queryKey: getGetGiftOrPaymentQueryKey(gift.id),
+        }),
       ]);
       toast({
         title: "Pledge created",
@@ -707,7 +717,8 @@ export function SplitGiftIntoPledgeDialog({
     } catch (err) {
       toast({
         title: "Could not split gift",
-        description: err instanceof Error ? err.message : "Something went wrong.",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
         variant: "destructive",
       });
     }
@@ -726,9 +737,10 @@ export function SplitGiftIntoPledgeDialog({
           <DialogTitle>Split into a pledge</DialogTitle>
           <DialogDescription>
             This gift&apos;s {allocations.length} allocation
-            {allocations.length === 1 ? "" : "s"} become individual payment gifts
-            on a new pledge for {donorName} ({formatCurrency(gift.amount ?? "0")}).
-            The original gift is kept as the first payment — nothing is deleted.
+            {allocations.length === 1 ? "" : "s"} become individual payment
+            gifts on a new pledge for {donorName} (
+            {formatCurrency(gift.amount ?? "0")}). The original gift is kept as
+            the first payment — nothing is deleted.
           </DialogDescription>
         </DialogHeader>
 
@@ -772,8 +784,8 @@ export function SplitGiftIntoPledgeDialog({
               >
                 The allocations add up to{" "}
                 {formatCurrency(String(allocCents / 100))}, but the gift is{" "}
-                {formatCurrency(gift.amount ?? "0")}. Fix the allocation amounts so
-                they match before splitting.
+                {formatCurrency(gift.amount ?? "0")}. Fix the allocation amounts
+                so they match before splitting.
               </p>
             )}
             {sumMatches && anyNonPositive && (
@@ -784,9 +796,9 @@ export function SplitGiftIntoPledgeDialog({
           </div>
 
           <p className="text-xs text-muted-foreground">
-            The thank-you, QuickBooks links, and other notes stay on the original
-            gift (the first payment). New payment gifts inherit the donor, date,
-            and payment method.
+            The thank-you, QuickBooks links, and other notes stay on the
+            original gift (the first payment). New payment gifts inherit the
+            donor, date, and payment method.
           </p>
         </div>
 

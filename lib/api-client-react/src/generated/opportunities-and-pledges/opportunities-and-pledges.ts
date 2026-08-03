@@ -25,6 +25,8 @@ import type {
   BulkUpdateOpportunitiesBody,
   BulkUpdateResult,
   CloseAwardBody,
+  ConvertPledgeToGiftResult,
+  CorrectionReasonBody,
   CreateOpportunityOrPledgeBody,
   FinalizePledgeBody,
   ForbiddenResponse,
@@ -37,6 +39,8 @@ import type {
   OpportunityOrPledgeDetail,
   OpportunityOrPledgeList,
   RecordVerbalCommitmentBody,
+  RevertPledgeToOpportunityBody,
+  RevertPledgeToVerbalGiftBody,
   UpdateOpportunityOrPledgeBody,
   WriteOffPledgeBody
 } from '../api.schemas';
@@ -57,7 +61,7 @@ export const getListOpportunitiesAndPledgesUrl = (params?: ListOpportunitiesAndP
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -69,16 +73,16 @@ export const getListOpportunitiesAndPledgesUrl = (params?: ListOpportunitiesAndP
 }
 
 export const listOpportunitiesAndPledges = async (params?: ListOpportunitiesAndPledgesParams, options?: RequestInit): Promise<OpportunityOrPledgeList> => {
-  
+
   return customFetch<OpportunityOrPledgeList>(getListOpportunitiesAndPledgesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -89,7 +93,7 @@ export const getListOpportunitiesAndPledgesQueryKey = (params?: ListOpportunitie
     ] as const;
     }
 
-    
+
 export const getListOpportunitiesAndPledgesQueryOptions = <TData = Awaited<ReturnType<typeof listOpportunitiesAndPledges>>, TError = ErrorType<unknown>>(params?: ListOpportunitiesAndPledgesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOpportunitiesAndPledges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -97,13 +101,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListOpportunitiesAndPledgesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listOpportunitiesAndPledges>>> = ({ signal }) => listOpportunitiesAndPledges(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOpportunitiesAndPledges>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -115,7 +119,7 @@ export type ListOpportunitiesAndPledgesQueryError = ErrorType<unknown>
 
 export function useListOpportunitiesAndPledges<TData = Awaited<ReturnType<typeof listOpportunitiesAndPledges>>, TError = ErrorType<unknown>>(
  params?: ListOpportunitiesAndPledgesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOpportunitiesAndPledges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListOpportunitiesAndPledgesQueryOptions(params,options)
@@ -131,15 +135,15 @@ export function useListOpportunitiesAndPledges<TData = Awaited<ReturnType<typeof
 export const getCreateOpportunityOrPledgeUrl = () => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges`
 }
 
 export const createOpportunityOrPledge = async (createOpportunityOrPledgeBody: CreateOpportunityOrPledgeBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getCreateOpportunityOrPledgeUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -147,7 +151,7 @@ export const createOpportunityOrPledge = async (createOpportunityOrPledgeBody: C
       createOpportunityOrPledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -162,7 +166,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createOpportunityOrPledge>>, {data: BodyType<CreateOpportunityOrPledgeBody>}> = (props) => {
@@ -173,7 +177,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -195,22 +199,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetOpportunityOrPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}`
 }
 
 export const getOpportunityOrPledge = async (id: string, options?: RequestInit): Promise<OpportunityOrPledgeDetail> => {
-  
+
   return customFetch<OpportunityOrPledgeDetail>(getGetOpportunityOrPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -221,7 +225,7 @@ export const getGetOpportunityOrPledgeQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetOpportunityOrPledgeQueryOptions = <TData = Awaited<ReturnType<typeof getOpportunityOrPledge>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpportunityOrPledge>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -229,13 +233,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetOpportunityOrPledgeQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getOpportunityOrPledge>>> = ({ signal }) => getOpportunityOrPledge(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOpportunityOrPledge>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -247,7 +251,7 @@ export type GetOpportunityOrPledgeQueryError = ErrorType<NotFoundResponse>
 
 export function useGetOpportunityOrPledge<TData = Awaited<ReturnType<typeof getOpportunityOrPledge>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOpportunityOrPledge>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetOpportunityOrPledgeQueryOptions(id,options)
@@ -263,16 +267,16 @@ export function useGetOpportunityOrPledge<TData = Awaited<ReturnType<typeof getO
 export const getUpdateOpportunityOrPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}`
 }
 
 export const updateOpportunityOrPledge = async (id: string,
     updateOpportunityOrPledgeBody: UpdateOpportunityOrPledgeBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getUpdateOpportunityOrPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -280,7 +284,7 @@ export const updateOpportunityOrPledge = async (id: string,
       updateOpportunityOrPledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -295,7 +299,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateOpportunityOrPledge>>, {id: string;data: BodyType<UpdateOpportunityOrPledgeBody>}> = (props) => {
@@ -306,7 +310,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -325,18 +329,232 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateOpportunityOrPledgeMutationOptions(options));
     }
+    /**
+ * Admin-only data correction. Requires a finalized fixed-commitment pledge with exactly one linked gift and exactly one received payment unit, where the payment, gift, and pledge amounts agree. Rewrites the lifecycle as though the donor had always committed to one stand-alone gift, keeps the gift linked to its originating opportunity, removes the obsolete pledge schedule and boundary, and preserves all payment and accounting evidence.
+ * @summary Correct a one-payment pledge that should always have been a stand-alone gift.
+ */
+export const getConvertPledgeToStandaloneGiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/opportunities-and-pledges/${id}/convert-to-standalone-gift`
+}
+
+export const convertPledgeToStandaloneGift = async (id: string,
+    correctionReasonBody?: CorrectionReasonBody, options?: RequestInit): Promise<ConvertPledgeToGiftResult> => {
+
+  return customFetch<ConvertPledgeToGiftResult>(getConvertPledgeToStandaloneGiftUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctionReasonBody,)
+  }
+);}
+
+
+
+
+export const getConvertPledgeToStandaloneGiftMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext> => {
+
+const mutationKey = ['convertPledgeToStandaloneGift'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>, {id: string;data: BodyType<CorrectionReasonBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  convertPledgeToStandaloneGift(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConvertPledgeToStandaloneGiftMutationResult = NonNullable<Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>>
+    export type ConvertPledgeToStandaloneGiftMutationBody = BodyType<CorrectionReasonBody>
+    export type ConvertPledgeToStandaloneGiftMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Correct a one-payment pledge that should always have been a stand-alone gift.
+ */
+export const useConvertPledgeToStandaloneGift = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof convertPledgeToStandaloneGift>>,
+        TError,
+        {id: string;data: BodyType<CorrectionReasonBody>},
+        TContext
+      > => {
+      return useMutation(getConvertPledgeToStandaloneGiftMutationOptions(options));
+    }
+    /**
+ * @summary Revert a mischaracterized pledge to a verbally committed gift opportunity awaiting payment.
+ */
+export const getRevertPledgeToVerbalGiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/opportunities-and-pledges/${id}/revert-to-verbal-gift`
+}
+
+export const revertPledgeToVerbalGift = async (id: string,
+    revertPledgeToVerbalGiftBody: RevertPledgeToVerbalGiftBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
+
+  return customFetch<OpportunityOrPledge>(getRevertPledgeToVerbalGiftUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      revertPledgeToVerbalGiftBody,)
+  }
+);}
+
+
+
+
+export const getRevertPledgeToVerbalGiftMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToVerbalGift>>, TError,{id: string;data: BodyType<RevertPledgeToVerbalGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToVerbalGift>>, TError,{id: string;data: BodyType<RevertPledgeToVerbalGiftBody>}, TContext> => {
+
+const mutationKey = ['revertPledgeToVerbalGift'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertPledgeToVerbalGift>>, {id: string;data: BodyType<RevertPledgeToVerbalGiftBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  revertPledgeToVerbalGift(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevertPledgeToVerbalGiftMutationResult = NonNullable<Awaited<ReturnType<typeof revertPledgeToVerbalGift>>>
+    export type RevertPledgeToVerbalGiftMutationBody = BodyType<RevertPledgeToVerbalGiftBody>
+    export type RevertPledgeToVerbalGiftMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Revert a mischaracterized pledge to a verbally committed gift opportunity awaiting payment.
+ */
+export const useRevertPledgeToVerbalGift = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToVerbalGift>>, TError,{id: string;data: BodyType<RevertPledgeToVerbalGiftBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revertPledgeToVerbalGift>>,
+        TError,
+        {id: string;data: BodyType<RevertPledgeToVerbalGiftBody>},
+        TContext
+      > => {
+      return useMutation(getRevertPledgeToVerbalGiftMutationOptions(options));
+    }
+    /**
+ * @summary Revert a mischaracterized pledge to a general fundraising opportunity.
+ */
+export const getRevertPledgeToOpportunityUrl = (id: string,) => {
+
+
+
+
+  return `/api/opportunities-and-pledges/${id}/revert-to-opportunity`
+}
+
+export const revertPledgeToOpportunity = async (id: string,
+    revertPledgeToOpportunityBody: RevertPledgeToOpportunityBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
+
+  return customFetch<OpportunityOrPledge>(getRevertPledgeToOpportunityUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      revertPledgeToOpportunityBody,)
+  }
+);}
+
+
+
+
+export const getRevertPledgeToOpportunityMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToOpportunity>>, TError,{id: string;data: BodyType<RevertPledgeToOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToOpportunity>>, TError,{id: string;data: BodyType<RevertPledgeToOpportunityBody>}, TContext> => {
+
+const mutationKey = ['revertPledgeToOpportunity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertPledgeToOpportunity>>, {id: string;data: BodyType<RevertPledgeToOpportunityBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  revertPledgeToOpportunity(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevertPledgeToOpportunityMutationResult = NonNullable<Awaited<ReturnType<typeof revertPledgeToOpportunity>>>
+    export type RevertPledgeToOpportunityMutationBody = BodyType<RevertPledgeToOpportunityBody>
+    export type RevertPledgeToOpportunityMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Revert a mischaracterized pledge to a general fundraising opportunity.
+ */
+export const useRevertPledgeToOpportunity = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revertPledgeToOpportunity>>, TError,{id: string;data: BodyType<RevertPledgeToOpportunityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revertPledgeToOpportunity>>,
+        TError,
+        {id: string;data: BodyType<RevertPledgeToOpportunityBody>},
+        TContext
+      > => {
+      return useMutation(getRevertPledgeToOpportunityMutationOptions(options));
+    }
     export const getBulkUpdateOpportunitiesAndPledgesUrl = () => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/bulk-update`
 }
 
 export const bulkUpdateOpportunitiesAndPledges = async (bulkUpdateOpportunitiesBody: BulkUpdateOpportunitiesBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkUpdateOpportunitiesAndPledgesUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -344,7 +562,7 @@ export const bulkUpdateOpportunitiesAndPledges = async (bulkUpdateOpportunitiesB
       bulkUpdateOpportunitiesBody,)
   }
 );}
-  
+
 
 
 
@@ -359,7 +577,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdateOpportunitiesAndPledges>>, {data: BodyType<BulkUpdateOpportunitiesBody>}> = (props) => {
@@ -370,7 +588,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -395,15 +613,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getBulkArchiveOpportunitiesAndPledgesUrl = () => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/bulk-archive`
 }
 
 export const bulkArchiveOpportunitiesAndPledges = async (bulkArchiveBody: BulkArchiveBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkArchiveOpportunitiesAndPledgesUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -411,7 +629,7 @@ export const bulkArchiveOpportunitiesAndPledges = async (bulkArchiveBody: BulkAr
       bulkArchiveBody,)
   }
 );}
-  
+
 
 
 
@@ -426,7 +644,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkArchiveOpportunitiesAndPledges>>, {data: BodyType<BulkArchiveBody>}> = (props) => {
@@ -437,7 +655,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -462,22 +680,22 @@ export const useBulkArchiveOpportunitiesAndPledges = <TError = ErrorType<BadRequ
     export const getArchiveOpportunityOrPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/archive`
 }
 
 export const archiveOpportunityOrPledge = async (id: string, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getArchiveOpportunityOrPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -492,7 +710,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveOpportunityOrPledge>>, {id: string}> = (props) => {
@@ -503,13 +721,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveOpportunityOrPledgeMutationResult = NonNullable<Awaited<ReturnType<typeof archiveOpportunityOrPledge>>>
-    
+
     export type ArchiveOpportunityOrPledgeMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveOpportunityOrPledge = <TError = ErrorType<NotFoundResponse>,
@@ -525,22 +743,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveOpportunityOrPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/unarchive`
 }
 
 export const unarchiveOpportunityOrPledge = async (id: string, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getUnarchiveOpportunityOrPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -555,7 +773,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>, {id: string}> = (props) => {
@@ -566,13 +784,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveOpportunityOrPledgeMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveOpportunityOrPledge>>>
-    
+
     export type UnarchiveOpportunityOrPledgeMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveOpportunityOrPledge = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -620,16 +838,16 @@ fiscal year exists to book the write-off into.
 export const getWriteOffPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/write-off`
 }
 
 export const writeOffPledge = async (id: string,
     writeOffPledgeBody?: WriteOffPledgeBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getWriteOffPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -637,7 +855,7 @@ export const writeOffPledge = async (id: string,
       writeOffPledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -652,7 +870,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof writeOffPledge>>, {id: string;data: BodyType<WriteOffPledgeBody>}> = (props) => {
@@ -663,7 +881,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -705,16 +923,16 @@ fixed-commitment pledge; 409 'award_already_closed' when already closed.
 export const getCloseAwardUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/close-award`
 }
 
 export const closeAward = async (id: string,
     closeAwardBody: CloseAwardBody, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getCloseAwardUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -722,7 +940,7 @@ export const closeAward = async (id: string,
       closeAwardBody,)
   }
 );}
-  
+
 
 
 
@@ -737,7 +955,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeAward>>, {id: string;data: BodyType<CloseAwardBody>}> = (props) => {
@@ -748,7 +966,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -780,22 +998,22 @@ required. 409 'award_not_closed' when the award is not closed.
 export const getReopenAwardUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/reopen-award`
 }
 
 export const reopenAward = async (id: string, options?: RequestInit): Promise<OpportunityOrPledge> => {
-  
+
   return customFetch<OpportunityOrPledge>(getReopenAwardUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -810,7 +1028,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenAward>>, {id: string}> = (props) => {
@@ -821,13 +1039,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReopenAwardMutationResult = NonNullable<Awaited<ReturnType<typeof reopenAward>>>
-    
+
     export type ReopenAwardMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -866,16 +1084,16 @@ queue. The opportunity's derived status/stage are recomputed after mint.
 export const getMintGiftFromOpportunityUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/mint-gift`
 }
 
 export const mintGiftFromOpportunity = async (id: string,
     mintGiftFromOpportunityBody?: MintGiftFromOpportunityBody, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getMintGiftFromOpportunityUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -883,7 +1101,7 @@ export const mintGiftFromOpportunity = async (id: string,
       mintGiftFromOpportunityBody,)
   }
 );}
-  
+
 
 
 
@@ -898,7 +1116,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mintGiftFromOpportunity>>, {id: string;data: BodyType<MintGiftFromOpportunityBody>}> = (props) => {
@@ -909,7 +1127,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -937,16 +1155,16 @@ export const useMintGiftFromOpportunity = <TError = ErrorType<BadRequestResponse
 export const getRecordVerbalCommitmentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/record-verbal-commitment`
 }
 
 export const recordVerbalCommitment = async (id: string,
     recordVerbalCommitmentBody: RecordVerbalCommitmentBody, options?: RequestInit): Promise<OpportunityCommitmentResult> => {
-  
+
   return customFetch<OpportunityCommitmentResult>(getRecordVerbalCommitmentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -954,7 +1172,7 @@ export const recordVerbalCommitment = async (id: string,
       recordVerbalCommitmentBody,)
   }
 );}
-  
+
 
 
 
@@ -969,7 +1187,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordVerbalCommitment>>, {id: string;data: BodyType<RecordVerbalCommitmentBody>}> = (props) => {
@@ -980,7 +1198,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1008,16 +1226,16 @@ export const useRecordVerbalCommitment = <TError = ErrorType<BadRequestResponse 
 export const getFinalizePledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/opportunities-and-pledges/${id}/finalize-pledge`
 }
 
 export const finalizePledge = async (id: string,
     finalizePledgeBody: FinalizePledgeBody, options?: RequestInit): Promise<OpportunityCommitmentResult> => {
-  
+
   return customFetch<OpportunityCommitmentResult>(getFinalizePledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1025,7 +1243,7 @@ export const finalizePledge = async (id: string,
       finalizePledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -1040,7 +1258,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizePledge>>, {id: string;data: BodyType<FinalizePledgeBody>}> = (props) => {
@@ -1051,7 +1269,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1073,4 +1291,3 @@ export const useFinalizePledge = <TError = ErrorType<BadRequestResponse | NotFou
       > => {
       return useMutation(getFinalizePledgeMutationOptions(options));
     }
-    

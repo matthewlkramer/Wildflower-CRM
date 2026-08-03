@@ -9,7 +9,7 @@ import {
   type GiftOrPayment,
   type OpportunityOrPledge,
 } from "@workspace/api-client-react";
-import { GiftFormDialog } from "@/components/gift-form-dialog";
+import { RecordReceivedGiftDialog } from "@/components/record-received-gift-dialog";
 import { CreateOpportunityDialog } from "@/components/create-opportunity-dialog";
 import {
   buildBaseParams,
@@ -17,11 +17,7 @@ import {
 } from "@/components/linked-records";
 import { RelatedCard, RelatedRow } from "@/components/record-layout";
 import { groupGiving, type GivingThread } from "@/lib/giving-groups";
-import {
-  formatCurrency,
-  formatDateShort,
-  formatEnum,
-} from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import {
   Tooltip,
@@ -83,7 +79,7 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
         <div className="flex items-center gap-1">
           <CreateOpportunityDialog scope={scope} mode="opportunity" />
           <CreateOpportunityDialog scope={scope} mode="pledge" />
-          <GiftFormDialog scope={scope} />
+          <RecordReceivedGiftDialog scope={scope} />
         </div>
       }
     >
@@ -192,12 +188,13 @@ function OppThread({
   const href = o.writtenPledge ? `/pledges/${o.id}` : `/opportunities/${o.id}`;
   const statusLabel = opportunityStatusLabel(o.status);
   const fy = o.fiscalYear?.toUpperCase();
-  const sub = [formatEnum(o.stage), statusLabel, fy].filter(Boolean).join(" · ");
+  const sub = [formatEnum(o.stage), statusLabel, fy]
+    .filter(Boolean)
+    .join(" · ");
 
   // Show the unfunded icon on pledge rows with no payments yet.
   const unpaidPledge =
-    o.status === "pledge" &&
-    (!o.paidAmount || parseFloat(o.paidAmount) === 0);
+    o.status === "pledge" && (!o.paidAmount || parseFloat(o.paidAmount) === 0);
 
   return (
     <div data-testid={`row-giving-opp-${o.id}`}>

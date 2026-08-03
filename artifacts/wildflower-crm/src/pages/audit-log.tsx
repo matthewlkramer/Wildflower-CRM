@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearch } from "wouter";
 import {
   useListAuditLog,
   getListAuditLogQueryKey,
@@ -60,7 +61,10 @@ const ACTION_LABEL: Record<string, string> = {
 
 // Color the action chip so destructive/structural events stand out from the
 // routine create/update stream.
-const ACTION_VARIANT: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+const ACTION_VARIANT: Record<
+  string,
+  "default" | "secondary" | "destructive" | "outline"
+> = {
   create: "secondary",
   update: "outline",
   archive: "destructive",
@@ -163,7 +167,9 @@ function ChangeList({ changes }: { changes: AuditChange[] }) {
       {changes.map((c, i) => (
         <li key={`${c.field}-${i}`} className="text-xs">
           <span className="font-medium">{c.field}</span>:{" "}
-          <span className="text-muted-foreground line-through">{formatValue(c.from)}</span>
+          <span className="text-muted-foreground line-through">
+            {formatValue(c.from)}
+          </span>
           {" → "}
           <span>{formatValue(c.to)}</span>
         </li>
@@ -191,9 +197,17 @@ function entityHref(entry: AuditLogEntry): string | null {
 
 export default function AuditLogPage() {
   const isAdmin = useIsAdmin();
+  const searchParams = new URLSearchParams(useSearch());
+  const scopedEntityId = searchParams.get("entityId")?.trim() || null;
+  const scopedEntityType = searchParams.get("entityType")?.trim() || null;
   const [page, setPage] = useState(1);
   const [action, setAction] = useState<string>("all");
-  const [entityType, setEntityType] = useState<string>("all");
+  const [entityType, setEntityType] = useState<string>(
+    scopedEntityType &&
+      ENTITY_TYPES.includes(scopedEntityType as (typeof ENTITY_TYPES)[number])
+      ? scopedEntityType
+      : "all",
+  );
   const [search, setSearch] = useState("");
   const debouncedSearch = useDebounce(search, 250);
   const [dateMode, setDateMode] = useState<DateMode>("any");
@@ -207,6 +221,7 @@ export default function AuditLogPage() {
     limit: PAGE_SIZE,
     ...(action !== "all" ? { action } : {}),
     ...(entityType !== "all" ? { entityType } : {}),
+    ...(scopedEntityId ? { entityId: scopedEntityId } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(dateFrom ? { dateFrom } : {}),
     ...(dateTo ? { dateTo } : {}),
@@ -218,7 +233,9 @@ export default function AuditLogPage() {
   if (!isAdmin) {
     return (
       <div className="max-w-3xl">
-        <h1 className="text-3xl font-serif font-bold text-foreground">Audit Log</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">
+          Audit Log
+        </h1>
         <p className="mt-4 text-sm text-muted-foreground">
           The audit log is only available to administrators.
         </p>
@@ -238,11 +255,19 @@ export default function AuditLogPage() {
   return (
     <div className="space-y-6 max-w-6xl">
       <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Audit Log</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">
+          Audit Log
+        </h1>
         <p className="text-sm text-muted-foreground mt-1">
           A chronological record of who changed what across the CRM — creates,
           edits, archives, merges, and bulk actions.
         </p>
+        {scopedEntityId ? (
+          <p className="mt-1 text-xs text-muted-foreground">
+            Filtered to record{" "}
+            <span className="font-mono">{scopedEntityId}</span>.
+          </p>
+        ) : null}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -274,7 +299,10 @@ export default function AuditLogPage() {
         </Select>
 
         <Select value={entityType} onValueChange={resetTo(setEntityType)}>
-          <SelectTrigger className="w-44" data-testid="select-audit-entity-type">
+          <SelectTrigger
+            className="w-44"
+            data-testid="select-audit-entity-type"
+          >
             <SelectValue placeholder="All record types" />
           </SelectTrigger>
           <SelectContent>
@@ -317,9 +345,7 @@ export default function AuditLogPage() {
               setDateA(e.target.value);
               setPage(1);
             }}
-            aria-label={
-              dateMode === "between" ? "Start date" : "Filter date"
-            }
+            aria-label={dateMode === "between" ? "Start date" : "Filter date"}
             data-testid="input-audit-date-from"
           />
         )}
@@ -357,19 +383,28 @@ export default function AuditLogPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-muted-foreground py-8"
+                >
                   Loading…
                 </TableCell>
               </TableRow>
             ) : isError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm text-destructive py-8">
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-destructive py-8"
+                >
                   Failed to load the audit log.
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-sm text-muted-foreground py-8"
+                >
                   No audit entries match these filters.
                 </TableCell>
               </TableRow>
@@ -377,18 +412,27 @@ export default function AuditLogPage() {
               rows.map((entry) => {
                 const href = entityHref(entry);
                 return (
-                  <TableRow key={entry.id} data-testid={`row-audit-${entry.id}`}>
+                  <TableRow
+                    key={entry.id}
+                    data-testid={`row-audit-${entry.id}`}
+                  >
                     <TableCell className="text-sm whitespace-nowrap">
                       {formatWhen(entry.createdAt)}
                     </TableCell>
                     <TableCell className="text-sm">
-                      <div className="font-medium">{entry.actorName ?? "Unknown"}</div>
+                      <div className="font-medium">
+                        {entry.actorName ?? "Unknown"}
+                      </div>
                       {entry.actorEmail ? (
-                        <div className="text-xs text-muted-foreground">{entry.actorEmail}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {entry.actorEmail}
+                        </div>
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={ACTION_VARIANT[entry.action] ?? "outline"}>
+                      <Badge
+                        variant={ACTION_VARIANT[entry.action] ?? "outline"}
+                      >
                         {ACTION_LABEL[entry.action] ?? entry.action}
                       </Badge>
                     </TableCell>
