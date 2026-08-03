@@ -2,7 +2,8 @@
 # Donor attribution production export
 
 This export is for reviewing preferred donor pathways, household groupings, DAF
-usage, and inconsistent donor attribution against production-shaped data.
+usage, and inconsistent gift, opportunity, and pledge attribution against
+production-shaped data.
 
 It deliberately excludes contact information, free-text notes, raw source
 payloads, and credentials. The resulting compressed JSON still contains donor
