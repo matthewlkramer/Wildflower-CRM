@@ -45,7 +45,7 @@ export const getListTasksUrl = (params?: ListTasksParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListTasksUrl = (params?: ListTasksParams,) => {
 }
 
 export const listTasks = async (params?: ListTasksParams, options?: RequestInit): Promise<TaskList> => {
-  
+
   return customFetch<TaskList>(getListTasksUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListTasksQueryKey = (params?: ListTasksParams,) => {
     ] as const;
     }
 
-    
+
 export const getListTasksQueryOptions = <TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorType<unknown>>(params?: ListTasksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListTasksQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listTasks>>> = ({ signal }) => listTasks(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListTasksQueryError = ErrorType<unknown>
 
 export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TError = ErrorType<unknown>>(
  params?: ListTasksParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTasks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTasksQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListTasks<TData = Awaited<ReturnType<typeof listTasks>>, TErr
 export const getCreateTaskUrl = () => {
 
 
-  
+
 
   return `/api/tasks`
 }
 
 export const createTask = async (createTaskBody: CreateTaskBody, options?: RequestInit): Promise<Task> => {
-  
+
   return customFetch<Task>(getCreateTaskUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createTask = async (createTaskBody: CreateTaskBody, options?: Reque
       createTaskBody,)
   }
 );}
-  
+
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTask>>, {data: BodyType<CreateTaskBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,22 +183,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetTaskUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/tasks/${id}`
 }
 
 export const getTask = async (id: string, options?: RequestInit): Promise<Task> => {
-  
+
   return customFetch<Task>(getGetTaskUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -209,7 +209,7 @@ export const getGetTaskQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetTaskQueryOptions = <TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -217,13 +217,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetTaskQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getTask>>> = ({ signal }) => getTask(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -235,7 +235,7 @@ export type GetTaskQueryError = ErrorType<NotFoundResponse>
 
 export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTask>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTaskQueryOptions(id,options)
@@ -251,16 +251,16 @@ export function useGetTask<TData = Awaited<ReturnType<typeof getTask>>, TError =
 export const getUpdateTaskUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/tasks/${id}`
 }
 
 export const updateTask = async (id: string,
     updateTaskBody: UpdateTaskBody, options?: RequestInit): Promise<Task> => {
-  
+
   return customFetch<Task>(getUpdateTaskUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -268,7 +268,7 @@ export const updateTask = async (id: string,
       updateTaskBody,)
   }
 );}
-  
+
 
 
 
@@ -283,7 +283,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTask>>, {id: string;data: BodyType<UpdateTaskBody>}> = (props) => {
@@ -294,7 +294,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -316,22 +316,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteTaskUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/tasks/${id}`
 }
 
 export const deleteTask = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteTaskUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -346,7 +346,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTask>>, {id: string}> = (props) => {
@@ -357,13 +357,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteTaskMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTask>>>
-    
+
     export type DeleteTaskMutationError = ErrorType<unknown>
 
     export const useDeleteTask = <TError = ErrorType<unknown>,
@@ -376,4 +376,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteTaskMutationOptions(options));
     }
-    

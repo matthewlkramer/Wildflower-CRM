@@ -65,7 +65,7 @@ export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams,) => 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -77,16 +77,16 @@ export const getListStagedPaymentsUrl = (params?: ListStagedPaymentsParams,) => 
 }
 
 export const listStagedPayments = async (params?: ListStagedPaymentsParams, options?: RequestInit): Promise<StagedPaymentList> => {
-  
+
   return customFetch<StagedPaymentList>(getListStagedPaymentsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -97,7 +97,7 @@ export const getListStagedPaymentsQueryKey = (params?: ListStagedPaymentsParams,
     ] as const;
     }
 
-    
+
 export const getListStagedPaymentsQueryOptions = <TData = Awaited<ReturnType<typeof listStagedPayments>>, TError = ErrorType<unknown>>(params?: ListStagedPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -105,13 +105,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStagedPaymentsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listStagedPayments>>> = ({ signal }) => listStagedPayments(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStagedPayments>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -123,7 +123,7 @@ export type ListStagedPaymentsQueryError = ErrorType<unknown>
 
 export function useListStagedPayments<TData = Awaited<ReturnType<typeof listStagedPayments>>, TError = ErrorType<unknown>>(
  params?: ListStagedPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStagedPaymentsQueryOptions(params,options)
@@ -139,22 +139,22 @@ export function useListStagedPayments<TData = Awaited<ReturnType<typeof listStag
 export const getGetStagedPaymentsSummaryUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments-summary`
 }
 
 export const getStagedPaymentsSummary = async ( options?: RequestInit): Promise<QuickbooksStagedPaymentSummary> => {
-  
+
   return customFetch<QuickbooksStagedPaymentSummary>(getGetStagedPaymentsSummaryUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -165,7 +165,7 @@ export const getGetStagedPaymentsSummaryQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetStagedPaymentsSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getStagedPaymentsSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStagedPaymentsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -173,13 +173,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetStagedPaymentsSummaryQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getStagedPaymentsSummary>>> = ({ signal }) => getStagedPaymentsSummary({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStagedPaymentsSummary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -191,7 +191,7 @@ export type GetStagedPaymentsSummaryQueryError = ErrorType<unknown>
 
 export function useGetStagedPaymentsSummary<TData = Awaited<ReturnType<typeof getStagedPaymentsSummary>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStagedPaymentsSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStagedPaymentsSummaryQueryOptions(options)
@@ -211,7 +211,7 @@ export const getSearchStagedPaymentDonorsUrl = (params: SearchStagedPaymentDonor
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -223,16 +223,16 @@ export const getSearchStagedPaymentDonorsUrl = (params: SearchStagedPaymentDonor
 }
 
 export const searchStagedPaymentDonors = async (params: SearchStagedPaymentDonorsParams, options?: RequestInit): Promise<DonorSearchList> => {
-  
+
   return customFetch<DonorSearchList>(getSearchStagedPaymentDonorsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -243,7 +243,7 @@ export const getSearchStagedPaymentDonorsQueryKey = (params?: SearchStagedPaymen
     ] as const;
     }
 
-    
+
 export const getSearchStagedPaymentDonorsQueryOptions = <TData = Awaited<ReturnType<typeof searchStagedPaymentDonors>>, TError = ErrorType<unknown>>(params: SearchStagedPaymentDonorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchStagedPaymentDonors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -251,13 +251,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getSearchStagedPaymentDonorsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof searchStagedPaymentDonors>>> = ({ signal }) => searchStagedPaymentDonors(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchStagedPaymentDonors>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -272,7 +272,7 @@ export type SearchStagedPaymentDonorsQueryError = ErrorType<unknown>
 
 export function useSearchStagedPaymentDonors<TData = Awaited<ReturnType<typeof searchStagedPaymentDonors>>, TError = ErrorType<unknown>>(
  params: SearchStagedPaymentDonorsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchStagedPaymentDonors>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getSearchStagedPaymentDonorsQueryOptions(params,options)
@@ -286,14 +286,14 @@ export function useSearchStagedPaymentDonors<TData = Awaited<ReturnType<typeof s
 
 
 /**
- * Duplicate guard for manual gift entry: returns the still-pending staged payments (QuickBooks) and Stripe charges already matched to the given donor, so a fundraiser doesn't hand-key a gift for money that is about to be booked via reconciliation. Read-only.
+ * Record-local payment selector: returns the still-pending QuickBooks payments and Stripe charges already matched to the given donor. A received gift or pledge payment must select one of these source records; the action then mints or links the CRM gift without opening the reconciliation workbench. Read-only.
  * @summary Pending reconciliation money (QuickBooks + Stripe) matched to a donor.
  */
 export const getGetPendingStagedMoneyForDonorUrl = (params: GetPendingStagedMoneyForDonorParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -305,16 +305,16 @@ export const getGetPendingStagedMoneyForDonorUrl = (params: GetPendingStagedMone
 }
 
 export const getPendingStagedMoneyForDonor = async (params: GetPendingStagedMoneyForDonorParams, options?: RequestInit): Promise<PendingDonorMoney> => {
-  
+
   return customFetch<PendingDonorMoney>(getGetPendingStagedMoneyForDonorUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -325,7 +325,7 @@ export const getGetPendingStagedMoneyForDonorQueryKey = (params?: GetPendingStag
     ] as const;
     }
 
-    
+
 export const getGetPendingStagedMoneyForDonorQueryOptions = <TData = Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError = ErrorType<BadRequestResponse>>(params: GetPendingStagedMoneyForDonorParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -333,13 +333,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetPendingStagedMoneyForDonorQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>> = ({ signal }) => getPendingStagedMoneyForDonor(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -354,7 +354,7 @@ export type GetPendingStagedMoneyForDonorQueryError = ErrorType<BadRequestRespon
 
 export function useGetPendingStagedMoneyForDonor<TData = Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError = ErrorType<BadRequestResponse>>(
  params: GetPendingStagedMoneyForDonorParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPendingStagedMoneyForDonor>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPendingStagedMoneyForDonorQueryOptions(params,options)
@@ -373,16 +373,16 @@ export function useGetPendingStagedMoneyForDonor<TData = Awaited<ReturnType<type
 export const getResolveStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/resolve`
 }
 
 export const resolveStagedPayment = async (id: string,
     resolveStagedPaymentBody: ResolveStagedPaymentBody, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getResolveStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -390,7 +390,7 @@ export const resolveStagedPayment = async (id: string,
       resolveStagedPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -405,7 +405,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveStagedPayment>>, {id: string;data: BodyType<ResolveStagedPaymentBody>}> = (props) => {
@@ -416,7 +416,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -444,16 +444,16 @@ export const useResolveStagedPayment = <TError = ErrorType<BadRequestResponse | 
 export const getCreateGiftFromStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/create-gift`
 }
 
 export const createGiftFromStagedPayment = async (id: string,
     mintGiftOverridesBody?: MintGiftOverridesBody, options?: RequestInit): Promise<StagedGiftResponse> => {
-  
+
   return customFetch<StagedGiftResponse>(getCreateGiftFromStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -461,7 +461,7 @@ export const createGiftFromStagedPayment = async (id: string,
       mintGiftOverridesBody,)
   }
 );}
-  
+
 
 
 
@@ -476,7 +476,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStagedPayment>>, {id: string;data: BodyType<MintGiftOverridesBody>}> = (props) => {
@@ -487,7 +487,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -515,22 +515,22 @@ export const useCreateGiftFromStagedPayment = <TError = ErrorType<BadRequestResp
 export const getReIncludeStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/re-include`
 }
 
 export const reIncludeStagedPayment = async (id: string, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getReIncludeStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -545,7 +545,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reIncludeStagedPayment>>, {id: string}> = (props) => {
@@ -556,13 +556,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReIncludeStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof reIncludeStagedPayment>>>
-    
+
     export type ReIncludeStagedPaymentMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
 
     /**
@@ -591,16 +591,16 @@ auto-attributed) and to fix the broad marker match's misattributions.
 export const getSetStagedPaymentEntityUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/set-entity`
 }
 
 export const setStagedPaymentEntity = async (id: string,
     setStagedPaymentEntityBody: SetStagedPaymentEntityBody, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getSetStagedPaymentEntityUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -608,7 +608,7 @@ export const setStagedPaymentEntity = async (id: string,
       setStagedPaymentEntityBody,)
   }
 );}
-  
+
 
 
 
@@ -623,7 +623,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStagedPaymentEntity>>, {id: string;data: BodyType<SetStagedPaymentEntityBody>}> = (props) => {
@@ -634,7 +634,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -669,16 +669,16 @@ null clears the value (keeping the manual pin so it is not re-derived).
 export const getSetStagedPaymentFundingSourceUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/set-funding-source`
 }
 
 export const setStagedPaymentFundingSource = async (id: string,
     setStagedPaymentFundingSourceBody: SetStagedPaymentFundingSourceBody, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getSetStagedPaymentFundingSourceUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -686,7 +686,7 @@ export const setStagedPaymentFundingSource = async (id: string,
       setStagedPaymentFundingSourceBody,)
   }
 );}
-  
+
 
 
 
@@ -701,7 +701,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStagedPaymentFundingSource>>, {id: string;data: BodyType<SetStagedPaymentFundingSourceBody>}> = (props) => {
@@ -712,7 +712,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -749,16 +749,16 @@ allowed on a row in any state.
 export const getSetStagedPaymentCodingUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/set-coding`
 }
 
 export const setStagedPaymentCoding = async (id: string,
     setStagedPaymentCodingBody: SetStagedPaymentCodingBody, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getSetStagedPaymentCodingUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -766,7 +766,7 @@ export const setStagedPaymentCoding = async (id: string,
       setStagedPaymentCodingBody,)
   }
 );}
-  
+
 
 
 
@@ -781,7 +781,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStagedPaymentCoding>>, {id: string;data: BodyType<SetStagedPaymentCodingBody>}> = (props) => {
@@ -792,7 +792,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -827,16 +827,16 @@ donor match is left intact so re-include can restore it.
 export const getExcludeStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/exclude`
 }
 
 export const excludeStagedPayment = async (id: string,
     excludeStagedPaymentBody: ExcludeStagedPaymentBody, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getExcludeStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -844,7 +844,7 @@ export const excludeStagedPayment = async (id: string,
       excludeStagedPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -859,7 +859,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof excludeStagedPayment>>, {id: string;data: BodyType<ExcludeStagedPaymentBody>}> = (props) => {
@@ -870,7 +870,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -906,22 +906,22 @@ payment.
 export const getListStagedPaymentGiftCandidatesUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/gift-candidates`
 }
 
 export const listStagedPaymentGiftCandidates = async (id: string, options?: RequestInit): Promise<GiftCandidateList> => {
-  
+
   return customFetch<GiftCandidateList>(getListStagedPaymentGiftCandidatesUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -932,7 +932,7 @@ export const getListStagedPaymentGiftCandidatesQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getListStagedPaymentGiftCandidatesQueryOptions = <TData = Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -940,13 +940,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStagedPaymentGiftCandidatesQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>> = ({ signal }) => listStagedPaymentGiftCandidates(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -961,7 +961,7 @@ export type ListStagedPaymentGiftCandidatesQueryError = ErrorType<NotFoundRespon
 
 export function useListStagedPaymentGiftCandidates<TData = Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftCandidates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStagedPaymentGiftCandidatesQueryOptions(id,options)
@@ -987,7 +987,7 @@ export const getListStagedPaymentGiftWindowUrl = (id: string,
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1000,16 +1000,16 @@ export const getListStagedPaymentGiftWindowUrl = (id: string,
 
 export const listStagedPaymentGiftWindow = async (id: string,
     params?: ListStagedPaymentGiftWindowParams, options?: RequestInit): Promise<GiftCandidateList> => {
-  
+
   return customFetch<GiftCandidateList>(getListStagedPaymentGiftWindowUrl(id,params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1021,7 +1021,7 @@ export const getListStagedPaymentGiftWindowQueryKey = (id: string,
     ] as const;
     }
 
-    
+
 export const getListStagedPaymentGiftWindowQueryOptions = <TData = Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>, TError = ErrorType<NotFoundResponse>>(id: string,
     params?: ListStagedPaymentGiftWindowParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -1030,13 +1030,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStagedPaymentGiftWindowQueryKey(id,params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>> = ({ signal }) => listStagedPaymentGiftWindow(id,params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1052,7 +1052,7 @@ export type ListStagedPaymentGiftWindowQueryError = ErrorType<NotFoundResponse>
 export function useListStagedPaymentGiftWindow<TData = Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>, TError = ErrorType<NotFoundResponse>>(
  id: string,
     params?: ListStagedPaymentGiftWindowParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStagedPaymentGiftWindow>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStagedPaymentGiftWindowQueryOptions(id,params,options)
@@ -1080,16 +1080,16 @@ to giftId and never changes the per-gift tie/book-once math.
 export const getReconcileStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/reconcile`
 }
 
 export const reconcileStagedPayment = async (id: string,
     reconcileStagedPaymentBody: ReconcileStagedPaymentBody, options?: RequestInit): Promise<StagedGiftResponse> => {
-  
+
   return customFetch<StagedGiftResponse>(getReconcileStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1097,7 +1097,7 @@ export const reconcileStagedPayment = async (id: string,
       reconcileStagedPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -1112,7 +1112,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reconcileStagedPayment>>, {id: string;data: BodyType<ReconcileStagedPaymentBody>}> = (props) => {
@@ -1123,7 +1123,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1165,22 +1165,22 @@ the deposit via the settled pairing fact. Always returns 410 with error
 export const getSplitStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/split`
 }
 
 export const splitStagedPayment = async (id: string, options?: RequestInit): Promise<unknown> => {
-  
+
   return customFetch<unknown>(getSplitStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1195,7 +1195,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitStagedPayment>>, {id: string}> = (props) => {
@@ -1206,13 +1206,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type SplitStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof splitStagedPayment>>>
-    
+
     export type SplitStagedPaymentMutationError = ErrorType<void>
 
     /**
@@ -1266,15 +1266,15 @@ leaves the others' counted rows in place).
 export const getMultiMatchStagedPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/multi-match`
 }
 
 export const multiMatchStagedPayments = async (multiMatchStagedPaymentsBody: MultiMatchStagedPaymentsBody, options?: RequestInit): Promise<MultiMatchStagedPaymentsResponse> => {
-  
+
   return customFetch<MultiMatchStagedPaymentsResponse>(getMultiMatchStagedPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1282,7 +1282,7 @@ export const multiMatchStagedPayments = async (multiMatchStagedPaymentsBody: Mul
       multiMatchStagedPaymentsBody,)
   }
 );}
-  
+
 
 
 
@@ -1297,7 +1297,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof multiMatchStagedPayments>>, {data: BodyType<MultiMatchStagedPaymentsBody>}> = (props) => {
@@ -1308,7 +1308,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1342,22 +1342,22 @@ group. Always returns 410 with error `group_creation_retired`.
 export const getGroupReconcileStagedPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/group-reconcile`
 }
 
 export const groupReconcileStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
-  
+
   return customFetch<unknown>(getGroupReconcileStagedPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1372,24 +1372,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupReconcileStagedPayments>>, void> = () => {
-          
+
 
           return  groupReconcileStagedPayments(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type GroupReconcileStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof groupReconcileStagedPayments>>>
-    
+
     export type GroupReconcileStagedPaymentsMutationError = ErrorType<void>
 
     /**
@@ -1420,22 +1420,22 @@ in the database (inert) until the tables are dropped. Always returns
 export const getGroupStagedPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/group`
 }
 
 export const groupStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
-  
+
   return customFetch<unknown>(getGroupStagedPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1450,24 +1450,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof groupStagedPayments>>, void> = () => {
-          
+
 
           return  groupStagedPayments(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type GroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof groupStagedPayments>>>
-    
+
     export type GroupStagedPaymentsMutationError = ErrorType<void>
 
     /**
@@ -1499,22 +1499,22 @@ POST /staged-payments/{id}/revert. Always returns 410 with error
 export const getUngroupStagedPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/ungroup`
 }
 
 export const ungroupStagedPayments = async ( options?: RequestInit): Promise<unknown> => {
-  
+
   return customFetch<unknown>(getUngroupStagedPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1529,24 +1529,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof ungroupStagedPayments>>, void> = () => {
-          
+
 
           return  ungroupStagedPayments(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UngroupStagedPaymentsMutationResult = NonNullable<Awaited<ReturnType<typeof ungroupStagedPayments>>>
-    
+
     export type UngroupStagedPaymentsMutationError = ErrorType<void>
 
     /**
@@ -1578,15 +1578,15 @@ confirmed so the client can report partial results.
 export const getConfirmStagedPaymentMatchesUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/confirm-matches`
 }
 
 export const confirmStagedPaymentMatches = async (confirmStagedPaymentMatchesBody: ConfirmStagedPaymentMatchesBody, options?: RequestInit): Promise<ConfirmStagedPaymentMatchesResponse> => {
-  
+
   return customFetch<ConfirmStagedPaymentMatchesResponse>(getConfirmStagedPaymentMatchesUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1594,7 +1594,7 @@ export const confirmStagedPaymentMatches = async (confirmStagedPaymentMatchesBod
       confirmStagedPaymentMatchesBody,)
   }
 );}
-  
+
 
 
 
@@ -1609,7 +1609,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmStagedPaymentMatches>>, {data: BodyType<ConfirmStagedPaymentMatchesBody>}> = (props) => {
@@ -1620,7 +1620,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1658,15 +1658,15 @@ so the client can report partial results.
 export const getRevertStagedPaymentMatchesUrl = () => {
 
 
-  
+
 
   return `/api/staged-payments/revert-matches`
 }
 
 export const revertStagedPaymentMatches = async (revertStagedPaymentMatchesBody: RevertStagedPaymentMatchesBody, options?: RequestInit): Promise<RevertStagedPaymentMatchesResponse> => {
-  
+
   return customFetch<RevertStagedPaymentMatchesResponse>(getRevertStagedPaymentMatchesUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1674,7 +1674,7 @@ export const revertStagedPaymentMatches = async (revertStagedPaymentMatchesBody:
       revertStagedPaymentMatchesBody,)
   }
 );}
-  
+
 
 
 
@@ -1689,7 +1689,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStagedPaymentMatches>>, {data: BodyType<RevertStagedPaymentMatchesBody>}> = (props) => {
@@ -1700,7 +1700,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1733,22 +1733,22 @@ Does not change the donor or mint a gift.
 export const getConfirmStagedPaymentMatchUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/confirm-match`
 }
 
 export const confirmStagedPaymentMatch = async (id: string, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getConfirmStagedPaymentMatchUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1763,7 +1763,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmStagedPaymentMatch>>, {id: string}> = (props) => {
@@ -1774,13 +1774,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ConfirmStagedPaymentMatchMutationResult = NonNullable<Awaited<ReturnType<typeof confirmStagedPaymentMatch>>>
-    
+
     export type ConfirmStagedPaymentMatchMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -1802,22 +1802,22 @@ export const useConfirmStagedPaymentMatch = <TError = ErrorType<NotFoundResponse
 export const getUnmatchStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/unmatch`
 }
 
 export const unmatchStagedPayment = async (id: string, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getUnmatchStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1832,7 +1832,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unmatchStagedPayment>>, {id: string}> = (props) => {
@@ -1843,13 +1843,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnmatchStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof unmatchStagedPayment>>>
-    
+
     export type UnmatchStagedPaymentMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -1879,22 +1879,22 @@ fundraiser-created ledger row). The donor match is left intact.
 export const getRevertStagedPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/revert`
 }
 
 export const revertStagedPayment = async (id: string, options?: RequestInit): Promise<StagedPayment> => {
-  
+
   return customFetch<StagedPayment>(getRevertStagedPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1909,7 +1909,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStagedPayment>>, {id: string}> = (props) => {
@@ -1920,13 +1920,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RevertStagedPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof revertStagedPayment>>>
-    
+
     export type RevertStagedPaymentMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -1957,22 +1957,22 @@ with error `group_creation_retired`.
 export const getEjectStagedPaymentFromGroupUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/staged-payments/${id}/eject-from-group`
 }
 
 export const ejectStagedPaymentFromGroup = async (id: string, options?: RequestInit): Promise<unknown> => {
-  
+
   return customFetch<unknown>(getEjectStagedPaymentFromGroupUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1987,7 +1987,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>, {id: string}> = (props) => {
@@ -1998,13 +1998,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type EjectStagedPaymentFromGroupMutationResult = NonNullable<Awaited<ReturnType<typeof ejectStagedPaymentFromGroup>>>
-    
+
     export type EjectStagedPaymentFromGroupMutationError = ErrorType<void>
 
     /**
@@ -2021,4 +2021,3 @@ export const useEjectStagedPaymentFromGroup = <TError = ErrorType<void>,
       > => {
       return useMutation(getEjectStagedPaymentFromGroupMutationOptions(options));
     }
-    

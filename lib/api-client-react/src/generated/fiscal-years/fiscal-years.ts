@@ -46,7 +46,7 @@ export const getListFiscalYearsUrl = (params?: ListFiscalYearsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -58,16 +58,16 @@ export const getListFiscalYearsUrl = (params?: ListFiscalYearsParams,) => {
 }
 
 export const listFiscalYears = async (params?: ListFiscalYearsParams, options?: RequestInit): Promise<FiscalYear[]> => {
-  
+
   return customFetch<FiscalYear[]>(getListFiscalYearsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -78,7 +78,7 @@ export const getListFiscalYearsQueryKey = (params?: ListFiscalYearsParams,) => {
     ] as const;
     }
 
-    
+
 export const getListFiscalYearsQueryOptions = <TData = Awaited<ReturnType<typeof listFiscalYears>>, TError = ErrorType<unknown>>(params?: ListFiscalYearsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFiscalYears>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -86,13 +86,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFiscalYearsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listFiscalYears>>> = ({ signal }) => listFiscalYears(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFiscalYears>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -104,7 +104,7 @@ export type ListFiscalYearsQueryError = ErrorType<unknown>
 
 export function useListFiscalYears<TData = Awaited<ReturnType<typeof listFiscalYears>>, TError = ErrorType<unknown>>(
  params?: ListFiscalYearsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listFiscalYears>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListFiscalYearsQueryOptions(params,options)
@@ -120,22 +120,22 @@ export function useListFiscalYears<TData = Awaited<ReturnType<typeof listFiscalY
 export const getGetFiscalYearUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}`
 }
 
 export const getFiscalYear = async (id: string, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getGetFiscalYearUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -146,7 +146,7 @@ export const getGetFiscalYearQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetFiscalYearQueryOptions = <TData = Awaited<ReturnType<typeof getFiscalYear>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYear>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -154,13 +154,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetFiscalYearQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getFiscalYear>>> = ({ signal }) => getFiscalYear(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFiscalYear>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -172,7 +172,7 @@ export type GetFiscalYearQueryError = ErrorType<NotFoundResponse>
 
 export function useGetFiscalYear<TData = Awaited<ReturnType<typeof getFiscalYear>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYear>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFiscalYearQueryOptions(id,options)
@@ -188,16 +188,16 @@ export function useGetFiscalYear<TData = Awaited<ReturnType<typeof getFiscalYear
 export const getUpdateFiscalYearUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}`
 }
 
 export const updateFiscalYear = async (id: string,
     updateFiscalYearBody: UpdateFiscalYearBody, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getUpdateFiscalYearUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -205,7 +205,7 @@ export const updateFiscalYear = async (id: string,
       updateFiscalYearBody,)
   }
 );}
-  
+
 
 
 
@@ -220,7 +220,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFiscalYear>>, {id: string;data: BodyType<UpdateFiscalYearBody>}> = (props) => {
@@ -231,7 +231,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -253,22 +253,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getArchiveFiscalYearUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}/archive`
 }
 
 export const archiveFiscalYear = async (id: string, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getArchiveFiscalYearUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -283,7 +283,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveFiscalYear>>, {id: string}> = (props) => {
@@ -294,13 +294,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveFiscalYearMutationResult = NonNullable<Awaited<ReturnType<typeof archiveFiscalYear>>>
-    
+
     export type ArchiveFiscalYearMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveFiscalYear = <TError = ErrorType<NotFoundResponse>,
@@ -316,22 +316,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveFiscalYearUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}/unarchive`
 }
 
 export const unarchiveFiscalYear = async (id: string, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getUnarchiveFiscalYearUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -346,7 +346,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveFiscalYear>>, {id: string}> = (props) => {
@@ -357,13 +357,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveFiscalYearMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveFiscalYear>>>
-    
+
     export type UnarchiveFiscalYearMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveFiscalYear = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -382,16 +382,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getCloseFiscalYearAuditUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}/close`
 }
 
 export const closeFiscalYearAudit = async (id: string,
     closeFiscalYearBody?: CloseFiscalYearBody, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getCloseFiscalYearAuditUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -399,7 +399,7 @@ export const closeFiscalYearAudit = async (id: string,
       closeFiscalYearBody,)
   }
 );}
-  
+
 
 
 
@@ -414,7 +414,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof closeFiscalYearAudit>>, {id: string;data: BodyType<CloseFiscalYearBody>}> = (props) => {
@@ -425,7 +425,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -453,22 +453,22 @@ export const useCloseFiscalYearAudit = <TError = ErrorType<BadRequestResponse | 
 export const getReopenFiscalYearAuditUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}/reopen`
 }
 
 export const reopenFiscalYearAudit = async (id: string, options?: RequestInit): Promise<FiscalYear> => {
-  
+
   return customFetch<FiscalYear>(getReopenFiscalYearAuditUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -483,7 +483,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenFiscalYearAudit>>, {id: string}> = (props) => {
@@ -494,13 +494,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReopenFiscalYearAuditMutationResult = NonNullable<Awaited<ReturnType<typeof reopenFiscalYearAudit>>>
-    
+
     export type ReopenFiscalYearAuditMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     /**
@@ -522,22 +522,22 @@ export const useReopenFiscalYearAudit = <TError = ErrorType<ForbiddenResponse | 
 export const getGetFiscalYearPreCloseChecklistUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/fiscal-years/${id}/pre-close-checklist`
 }
 
 export const getFiscalYearPreCloseChecklist = async (id: string, options?: RequestInit): Promise<FiscalYearPreCloseChecklist> => {
-  
+
   return customFetch<FiscalYearPreCloseChecklist>(getGetFiscalYearPreCloseChecklistUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -548,7 +548,7 @@ export const getGetFiscalYearPreCloseChecklistQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetFiscalYearPreCloseChecklistQueryOptions = <TData = Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -556,13 +556,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetFiscalYearPreCloseChecklistQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>> = ({ signal }) => getFiscalYearPreCloseChecklist(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -577,7 +577,7 @@ export type GetFiscalYearPreCloseChecklistQueryError = ErrorType<NotFoundRespons
 
 export function useGetFiscalYearPreCloseChecklist<TData = Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFiscalYearPreCloseChecklist>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFiscalYearPreCloseChecklistQueryOptions(id,options)

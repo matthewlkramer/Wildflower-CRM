@@ -48,7 +48,7 @@ export const getListSavedViewsUrl = (params: ListSavedViewsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -60,16 +60,16 @@ export const getListSavedViewsUrl = (params: ListSavedViewsParams,) => {
 }
 
 export const listSavedViews = async (params: ListSavedViewsParams, options?: RequestInit): Promise<SavedViewList> => {
-  
+
   return customFetch<SavedViewList>(getListSavedViewsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -80,7 +80,7 @@ export const getListSavedViewsQueryKey = (params?: ListSavedViewsParams,) => {
     ] as const;
     }
 
-    
+
 export const getListSavedViewsQueryOptions = <TData = Awaited<ReturnType<typeof listSavedViews>>, TError = ErrorType<BadRequestResponse>>(params: ListSavedViewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedViews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -88,13 +88,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListSavedViewsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listSavedViews>>> = ({ signal }) => listSavedViews(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSavedViews>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -106,7 +106,7 @@ export type ListSavedViewsQueryError = ErrorType<BadRequestResponse>
 
 export function useListSavedViews<TData = Awaited<ReturnType<typeof listSavedViews>>, TError = ErrorType<BadRequestResponse>>(
  params: ListSavedViewsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedViews>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSavedViewsQueryOptions(params,options)
@@ -122,15 +122,15 @@ export function useListSavedViews<TData = Awaited<ReturnType<typeof listSavedVie
 export const getCreateSavedViewUrl = () => {
 
 
-  
+
 
   return `/api/saved-views`
 }
 
 export const createSavedView = async (createSavedViewBody: CreateSavedViewBody, options?: RequestInit): Promise<SavedView> => {
-  
+
   return customFetch<SavedView>(getCreateSavedViewUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -138,7 +138,7 @@ export const createSavedView = async (createSavedViewBody: CreateSavedViewBody, 
       createSavedViewBody,)
   }
 );}
-  
+
 
 
 
@@ -153,7 +153,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSavedView>>, {data: BodyType<CreateSavedViewBody>}> = (props) => {
@@ -164,7 +164,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -189,16 +189,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getUpdateSavedViewUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/saved-views/${id}`
 }
 
 export const updateSavedView = async (id: string,
     updateSavedViewBody: UpdateSavedViewBody, options?: RequestInit): Promise<SavedView> => {
-  
+
   return customFetch<SavedView>(getUpdateSavedViewUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -206,7 +206,7 @@ export const updateSavedView = async (id: string,
       updateSavedViewBody,)
   }
 );}
-  
+
 
 
 
@@ -221,7 +221,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSavedView>>, {id: string;data: BodyType<UpdateSavedViewBody>}> = (props) => {
@@ -232,7 +232,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -257,22 +257,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getDeleteSavedViewUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/saved-views/${id}`
 }
 
 export const deleteSavedView = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteSavedViewUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -287,7 +287,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSavedView>>, {id: string}> = (props) => {
@@ -298,13 +298,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteSavedViewMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSavedView>>>
-    
+
     export type DeleteSavedViewMutationError = ErrorType<void>
 
     export const useDeleteSavedView = <TError = ErrorType<void>,
@@ -317,4 +317,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteSavedViewMutationOptions(options));
     }
-    

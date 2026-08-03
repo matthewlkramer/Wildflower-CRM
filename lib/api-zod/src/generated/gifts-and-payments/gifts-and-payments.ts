@@ -69,7 +69,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -203,7 +203,7 @@ export const GetGiftOrPaymentResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -358,7 +358,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -432,6 +432,23 @@ export const UpdateGiftOrPaymentResponse = zod.object({
 })
 
 /**
+ * Clears only gift.opportunityId and re-derives the former pledge. The gift, allocations, payment units, QuickBooks/Stripe/Donorbox evidence, amount, date, and intermediary remain unchanged.
+ * @summary Admin correction that detaches a mislinked pledge payment and treats it as a stand-alone gift.
+ */
+export const DetachGiftFromPledgeParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DetachGiftFromPledgeBody = zod.object({
+  "reason": zod.string().nullish().describe('Optional explanation stored in the audit history.')
+})
+
+export const DetachGiftFromPledgeResponse = zod.object({
+  "giftId": zod.string(),
+  "formerOpportunityId": zod.string()
+})
+
+/**
  * Recent outbound emails from the caller's mailbox to any contact
 of the gift's funder, within 90 days of the gift's dateReceived.
 Each result is flagged `autoSuggested: true` when it matches the
@@ -481,7 +498,7 @@ export const LinkThankYouEmailResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -742,7 +759,7 @@ export const UntieGiftPaymentUnitResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -1006,7 +1023,7 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -1098,7 +1115,7 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),

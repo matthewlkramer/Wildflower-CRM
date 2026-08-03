@@ -51,7 +51,7 @@ export const getListStripeStagedChargesUrl = (params?: ListStripeStagedChargesPa
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -63,16 +63,16 @@ export const getListStripeStagedChargesUrl = (params?: ListStripeStagedChargesPa
 }
 
 export const listStripeStagedCharges = async (params?: ListStripeStagedChargesParams, options?: RequestInit): Promise<StripeStagedChargeList> => {
-  
+
   return customFetch<StripeStagedChargeList>(getListStripeStagedChargesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -83,7 +83,7 @@ export const getListStripeStagedChargesQueryKey = (params?: ListStripeStagedChar
     ] as const;
     }
 
-    
+
 export const getListStripeStagedChargesQueryOptions = <TData = Awaited<ReturnType<typeof listStripeStagedCharges>>, TError = ErrorType<unknown>>(params?: ListStripeStagedChargesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStripeStagedCharges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -91,13 +91,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStripeStagedChargesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listStripeStagedCharges>>> = ({ signal }) => listStripeStagedCharges(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStripeStagedCharges>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -109,7 +109,7 @@ export type ListStripeStagedChargesQueryError = ErrorType<unknown>
 
 export function useListStripeStagedCharges<TData = Awaited<ReturnType<typeof listStripeStagedCharges>>, TError = ErrorType<unknown>>(
  params?: ListStripeStagedChargesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStripeStagedCharges>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStripeStagedChargesQueryOptions(params,options)
@@ -125,22 +125,22 @@ export function useListStripeStagedCharges<TData = Awaited<ReturnType<typeof lis
 export const getGetStripeStagedChargesSummaryUrl = () => {
 
 
-  
+
 
   return `/api/stripe-staged-charges-summary`
 }
 
 export const getStripeStagedChargesSummary = async ( options?: RequestInit): Promise<StripeStagedChargeSummary> => {
-  
+
   return customFetch<StripeStagedChargeSummary>(getGetStripeStagedChargesSummaryUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -151,7 +151,7 @@ export const getGetStripeStagedChargesSummaryQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetStripeStagedChargesSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getStripeStagedChargesSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeStagedChargesSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -159,13 +159,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetStripeStagedChargesSummaryQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getStripeStagedChargesSummary>>> = ({ signal }) => getStripeStagedChargesSummary({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStripeStagedChargesSummary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -177,7 +177,7 @@ export type GetStripeStagedChargesSummaryQueryError = ErrorType<unknown>
 
 export function useGetStripeStagedChargesSummary<TData = Awaited<ReturnType<typeof getStripeStagedChargesSummary>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getStripeStagedChargesSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetStripeStagedChargesSummaryQueryOptions(options)
@@ -196,16 +196,16 @@ export function useGetStripeStagedChargesSummary<TData = Awaited<ReturnType<type
 export const getResolveStripeStagedChargeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/resolve`
 }
 
 export const resolveStripeStagedCharge = async (id: string,
     resolveStagedPaymentBody: ResolveStagedPaymentBody, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getResolveStripeStagedChargeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -213,7 +213,7 @@ export const resolveStripeStagedCharge = async (id: string,
       resolveStagedPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -228,7 +228,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveStripeStagedCharge>>, {id: string;data: BodyType<ResolveStagedPaymentBody>}> = (props) => {
@@ -239,7 +239,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -267,16 +267,16 @@ export const useResolveStripeStagedCharge = <TError = ErrorType<BadRequestRespon
 export const getLinkStripeChargeToGiftUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/link-gift`
 }
 
 export const linkStripeChargeToGift = async (id: string,
     stripeChargeLinkGiftBody: StripeChargeLinkGiftBody, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getLinkStripeChargeToGiftUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -284,7 +284,7 @@ export const linkStripeChargeToGift = async (id: string,
       stripeChargeLinkGiftBody,)
   }
 );}
-  
+
 
 
 
@@ -299,7 +299,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkStripeChargeToGift>>, {id: string;data: BodyType<StripeChargeLinkGiftBody>}> = (props) => {
@@ -310,7 +310,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -338,16 +338,16 @@ export const useLinkStripeChargeToGift = <TError = ErrorType<BadRequestResponse 
 export const getCreateGiftFromStripeStagedChargeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/create-gift`
 }
 
 export const createGiftFromStripeStagedCharge = async (id: string,
     stripeChargeCreateGiftBody?: StripeChargeCreateGiftBody, options?: RequestInit): Promise<StagedGiftResponse> => {
-  
+
   return customFetch<StagedGiftResponse>(getCreateGiftFromStripeStagedChargeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -355,7 +355,7 @@ export const createGiftFromStripeStagedCharge = async (id: string,
       stripeChargeCreateGiftBody,)
   }
 );}
-  
+
 
 
 
@@ -370,7 +370,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftFromStripeStagedCharge>>, {id: string;data: BodyType<StripeChargeCreateGiftBody>}> = (props) => {
@@ -381,7 +381,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -409,16 +409,16 @@ export const useCreateGiftFromStripeStagedCharge = <TError = ErrorType<BadReques
 export const getExcludeStripeStagedChargeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/exclude`
 }
 
 export const excludeStripeStagedCharge = async (id: string,
     excludeStagedPaymentBody: ExcludeStagedPaymentBody, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getExcludeStripeStagedChargeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -426,7 +426,7 @@ export const excludeStripeStagedCharge = async (id: string,
       excludeStagedPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -441,7 +441,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof excludeStripeStagedCharge>>, {id: string;data: BodyType<ExcludeStagedPaymentBody>}> = (props) => {
@@ -452,7 +452,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -480,22 +480,22 @@ export const useExcludeStripeStagedCharge = <TError = ErrorType<BadRequestRespon
 export const getReIncludeStripeStagedChargeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/re-include`
 }
 
 export const reIncludeStripeStagedCharge = async (id: string, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getReIncludeStripeStagedChargeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -510,7 +510,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>, {id: string}> = (props) => {
@@ -521,13 +521,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReIncludeStripeStagedChargeMutationResult = NonNullable<Awaited<ReturnType<typeof reIncludeStripeStagedCharge>>>
-    
+
     export type ReIncludeStripeStagedChargeMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -549,22 +549,22 @@ export const useReIncludeStripeStagedCharge = <TError = ErrorType<NotFoundRespon
 export const getRevertStripeStagedChargeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/revert`
 }
 
 export const revertStripeStagedCharge = async (id: string, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getRevertStripeStagedChargeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -579,7 +579,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertStripeStagedCharge>>, {id: string}> = (props) => {
@@ -590,13 +590,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RevertStripeStagedChargeMutationResult = NonNullable<Awaited<ReturnType<typeof revertStripeStagedCharge>>>
-    
+
     export type RevertStripeStagedChargeMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -618,22 +618,22 @@ export const useRevertStripeStagedCharge = <TError = ErrorType<NotFoundResponse 
 export const getConfirmStripeRefundPropagationUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/confirm-refund`
 }
 
 export const confirmStripeRefundPropagation = async (id: string, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getConfirmStripeRefundPropagationUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -648,7 +648,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmStripeRefundPropagation>>, {id: string}> = (props) => {
@@ -659,13 +659,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ConfirmStripeRefundPropagationMutationResult = NonNullable<Awaited<ReturnType<typeof confirmStripeRefundPropagation>>>
-    
+
     export type ConfirmStripeRefundPropagationMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -687,22 +687,22 @@ export const useConfirmStripeRefundPropagation = <TError = ErrorType<NotFoundRes
 export const getDismissStripeRefundPropagationUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/stripe-staged-charges/${id}/dismiss-refund`
 }
 
 export const dismissStripeRefundPropagation = async (id: string, options?: RequestInit): Promise<StripeStagedCharge> => {
-  
+
   return customFetch<StripeStagedCharge>(getDismissStripeRefundPropagationUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -717,7 +717,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissStripeRefundPropagation>>, {id: string}> = (props) => {
@@ -728,13 +728,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DismissStripeRefundPropagationMutationResult = NonNullable<Awaited<ReturnType<typeof dismissStripeRefundPropagation>>>
-    
+
     export type DismissStripeRefundPropagationMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -757,7 +757,7 @@ export const getListStripePayoutReconciliationsUrl = (params?: ListStripePayoutR
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -769,16 +769,16 @@ export const getListStripePayoutReconciliationsUrl = (params?: ListStripePayoutR
 }
 
 export const listStripePayoutReconciliations = async (params?: ListStripePayoutReconciliationsParams, options?: RequestInit): Promise<StripePayoutReconciliationList> => {
-  
+
   return customFetch<StripePayoutReconciliationList>(getListStripePayoutReconciliationsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -789,7 +789,7 @@ export const getListStripePayoutReconciliationsQueryKey = (params?: ListStripePa
     ] as const;
     }
 
-    
+
 export const getListStripePayoutReconciliationsQueryOptions = <TData = Awaited<ReturnType<typeof listStripePayoutReconciliations>>, TError = ErrorType<unknown>>(params?: ListStripePayoutReconciliationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStripePayoutReconciliations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -797,13 +797,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStripePayoutReconciliationsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listStripePayoutReconciliations>>> = ({ signal }) => listStripePayoutReconciliations(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStripePayoutReconciliations>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -818,7 +818,7 @@ export type ListStripePayoutReconciliationsQueryError = ErrorType<unknown>
 
 export function useListStripePayoutReconciliations<TData = Awaited<ReturnType<typeof listStripePayoutReconciliations>>, TError = ErrorType<unknown>>(
  params?: ListStripePayoutReconciliationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listStripePayoutReconciliations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListStripePayoutReconciliationsQueryOptions(params,options)

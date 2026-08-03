@@ -45,7 +45,7 @@ export const getListSchoolsUrl = (params?: ListSchoolsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListSchoolsUrl = (params?: ListSchoolsParams,) => {
 }
 
 export const listSchools = async (params?: ListSchoolsParams, options?: RequestInit): Promise<SchoolList> => {
-  
+
   return customFetch<SchoolList>(getListSchoolsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListSchoolsQueryKey = (params?: ListSchoolsParams,) => {
     ] as const;
     }
 
-    
+
 export const getListSchoolsQueryOptions = <TData = Awaited<ReturnType<typeof listSchools>>, TError = ErrorType<unknown>>(params?: ListSchoolsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSchools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListSchoolsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listSchools>>> = ({ signal }) => listSchools(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSchools>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListSchoolsQueryError = ErrorType<unknown>
 
 export function useListSchools<TData = Awaited<ReturnType<typeof listSchools>>, TError = ErrorType<unknown>>(
  params?: ListSchoolsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSchools>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListSchoolsQueryOptions(params,options)
@@ -119,22 +119,22 @@ export function useListSchools<TData = Awaited<ReturnType<typeof listSchools>>, 
 export const getGetSchoolUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/schools/${id}`
 }
 
 export const getSchool = async (id: string, options?: RequestInit): Promise<School> => {
-  
+
   return customFetch<School>(getGetSchoolUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -145,7 +145,7 @@ export const getGetSchoolQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetSchoolQueryOptions = <TData = Awaited<ReturnType<typeof getSchool>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSchool>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -153,13 +153,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetSchoolQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getSchool>>> = ({ signal }) => getSchool(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSchool>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -171,7 +171,7 @@ export type GetSchoolQueryError = ErrorType<NotFoundResponse>
 
 export function useGetSchool<TData = Awaited<ReturnType<typeof getSchool>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSchool>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSchoolQueryOptions(id,options)
@@ -187,16 +187,16 @@ export function useGetSchool<TData = Awaited<ReturnType<typeof getSchool>>, TErr
 export const getUpdateSchoolUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/schools/${id}`
 }
 
 export const updateSchool = async (id: string,
     updateSchoolBody: UpdateSchoolBody, options?: RequestInit): Promise<School> => {
-  
+
   return customFetch<School>(getUpdateSchoolUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -204,7 +204,7 @@ export const updateSchool = async (id: string,
       updateSchoolBody,)
   }
 );}
-  
+
 
 
 
@@ -219,7 +219,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSchool>>, {id: string;data: BodyType<UpdateSchoolBody>}> = (props) => {
@@ -230,7 +230,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -252,22 +252,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getArchiveSchoolUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/schools/${id}/archive`
 }
 
 export const archiveSchool = async (id: string, options?: RequestInit): Promise<School> => {
-  
+
   return customFetch<School>(getArchiveSchoolUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -282,7 +282,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveSchool>>, {id: string}> = (props) => {
@@ -293,13 +293,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveSchoolMutationResult = NonNullable<Awaited<ReturnType<typeof archiveSchool>>>
-    
+
     export type ArchiveSchoolMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveSchool = <TError = ErrorType<NotFoundResponse>,
@@ -315,22 +315,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveSchoolUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/schools/${id}/unarchive`
 }
 
 export const unarchiveSchool = async (id: string, options?: RequestInit): Promise<School> => {
-  
+
   return customFetch<School>(getUnarchiveSchoolUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -345,7 +345,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveSchool>>, {id: string}> = (props) => {
@@ -356,13 +356,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveSchoolMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveSchool>>>
-    
+
     export type UnarchiveSchoolMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveSchool = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -375,4 +375,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveSchoolMutationOptions(options));
     }
-    

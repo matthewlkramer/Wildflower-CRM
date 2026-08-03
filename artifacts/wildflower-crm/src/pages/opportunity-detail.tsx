@@ -5,9 +5,7 @@ import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
   useArchiveOpportunityOrPledge,
-  useMintGiftFromOpportunity,
-  getGetGiftOrPaymentQueryKey,
-  getListGiftsAndPaymentsQueryKey,
+  useUnarchiveOpportunityOrPledge,
   useGetOrganization,
   useGetHousehold,
   getGetOpportunityOrPledgeQueryKey,
@@ -19,6 +17,7 @@ import {
   type OpportunityStage,
   type OpportunityStatus,
   type OpportunityLossType,
+  type OpportunityCommitmentPath,
   type OpportunityType,
   type OpportunityConditional,
   type OpportunityConditionsMet,
@@ -42,6 +41,16 @@ import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { FileUploadField } from "@/components/grant-letter-upload";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import { CommitmentLifecycleCard } from "@/components/commitment-lifecycle-card";
+import {
+  FinalizePledgeDialog,
+  VerbalCommitmentDialog,
+} from "@/components/commitment-action-dialogs";
+import { PaymentEvidencePickerDialog } from "@/components/payment-evidence-picker-dialog";
+import {
+  ConvertPledgeToGiftDialog,
+  RevertPledgeToOpportunityDialog,
+  RevertPledgeToVerbalGiftDialog,
+} from "@/components/fundraising-correction-dialogs";
 import { WriteOffPledgeDialog } from "@/components/audit-close-dialogs";
 import {
   InlineEditBoolean,
@@ -52,7 +61,6 @@ import {
   EditTriggerRow,
   ActionButtons,
   useSaveRunner,
-  EDIT_PENCIL_REVEAL,
   type InlineSelectOption,
   type SaveResult,
 } from "@/components/inline-edit";
@@ -145,16 +153,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+
 import { Input } from "@/components/ui/input";
 import { DerivedRow } from "@/components/derived-row";
 
@@ -190,42 +189,36 @@ export default function OpportunityDetail({
       </div>
     );
   }
-  return (
-    <OppView
-      opp={data}
-      backHref={backHref}
-      backLabel={backLabel}
-      entityLabel={entityLabel}
-    />
-  );
+  return <OppView opp={data} />;
 }
 
-function OppView({
-  opp,
-  backHref,
-  backLabel,
-  entityLabel,
-}: {
-  opp: OpportunityOrPledgeDetail;
-  backHref: string;
-  backLabel: string;
-  entityLabel: string;
-}) {
+function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
+  const isPledge = !!opp.pledgeCommittedAt;
+  const recordLabel = isPledge ? "Pledge" : "Opportunity";
+  const recordBackHref = isPledge ? "/pledges" : "/opportunities";
+  const recordBackLabel = isPledge
+    ? "Back to pledges"
+    : "Back to opportunities";
   const [reportingDialogOpen, setReportingDialogOpen] = useState(false);
   const [writeOffOpen, setWriteOffOpen] = useState(false);
   const [flagResearchOpen, setFlagResearchOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
   const [closeAwardOpen, setCloseAwardOpen] = useState(false);
-  // Explicit confirmation before recording an off-books gift (the only manual
-  // gift-creation path left on a pledge — money that never hits our bank).
-  const [offBooksConfirmOpen, setOffBooksConfirmOpen] = useState(false);
+  const [paymentPickerOpen, setPaymentPickerOpen] = useState(false);
+  const [commitmentPathOpen, setCommitmentPathOpen] =
+    useState<OpportunityCommitmentPath | null>(null);
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [convertToGiftOpen, setConvertToGiftOpen] = useState(false);
+  const [revertVerbalGiftOpen, setRevertVerbalGiftOpen] = useState(false);
+  const [revertOpportunityOpen, setRevertOpportunityOpen] = useState(false);
   // Non-null while the "mark dormant/lost" close-date prompt is open.
   const [closingLossType, setClosingLossType] =
     useState<OpportunityLossType | null>(null);
   const [closeDateValue, setCloseDateValue] = useState("");
+  const [closeReasonValue, setCloseReasonValue] = useState("");
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(opp.name ?? "");
@@ -241,7 +234,7 @@ function OppView({
             queryKey: getListOpportunitiesAndPledgesQueryKey(),
           }),
         ]);
-        toast({ title: `${entityLabel} updated` });
+        toast({ title: `${recordLabel} updated` });
         // The server sets `promptForReportingDeadlines` on the PATCH
         // response only when status flipped into pledge/cash_in AND
         // there are zero existing reporting_deadline tasks on this opp.
@@ -266,8 +259,8 @@ function OppView({
         await queryClient.invalidateQueries({
           queryKey: getListOpportunitiesAndPledgesQueryKey(),
         });
-        toast({ title: `${entityLabel} archived` });
-        navigate(backHref);
+        toast({ title: `${recordLabel} archived` });
+        navigate(recordBackHref);
       },
       onError: (err: unknown) => {
         toast({
@@ -279,13 +272,9 @@ function OppView({
     },
   });
 
-  // "Record off-books gift" action — mints a gift for money that never hits
-  // our bank/QuickBooks (money/donor/scope derived server-side). On-books
-  // payments are never minted here; they come from the reconciliation
-  // workbench. On success we land on the new gift's detail page.
-  const mintGift = useMintGiftFromOpportunity({
+  const restore = useUnarchiveOpportunityOrPledge({
     mutation: {
-      onSuccess: async (gift) => {
+      onSuccess: async () => {
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: getGetOpportunityOrPledgeQueryKey(opp.id),
@@ -293,21 +282,12 @@ function OppView({
           queryClient.invalidateQueries({
             queryKey: getListOpportunitiesAndPledgesQueryKey(),
           }),
-          queryClient.invalidateQueries({
-            queryKey: getListGiftsAndPaymentsQueryKey(),
-          }),
-          gift?.id
-            ? queryClient.invalidateQueries({
-                queryKey: getGetGiftOrPaymentQueryKey(gift.id),
-              })
-            : Promise.resolve(),
         ]);
-        toast({ title: "Gift created" });
-        if (gift?.id) navigate(`/gifts/${gift.id}`);
+        toast({ title: `${recordLabel} restored` });
       },
       onError: (err: unknown) => {
         toast({
-          title: "Could not create gift",
+          title: "Restore failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -445,12 +425,150 @@ function OppView({
       value={nameValue}
       onChange={(e) => setNameValue(e.target.value)}
       className="h-11 max-w-md font-serif text-2xl font-bold"
-      aria-label={`${entityLabel} name`}
+      aria-label={`${recordLabel} name`}
       data-testid="input-opp-name"
       autoFocus
     />
   ) : (
     (opp.name ?? `Untitled ${opp.id}`)
+  );
+
+  const paymentDonor = opp.organizationId
+    ? {
+        type: "organization" as const,
+        id: opp.organizationId,
+        name: funderName ?? opp.organizationId,
+      }
+    : opp.householdId
+      ? {
+          type: "household" as const,
+          id: opp.householdId,
+          name: householdName ?? opp.householdId,
+        }
+      : opp.individualGiverPersonId
+        ? {
+            type: "individual" as const,
+            id: opp.individualGiverPersonId,
+            name: giverName ?? opp.individualGiverPersonId,
+          }
+        : null;
+
+  const viewerIsAdmin = viewerRole === "admin";
+  const linkedPayments = opp.payments ?? [];
+  const activeLinkedPayments = linkedPayments.filter(
+    (payment) => !payment.archivedAt,
+  );
+  const singlePayment =
+    activeLinkedPayments.length === 1 ? activeLinkedPayments[0] : null;
+  const basicConvertEligible =
+    isPledge &&
+    opp.disbursementModel === "fixed_commitment" &&
+    !opp.isWriteOff &&
+    linkedPayments.length === 1 &&
+    !!singlePayment &&
+    Number(singlePayment.amount ?? 0) > 0 &&
+    Math.round(Number(singlePayment.amount ?? 0) * 100) ===
+      Math.round(Number(opp.awardedAmount ?? 0) * 100);
+  const convertDisabledReason = !viewerIsAdmin
+    ? "admin role required"
+    : opp.disbursementModel !== "fixed_commitment"
+      ? "cost-reimbursement awards cannot be converted"
+      : opp.isWriteOff
+        ? "write-off pledges cannot be converted"
+        : linkedPayments.length !== 1
+          ? "requires exactly one payment"
+          : !singlePayment ||
+              Math.round(Number(singlePayment.amount ?? 0) * 100) !==
+                Math.round(Number(opp.awardedAmount ?? 0) * 100)
+            ? "the one payment must fully equal the pledge"
+            : null;
+  const canRevertPledge = viewerIsAdmin && linkedPayments.length === 0;
+
+  const reopenOpportunity = () =>
+    patch({
+      lossType: null,
+      lossReason: null,
+      actualCompletionDate: null,
+    });
+
+  const startClose = (next: OpportunityLossType) => {
+    setCloseDateValue(
+      opp.actualCompletionDate ?? new Date().toISOString().slice(0, 10),
+    );
+    setCloseReasonValue(opp.lossReason ?? "");
+    setClosingLossType(next);
+  };
+
+  const primaryAction = opp.archivedAt ? (
+    <Button
+      size="sm"
+      onClick={() => restore.mutate({ id: opp.id })}
+      disabled={restore.isPending}
+      data-testid="button-restore-opp"
+    >
+      {restore.isPending
+        ? "Restoring…"
+        : `Restore ${recordLabel.toLowerCase()}`}
+    </Button>
+  ) : isPledge ? (
+    opp.status === "cash_in" ? null : (
+      <Button
+        size="sm"
+        onClick={() => setPaymentPickerOpen(true)}
+        disabled={!paymentDonor}
+        data-testid="button-link-pledge-payment"
+      >
+        {opp.disbursementModel === "cost_reimbursement"
+          ? "Link reimbursement payment"
+          : "Link payment"}
+      </Button>
+    )
+  ) : opp.lossType ? (
+    <Button
+      size="sm"
+      onClick={() => void reopenOpportunity()}
+      disabled={update.isPending}
+      data-testid="button-reopen-opportunity"
+    >
+      Reopen opportunity
+    </Button>
+  ) : opp.commitmentPath === "gift" ? (
+    <Button
+      size="sm"
+      onClick={() => setPaymentPickerOpen(true)}
+      disabled={!paymentDonor}
+      data-testid="button-record-received-gift"
+    >
+      Record received gift
+    </Button>
+  ) : opp.commitmentPath === "written_pledge" ||
+    opp.commitmentPath === "verbal_pledge" ? (
+    <Button
+      size="sm"
+      onClick={() => setFinalizeOpen(true)}
+      data-testid="button-finalize-primary"
+    >
+      Finalize pledge
+    </Button>
+  ) : (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" data-testid="button-record-verbal-commitment">
+          Record verbal commitment
+          <ChevronDown className="ml-1 h-4 w-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => setCommitmentPathOpen("gift")}>
+          Commitment to make a gift…
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => setCommitmentPathOpen("written_pledge")}
+        >
+          Commitment to make a written pledge…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 
   const actions = editingName ? (
@@ -475,162 +593,264 @@ function OppView({
     </>
   ) : (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className={EDIT_PENCIL_REVEAL}
-        onClick={() => setEditingName(true)}
-        data-testid="button-edit-opp-name"
-      >
-        Edit name
-      </Button>
-      {opp.auditClose.frozen &&
-      opp.writtenPledge &&
-      !opp.isWriteOff &&
-      Number(opp.auditClose.uncollectedRemainder) > 0 &&
-      !opp.auditClose.resolvedByWriteOffPledgeId ? (
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => setWriteOffOpen(true)}
-          data-testid="button-write-off-pledge"
-        >
-          Write off remainder
-        </Button>
-      ) : null}
+      {primaryAction}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            disabled={mintGift.isPending || archive.isPending}
+            disabled={archive.isPending || restore.isPending}
             data-testid="button-opp-actions"
           >
             Actions
             <ChevronDown className="ml-1 h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {/* Conversions. Only meaningful on a live (non-write-off) record. */}
-          {!opp.isWriteOff ? (
+        <DropdownMenuContent align="end" className="min-w-72">
+          {opp.archivedAt ? (
+            <DropdownMenuItem
+              onSelect={() => restore.mutate({ id: opp.id })}
+              disabled={restore.isPending}
+            >
+              Restore {recordLabel.toLowerCase()}
+            </DropdownMenuItem>
+          ) : (
             <>
-              {/*
-                Payments are minted from money evidence in the reconciliation
-                workbench — never typed in here. The old "won gift (awaiting
-                imminent payment)" mint actions silently asserted the
-                off-books exception and generated duplicate payment records;
-                they are gone. The only manual path left is the explicit
-                off-books exception (money that never hits our bank), finance
-                only, behind a confirmation dialog. Blocked rows are labeled,
-                never hidden (user rule); the API enforces the same guard with
-                manual_gift_on_pledge_blocked / finance 403.
-              */}
-              <DropdownMenuItem
-                onSelect={() => navigate("/reconciliation/deposits")}
-                data-testid="action-record-payment-workbench"
-              >
-                Record payment (via reconciliation workbench)
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!viewerIsFinance || mintGift.isPending}
-                onSelect={() => setOffBooksConfirmOpen(true)}
-                data-testid="action-record-off-books-gift"
-              >
-                Record off-books gift
-                {!viewerIsFinance
-                  ? " (finance role required — off-books exception)"
-                  : ""}
+              <DropdownMenuItem onSelect={() => setEditingName(true)}>
+                Edit name
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              {/*
-                Loss-type override (the only user-settable lifecycle input).
-                The derived status badge in the header reflects the result.
-              */}
-              <DropdownMenuItem
-                onSelect={() =>
-                  saveLossType(opp.lossType === "dormant" ? null : "dormant")
-                }
-                data-testid="action-toggle-dormant"
-              >
-                {opp.lossType === "dormant"
-                  ? "Unmark as dormant"
-                  : "Mark as dormant"}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() =>
-                  saveLossType(opp.lossType === "lost" ? null : "lost")
-                }
-                data-testid="action-toggle-lost"
-              >
-                {opp.lossType === "lost" ? "Unmark as lost" : "Mark as lost"}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              {/*
-                Close-award / reopen-award (cost-reimbursement only). The
-                second user-set lifecycle input alongside lossType. Blocked
-                rows are labeled, never hidden (user rule): non-finance
-                viewers see the item disabled with the reason.
-              */}
-              {opp.disbursementModel === "cost_reimbursement" ? (
+
+              {!isPledge && !opp.isWriteOff ? (
                 <>
-                  {opp.awardClosedAt ? (
+                  <DropdownMenuItem
+                    onSelect={() => setCommitmentPathOpen("gift")}
+                  >
+                    {opp.commitmentPath === "gift"
+                      ? "Edit verbal gift commitment…"
+                      : "Record verbal commitment to make a gift…"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setCommitmentPathOpen("written_pledge")}
+                  >
+                    {opp.commitmentPath === "written_pledge"
+                      ? "Edit written-pledge commitment…"
+                      : "Record verbal commitment to make a written pledge…"}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => setCommitmentPathOpen("verbal_pledge")}
+                  >
+                    {opp.commitmentPath === "verbal_pledge"
+                      ? "Edit informal verbal pledge setup…"
+                      : "Set up informal verbal pledge…"}
+                  </DropdownMenuItem>
+                  {opp.commitmentPath === "gift" ? (
                     <DropdownMenuItem
-                      disabled={!viewerIsFinance || reopenAward.isPending}
-                      onSelect={() => reopenAward.mutate({ id: opp.id })}
-                      data-testid="action-reopen-award"
+                      onSelect={() => setPaymentPickerOpen(true)}
+                      disabled={!paymentDonor}
                     >
-                      Reopen award
-                      {!viewerIsFinance ? " (finance role required)" : ""}
+                      Record received gift…
+                    </DropdownMenuItem>
+                  ) : null}
+                  {opp.commitmentPath === "written_pledge" ||
+                  opp.commitmentPath === "verbal_pledge" ? (
+                    <DropdownMenuItem onSelect={() => setFinalizeOpen(true)}>
+                      Finalize pledge…
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  {opp.lossType ? (
+                    <DropdownMenuItem onSelect={() => void reopenOpportunity()}>
+                      Reopen opportunity
                     </DropdownMenuItem>
                   ) : (
-                    <DropdownMenuItem
-                      disabled={!viewerIsFinance}
-                      onSelect={() => setCloseAwardOpen(true)}
-                      data-testid="action-close-award"
-                    >
-                      Close award
-                      {!viewerIsFinance ? " (finance role required)" : ""}
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onSelect={() => startClose("dormant")}>
+                        Mark dormant…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => startClose("lost")}>
+                        Mark lost…
+                      </DropdownMenuItem>
+                    </>
                   )}
-                  <DropdownMenuSeparator />
                 </>
               ) : null}
+
+              {isPledge && !opp.isWriteOff ? (
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => setPaymentPickerOpen(true)}
+                    disabled={!paymentDonor}
+                  >
+                    {opp.disbursementModel === "cost_reimbursement"
+                      ? "Link reimbursement payment…"
+                      : "Link payment…"}
+                  </DropdownMenuItem>
+                  {opp.disbursementModel === "cost_reimbursement" ? (
+                    opp.awardClosedAt ? (
+                      <DropdownMenuItem
+                        disabled={!viewerIsFinance || reopenAward.isPending}
+                        onSelect={() => reopenAward.mutate({ id: opp.id })}
+                      >
+                        Reopen award
+                        {!viewerIsFinance ? " (finance role required)" : ""}
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        disabled={!viewerIsFinance}
+                        onSelect={() => setCloseAwardOpen(true)}
+                      >
+                        Close award…
+                        {!viewerIsFinance ? " (finance role required)" : ""}
+                      </DropdownMenuItem>
+                    )
+                  ) : null}
+                  {opp.auditClose.frozen &&
+                  Number(opp.auditClose.uncollectedRemainder) > 0 &&
+                  !opp.auditClose.resolvedByWriteOffPledgeId ? (
+                    <DropdownMenuItem onSelect={() => setWriteOffOpen(true)}>
+                      Write off remainder…
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={!basicConvertEligible || !viewerIsAdmin}
+                    onSelect={() => setConvertToGiftOpen(true)}
+                  >
+                    Convert pledge and payment to stand-alone gift…
+                    {convertDisabledReason ? ` (${convertDisabledReason})` : ""}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!canRevertPledge}
+                    onSelect={() => setRevertVerbalGiftOpen(true)}
+                  >
+                    Revert to verbal gift commitment…
+                    {!viewerIsAdmin
+                      ? " (admin role required)"
+                      : linkedPayments.length > 0
+                        ? " (remove or convert payments first)"
+                        : ""}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={!canRevertPledge}
+                    onSelect={() => setRevertOpportunityOpen(true)}
+                  >
+                    Revert to general opportunity…
+                    {!viewerIsAdmin
+                      ? " (admin role required)"
+                      : linkedPayments.length > 0
+                        ? " (remove or convert payments first)"
+                        : ""}
+                  </DropdownMenuItem>
+                </>
+              ) : null}
+
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => setFlagResearchOpen(true)}
+                data-testid="action-flag-research-opp"
+              >
+                Flag for research
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                disabled={!viewerIsAdmin}
+                onSelect={() =>
+                  navigate(
+                    `/audit-log?entityType=opportunity&entityId=${opp.id}`,
+                  )
+                }
+              >
+                View change history
+                {!viewerIsAdmin ? " (admin role required)" : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => setArchiveOpen(true)}
+                data-testid="action-archive-opp"
+              >
+                Archive {recordLabel.toLowerCase()}
+              </DropdownMenuItem>
             </>
-          ) : null}
-          <DropdownMenuItem
-            onSelect={() => setFlagResearchOpen(true)}
-            data-testid="action-flag-research-opp"
-          >
-            Flag for research
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => setArchiveOpen(true)}
-            data-testid="action-archive-opp"
-          >
-            Archive
-          </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
+
+      {paymentDonor ? (
+        <PaymentEvidencePickerDialog
+          open={paymentPickerOpen}
+          onOpenChange={setPaymentPickerOpen}
+          donor={paymentDonor}
+          action={{
+            kind: "create-from-opportunity",
+            opportunityId: opp.id,
+            recordKind: isPledge ? "pledge" : "opportunity",
+          }}
+          expectedAmount={
+            isPledge
+              ? String(
+                  Math.max(
+                    0,
+                    Number(opp.awardedAmount ?? 0) -
+                      Number(opp.paidAmount ?? 0),
+                  ),
+                )
+              : (opp.awardedAmount ?? opp.askAmount)
+          }
+          onComplete={(giftId) => navigate(`/gifts/${giftId}`)}
+        />
+      ) : null}
+      <VerbalCommitmentDialog
+        opp={opp}
+        path={commitmentPathOpen ?? "gift"}
+        open={commitmentPathOpen !== null}
+        onOpenChange={(open) => {
+          if (!open) setCommitmentPathOpen(null);
+        }}
+      />
+      <FinalizePledgeDialog
+        opp={opp}
+        open={finalizeOpen}
+        onOpenChange={setFinalizeOpen}
+        onFinalized={() => navigate(`/pledges/${opp.id}`)}
+      />
+      <ConvertPledgeToGiftDialog
+        pledgeId={opp.id}
+        open={convertToGiftOpen}
+        onOpenChange={setConvertToGiftOpen}
+        onConverted={(giftId) => navigate(`/gifts/${giftId}`)}
+      />
+      <RevertPledgeToVerbalGiftDialog
+        pledgeId={opp.id}
+        open={revertVerbalGiftOpen}
+        onOpenChange={setRevertVerbalGiftOpen}
+        initialCommitmentDate={opp.verbalCommitmentAt ?? opp.pledgeCommittedAt}
+        initialExpectedDate={opp.projectedCloseDate}
+        onReverted={() => navigate(`/opportunities/${opp.id}`)}
+      />
+      <RevertPledgeToOpportunityDialog
+        pledgeId={opp.id}
+        open={revertOpportunityOpen}
+        onOpenChange={setRevertOpportunityOpen}
+        initialStage={opp.stage}
+        initialProjectedCloseDate={opp.projectedCloseDate}
+        onReverted={() => navigate(`/opportunities/${opp.id}`)}
+      />
       <CloseAwardDialog
         opp={opp}
         open={closeAwardOpen}
         onOpenChange={setCloseAwardOpen}
       />
       <FlagForResearchDialog
-        targetType={
-          entityLabel.toLowerCase() === "pledge" ? "pledge" : "opportunity"
-        }
+        targetType={isPledge ? "pledge" : "opportunity"}
         targetId={opp.id}
-        recordLabel={opp.name ?? `this ${entityLabel.toLowerCase()}`}
+        recordLabel={opp.name ?? `this ${recordLabel.toLowerCase()}`}
         open={flagResearchOpen}
         onOpenChange={setFlagResearchOpen}
         hideTrigger
       />
       <ConfirmDeleteDialog
-        title={`Archive this ${entityLabel.toLowerCase()}?`}
-        description="It will be hidden from lists. An admin can restore it from the archived view."
+        title={`Archive this ${recordLabel.toLowerCase()}?`}
+        description="Archive is for duplicate, test, or invalid records—not a fundraising outcome. The record will be hidden from default lists and can be restored by an admin."
         confirmLabel="Archive"
-        triggerLabel="Archive"
         busyLabel="Archiving…"
         destructive={false}
         onConfirm={() => archive.mutateAsync({ id: opp.id })}
@@ -639,78 +859,57 @@ function OppView({
         onOpenChange={setArchiveOpen}
         confirmTestId="button-confirm-archive-opp"
       />
-      {/*
-        Off-books gift confirmation: the only remaining manual gift-creation
-        path on a pledge. Requires an explicit assertion that this money will
-        never appear in our bank/QuickBooks — real payments are recorded in
-        the reconciliation workbench when the money arrives.
-      */}
-      <AlertDialog
-        open={offBooksConfirmOpen}
-        onOpenChange={setOffBooksConfirmOpen}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Record an off-books gift?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Only use this for money that will never hit our bank account or
-              QuickBooks (for example, a donor paying a vendor directly). If
-              actual money is arriving, do not record it here — it will be
-              recorded from the bank deposit in the reconciliation workbench,
-              and recording it manually creates duplicate payment records.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-off-books-gift">
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction
-              disabled={mintGift.isPending}
-              onClick={() =>
-                mintGift.mutate({
-                  id: opp.id,
-                  data: { offBooksException: true },
-                })
-              }
-              data-testid="button-confirm-off-books-gift"
-            >
-              {mintGift.isPending ? "Recording…" : "Record off-books gift"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      {/*
-        Close-date prompt: newly marking a row dormant/lost requires an
-        actualCompletionDate (API rejects the close transition without one).
-        Defaults to today but stays editable — no more silent defaulting.
-      */}
       <Dialog
         open={closingLossType !== null}
         onOpenChange={(open) => {
           if (!open) setClosingLossType(null);
         }}
       >
-        <DialogContent className="sm:max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
-              Mark as {closingLossType === "dormant" ? "dormant" : "lost"}?
+              Mark opportunity as{" "}
+              {closingLossType === "dormant" ? "dormant" : "lost"}?
             </DialogTitle>
             <DialogDescription>
-              Closing this {entityLabel.toLowerCase()} requires an actual
-              completion date.
+              Dormant pauses the opportunity. Lost closes it because the ask was
+              declined, withdrawn, or otherwise unsuccessful.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-1.5">
-            <label htmlFor="close-date-input" className="text-sm font-medium">
-              Actual completion date
-            </label>
-            <Input
-              id="close-date-input"
-              type="date"
-              value={closeDateValue}
-              onChange={(e) => setCloseDateValue(e.target.value)}
-              data-testid="input-close-date"
-            />
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="close-date-input" className="text-sm font-medium">
+                Actual completion date
+              </label>
+              <Input
+                id="close-date-input"
+                type="date"
+                value={closeDateValue}
+                onChange={(event) => setCloseDateValue(event.target.value)}
+                data-testid="input-close-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label
+                htmlFor="close-reason-input"
+                className="text-sm font-medium"
+              >
+                {closingLossType === "lost"
+                  ? "Loss reason"
+                  : "Explanation (optional)"}
+              </label>
+              <Input
+                id="close-reason-input"
+                value={closeReasonValue}
+                onChange={(event) => setCloseReasonValue(event.target.value)}
+                placeholder={
+                  closingLossType === "lost"
+                    ? "Why was the opportunity lost?"
+                    : "Why is the opportunity being paused?"
+                }
+                data-testid="input-close-reason"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -721,12 +920,17 @@ function OppView({
               Cancel
             </Button>
             <Button
-              disabled={!closeDateValue || update.isPending}
+              disabled={
+                !closeDateValue ||
+                (closingLossType === "lost" && !closeReasonValue.trim()) ||
+                update.isPending
+              }
               onClick={async () => {
                 if (!closingLossType || !closeDateValue) return;
                 await patch({
                   lossType: closingLossType,
                   actualCompletionDate: closeDateValue,
+                  lossReason: closeReasonValue.trim() || null,
                 });
                 setClosingLossType(null);
               }}
@@ -735,34 +939,14 @@ function OppView({
               {update.isPending
                 ? "Saving…"
                 : closingLossType === "dormant"
-                  ? "Mark as dormant"
-                  : "Mark as lost"}
+                  ? "Mark dormant"
+                  : "Mark lost"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </>
   );
-
-  // `status` is fully calculated server-side; the only thing the user can
-  // set is the lossType override (dormant/lost). Newly closing a row (the
-  // API rejects a close transition without a completion date) prompts for
-  // the actual completion date — defaulted to today, but visible and
-  // editable so the user confirms rather than getting a silent default.
-  // Rows that already carry a date (or are being re-closed) skip the prompt.
-  const saveLossType = (next: OpportunityLossType | null) => {
-    // Prompt only on a true close TRANSITION (mirrors the API rule):
-    // already-closed rows — lossType set, or legacy stage 'complete' —
-    // and rows that already carry a date save directly.
-    const alreadyClosed = !!opp.lossType || opp.stage === "complete";
-    if (next && !opp.actualCompletionDate && !alreadyClosed) {
-      setCloseDateValue(new Date().toISOString().slice(0, 10));
-      setClosingLossType(next);
-      return Promise.resolve();
-    }
-    const body: UpdateOpportunityOrPledgeBody = { lossType: next };
-    return patch(body);
-  };
 
   const statusBadge = (status: OpportunityStatus | null) =>
     status ? (
@@ -918,29 +1102,32 @@ function OppView({
     </>
   );
 
-  // The donor lives in the header subtitle (no separate Donor card): plain
-  // link + hover pencil that opens the donor editor in place.
-  const subtitle = (
-    <InlineEditDonor
-      testIdBase="opp-donor"
-      align="left"
-      value={{
-        organizationId: opp.organizationId ?? null,
-        individualGiverPersonId: opp.individualGiverPersonId ?? null,
-        householdId: opp.householdId ?? null,
-      }}
-      display={donorDisplay}
-      onSave={saveDonor}
-    />
-  );
+  // Once money is linked, changing the donor also changes the meaning of the
+  // payment. Keep it read-only and require an explicit correction workflow.
+  const subtitle =
+    linkedPayments.length > 0 ? (
+      donorDisplay
+    ) : (
+      <InlineEditDonor
+        testIdBase="opp-donor"
+        align="left"
+        value={{
+          organizationId: opp.organizationId ?? null,
+          individualGiverPersonId: opp.individualGiverPersonId ?? null,
+          householdId: opp.householdId ?? null,
+        }}
+        display={donorDisplay}
+        onSave={saveDonor}
+      />
+    );
 
   return (
     <>
       <RecordLayout
-        backHref={backHref}
-        backLabel={backLabel.replace(/^←\s*/, "")}
+        backHref={recordBackHref}
+        backLabel={recordBackLabel}
         title={title}
-        typeBadge={entityLabel}
+        typeBadge={recordLabel}
         headerBadges={headerBadges}
         subtitle={subtitle}
         actions={actions}
@@ -950,10 +1137,9 @@ function OppView({
             <FieldCard
               title="Pipeline"
               empty={
-                (entityLabel.toLowerCase() === "pledge" ||
-                  !opp.applicationDeadline) &&
+                (isPledge || !opp.applicationDeadline) &&
                 !opp.winProbability &&
-                !opp.writtenPledge &&
+                !isPledge &&
                 !opp.grantLetterUrl &&
                 !opp.writeOffOfPledgeId &&
                 !opp.auditClose.resolvedByWriteOffPledgeId
@@ -964,7 +1150,7 @@ function OppView({
                   Application deadline is a pre-award field; on a pledge the
                   award is already committed, so the row is hidden there.
                 */}
-                {entityLabel.toLowerCase() !== "pledge" ? (
+                {!isPledge ? (
                   <Row label="Application deadline">
                     <InlineEditDate
                       label="Application deadline"
@@ -1243,10 +1429,7 @@ function OppView({
         }
         right={
           <>
-            <CommitmentLifecycleCard
-              opp={opp}
-              onPledgeFinalized={() => setReportingDialogOpen(true)}
-            />
+            <CommitmentLifecycleCard opp={opp} />
             <RelatedCard
               title="People"
               count={associatedPeople.length || undefined}

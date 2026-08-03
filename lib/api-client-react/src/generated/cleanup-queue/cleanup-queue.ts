@@ -50,7 +50,7 @@ export const getListCleanupQueueUrl = (params?: ListCleanupQueueParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -62,16 +62,16 @@ export const getListCleanupQueueUrl = (params?: ListCleanupQueueParams,) => {
 }
 
 export const listCleanupQueue = async (params?: ListCleanupQueueParams, options?: RequestInit): Promise<CleanupItemList> => {
-  
+
   return customFetch<CleanupItemList>(getListCleanupQueueUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -82,7 +82,7 @@ export const getListCleanupQueueQueryKey = (params?: ListCleanupQueueParams,) =>
     ] as const;
     }
 
-    
+
 export const getListCleanupQueueQueryOptions = <TData = Awaited<ReturnType<typeof listCleanupQueue>>, TError = ErrorType<unknown>>(params?: ListCleanupQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCleanupQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -90,13 +90,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListCleanupQueueQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listCleanupQueue>>> = ({ signal }) => listCleanupQueue(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCleanupQueue>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -111,7 +111,7 @@ export type ListCleanupQueueQueryError = ErrorType<unknown>
 
 export function useListCleanupQueue<TData = Awaited<ReturnType<typeof listCleanupQueue>>, TError = ErrorType<unknown>>(
  params?: ListCleanupQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCleanupQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCleanupQueueQueryOptions(params,options)
@@ -130,15 +130,15 @@ export function useListCleanupQueue<TData = Awaited<ReturnType<typeof listCleanu
 export const getFlagForResearchUrl = () => {
 
 
-  
+
 
   return `/api/cleanup-queue`
 }
 
 export const flagForResearch = async (flagForResearchBody: FlagForResearchBody, options?: RequestInit): Promise<CleanupItem> => {
-  
+
   return customFetch<CleanupItem>(getFlagForResearchUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -146,7 +146,7 @@ export const flagForResearch = async (flagForResearchBody: FlagForResearchBody, 
       flagForResearchBody,)
   }
 );}
-  
+
 
 
 
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof flagForResearch>>, {data: BodyType<FlagForResearchBody>}> = (props) => {
@@ -172,7 +172,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -200,22 +200,22 @@ export const useFlagForResearch = <TError = ErrorType<BadRequestResponse>,
 export const getApplyHighConfidenceCleanupProposalsUrl = () => {
 
 
-  
+
 
   return `/api/cleanup-queue/apply-high-confidence`
 }
 
 export const applyHighConfidenceCleanupProposals = async ( options?: RequestInit): Promise<ApplyHighConfidenceCleanupProposalsResult> => {
-  
+
   return customFetch<ApplyHighConfidenceCleanupProposalsResult>(getApplyHighConfidenceCleanupProposalsUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -230,24 +230,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>, void> = () => {
-          
+
 
           return  applyHighConfidenceCleanupProposals(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ApplyHighConfidenceCleanupProposalsMutationResult = NonNullable<Awaited<ReturnType<typeof applyHighConfidenceCleanupProposals>>>
-    
+
     export type ApplyHighConfidenceCleanupProposalsMutationError = ErrorType<ForbiddenResponse>
 
     /**
@@ -269,22 +269,22 @@ export const useApplyHighConfidenceCleanupProposals = <TError = ErrorType<Forbid
 export const getApplyCleanupProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/cleanup-queue/${id}/apply-proposal`
 }
 
 export const applyCleanupProposal = async (id: string, options?: RequestInit): Promise<CleanupItem> => {
-  
+
   return customFetch<CleanupItem>(getApplyCleanupProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -299,7 +299,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyCleanupProposal>>, {id: string}> = (props) => {
@@ -310,13 +310,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ApplyCleanupProposalMutationResult = NonNullable<Awaited<ReturnType<typeof applyCleanupProposal>>>
-    
+
     export type ApplyCleanupProposalMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
 
     /**
@@ -338,16 +338,16 @@ export const useApplyCleanupProposal = <TError = ErrorType<ForbiddenResponse | N
 export const getUpdateCleanupItemUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/cleanup-queue/${id}`
 }
 
 export const updateCleanupItem = async (id: string,
     updateCleanupItemBody: UpdateCleanupItemBody, options?: RequestInit): Promise<CleanupItem> => {
-  
+
   return customFetch<CleanupItem>(getUpdateCleanupItemUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -355,7 +355,7 @@ export const updateCleanupItem = async (id: string,
       updateCleanupItemBody,)
   }
 );}
-  
+
 
 
 
@@ -370,7 +370,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCleanupItem>>, {id: string;data: BodyType<UpdateCleanupItemBody>}> = (props) => {
@@ -381,7 +381,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -409,22 +409,22 @@ export const useUpdateCleanupItem = <TError = ErrorType<BadRequestResponse | Not
 export const getResolveCleanupItemUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/cleanup-queue/${id}/resolve`
 }
 
 export const resolveCleanupItem = async (id: string, options?: RequestInit): Promise<CleanupItem> => {
-  
+
   return customFetch<CleanupItem>(getResolveCleanupItemUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -439,7 +439,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveCleanupItem>>, {id: string}> = (props) => {
@@ -450,13 +450,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ResolveCleanupItemMutationResult = NonNullable<Awaited<ReturnType<typeof resolveCleanupItem>>>
-    
+
     export type ResolveCleanupItemMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -478,22 +478,22 @@ export const useResolveCleanupItem = <TError = ErrorType<NotFoundResponse | void
 export const getDismissCleanupItemUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/cleanup-queue/${id}/dismiss`
 }
 
 export const dismissCleanupItem = async (id: string, options?: RequestInit): Promise<CleanupItem> => {
-  
+
   return customFetch<CleanupItem>(getDismissCleanupItemUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -508,7 +508,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissCleanupItem>>, {id: string}> = (props) => {
@@ -519,13 +519,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DismissCleanupItemMutationResult = NonNullable<Awaited<ReturnType<typeof dismissCleanupItem>>>
-    
+
     export type DismissCleanupItemMutationError = ErrorType<NotFoundResponse | void>
 
     /**
@@ -541,4 +541,3 @@ export const useDismissCleanupItem = <TError = ErrorType<NotFoundResponse | void
       > => {
       return useMutation(getDismissCleanupItemMutationOptions(options));
     }
-    

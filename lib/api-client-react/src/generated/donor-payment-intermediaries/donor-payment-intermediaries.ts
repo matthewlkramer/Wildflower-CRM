@@ -43,7 +43,7 @@ export const getListDonorPaymentIntermediariesUrl = (params?: ListDonorPaymentIn
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -55,16 +55,16 @@ export const getListDonorPaymentIntermediariesUrl = (params?: ListDonorPaymentIn
 }
 
 export const listDonorPaymentIntermediaries = async (params?: ListDonorPaymentIntermediariesParams, options?: RequestInit): Promise<DonorPaymentIntermediaryList> => {
-  
+
   return customFetch<DonorPaymentIntermediaryList>(getListDonorPaymentIntermediariesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -75,7 +75,7 @@ export const getListDonorPaymentIntermediariesQueryKey = (params?: ListDonorPaym
     ] as const;
     }
 
-    
+
 export const getListDonorPaymentIntermediariesQueryOptions = <TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError = ErrorType<BadRequestResponse>>(params?: ListDonorPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -83,13 +83,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListDonorPaymentIntermediariesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>> = ({ signal }) => listDonorPaymentIntermediaries(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -101,7 +101,7 @@ export type ListDonorPaymentIntermediariesQueryError = ErrorType<BadRequestRespo
 
 export function useListDonorPaymentIntermediaries<TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListDonorPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListDonorPaymentIntermediariesQueryOptions(params,options)
@@ -117,15 +117,15 @@ export function useListDonorPaymentIntermediaries<TData = Awaited<ReturnType<typ
 export const getCreateDonorPaymentIntermediaryUrl = () => {
 
 
-  
+
 
   return `/api/donor-payment-intermediaries`
 }
 
 export const createDonorPaymentIntermediary = async (createDonorPaymentIntermediaryBody: CreateDonorPaymentIntermediaryBody, options?: RequestInit): Promise<DonorPaymentIntermediary> => {
-  
+
   return customFetch<DonorPaymentIntermediary>(getCreateDonorPaymentIntermediaryUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -133,7 +133,7 @@ export const createDonorPaymentIntermediary = async (createDonorPaymentIntermedi
       createDonorPaymentIntermediaryBody,)
   }
 );}
-  
+
 
 
 
@@ -148,7 +148,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDonorPaymentIntermediary>>, {data: BodyType<CreateDonorPaymentIntermediaryBody>}> = (props) => {
@@ -159,7 +159,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -181,22 +181,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteDonorPaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/donor-payment-intermediaries/${id}`
 }
 
 export const deleteDonorPaymentIntermediary = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteDonorPaymentIntermediaryUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -211,7 +211,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>, {id: string}> = (props) => {
@@ -222,13 +222,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteDonorPaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>>
-    
+
     export type DeleteDonorPaymentIntermediaryMutationError = ErrorType<unknown>
 
     export const useDeleteDonorPaymentIntermediary = <TError = ErrorType<unknown>,
@@ -241,4 +241,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteDonorPaymentIntermediaryMutationOptions(options));
     }
-    

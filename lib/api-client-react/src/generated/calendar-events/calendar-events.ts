@@ -44,7 +44,7 @@ export const getListCalendarEventsUrl = (params?: ListCalendarEventsParams,) => 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -56,16 +56,16 @@ export const getListCalendarEventsUrl = (params?: ListCalendarEventsParams,) => 
 }
 
 export const listCalendarEvents = async (params?: ListCalendarEventsParams, options?: RequestInit): Promise<CalendarEventList> => {
-  
+
   return customFetch<CalendarEventList>(getListCalendarEventsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -76,7 +76,7 @@ export const getListCalendarEventsQueryKey = (params?: ListCalendarEventsParams,
     ] as const;
     }
 
-    
+
 export const getListCalendarEventsQueryOptions = <TData = Awaited<ReturnType<typeof listCalendarEvents>>, TError = ErrorType<unknown>>(params?: ListCalendarEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCalendarEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -84,13 +84,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListCalendarEventsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listCalendarEvents>>> = ({ signal }) => listCalendarEvents(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCalendarEvents>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -102,7 +102,7 @@ export type ListCalendarEventsQueryError = ErrorType<unknown>
 
 export function useListCalendarEvents<TData = Awaited<ReturnType<typeof listCalendarEvents>>, TError = ErrorType<unknown>>(
  params?: ListCalendarEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCalendarEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCalendarEventsQueryOptions(params,options)
@@ -118,22 +118,22 @@ export function useListCalendarEvents<TData = Awaited<ReturnType<typeof listCale
 export const getGetCalendarEventUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/calendar-events/${id}`
 }
 
 export const getCalendarEvent = async (id: string, options?: RequestInit): Promise<CalendarEvent> => {
-  
+
   return customFetch<CalendarEvent>(getGetCalendarEventUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -144,7 +144,7 @@ export const getGetCalendarEventQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetCalendarEventQueryOptions = <TData = Awaited<ReturnType<typeof getCalendarEvent>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendarEvent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -152,13 +152,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetCalendarEventQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getCalendarEvent>>> = ({ signal }) => getCalendarEvent(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCalendarEvent>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -170,7 +170,7 @@ export type GetCalendarEventQueryError = ErrorType<NotFoundResponse>
 
 export function useGetCalendarEvent<TData = Awaited<ReturnType<typeof getCalendarEvent>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendarEvent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCalendarEventQueryOptions(id,options)
@@ -186,16 +186,16 @@ export function useGetCalendarEvent<TData = Awaited<ReturnType<typeof getCalenda
 export const getUpdateCalendarEventPrivacyUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/calendar-events/${id}/privacy`
 }
 
 export const updateCalendarEventPrivacy = async (id: string,
     updateCalendarEventPrivacyBody: UpdateCalendarEventPrivacyBody, options?: RequestInit): Promise<CalendarEvent> => {
-  
+
   return customFetch<CalendarEvent>(getUpdateCalendarEventPrivacyUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -203,7 +203,7 @@ export const updateCalendarEventPrivacy = async (id: string,
       updateCalendarEventPrivacyBody,)
   }
 );}
-  
+
 
 
 
@@ -218,7 +218,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendarEventPrivacy>>, {id: string;data: BodyType<UpdateCalendarEventPrivacyBody>}> = (props) => {
@@ -229,7 +229,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,4 +248,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateCalendarEventPrivacyMutationOptions(options));
     }
-    

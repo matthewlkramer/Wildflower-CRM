@@ -1,2 +1,0 @@
-Apply the reviewed detail-action overlay and run the full validation workflow.
-Synchronize trigger 2026-08-03T16:49:00Z.

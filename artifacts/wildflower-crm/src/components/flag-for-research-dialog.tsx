@@ -22,8 +22,11 @@ const CLEANUP_KEY_PREFIX = "/api/cleanup-queue";
 // Map a flag target type to the API key prefix of the record's detail query, so
 // flagging refreshes the passive "Needs research" badge on that detail page.
 // `staged_payment` has no such badge, so it is intentionally omitted.
-const DETAIL_KEY_PREFIX: Partial<Record<FlagForResearchBodyTargetType, string>> = {
+const DETAIL_KEY_PREFIX: Partial<
+  Record<FlagForResearchBodyTargetType, string>
+> = {
   organization: "/api/organizations",
+  household: "/api/households",
   person: "/api/people",
   opportunity: "/api/opportunities-and-pledges",
   pledge: "/api/opportunities-and-pledges",
@@ -186,8 +189,10 @@ export function BulkFlagForResearchDialog({
 
   const uniqueTargets = useMemo(() => {
     const seen = new Set<string>();
-    const out: { targetType: FlagForResearchBodyTargetType; targetId: string }[] =
-      [];
+    const out: {
+      targetType: FlagForResearchBodyTargetType;
+      targetId: string;
+    }[] = [];
     for (const t of targets) {
       const key = `${t.targetType}:${t.targetId}`;
       if (seen.has(key)) continue;
@@ -245,9 +250,8 @@ export function BulkFlagForResearchDialog({
             {uniqueTargets.length === 1 ? "record" : "records"} for research
           </DialogTitle>
           <DialogDescription>
-            Add the selected{" "}
-            {uniqueTargets.length === 1 ? "record" : "records"} to the Cleanup
-            Queue so the team can research and follow up.
+            Add the selected {uniqueTargets.length === 1 ? "record" : "records"}{" "}
+            to the Cleanup Queue so the team can research and follow up.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
@@ -271,12 +275,12 @@ export function BulkFlagForResearchDialog({
           </Button>
           <Button
             onClick={submit}
-            disabled={busy || note.trim().length === 0 || uniqueTargets.length === 0}
+            disabled={
+              busy || note.trim().length === 0 || uniqueTargets.length === 0
+            }
             data-testid="button-confirm-bulk-flag-research"
           >
-            {busy
-              ? "Flagging…"
-              : `Flag ${uniqueTargets.length} for research`}
+            {busy ? "Flagging…" : `Flag ${uniqueTargets.length} for research`}
           </Button>
         </DialogFooter>
       </DialogContent>

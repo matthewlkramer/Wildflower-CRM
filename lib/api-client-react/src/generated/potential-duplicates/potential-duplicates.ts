@@ -46,7 +46,7 @@ export const getListPotentialDuplicatesUrl = (params: ListPotentialDuplicatesPar
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -58,16 +58,16 @@ export const getListPotentialDuplicatesUrl = (params: ListPotentialDuplicatesPar
 }
 
 export const listPotentialDuplicates = async (params: ListPotentialDuplicatesParams, options?: RequestInit): Promise<DuplicatePairList> => {
-  
+
   return customFetch<DuplicatePairList>(getListPotentialDuplicatesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -78,7 +78,7 @@ export const getListPotentialDuplicatesQueryKey = (params?: ListPotentialDuplica
     ] as const;
     }
 
-    
+
 export const getListPotentialDuplicatesQueryOptions = <TData = Awaited<ReturnType<typeof listPotentialDuplicates>>, TError = ErrorType<ForbiddenResponse>>(params: ListPotentialDuplicatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPotentialDuplicates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -86,13 +86,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPotentialDuplicatesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPotentialDuplicates>>> = ({ signal }) => listPotentialDuplicates(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPotentialDuplicates>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -107,7 +107,7 @@ export type ListPotentialDuplicatesQueryError = ErrorType<ForbiddenResponse>
 
 export function useListPotentialDuplicates<TData = Awaited<ReturnType<typeof listPotentialDuplicates>>, TError = ErrorType<ForbiddenResponse>>(
  params: ListPotentialDuplicatesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPotentialDuplicates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPotentialDuplicatesQueryOptions(params,options)
@@ -126,15 +126,15 @@ export function useListPotentialDuplicates<TData = Awaited<ReturnType<typeof lis
 export const getDismissPotentialDuplicateUrl = () => {
 
 
-  
+
 
   return `/api/potential-duplicates/dismiss`
 }
 
 export const dismissPotentialDuplicate = async (dismissDuplicateBody: DismissDuplicateBody, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDismissPotentialDuplicateUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -142,7 +142,7 @@ export const dismissPotentialDuplicate = async (dismissDuplicateBody: DismissDup
       dismissDuplicateBody,)
   }
 );}
-  
+
 
 
 
@@ -157,7 +157,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissPotentialDuplicate>>, {data: BodyType<DismissDuplicateBody>}> = (props) => {
@@ -168,7 +168,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -190,4 +190,3 @@ export const useDismissPotentialDuplicate = <TError = ErrorType<BadRequestRespon
       > => {
       return useMutation(getDismissPotentialDuplicateMutationOptions(options));
     }
-    

@@ -7,19 +7,17 @@ import {
   entities,
 } from "@workspace/db/schema";
 import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
-import {
-  asyncHandler,
-  newId,
-  notFound,
-  paramId,
-} from "../../lib/helpers";
+import { asyncHandler, newId, notFound, paramId } from "../../lib/helpers";
 import {
   seedInitialGiftAllocation,
   assertGiftHasAllocations,
 } from "../../lib/giftAllocationSeed";
 import { isGovernmentReimbursement } from "../../lib/quickbooksExclusionRules";
 import { getAppUser } from "../../lib/appRequest";
-import { validateGiftInvariants, type InvariantIssue } from "@workspace/api-zod";
+import {
+  validateGiftInvariants,
+  type InvariantIssue,
+} from "@workspace/api-zod";
 import {
   ResolveStagedPaymentBody,
   ExcludeStagedPaymentBody,
@@ -73,7 +71,11 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select({ status: stagedStatusSql.as("status") })
+      .select({
+        status: stagedStatusSql.as("status"),
+        matchedPaymentIntermediaryId:
+          stagedPayments.matchedPaymentIntermediaryId,
+      })
       .from(stagedPayments)
       .where(eq(stagedPayments.id, id))
       .then((r) => r[0]);
@@ -100,7 +102,10 @@ router.post(
         ...donor,
         matchStatus: "matched",
         matchMethod: "manual",
-        matchedPaymentIntermediaryId: body.paymentIntermediaryId ?? null,
+        matchedPaymentIntermediaryId:
+          body.paymentIntermediaryId === undefined
+            ? existing.matchedPaymentIntermediaryId
+            : body.paymentIntermediaryId,
         matchConfirmedByUserId: user.id,
         matchConfirmedAt: new Date(),
         updatedAt: new Date(),
@@ -200,7 +205,8 @@ router.post(
           .where(eq(stagedPayments.id, id))
           .for("update")
           .then((r) => r[0]);
-        if (!locked || locked.status !== "pending") throw new Error(NOT_PENDING);
+        if (!locked || locked.status !== "pending")
+          throw new Error(NOT_PENDING);
         const donor = {
           organizationId: locked.organizationId,
           individualGiverPersonId: locked.individualGiverPersonId,
@@ -353,7 +359,8 @@ router.post(
     if (!row) {
       res.status(409).json({
         error: "not_excluded",
-        message: "This staged payment is no longer excluded. Refresh and retry.",
+        message:
+          "This staged payment is no longer excluded. Refresh and retry.",
       });
       return;
     }
@@ -414,10 +421,7 @@ router.post(
         updatedAt: new Date(),
       })
       .where(
-        and(
-          eq(stagedPayments.id, id),
-          stagedStatusIn(["pending", "excluded"]),
-        ),
+        and(eq(stagedPayments.id, id), stagedStatusIn(["pending", "excluded"])),
       )
       .returning(stagedReturnColumns);
     if (!row) {

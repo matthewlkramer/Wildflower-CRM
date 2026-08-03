@@ -47,7 +47,7 @@ export const getListMeetingNotesUrl = (params?: ListMeetingNotesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -59,16 +59,16 @@ export const getListMeetingNotesUrl = (params?: ListMeetingNotesParams,) => {
 }
 
 export const listMeetingNotes = async (params?: ListMeetingNotesParams, options?: RequestInit): Promise<MeetingNoteList> => {
-  
+
   return customFetch<MeetingNoteList>(getListMeetingNotesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -79,7 +79,7 @@ export const getListMeetingNotesQueryKey = (params?: ListMeetingNotesParams,) =>
     ] as const;
     }
 
-    
+
 export const getListMeetingNotesQueryOptions = <TData = Awaited<ReturnType<typeof listMeetingNotes>>, TError = ErrorType<unknown>>(params?: ListMeetingNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMeetingNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -87,13 +87,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListMeetingNotesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listMeetingNotes>>> = ({ signal }) => listMeetingNotes(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMeetingNotes>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -105,7 +105,7 @@ export type ListMeetingNotesQueryError = ErrorType<unknown>
 
 export function useListMeetingNotes<TData = Awaited<ReturnType<typeof listMeetingNotes>>, TError = ErrorType<unknown>>(
  params?: ListMeetingNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMeetingNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListMeetingNotesQueryOptions(params,options)
@@ -121,15 +121,15 @@ export function useListMeetingNotes<TData = Awaited<ReturnType<typeof listMeetin
 export const getCreateMeetingNoteUrl = () => {
 
 
-  
+
 
   return `/api/meeting-notes`
 }
 
 export const createMeetingNote = async (createMeetingNoteBody: CreateMeetingNoteBody, options?: RequestInit): Promise<MeetingNote> => {
-  
+
   return customFetch<MeetingNote>(getCreateMeetingNoteUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -137,7 +137,7 @@ export const createMeetingNote = async (createMeetingNoteBody: CreateMeetingNote
       createMeetingNoteBody,)
   }
 );}
-  
+
 
 
 
@@ -152,7 +152,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createMeetingNote>>, {data: BodyType<CreateMeetingNoteBody>}> = (props) => {
@@ -163,7 +163,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -185,22 +185,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetMeetingNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/meeting-notes/${id}`
 }
 
 export const getMeetingNote = async (id: string, options?: RequestInit): Promise<MeetingNote> => {
-  
+
   return customFetch<MeetingNote>(getGetMeetingNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -211,7 +211,7 @@ export const getGetMeetingNoteQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetMeetingNoteQueryOptions = <TData = Awaited<ReturnType<typeof getMeetingNote>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMeetingNote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -219,13 +219,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetMeetingNoteQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getMeetingNote>>> = ({ signal }) => getMeetingNote(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMeetingNote>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -237,7 +237,7 @@ export type GetMeetingNoteQueryError = ErrorType<NotFoundResponse>
 
 export function useGetMeetingNote<TData = Awaited<ReturnType<typeof getMeetingNote>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMeetingNote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMeetingNoteQueryOptions(id,options)
@@ -253,16 +253,16 @@ export function useGetMeetingNote<TData = Awaited<ReturnType<typeof getMeetingNo
 export const getUpdateMeetingNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/meeting-notes/${id}`
 }
 
 export const updateMeetingNote = async (id: string,
     updateMeetingNoteBody: UpdateMeetingNoteBody, options?: RequestInit): Promise<MeetingNote> => {
-  
+
   return customFetch<MeetingNote>(getUpdateMeetingNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -270,7 +270,7 @@ export const updateMeetingNote = async (id: string,
       updateMeetingNoteBody,)
   }
 );}
-  
+
 
 
 
@@ -285,7 +285,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMeetingNote>>, {id: string;data: BodyType<UpdateMeetingNoteBody>}> = (props) => {
@@ -296,7 +296,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -318,22 +318,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteMeetingNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/meeting-notes/${id}`
 }
 
 export const deleteMeetingNote = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteMeetingNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -348,7 +348,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteMeetingNote>>, {id: string}> = (props) => {
@@ -359,13 +359,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteMeetingNoteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteMeetingNote>>>
-    
+
     export type DeleteMeetingNoteMutationError = ErrorType<unknown>
 
     export const useDeleteMeetingNote = <TError = ErrorType<unknown>,
@@ -381,16 +381,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getPromoteMeetingActionItemUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/meeting-notes/${id}/promote-action-item`
 }
 
 export const promoteMeetingActionItem = async (id: string,
     promoteActionItemBody: PromoteActionItemBody, options?: RequestInit): Promise<Task> => {
-  
+
   return customFetch<Task>(getPromoteMeetingActionItemUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -398,7 +398,7 @@ export const promoteMeetingActionItem = async (id: string,
       promoteActionItemBody,)
   }
 );}
-  
+
 
 
 
@@ -413,7 +413,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof promoteMeetingActionItem>>, {id: string;data: BodyType<PromoteActionItemBody>}> = (props) => {
@@ -424,7 +424,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -443,4 +443,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getPromoteMeetingActionItemMutationOptions(options));
     }
-    

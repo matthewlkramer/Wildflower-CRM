@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import {
@@ -92,11 +92,23 @@ const EMPTY_FORM: FormState = {
 export function CreateOpportunityDialog({
   scope,
   mode,
+  trigger,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
 }: {
   scope?: LinkedRecordsScope;
   mode: "opportunity" | "pledge";
+  trigger?: ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setUncontrolledOpen(next);
+    controlledOnOpenChange?.(next);
+  };
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const initialDonor = scope ? donorFromScope(scope) : null;
   const [donorType, setDonorType] = useState<DonorType>(
@@ -198,28 +210,31 @@ export function CreateOpportunityDialog({
   // inline "Add" button; list-page headers use a "+" icon next to the title.
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
-      <DialogTrigger asChild>
-        {scope ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 px-2 text-xs"
-            data-testid={
-              isPledge ? "button-new-pledge" : "button-new-opportunity"
-            }
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Add
-          </Button>
-        ) : (
-          <AddIconButton
-            label={isPledge ? "New pledge" : "New opportunity"}
-            data-testid={
-              isPledge ? "button-new-pledge" : "button-new-opportunity"
-            }
-          />
-        )}
-      </DialogTrigger>
+      {isControlled && !trigger ? null : (
+        <DialogTrigger asChild>
+          {trigger ??
+            (scope ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                data-testid={
+                  isPledge ? "button-new-pledge" : "button-new-opportunity"
+                }
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add
+              </Button>
+            ) : (
+              <AddIconButton
+                label={isPledge ? "New pledge" : "New opportunity"}
+                data-testid={
+                  isPledge ? "button-new-pledge" : "button-new-opportunity"
+                }
+              />
+            ))}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>

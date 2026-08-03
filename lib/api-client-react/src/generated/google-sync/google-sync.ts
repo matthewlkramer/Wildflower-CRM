@@ -40,22 +40,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetGoogleSyncStatusUrl = () => {
 
 
-  
+
 
   return `/api/google-sync/status`
 }
 
 export const getGoogleSyncStatus = async ( options?: RequestInit): Promise<GoogleSyncStatus> => {
-  
+
   return customFetch<GoogleSyncStatus>(getGetGoogleSyncStatusUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -66,7 +66,7 @@ export const getGetGoogleSyncStatusQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetGoogleSyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof getGoogleSyncStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGoogleSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -74,13 +74,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGoogleSyncStatusQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGoogleSyncStatus>>> = ({ signal }) => getGoogleSyncStatus({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGoogleSyncStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -92,7 +92,7 @@ export type GetGoogleSyncStatusQueryError = ErrorType<unknown>
 
 export function useGetGoogleSyncStatus<TData = Awaited<ReturnType<typeof getGoogleSyncStatus>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGoogleSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGoogleSyncStatusQueryOptions(options)
@@ -111,22 +111,22 @@ export function useGetGoogleSyncStatus<TData = Awaited<ReturnType<typeof getGoog
 export const getRunGmailSyncUrl = () => {
 
 
-  
+
 
   return `/api/google-sync/gmail`
 }
 
 export const runGmailSync = async ( options?: RequestInit): Promise<GmailSyncRunResponse> => {
-  
+
   return customFetch<GmailSyncRunResponse>(getRunGmailSyncUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -141,24 +141,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof runGmailSync>>, void> = () => {
-          
+
 
           return  runGmailSync(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RunGmailSyncMutationResult = NonNullable<Awaited<ReturnType<typeof runGmailSync>>>
-    
+
     export type RunGmailSyncMutationError = ErrorType<void>
 
     /**
@@ -180,22 +180,22 @@ export const useRunGmailSync = <TError = ErrorType<void>,
 export const getRunCalendarSyncUrl = () => {
 
 
-  
+
 
   return `/api/google-sync/calendar`
 }
 
 export const runCalendarSync = async ( options?: RequestInit): Promise<CalendarSyncRunResponse> => {
-  
+
   return customFetch<CalendarSyncRunResponse>(getRunCalendarSyncUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -210,24 +210,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof runCalendarSync>>, void> = () => {
-          
+
 
           return  runCalendarSync(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RunCalendarSyncMutationResult = NonNullable<Awaited<ReturnType<typeof runCalendarSync>>>
-    
+
     export type RunCalendarSyncMutationError = ErrorType<void>
 
     /**
@@ -243,4 +243,3 @@ export const useRunCalendarSync = <TError = ErrorType<void>,
       > => {
       return useMutation(getRunCalendarSyncMutationOptions(options));
     }
-    

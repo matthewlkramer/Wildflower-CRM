@@ -40,22 +40,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetQuickbooksOauthStatusUrl = () => {
 
 
-  
+
 
   return `/api/quickbooks-oauth/status`
 }
 
 export const getQuickbooksOauthStatus = async ( options?: RequestInit): Promise<QuickbooksOauthStatus> => {
-  
+
   return customFetch<QuickbooksOauthStatus>(getGetQuickbooksOauthStatusUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -66,7 +66,7 @@ export const getGetQuickbooksOauthStatusQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetQuickbooksOauthStatusQueryOptions = <TData = Awaited<ReturnType<typeof getQuickbooksOauthStatus>>, TError = ErrorType<ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksOauthStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -74,13 +74,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetQuickbooksOauthStatusQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getQuickbooksOauthStatus>>> = ({ signal }) => getQuickbooksOauthStatus({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksOauthStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -92,7 +92,7 @@ export type GetQuickbooksOauthStatusQueryError = ErrorType<ForbiddenResponse>
 
 export function useGetQuickbooksOauthStatus<TData = Awaited<ReturnType<typeof getQuickbooksOauthStatus>>, TError = ErrorType<ForbiddenResponse>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getQuickbooksOauthStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetQuickbooksOauthStatusQueryOptions(options)
@@ -108,22 +108,22 @@ export function useGetQuickbooksOauthStatus<TData = Awaited<ReturnType<typeof ge
 export const getDisconnectQuickbooksOauthUrl = () => {
 
 
-  
+
 
   return `/api/quickbooks-oauth/disconnect`
 }
 
 export const disconnectQuickbooksOauth = async ( options?: RequestInit): Promise<DisconnectQuickbooksOauth200> => {
-  
+
   return customFetch<DisconnectQuickbooksOauth200>(getDisconnectQuickbooksOauthUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -138,24 +138,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof disconnectQuickbooksOauth>>, void> = () => {
-          
+
 
           return  disconnectQuickbooksOauth(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DisconnectQuickbooksOauthMutationResult = NonNullable<Awaited<ReturnType<typeof disconnectQuickbooksOauth>>>
-    
+
     export type DisconnectQuickbooksOauthMutationError = ErrorType<ForbiddenResponse>
 
     export const useDisconnectQuickbooksOauth = <TError = ErrorType<ForbiddenResponse>,
@@ -168,4 +168,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDisconnectQuickbooksOauthMutationOptions(options));
     }
-    

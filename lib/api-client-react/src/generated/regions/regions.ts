@@ -48,7 +48,7 @@ export const getListRegionsUrl = (params?: ListRegionsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -60,16 +60,16 @@ export const getListRegionsUrl = (params?: ListRegionsParams,) => {
 }
 
 export const listRegions = async (params?: ListRegionsParams, options?: RequestInit): Promise<RegionList> => {
-  
+
   return customFetch<RegionList>(getListRegionsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -80,7 +80,7 @@ export const getListRegionsQueryKey = (params?: ListRegionsParams,) => {
     ] as const;
     }
 
-    
+
 export const getListRegionsQueryOptions = <TData = Awaited<ReturnType<typeof listRegions>>, TError = ErrorType<unknown>>(params?: ListRegionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRegions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -88,13 +88,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListRegionsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listRegions>>> = ({ signal }) => listRegions(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRegions>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -106,7 +106,7 @@ export type ListRegionsQueryError = ErrorType<unknown>
 
 export function useListRegions<TData = Awaited<ReturnType<typeof listRegions>>, TError = ErrorType<unknown>>(
  params?: ListRegionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRegions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListRegionsQueryOptions(params,options)
@@ -125,15 +125,15 @@ export function useListRegions<TData = Awaited<ReturnType<typeof listRegions>>, 
 export const getCreateRegionUrl = () => {
 
 
-  
+
 
   return `/api/regions`
 }
 
 export const createRegion = async (createRegionBody: CreateRegionBody, options?: RequestInit): Promise<Region> => {
-  
+
   return customFetch<Region>(getCreateRegionUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -141,7 +141,7 @@ export const createRegion = async (createRegionBody: CreateRegionBody, options?:
       createRegionBody,)
   }
 );}
-  
+
 
 
 
@@ -156,7 +156,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRegion>>, {data: BodyType<CreateRegionBody>}> = (props) => {
@@ -167,7 +167,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -193,7 +193,7 @@ export const getGetRegionContainmentUrl = (params: GetRegionContainmentParams,) 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -205,16 +205,16 @@ export const getGetRegionContainmentUrl = (params: GetRegionContainmentParams,) 
 }
 
 export const getRegionContainment = async (params: GetRegionContainmentParams, options?: RequestInit): Promise<RegionContainmentList> => {
-  
+
   return customFetch<RegionContainmentList>(getGetRegionContainmentUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -225,7 +225,7 @@ export const getGetRegionContainmentQueryKey = (params?: GetRegionContainmentPar
     ] as const;
     }
 
-    
+
 export const getGetRegionContainmentQueryOptions = <TData = Awaited<ReturnType<typeof getRegionContainment>>, TError = ErrorType<BadRequestResponse>>(params: GetRegionContainmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -233,13 +233,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetRegionContainmentQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getRegionContainment>>> = ({ signal }) => getRegionContainment(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -251,7 +251,7 @@ export type GetRegionContainmentQueryError = ErrorType<BadRequestResponse>
 
 export function useGetRegionContainment<TData = Awaited<ReturnType<typeof getRegionContainment>>, TError = ErrorType<BadRequestResponse>>(
  params: GetRegionContainmentParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegionContainment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetRegionContainmentQueryOptions(params,options)
@@ -267,22 +267,22 @@ export function useGetRegionContainment<TData = Awaited<ReturnType<typeof getReg
 export const getGetRegionUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/regions/${id}`
 }
 
 export const getRegion = async (id: string, options?: RequestInit): Promise<Region> => {
-  
+
   return customFetch<Region>(getGetRegionUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -293,7 +293,7 @@ export const getGetRegionQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetRegionQueryOptions = <TData = Awaited<ReturnType<typeof getRegion>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -301,13 +301,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetRegionQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getRegion>>> = ({ signal }) => getRegion(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRegion>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -319,7 +319,7 @@ export type GetRegionQueryError = ErrorType<NotFoundResponse>
 
 export function useGetRegion<TData = Awaited<ReturnType<typeof getRegion>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRegion>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetRegionQueryOptions(id,options)
@@ -335,16 +335,16 @@ export function useGetRegion<TData = Awaited<ReturnType<typeof getRegion>>, TErr
 export const getUpdateRegionUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/regions/${id}`
 }
 
 export const updateRegion = async (id: string,
     updateRegionBody: UpdateRegionBody, options?: RequestInit): Promise<Region> => {
-  
+
   return customFetch<Region>(getUpdateRegionUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -352,7 +352,7 @@ export const updateRegion = async (id: string,
       updateRegionBody,)
   }
 );}
-  
+
 
 
 
@@ -367,7 +367,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateRegion>>, {id: string;data: BodyType<UpdateRegionBody>}> = (props) => {
@@ -378,7 +378,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -400,22 +400,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getArchiveRegionUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/regions/${id}/archive`
 }
 
 export const archiveRegion = async (id: string, options?: RequestInit): Promise<Region> => {
-  
+
   return customFetch<Region>(getArchiveRegionUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -430,7 +430,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveRegion>>, {id: string}> = (props) => {
@@ -441,13 +441,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveRegionMutationResult = NonNullable<Awaited<ReturnType<typeof archiveRegion>>>
-    
+
     export type ArchiveRegionMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveRegion = <TError = ErrorType<NotFoundResponse>,
@@ -463,22 +463,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveRegionUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/regions/${id}/unarchive`
 }
 
 export const unarchiveRegion = async (id: string, options?: RequestInit): Promise<Region> => {
-  
+
   return customFetch<Region>(getUnarchiveRegionUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -493,7 +493,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveRegion>>, {id: string}> = (props) => {
@@ -504,13 +504,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveRegionMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveRegion>>>
-    
+
     export type UnarchiveRegionMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveRegion = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -523,4 +523,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveRegionMutationOptions(options));
     }
-    

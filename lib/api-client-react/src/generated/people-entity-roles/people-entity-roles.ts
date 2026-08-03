@@ -45,7 +45,7 @@ export const getListPeopleEntityRolesUrl = (params?: ListPeopleEntityRolesParams
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListPeopleEntityRolesUrl = (params?: ListPeopleEntityRolesParams
 }
 
 export const listPeopleEntityRoles = async (params?: ListPeopleEntityRolesParams, options?: RequestInit): Promise<PeopleEntityRoleList> => {
-  
+
   return customFetch<PeopleEntityRoleList>(getListPeopleEntityRolesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListPeopleEntityRolesQueryKey = (params?: ListPeopleEntityRolesP
     ] as const;
     }
 
-    
+
 export const getListPeopleEntityRolesQueryOptions = <TData = Awaited<ReturnType<typeof listPeopleEntityRoles>>, TError = ErrorType<unknown>>(params?: ListPeopleEntityRolesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPeopleEntityRoles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPeopleEntityRolesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPeopleEntityRoles>>> = ({ signal }) => listPeopleEntityRoles(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPeopleEntityRoles>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListPeopleEntityRolesQueryError = ErrorType<unknown>
 
 export function useListPeopleEntityRoles<TData = Awaited<ReturnType<typeof listPeopleEntityRoles>>, TError = ErrorType<unknown>>(
  params?: ListPeopleEntityRolesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPeopleEntityRoles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPeopleEntityRolesQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListPeopleEntityRoles<TData = Awaited<ReturnType<typeof listP
 export const getCreatePeopleEntityRoleUrl = () => {
 
 
-  
+
 
   return `/api/people-entity-roles`
 }
 
 export const createPeopleEntityRole = async (createPeopleEntityRoleBody: CreatePeopleEntityRoleBody, options?: RequestInit): Promise<PeopleEntityRole> => {
-  
+
   return customFetch<PeopleEntityRole>(getCreatePeopleEntityRoleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createPeopleEntityRole = async (createPeopleEntityRoleBody: CreateP
       createPeopleEntityRoleBody,)
   }
 );}
-  
+
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPeopleEntityRole>>, {data: BodyType<CreatePeopleEntityRoleBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,16 +183,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdatePeopleEntityRoleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people-entity-roles/${id}`
 }
 
 export const updatePeopleEntityRole = async (id: string,
     updatePeopleEntityRoleBody: UpdatePeopleEntityRoleBody, options?: RequestInit): Promise<PeopleEntityRole> => {
-  
+
   return customFetch<PeopleEntityRole>(getUpdatePeopleEntityRoleUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -200,7 +200,7 @@ export const updatePeopleEntityRole = async (id: string,
       updatePeopleEntityRoleBody,)
   }
 );}
-  
+
 
 
 
@@ -215,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePeopleEntityRole>>, {id: string;data: BodyType<UpdatePeopleEntityRoleBody>}> = (props) => {
@@ -226,7 +226,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,22 +248,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeletePeopleEntityRoleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people-entity-roles/${id}`
 }
 
 export const deletePeopleEntityRole = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeletePeopleEntityRoleUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -278,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePeopleEntityRole>>, {id: string}> = (props) => {
@@ -289,13 +289,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeletePeopleEntityRoleMutationResult = NonNullable<Awaited<ReturnType<typeof deletePeopleEntityRole>>>
-    
+
     export type DeletePeopleEntityRoleMutationError = ErrorType<unknown>
 
     export const useDeletePeopleEntityRole = <TError = ErrorType<unknown>,
@@ -308,4 +308,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeletePeopleEntityRoleMutationOptions(options));
     }
-    

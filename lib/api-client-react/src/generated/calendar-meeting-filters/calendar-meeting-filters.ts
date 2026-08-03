@@ -44,22 +44,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getGetCalendarMeetingFiltersUrl = () => {
 
 
-  
+
 
   return `/api/calendar-meeting-filters`
 }
 
 export const getCalendarMeetingFilters = async ( options?: RequestInit): Promise<CalendarMeetingFiltersConfig> => {
-  
+
   return customFetch<CalendarMeetingFiltersConfig>(getGetCalendarMeetingFiltersUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -70,7 +70,7 @@ export const getGetCalendarMeetingFiltersQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetCalendarMeetingFiltersQueryOptions = <TData = Awaited<ReturnType<typeof getCalendarMeetingFilters>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendarMeetingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -78,13 +78,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetCalendarMeetingFiltersQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getCalendarMeetingFilters>>> = ({ signal }) => getCalendarMeetingFilters({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCalendarMeetingFilters>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -99,7 +99,7 @@ export type GetCalendarMeetingFiltersQueryError = ErrorType<unknown>
 
 export function useGetCalendarMeetingFilters<TData = Awaited<ReturnType<typeof getCalendarMeetingFilters>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendarMeetingFilters>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCalendarMeetingFiltersQueryOptions(options)
@@ -118,15 +118,15 @@ export function useGetCalendarMeetingFilters<TData = Awaited<ReturnType<typeof g
 export const getUpdateCalendarMeetingFiltersUrl = () => {
 
 
-  
+
 
   return `/api/calendar-meeting-filters`
 }
 
 export const updateCalendarMeetingFilters = async (updateCalendarMeetingFiltersBody: UpdateCalendarMeetingFiltersBody, options?: RequestInit): Promise<CalendarMeetingFiltersConfig> => {
-  
+
   return customFetch<CalendarMeetingFiltersConfig>(getUpdateCalendarMeetingFiltersUrl(),
-  {      
+  {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -134,7 +134,7 @@ export const updateCalendarMeetingFilters = async (updateCalendarMeetingFiltersB
       updateCalendarMeetingFiltersBody,)
   }
 );}
-  
+
 
 
 
@@ -149,7 +149,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendarMeetingFilters>>, {data: BodyType<UpdateCalendarMeetingFiltersBody>}> = (props) => {
@@ -160,7 +160,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -182,4 +182,3 @@ export const useUpdateCalendarMeetingFilters = <TError = ErrorType<BadRequestRes
       > => {
       return useMutation(getUpdateCalendarMeetingFiltersMutationOptions(options));
     }
-    

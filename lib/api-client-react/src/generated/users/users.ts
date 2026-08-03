@@ -39,22 +39,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getListUsersUrl = () => {
 
 
-  
+
 
   return `/api/users`
 }
 
 export const listUsers = async ( options?: RequestInit): Promise<User[]> => {
-  
+
   return customFetch<User[]>(getListUsersUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -65,7 +65,7 @@ export const getListUsersQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -73,13 +73,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListUsersQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) => listUsers({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -91,7 +91,7 @@ export type ListUsersQueryError = ErrorType<unknown>
 
 export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListUsersQueryOptions(options)
@@ -107,22 +107,22 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
 export const getGetCurrentUserUrl = () => {
 
 
-  
+
 
   return `/api/users/me`
 }
 
 export const getCurrentUser = async ( options?: RequestInit): Promise<User> => {
-  
+
   return customFetch<User>(getGetCurrentUserUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -133,7 +133,7 @@ export const getGetCurrentUserQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -141,13 +141,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetCurrentUserQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({ signal }) => getCurrentUser({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -159,7 +159,7 @@ export type GetCurrentUserQueryError = ErrorType<unknown>
 
 export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCurrentUserQueryOptions(options)
@@ -175,15 +175,15 @@ export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUs
 export const getUpdateCurrentUserUrl = () => {
 
 
-  
+
 
   return `/api/users/me`
 }
 
 export const updateCurrentUser = async (updateCurrentUserBody: UpdateCurrentUserBody, options?: RequestInit): Promise<User> => {
-  
+
   return customFetch<User>(getUpdateCurrentUserUrl(),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -191,7 +191,7 @@ export const updateCurrentUser = async (updateCurrentUserBody: UpdateCurrentUser
       updateCurrentUserBody,)
   }
 );}
-  
+
 
 
 
@@ -206,7 +206,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCurrentUser>>, {data: BodyType<UpdateCurrentUserBody>}> = (props) => {
@@ -217,7 +217,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -236,4 +236,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateCurrentUserMutationOptions(options));
     }
-    

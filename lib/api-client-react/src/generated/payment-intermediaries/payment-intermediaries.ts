@@ -47,7 +47,7 @@ export const getListPaymentIntermediariesUrl = (params?: ListPaymentIntermediari
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -59,16 +59,16 @@ export const getListPaymentIntermediariesUrl = (params?: ListPaymentIntermediari
 }
 
 export const listPaymentIntermediaries = async (params?: ListPaymentIntermediariesParams, options?: RequestInit): Promise<PaymentIntermediaryList> => {
-  
+
   return customFetch<PaymentIntermediaryList>(getListPaymentIntermediariesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -79,7 +79,7 @@ export const getListPaymentIntermediariesQueryKey = (params?: ListPaymentInterme
     ] as const;
     }
 
-    
+
 export const getListPaymentIntermediariesQueryOptions = <TData = Awaited<ReturnType<typeof listPaymentIntermediaries>>, TError = ErrorType<unknown>>(params?: ListPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -87,13 +87,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPaymentIntermediariesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPaymentIntermediaries>>> = ({ signal }) => listPaymentIntermediaries(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPaymentIntermediaries>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -105,7 +105,7 @@ export type ListPaymentIntermediariesQueryError = ErrorType<unknown>
 
 export function useListPaymentIntermediaries<TData = Awaited<ReturnType<typeof listPaymentIntermediaries>>, TError = ErrorType<unknown>>(
  params?: ListPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPaymentIntermediariesQueryOptions(params,options)
@@ -121,15 +121,15 @@ export function useListPaymentIntermediaries<TData = Awaited<ReturnType<typeof l
 export const getCreatePaymentIntermediaryUrl = () => {
 
 
-  
+
 
   return `/api/payment-intermediaries`
 }
 
 export const createPaymentIntermediary = async (createPaymentIntermediaryBody: CreatePaymentIntermediaryBody, options?: RequestInit): Promise<PaymentIntermediary> => {
-  
+
   return customFetch<PaymentIntermediary>(getCreatePaymentIntermediaryUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -137,7 +137,7 @@ export const createPaymentIntermediary = async (createPaymentIntermediaryBody: C
       createPaymentIntermediaryBody,)
   }
 );}
-  
+
 
 
 
@@ -152,7 +152,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPaymentIntermediary>>, {data: BodyType<CreatePaymentIntermediaryBody>}> = (props) => {
@@ -163,7 +163,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -185,22 +185,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetPaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/payment-intermediaries/${id}`
 }
 
 export const getPaymentIntermediary = async (id: string, options?: RequestInit): Promise<PaymentIntermediaryDetail> => {
-  
+
   return customFetch<PaymentIntermediaryDetail>(getGetPaymentIntermediaryUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -211,7 +211,7 @@ export const getGetPaymentIntermediaryQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetPaymentIntermediaryQueryOptions = <TData = Awaited<ReturnType<typeof getPaymentIntermediary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPaymentIntermediary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -219,13 +219,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetPaymentIntermediaryQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getPaymentIntermediary>>> = ({ signal }) => getPaymentIntermediary(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPaymentIntermediary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -237,7 +237,7 @@ export type GetPaymentIntermediaryQueryError = ErrorType<NotFoundResponse>
 
 export function useGetPaymentIntermediary<TData = Awaited<ReturnType<typeof getPaymentIntermediary>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPaymentIntermediary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPaymentIntermediaryQueryOptions(id,options)
@@ -253,16 +253,16 @@ export function useGetPaymentIntermediary<TData = Awaited<ReturnType<typeof getP
 export const getUpdatePaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/payment-intermediaries/${id}`
 }
 
 export const updatePaymentIntermediary = async (id: string,
     updatePaymentIntermediaryBody: UpdatePaymentIntermediaryBody, options?: RequestInit): Promise<PaymentIntermediary> => {
-  
+
   return customFetch<PaymentIntermediary>(getUpdatePaymentIntermediaryUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -270,7 +270,7 @@ export const updatePaymentIntermediary = async (id: string,
       updatePaymentIntermediaryBody,)
   }
 );}
-  
+
 
 
 
@@ -285,7 +285,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePaymentIntermediary>>, {id: string;data: BodyType<UpdatePaymentIntermediaryBody>}> = (props) => {
@@ -296,7 +296,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -318,22 +318,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getArchivePaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/payment-intermediaries/${id}/archive`
 }
 
 export const archivePaymentIntermediary = async (id: string, options?: RequestInit): Promise<PaymentIntermediary> => {
-  
+
   return customFetch<PaymentIntermediary>(getArchivePaymentIntermediaryUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -348,7 +348,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archivePaymentIntermediary>>, {id: string}> = (props) => {
@@ -359,13 +359,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchivePaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof archivePaymentIntermediary>>>
-    
+
     export type ArchivePaymentIntermediaryMutationError = ErrorType<NotFoundResponse>
 
     export const useArchivePaymentIntermediary = <TError = ErrorType<NotFoundResponse>,
@@ -381,22 +381,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchivePaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/payment-intermediaries/${id}/unarchive`
 }
 
 export const unarchivePaymentIntermediary = async (id: string, options?: RequestInit): Promise<PaymentIntermediary> => {
-  
+
   return customFetch<PaymentIntermediary>(getUnarchivePaymentIntermediaryUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -411,7 +411,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchivePaymentIntermediary>>, {id: string}> = (props) => {
@@ -422,13 +422,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchivePaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof unarchivePaymentIntermediary>>>
-    
+
     export type UnarchivePaymentIntermediaryMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchivePaymentIntermediary = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -441,4 +441,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchivePaymentIntermediaryMutationOptions(options));
     }
-    

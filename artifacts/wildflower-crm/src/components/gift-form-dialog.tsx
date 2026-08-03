@@ -562,9 +562,9 @@ export function GiftFormDialog({ scope }: { scope?: LinkedRecordsScope }) {
                   data-testid="notice-evidence-only"
                 >
                   <p>
-                    Gifts against a pledge are created from payment evidence in
-                    the reconciliation workbench, not entered by hand. The only
-                    exception is off-books money that will never appear in
+                    On-books gifts must be created by selecting their received
+                    payment evidence from the gift or pledge record. This manual
+                    form is only for off-books money that will never appear in
                     QuickBooks or Stripe.
                   </p>
                   <div className="flex items-start gap-2">

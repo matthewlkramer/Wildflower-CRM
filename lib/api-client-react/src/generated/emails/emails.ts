@@ -45,7 +45,7 @@ export const getListEmailsUrl = (params?: ListEmailsParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListEmailsUrl = (params?: ListEmailsParams,) => {
 }
 
 export const listEmails = async (params?: ListEmailsParams, options?: RequestInit): Promise<EmailList> => {
-  
+
   return customFetch<EmailList>(getListEmailsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListEmailsQueryKey = (params?: ListEmailsParams,) => {
     ] as const;
     }
 
-    
+
 export const getListEmailsQueryOptions = <TData = Awaited<ReturnType<typeof listEmails>>, TError = ErrorType<unknown>>(params?: ListEmailsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListEmailsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmails>>> = ({ signal }) => listEmails(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmails>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListEmailsQueryError = ErrorType<unknown>
 
 export function useListEmails<TData = Awaited<ReturnType<typeof listEmails>>, TError = ErrorType<unknown>>(
  params?: ListEmailsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListEmailsQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListEmails<TData = Awaited<ReturnType<typeof listEmails>>, TE
 export const getCreateEmailUrl = () => {
 
 
-  
+
 
   return `/api/emails`
 }
 
 export const createEmail = async (createEmailBody: CreateEmailBody, options?: RequestInit): Promise<Email> => {
-  
+
   return customFetch<Email>(getCreateEmailUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createEmail = async (createEmailBody: CreateEmailBody, options?: Re
       createEmailBody,)
   }
 );}
-  
+
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmail>>, {data: BodyType<CreateEmailBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,16 +183,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdateEmailUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/emails/${id}`
 }
 
 export const updateEmail = async (id: string,
     updateEmailBody: UpdateEmailBody, options?: RequestInit): Promise<Email> => {
-  
+
   return customFetch<Email>(getUpdateEmailUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -200,7 +200,7 @@ export const updateEmail = async (id: string,
       updateEmailBody,)
   }
 );}
-  
+
 
 
 
@@ -215,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEmail>>, {id: string;data: BodyType<UpdateEmailBody>}> = (props) => {
@@ -226,7 +226,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,22 +248,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteEmailUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/emails/${id}`
 }
 
 export const deleteEmail = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteEmailUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -278,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteEmail>>, {id: string}> = (props) => {
@@ -289,13 +289,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteEmailMutationResult = NonNullable<Awaited<ReturnType<typeof deleteEmail>>>
-    
+
     export type DeleteEmailMutationError = ErrorType<unknown>
 
     export const useDeleteEmail = <TError = ErrorType<unknown>,
@@ -308,4 +308,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteEmailMutationOptions(options));
     }
-    

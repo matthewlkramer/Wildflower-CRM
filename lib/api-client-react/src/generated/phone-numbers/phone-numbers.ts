@@ -45,7 +45,7 @@ export const getListPhoneNumbersUrl = (params?: ListPhoneNumbersParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListPhoneNumbersUrl = (params?: ListPhoneNumbersParams,) => {
 }
 
 export const listPhoneNumbers = async (params?: ListPhoneNumbersParams, options?: RequestInit): Promise<PhoneNumberList> => {
-  
+
   return customFetch<PhoneNumberList>(getListPhoneNumbersUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListPhoneNumbersQueryKey = (params?: ListPhoneNumbersParams,) =>
     ] as const;
     }
 
-    
+
 export const getListPhoneNumbersQueryOptions = <TData = Awaited<ReturnType<typeof listPhoneNumbers>>, TError = ErrorType<unknown>>(params?: ListPhoneNumbersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPhoneNumbers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPhoneNumbersQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPhoneNumbers>>> = ({ signal }) => listPhoneNumbers(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPhoneNumbers>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListPhoneNumbersQueryError = ErrorType<unknown>
 
 export function useListPhoneNumbers<TData = Awaited<ReturnType<typeof listPhoneNumbers>>, TError = ErrorType<unknown>>(
  params?: ListPhoneNumbersParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPhoneNumbers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPhoneNumbersQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListPhoneNumbers<TData = Awaited<ReturnType<typeof listPhoneN
 export const getCreatePhoneNumberUrl = () => {
 
 
-  
+
 
   return `/api/phone-numbers`
 }
 
 export const createPhoneNumber = async (createPhoneNumberBody: CreatePhoneNumberBody, options?: RequestInit): Promise<PhoneNumber> => {
-  
+
   return customFetch<PhoneNumber>(getCreatePhoneNumberUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createPhoneNumber = async (createPhoneNumberBody: CreatePhoneNumber
       createPhoneNumberBody,)
   }
 );}
-  
+
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPhoneNumber>>, {data: BodyType<CreatePhoneNumberBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,16 +183,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdatePhoneNumberUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/phone-numbers/${id}`
 }
 
 export const updatePhoneNumber = async (id: string,
     updatePhoneNumberBody: UpdatePhoneNumberBody, options?: RequestInit): Promise<PhoneNumber> => {
-  
+
   return customFetch<PhoneNumber>(getUpdatePhoneNumberUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -200,7 +200,7 @@ export const updatePhoneNumber = async (id: string,
       updatePhoneNumberBody,)
   }
 );}
-  
+
 
 
 
@@ -215,7 +215,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePhoneNumber>>, {id: string;data: BodyType<UpdatePhoneNumberBody>}> = (props) => {
@@ -226,7 +226,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -248,22 +248,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeletePhoneNumberUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/phone-numbers/${id}`
 }
 
 export const deletePhoneNumber = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeletePhoneNumberUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -278,7 +278,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePhoneNumber>>, {id: string}> = (props) => {
@@ -289,13 +289,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeletePhoneNumberMutationResult = NonNullable<Awaited<ReturnType<typeof deletePhoneNumber>>>
-    
+
     export type DeletePhoneNumberMutationError = ErrorType<unknown>
 
     export const useDeletePhoneNumber = <TError = ErrorType<unknown>,
@@ -308,4 +308,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeletePhoneNumberMutationOptions(options));
     }
-    

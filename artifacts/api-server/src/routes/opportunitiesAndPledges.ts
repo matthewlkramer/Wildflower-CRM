@@ -1354,7 +1354,7 @@ router.post(
       return res.status(409).json({
         error: "manual_gift_on_pledge_blocked",
         message:
-          "Manual gift creation against a pledge is blocked — payments are minted from QuickBooks evidence via reconciliation. Use offBooksException=true (finance only) for money that never hits QuickBooks.",
+          "Manual gift creation against a pledge is blocked. Link the received QuickBooks payment or Stripe charge from the pledge record. Use offBooksException=true (finance only) only for money that will never hit QuickBooks or Stripe.",
       });
     }
     if (!requireFinance(req, res)) return;
@@ -1369,7 +1369,7 @@ router.post(
       return res.status(409).json({
         error: "awaiting_settlement_mint_removed",
         message:
-          "Pre-minting a gift for imminent money is no longer supported — it created duplicate payment records. Record expected money on the pledge's expected payments; the payment is recorded from the bank deposit in the reconciliation workbench when it arrives.",
+          "Pre-minting a gift for imminent money is no longer supported — it created duplicate payment records. Record expected money on the pledge's expected payments; when the money arrives, link the received payment from the pledge record.",
       });
     }
 
@@ -1470,6 +1470,26 @@ router.patch(
       actualCompletionDate: merged.actualCompletionDate,
     });
     if (issues.length) return respondInvariantFailure(res, issues);
+
+    const donorChanged =
+      merged.organizationId !== existing.organizationId ||
+      merged.individualGiverPersonId !== existing.individualGiverPersonId ||
+      merged.householdId !== existing.householdId;
+    if (donorChanged) {
+      const [linkedGift] = await db
+        .select({ id: giftsAndPayments.id })
+        .from(giftsAndPayments)
+        .where(eq(giftsAndPayments.opportunityId, id))
+        .limit(1);
+      if (linkedGift) {
+        res.status(409).json({
+          error: "opportunity_donor_correction_required",
+          message:
+            "This opportunity or pledge already has a linked gift. Use an explicit donor-correction workflow so the opportunity and every payment stay on the same donor.",
+        });
+        return;
+      }
+    }
 
     // Close-transition rule: a PATCH that NEWLY closes this row (sets lossType
     // dormant/lost, or stage → complete) must leave it with an

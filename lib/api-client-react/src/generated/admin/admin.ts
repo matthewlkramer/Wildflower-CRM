@@ -69,22 +69,22 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 export const getAdminListEmailIntelPromptsUrl = () => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts`
 }
 
 export const adminListEmailIntelPrompts = async ( options?: RequestInit): Promise<EmailIntelPromptConsole> => {
-  
+
   return customFetch<EmailIntelPromptConsole>(getAdminListEmailIntelPromptsUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -95,7 +95,7 @@ export const getAdminListEmailIntelPromptsQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminListEmailIntelPromptsQueryOptions = <TData = Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -103,13 +103,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminListEmailIntelPromptsQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListEmailIntelPrompts>>> = ({ signal }) => adminListEmailIntelPrompts({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -124,7 +124,7 @@ export type AdminListEmailIntelPromptsQueryError = ErrorType<void>
 
 export function useAdminListEmailIntelPrompts<TData = Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelPrompts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListEmailIntelPromptsQueryOptions(options)
@@ -143,15 +143,15 @@ export function useAdminListEmailIntelPrompts<TData = Awaited<ReturnType<typeof 
 export const getAdminSaveEmailIntelPromptUrl = () => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts`
 }
 
 export const adminSaveEmailIntelPrompt = async (saveEmailIntelPromptBody: SaveEmailIntelPromptBody, options?: RequestInit): Promise<EmailIntelPrompt> => {
-  
+
   return customFetch<EmailIntelPrompt>(getAdminSaveEmailIntelPromptUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -159,7 +159,7 @@ export const adminSaveEmailIntelPrompt = async (saveEmailIntelPromptBody: SaveEm
       saveEmailIntelPromptBody,)
   }
 );}
-  
+
 
 
 
@@ -174,7 +174,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminSaveEmailIntelPrompt>>, {data: BodyType<SaveEmailIntelPromptBody>}> = (props) => {
@@ -185,7 +185,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -213,15 +213,15 @@ export const useAdminSaveEmailIntelPrompt = <TError = ErrorType<BadRequestRespon
 export const getAdminGenerateEmailIntelPromptUrl = () => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts/generate`
 }
 
 export const adminGenerateEmailIntelPrompt = async (generateEmailIntelPromptBody: GenerateEmailIntelPromptBody, options?: RequestInit): Promise<EmailIntelPrompt> => {
-  
+
   return customFetch<EmailIntelPrompt>(getAdminGenerateEmailIntelPromptUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -229,7 +229,7 @@ export const adminGenerateEmailIntelPrompt = async (generateEmailIntelPromptBody
       generateEmailIntelPromptBody,)
   }
 );}
-  
+
 
 
 
@@ -244,7 +244,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminGenerateEmailIntelPrompt>>, {data: BodyType<GenerateEmailIntelPromptBody>}> = (props) => {
@@ -255,7 +255,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -283,22 +283,22 @@ export const useAdminGenerateEmailIntelPrompt = <TError = ErrorType<BadRequestRe
 export const getAdminActivateEmailIntelPromptUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts/${id}/activate`
 }
 
 export const adminActivateEmailIntelPrompt = async (id: string, options?: RequestInit): Promise<EmailIntelPrompt> => {
-  
+
   return customFetch<EmailIntelPrompt>(getAdminActivateEmailIntelPromptUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -313,7 +313,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>, {id: string}> = (props) => {
@@ -324,13 +324,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminActivateEmailIntelPromptMutationResult = NonNullable<Awaited<ReturnType<typeof adminActivateEmailIntelPrompt>>>
-    
+
     export type AdminActivateEmailIntelPromptMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -352,22 +352,22 @@ export const useAdminActivateEmailIntelPrompt = <TError = ErrorType<void | NotFo
 export const getAdminRevertEmailIntelPromptUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts/${id}/revert`
 }
 
 export const adminRevertEmailIntelPrompt = async (id: string, options?: RequestInit): Promise<EmailIntelPrompt> => {
-  
+
   return customFetch<EmailIntelPrompt>(getAdminRevertEmailIntelPromptUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -382,7 +382,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>, {id: string}> = (props) => {
@@ -393,13 +393,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminRevertEmailIntelPromptMutationResult = NonNullable<Awaited<ReturnType<typeof adminRevertEmailIntelPrompt>>>
-    
+
     export type AdminRevertEmailIntelPromptMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -421,22 +421,22 @@ export const useAdminRevertEmailIntelPrompt = <TError = ErrorType<void | NotFoun
 export const getAdminDiscardEmailIntelPromptUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/email-intel/prompts/${id}`
 }
 
 export const adminDiscardEmailIntelPrompt = async (id: string, options?: RequestInit): Promise<AdminDiscardEmailIntelPrompt200> => {
-  
+
   return customFetch<AdminDiscardEmailIntelPrompt200>(getAdminDiscardEmailIntelPromptUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -451,7 +451,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>, {id: string}> = (props) => {
@@ -462,13 +462,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminDiscardEmailIntelPromptMutationResult = NonNullable<Awaited<ReturnType<typeof adminDiscardEmailIntelPrompt>>>
-    
+
     export type AdminDiscardEmailIntelPromptMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -491,7 +491,7 @@ export const getAdminListEmailIntelFeedbackUrl = (params?: AdminListEmailIntelFe
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -503,16 +503,16 @@ export const getAdminListEmailIntelFeedbackUrl = (params?: AdminListEmailIntelFe
 }
 
 export const adminListEmailIntelFeedback = async (params?: AdminListEmailIntelFeedbackParams, options?: RequestInit): Promise<EmailIntelFeedbackList> => {
-  
+
   return customFetch<EmailIntelFeedbackList>(getAdminListEmailIntelFeedbackUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -523,7 +523,7 @@ export const getAdminListEmailIntelFeedbackQueryKey = (params?: AdminListEmailIn
     ] as const;
     }
 
-    
+
 export const getAdminListEmailIntelFeedbackQueryOptions = <TData = Awaited<ReturnType<typeof adminListEmailIntelFeedback>>, TError = ErrorType<void>>(params?: AdminListEmailIntelFeedbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelFeedback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -531,13 +531,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminListEmailIntelFeedbackQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListEmailIntelFeedback>>> = ({ signal }) => adminListEmailIntelFeedback(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelFeedback>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -552,7 +552,7 @@ export type AdminListEmailIntelFeedbackQueryError = ErrorType<void>
 
 export function useAdminListEmailIntelFeedback<TData = Awaited<ReturnType<typeof adminListEmailIntelFeedback>>, TError = ErrorType<void>>(
  params?: AdminListEmailIntelFeedbackParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEmailIntelFeedback>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListEmailIntelFeedbackQueryOptions(params,options)
@@ -568,22 +568,22 @@ export function useAdminListEmailIntelFeedback<TData = Awaited<ReturnType<typeof
 export const getAdminListGoogleSyncUrl = () => {
 
 
-  
+
 
   return `/api/admin/google-sync`
 }
 
 export const adminListGoogleSync = async ( options?: RequestInit): Promise<AdminGoogleSyncList> => {
-  
+
   return customFetch<AdminGoogleSyncList>(getAdminListGoogleSyncUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -594,7 +594,7 @@ export const getAdminListGoogleSyncQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminListGoogleSyncQueryOptions = <TData = Awaited<ReturnType<typeof adminListGoogleSync>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListGoogleSync>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -602,13 +602,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminListGoogleSyncQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListGoogleSync>>> = ({ signal }) => adminListGoogleSync({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListGoogleSync>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -620,7 +620,7 @@ export type AdminListGoogleSyncQueryError = ErrorType<void>
 
 export function useAdminListGoogleSync<TData = Awaited<ReturnType<typeof adminListGoogleSync>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListGoogleSync>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListGoogleSyncQueryOptions(options)
@@ -636,22 +636,22 @@ export function useAdminListGoogleSync<TData = Awaited<ReturnType<typeof adminLi
 export const getAdminResyncGoogleUserUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/google-sync/${id}/resync`
 }
 
 export const adminResyncGoogleUser = async (id: string, options?: RequestInit): Promise<AdminResyncGoogleUser200> => {
-  
+
   return customFetch<AdminResyncGoogleUser200>(getAdminResyncGoogleUserUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -666,7 +666,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminResyncGoogleUser>>, {id: string}> = (props) => {
@@ -677,13 +677,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminResyncGoogleUserMutationResult = NonNullable<Awaited<ReturnType<typeof adminResyncGoogleUser>>>
-    
+
     export type AdminResyncGoogleUserMutationError = ErrorType<void>
 
     export const useAdminResyncGoogleUser = <TError = ErrorType<void>,
@@ -702,22 +702,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getAdminGetDerivationHealthUrl = () => {
 
 
-  
+
 
   return `/api/admin/derivation-health`
 }
 
 export const adminGetDerivationHealth = async ( options?: RequestInit): Promise<DerivationHealthReport> => {
-  
+
   return customFetch<DerivationHealthReport>(getAdminGetDerivationHealthUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -728,7 +728,7 @@ export const getAdminGetDerivationHealthQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminGetDerivationHealthQueryOptions = <TData = Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -736,13 +736,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminGetDerivationHealthQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetDerivationHealth>>> = ({ signal }) => adminGetDerivationHealth({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -757,7 +757,7 @@ export type AdminGetDerivationHealthQueryError = ErrorType<void>
 
 export function useAdminGetDerivationHealth<TData = Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetDerivationHealth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetDerivationHealthQueryOptions(options)
@@ -776,22 +776,22 @@ export function useAdminGetDerivationHealth<TData = Awaited<ReturnType<typeof ad
 export const getAdminGetSchoolSyncStatusUrl = () => {
 
 
-  
+
 
   return `/api/admin/school-sync`
 }
 
 export const adminGetSchoolSyncStatus = async ( options?: RequestInit): Promise<SchoolSyncStatus> => {
-  
+
   return customFetch<SchoolSyncStatus>(getAdminGetSchoolSyncStatusUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -802,7 +802,7 @@ export const getAdminGetSchoolSyncStatusQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminGetSchoolSyncStatusQueryOptions = <TData = Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -810,13 +810,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminGetSchoolSyncStatusQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>> = ({ signal }) => adminGetSchoolSyncStatus({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -831,7 +831,7 @@ export type AdminGetSchoolSyncStatusQueryError = ErrorType<void>
 
 export function useAdminGetSchoolSyncStatus<TData = Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetSchoolSyncStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminGetSchoolSyncStatusQueryOptions(options)
@@ -850,22 +850,22 @@ export function useAdminGetSchoolSyncStatus<TData = Awaited<ReturnType<typeof ad
 export const getAdminRunSchoolSyncUrl = () => {
 
 
-  
+
 
   return `/api/admin/school-sync/run`
 }
 
 export const adminRunSchoolSync = async ( options?: RequestInit): Promise<SchoolSyncStatus> => {
-  
+
   return customFetch<SchoolSyncStatus>(getAdminRunSchoolSyncUrl(),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -880,24 +880,24 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminRunSchoolSync>>, void> = () => {
-          
+
 
           return  adminRunSchoolSync(requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminRunSchoolSyncMutationResult = NonNullable<Awaited<ReturnType<typeof adminRunSchoolSync>>>
-    
+
     export type AdminRunSchoolSyncMutationError = ErrorType<void>
 
     /**
@@ -919,22 +919,22 @@ export const useAdminRunSchoolSync = <TError = ErrorType<void>,
 export const getAdminListQuickbooksRulesUrl = () => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules`
 }
 
 export const adminListQuickbooksRules = async ( options?: RequestInit): Promise<QuickbooksHandlingRule[]> => {
-  
+
   return customFetch<QuickbooksHandlingRule[]>(getAdminListQuickbooksRulesUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -945,7 +945,7 @@ export const getAdminListQuickbooksRulesQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminListQuickbooksRulesQueryOptions = <TData = Awaited<ReturnType<typeof adminListQuickbooksRules>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListQuickbooksRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -953,13 +953,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminListQuickbooksRulesQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListQuickbooksRules>>> = ({ signal }) => adminListQuickbooksRules({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListQuickbooksRules>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -974,7 +974,7 @@ export type AdminListQuickbooksRulesQueryError = ErrorType<void>
 
 export function useAdminListQuickbooksRules<TData = Awaited<ReturnType<typeof adminListQuickbooksRules>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListQuickbooksRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListQuickbooksRulesQueryOptions(options)
@@ -993,15 +993,15 @@ export function useAdminListQuickbooksRules<TData = Awaited<ReturnType<typeof ad
 export const getAdminCreateQuickbooksRuleUrl = () => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules`
 }
 
 export const adminCreateQuickbooksRule = async (createQuickbooksRuleBody: CreateQuickbooksRuleBody, options?: RequestInit): Promise<QuickbooksHandlingRule> => {
-  
+
   return customFetch<QuickbooksHandlingRule>(getAdminCreateQuickbooksRuleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1009,7 +1009,7 @@ export const adminCreateQuickbooksRule = async (createQuickbooksRuleBody: Create
       createQuickbooksRuleBody,)
   }
 );}
-  
+
 
 
 
@@ -1024,7 +1024,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateQuickbooksRule>>, {data: BodyType<CreateQuickbooksRuleBody>}> = (props) => {
@@ -1035,7 +1035,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1063,15 +1063,15 @@ export const useAdminCreateQuickbooksRule = <TError = ErrorType<BadRequestRespon
 export const getAdminReorderQuickbooksRulesUrl = () => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules/reorder`
 }
 
 export const adminReorderQuickbooksRules = async (reorderQuickbooksRulesBody: ReorderQuickbooksRulesBody, options?: RequestInit): Promise<QuickbooksHandlingRule[]> => {
-  
+
   return customFetch<QuickbooksHandlingRule[]>(getAdminReorderQuickbooksRulesUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1079,7 +1079,7 @@ export const adminReorderQuickbooksRules = async (reorderQuickbooksRulesBody: Re
       reorderQuickbooksRulesBody,)
   }
 );}
-  
+
 
 
 
@@ -1094,7 +1094,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminReorderQuickbooksRules>>, {data: BodyType<ReorderQuickbooksRulesBody>}> = (props) => {
@@ -1105,7 +1105,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1133,16 +1133,16 @@ export const useAdminReorderQuickbooksRules = <TError = ErrorType<BadRequestResp
 export const getAdminUpdateQuickbooksRuleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules/${id}`
 }
 
 export const adminUpdateQuickbooksRule = async (id: string,
     updateQuickbooksRuleBody: UpdateQuickbooksRuleBody, options?: RequestInit): Promise<QuickbooksHandlingRule> => {
-  
+
   return customFetch<QuickbooksHandlingRule>(getAdminUpdateQuickbooksRuleUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1150,7 +1150,7 @@ export const adminUpdateQuickbooksRule = async (id: string,
       updateQuickbooksRuleBody,)
   }
 );}
-  
+
 
 
 
@@ -1165,7 +1165,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateQuickbooksRule>>, {id: string;data: BodyType<UpdateQuickbooksRuleBody>}> = (props) => {
@@ -1176,7 +1176,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1204,22 +1204,22 @@ export const useAdminUpdateQuickbooksRule = <TError = ErrorType<BadRequestRespon
 export const getAdminDeleteQuickbooksRuleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules/${id}`
 }
 
 export const adminDeleteQuickbooksRule = async (id: string, options?: RequestInit): Promise<AdminDeleteQuickbooksRule200> => {
-  
+
   return customFetch<AdminDeleteQuickbooksRule200>(getAdminDeleteQuickbooksRuleUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1234,7 +1234,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>, {id: string}> = (props) => {
@@ -1245,13 +1245,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminDeleteQuickbooksRuleMutationResult = NonNullable<Awaited<ReturnType<typeof adminDeleteQuickbooksRule>>>
-    
+
     export type AdminDeleteQuickbooksRuleMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -1273,16 +1273,16 @@ export const useAdminDeleteQuickbooksRule = <TError = ErrorType<void | NotFoundR
 export const getAdminApplyQuickbooksRuleToPendingUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/quickbooks-rules/${id}/apply-to-pending`
 }
 
 export const adminApplyQuickbooksRuleToPending = async (id: string,
     applyRuleToPendingBody: ApplyRuleToPendingBody, options?: RequestInit): Promise<ApplyRuleToPendingResult> => {
-  
+
   return customFetch<ApplyRuleToPendingResult>(getAdminApplyQuickbooksRuleToPendingUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1290,7 +1290,7 @@ export const adminApplyQuickbooksRuleToPending = async (id: string,
       applyRuleToPendingBody,)
   }
 );}
-  
+
 
 
 
@@ -1305,7 +1305,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>, {id: string;data: BodyType<ApplyRuleToPendingBody>}> = (props) => {
@@ -1316,7 +1316,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1344,22 +1344,22 @@ export const useAdminApplyQuickbooksRuleToPending = <TError = ErrorType<BadReque
 export const getAdminListEntityCodingRulesUrl = () => {
 
 
-  
+
 
   return `/api/admin/entity-coding-rules`
 }
 
 export const adminListEntityCodingRules = async ( options?: RequestInit): Promise<EntityCodingRule[]> => {
-  
+
   return customFetch<EntityCodingRule[]>(getAdminListEntityCodingRulesUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1370,7 +1370,7 @@ export const getAdminListEntityCodingRulesQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getAdminListEntityCodingRulesQueryOptions = <TData = Awaited<ReturnType<typeof adminListEntityCodingRules>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEntityCodingRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1378,13 +1378,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAdminListEntityCodingRulesQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof adminListEntityCodingRules>>> = ({ signal }) => adminListEntityCodingRules({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminListEntityCodingRules>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1399,7 +1399,7 @@ export type AdminListEntityCodingRulesQueryError = ErrorType<void>
 
 export function useAdminListEntityCodingRules<TData = Awaited<ReturnType<typeof adminListEntityCodingRules>>, TError = ErrorType<void>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminListEntityCodingRules>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getAdminListEntityCodingRulesQueryOptions(options)
@@ -1418,15 +1418,15 @@ export function useAdminListEntityCodingRules<TData = Awaited<ReturnType<typeof 
 export const getAdminCreateEntityCodingRuleUrl = () => {
 
 
-  
+
 
   return `/api/admin/entity-coding-rules`
 }
 
 export const adminCreateEntityCodingRule = async (createEntityCodingRuleBody: CreateEntityCodingRuleBody, options?: RequestInit): Promise<EntityCodingRule> => {
-  
+
   return customFetch<EntityCodingRule>(getAdminCreateEntityCodingRuleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1434,7 +1434,7 @@ export const adminCreateEntityCodingRule = async (createEntityCodingRuleBody: Cr
       createEntityCodingRuleBody,)
   }
 );}
-  
+
 
 
 
@@ -1449,7 +1449,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminCreateEntityCodingRule>>, {data: BodyType<CreateEntityCodingRuleBody>}> = (props) => {
@@ -1460,7 +1460,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1488,16 +1488,16 @@ export const useAdminCreateEntityCodingRule = <TError = ErrorType<BadRequestResp
 export const getAdminUpdateEntityCodingRuleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/entity-coding-rules/${id}`
 }
 
 export const adminUpdateEntityCodingRule = async (id: string,
     updateEntityCodingRuleBody: UpdateEntityCodingRuleBody, options?: RequestInit): Promise<EntityCodingRule> => {
-  
+
   return customFetch<EntityCodingRule>(getAdminUpdateEntityCodingRuleUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1505,7 +1505,7 @@ export const adminUpdateEntityCodingRule = async (id: string,
       updateEntityCodingRuleBody,)
   }
 );}
-  
+
 
 
 
@@ -1520,7 +1520,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminUpdateEntityCodingRule>>, {id: string;data: BodyType<UpdateEntityCodingRuleBody>}> = (props) => {
@@ -1531,7 +1531,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1559,22 +1559,22 @@ export const useAdminUpdateEntityCodingRule = <TError = ErrorType<BadRequestResp
 export const getAdminDeleteEntityCodingRuleUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/admin/entity-coding-rules/${id}`
 }
 
 export const adminDeleteEntityCodingRule = async (id: string, options?: RequestInit): Promise<AdminDeleteEntityCodingRule200> => {
-  
+
   return customFetch<AdminDeleteEntityCodingRule200>(getAdminDeleteEntityCodingRuleUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1589,7 +1589,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>, {id: string}> = (props) => {
@@ -1600,13 +1600,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type AdminDeleteEntityCodingRuleMutationResult = NonNullable<Awaited<ReturnType<typeof adminDeleteEntityCodingRule>>>
-    
+
     export type AdminDeleteEntityCodingRuleMutationError = ErrorType<void | NotFoundResponse>
 
     /**
@@ -1629,7 +1629,7 @@ export const getGetOwnedRecordCountsUrl = (params: GetOwnedRecordCountsParams,) 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1641,16 +1641,16 @@ export const getGetOwnedRecordCountsUrl = (params: GetOwnedRecordCountsParams,) 
 }
 
 export const getOwnedRecordCounts = async (params: GetOwnedRecordCountsParams, options?: RequestInit): Promise<OwnedRecordCounts> => {
-  
+
   return customFetch<OwnedRecordCounts>(getGetOwnedRecordCountsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1661,7 +1661,7 @@ export const getGetOwnedRecordCountsQueryKey = (params?: GetOwnedRecordCountsPar
     ] as const;
     }
 
-    
+
 export const getGetOwnedRecordCountsQueryOptions = <TData = Awaited<ReturnType<typeof getOwnedRecordCounts>>, TError = ErrorType<BadRequestResponse | ForbiddenResponse>>(params: GetOwnedRecordCountsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnedRecordCounts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1669,13 +1669,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetOwnedRecordCountsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getOwnedRecordCounts>>> = ({ signal }) => getOwnedRecordCounts(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getOwnedRecordCounts>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1690,7 +1690,7 @@ export type GetOwnedRecordCountsQueryError = ErrorType<BadRequestResponse | Forb
 
 export function useGetOwnedRecordCounts<TData = Awaited<ReturnType<typeof getOwnedRecordCounts>>, TError = ErrorType<BadRequestResponse | ForbiddenResponse>>(
  params: GetOwnedRecordCountsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOwnedRecordCounts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetOwnedRecordCountsQueryOptions(params,options)
@@ -1709,15 +1709,15 @@ export function useGetOwnedRecordCounts<TData = Awaited<ReturnType<typeof getOwn
 export const getReassignOwnerUrl = () => {
 
 
-  
+
 
   return `/api/admin/reassign-owner`
 }
 
 export const reassignOwner = async (reassignOwnerBody: ReassignOwnerBody, options?: RequestInit): Promise<ReassignOwnerResult> => {
-  
+
   return customFetch<ReassignOwnerResult>(getReassignOwnerUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1725,7 +1725,7 @@ export const reassignOwner = async (reassignOwnerBody: ReassignOwnerBody, option
       reassignOwnerBody,)
   }
 );}
-  
+
 
 
 
@@ -1740,7 +1740,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reassignOwner>>, {data: BodyType<ReassignOwnerBody>}> = (props) => {
@@ -1751,7 +1751,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1773,4 +1773,3 @@ export const useReassignOwner = <TError = ErrorType<BadRequestResponse | Forbidd
       > => {
       return useMutation(getReassignOwnerMutationOptions(options));
     }
-    

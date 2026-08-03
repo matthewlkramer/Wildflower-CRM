@@ -16,7 +16,7 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Plus, Trash2 } from "lucide-react";
-import { GiftFormDialog } from "@/components/gift-form-dialog";
+import { RecordReceivedGiftDialog } from "@/components/record-received-gift-dialog";
 import { CreateOpportunityDialog } from "@/components/create-opportunity-dialog";
 import { AddTaskDialog } from "@/components/tasks-panel";
 import { RelatedCard, RelatedRow } from "@/components/record-layout";
@@ -31,7 +31,12 @@ import {
 } from "@/components/ui/select";
 import { useUserNameMap } from "@/components/user-picker";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatDate, formatDateShort, formatEnum } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDate,
+  formatDateShort,
+  formatEnum,
+} from "@/lib/format";
 import { opportunityStatusLabel } from "@/lib/opportunity-status";
 
 // Cap each card at this many rows. Donor-scoped lists rarely exceed
@@ -55,7 +60,8 @@ export type LinkedRecordsScope =
   | { individualGiverPersonId: string };
 
 export function buildBaseParams(scope: LinkedRecordsScope) {
-  if ("organizationId" in scope) return { organizationId: scope.organizationId };
+  if ("organizationId" in scope)
+    return { organizationId: scope.organizationId };
   if ("householdId" in scope) return { householdId: scope.householdId };
   return { individualGiverPersonId: scope.individualGiverPersonId };
 }
@@ -76,7 +82,7 @@ export function LinkedGiftsCard({ scope }: { scope: LinkedRecordsScope }) {
     <RelatedCard
       title="Gifts & payments"
       count={isLoading ? undefined : total}
-      action={<GiftFormDialog scope={scope} />}
+      action={<RecordReceivedGiftDialog scope={scope} />}
     >
       {isError ? (
         <p className="px-2 py-2 text-sm text-destructive">
@@ -344,7 +350,10 @@ export function LinkedTasksCard({
                       variant="ghost"
                       className="h-7 w-7 text-muted-foreground hover:text-primary"
                       onClick={() =>
-                        updateTask.mutate({ id: t.id, data: { status: "done" } })
+                        updateTask.mutate({
+                          id: t.id,
+                          data: { status: "done" },
+                        })
                       }
                       aria-label="Mark done"
                       data-testid={`button-task-done-${t.id}`}
@@ -368,10 +377,7 @@ export function LinkedTasksCard({
               <div className="text-xs text-muted-foreground">
                 Due {formatDate(t.dueDate)}
                 {t.assigneeUserId ? (
-                  <>
-                    {" "}
-                    · {userMap.get(t.assigneeUserId) ?? t.assigneeUserId}
-                  </>
+                  <> · {userMap.get(t.assigneeUserId) ?? t.assigneeUserId}</>
                 ) : null}
               </div>
             </li>

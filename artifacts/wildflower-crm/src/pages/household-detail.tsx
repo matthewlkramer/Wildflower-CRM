@@ -5,12 +5,16 @@ import {
   useGetHousehold,
   useUpdateHousehold,
   useArchiveHousehold,
+  useUnarchiveHousehold,
   getGetHouseholdQueryKey,
   getListHouseholdsQueryKey,
   type HouseholdDetail,
   type UpdateHouseholdBody,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
+import { DonorRecordActions } from "@/components/donor-record-actions";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { EDIT_PENCIL_REVEAL } from "@/components/inline-edit";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
@@ -70,6 +74,8 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
 
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(household.name);
+  const [flagResearchOpen, setFlagResearchOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const update = useUpdateHousehold({
     mutation: {
@@ -106,6 +112,29 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
       onError: (err: unknown) => {
         toast({
           title: "Archive failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const restore = useUnarchiveHousehold({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getGetHouseholdQueryKey(household.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListHouseholdsQueryKey(),
+          }),
+        ]);
+        toast({ title: "Household restored" });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Restore failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -163,34 +192,40 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
     </>
   ) : (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={toggleActive}
-        disabled={update.isPending}
-        data-testid="button-toggle-household-active"
-      >
-        {household.active ? "Mark inactive" : "Mark active"}
-      </Button>
-      <Button
-        variant="outline"
-        size="sm"
-        className={EDIT_PENCIL_REVEAL}
-        onClick={() => setEditingName(true)}
-        data-testid="button-edit-household-name"
-      >
-        Edit name
-      </Button>
+      <DonorRecordActions
+        sourceKind="household"
+        sourceId={household.id}
+        sourceName={household.name}
+        onEditName={() => setEditingName(true)}
+        onFlagResearch={() => setFlagResearchOpen(true)}
+        onArchive={() => setArchiveOpen(true)}
+        busy={archive.isPending || restore.isPending || update.isPending}
+        archived={!!household.archivedAt}
+        onRestore={() => restore.mutate({ id: household.id })}
+        additionalItems={
+          <DropdownMenuItem onSelect={toggleActive}>
+            {household.active ? "Mark inactive" : "Mark active"}
+          </DropdownMenuItem>
+        }
+      />
+      <FlagForResearchDialog
+        targetType="household"
+        targetId={household.id}
+        recordLabel={household.name}
+        open={flagResearchOpen}
+        onOpenChange={setFlagResearchOpen}
+        hideTrigger
+      />
       <ConfirmDeleteDialog
         title={`Archive ${household.name}?`}
         description="It will be hidden from lists. An admin can restore it from the archived view."
         confirmLabel="Archive"
-        triggerLabel="Archive"
         busyLabel="Archiving…"
         destructive={false}
         onConfirm={() => archive.mutateAsync({ id: household.id })}
         disabled={archive.isPending}
-        triggerTestId="button-archive-household"
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
         confirmTestId="button-confirm-archive-household"
       />
     </>
@@ -312,7 +347,10 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
             )}
           </RelatedCard>
 
-          <GivingRelationshipCard sourceKind="household" sourceId={household.id} />
+          <GivingRelationshipCard
+            sourceKind="household"
+            sourceId={household.id}
+          />
 
           <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 

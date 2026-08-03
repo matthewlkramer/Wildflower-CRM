@@ -45,7 +45,7 @@ export const getListNotesUrl = (params?: ListNotesParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -57,16 +57,16 @@ export const getListNotesUrl = (params?: ListNotesParams,) => {
 }
 
 export const listNotes = async (params?: ListNotesParams, options?: RequestInit): Promise<NoteList> => {
-  
+
   return customFetch<NoteList>(getListNotesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -77,7 +77,7 @@ export const getListNotesQueryKey = (params?: ListNotesParams,) => {
     ] as const;
     }
 
-    
+
 export const getListNotesQueryOptions = <TData = Awaited<ReturnType<typeof listNotes>>, TError = ErrorType<unknown>>(params?: ListNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -85,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListNotesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listNotes>>> = ({ signal }) => listNotes(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNotes>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -103,7 +103,7 @@ export type ListNotesQueryError = ErrorType<unknown>
 
 export function useListNotes<TData = Awaited<ReturnType<typeof listNotes>>, TError = ErrorType<unknown>>(
  params?: ListNotesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNotes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListNotesQueryOptions(params,options)
@@ -119,15 +119,15 @@ export function useListNotes<TData = Awaited<ReturnType<typeof listNotes>>, TErr
 export const getCreateNoteUrl = () => {
 
 
-  
+
 
   return `/api/notes`
 }
 
 export const createNote = async (createNoteBody: CreateNoteBody, options?: RequestInit): Promise<Note> => {
-  
+
   return customFetch<Note>(getCreateNoteUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -135,7 +135,7 @@ export const createNote = async (createNoteBody: CreateNoteBody, options?: Reque
       createNoteBody,)
   }
 );}
-  
+
 
 
 
@@ -150,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNote>>, {data: BodyType<CreateNoteBody>}> = (props) => {
@@ -161,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -183,22 +183,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/notes/${id}`
 }
 
 export const getNote = async (id: string, options?: RequestInit): Promise<Note> => {
-  
+
   return customFetch<Note>(getGetNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -209,7 +209,7 @@ export const getGetNoteQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetNoteQueryOptions = <TData = Awaited<ReturnType<typeof getNote>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -217,13 +217,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetNoteQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getNote>>> = ({ signal }) => getNote(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getNote>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -235,7 +235,7 @@ export type GetNoteQueryError = ErrorType<NotFoundResponse>
 
 export function useGetNote<TData = Awaited<ReturnType<typeof getNote>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getNote>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetNoteQueryOptions(id,options)
@@ -251,16 +251,16 @@ export function useGetNote<TData = Awaited<ReturnType<typeof getNote>>, TError =
 export const getUpdateNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/notes/${id}`
 }
 
 export const updateNote = async (id: string,
     updateNoteBody: UpdateNoteBody, options?: RequestInit): Promise<Note> => {
-  
+
   return customFetch<Note>(getUpdateNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -268,7 +268,7 @@ export const updateNote = async (id: string,
       updateNoteBody,)
   }
 );}
-  
+
 
 
 
@@ -283,7 +283,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateNote>>, {id: string;data: BodyType<UpdateNoteBody>}> = (props) => {
@@ -294,7 +294,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -316,22 +316,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteNoteUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/notes/${id}`
 }
 
 export const deleteNote = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteNoteUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -346,7 +346,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteNote>>, {id: string}> = (props) => {
@@ -357,13 +357,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteNoteMutationResult = NonNullable<Awaited<ReturnType<typeof deleteNote>>>
-    
+
     export type DeleteNoteMutationError = ErrorType<unknown>
 
     export const useDeleteNote = <TError = ErrorType<unknown>,
@@ -376,4 +376,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getDeleteNoteMutationOptions(options));
     }
-    
