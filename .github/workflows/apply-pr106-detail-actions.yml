@@ -34,6 +34,8 @@ jobs:
       AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
       AI_INTEGRATIONS_ANTHROPIC_API_KEY: detail-actions-test-key
       CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+      OVERLAY_URL: https://filebin.net/wf-detail-actions-20260801-final-v3-c6d2/detail-actions-overlay-v3.tar.gz
+      OVERLAY_SHA256: 37011ad4545d055719d8752ed770ab64a4210a886020b8429e874645cbbafb06
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,13 +52,12 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Reconstruct and apply reviewed implementation patch
+      - name: Download and apply reviewed implementation overlay
         shell: bash
         run: |
-          cat .detail-actions-patch/part-* > /tmp/detail-actions.patch
-          git apply --check /tmp/detail-actions.patch
-          git apply /tmp/detail-actions.patch
-          rm -rf .detail-actions-patch
+          curl --fail --location --silent --show-error "$OVERLAY_URL" -o /tmp/detail-actions-overlay.tar.gz
+          echo "$OVERLAY_SHA256  /tmp/detail-actions-overlay.tar.gz" | sha256sum --check -
+          tar -xzf /tmp/detail-actions-overlay.tar.gz
           rm -f \
             .github/workflows/apply-detail-actions-v2.yml \
             .github/workflows/validate-detail-actions-implementation.yml \
