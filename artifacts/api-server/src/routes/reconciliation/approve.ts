@@ -322,6 +322,20 @@ async function mintGiftFromEvidence(
             message: "opportunity not found",
           });
         }
+        if (opp.archivedAt != null) {
+          throw new ApproveAbort(409, {
+            error: "opportunity_archived",
+            message:
+              "Restore this opportunity before recording received money against it.",
+          });
+        }
+        if (opp.lossType != null) {
+          throw new ApproveAbort(409, {
+            error: "opportunity_closed",
+            message:
+              "Reopen this opportunity before recording received money against it.",
+          });
+        }
       }
 
       let charge: typeof stripeStagedCharges.$inferSelect | null = null;
@@ -388,15 +402,6 @@ async function mintGiftFromEvidence(
             error: "stripe_charge_wrong_payout",
             message:
               "The selected Stripe charge is not part of this deposit's confirmed settlement. Book it from its own card.",
-          });
-        }
-        // The skipped QB-anchor gate normally rejects archived opportunities —
-        // enforce that directly here.
-        if (opp && opp.archivedAt != null) {
-          throw new ApproveAbort(409, {
-            error: "opportunity_archived",
-            message:
-              "Restore this opportunity before recording a payment against it.",
           });
         }
         await createGiftFromChargeInTx(tx, {
@@ -799,7 +804,9 @@ router.post(
         const incumbentPaymentId = await tx
           .execute<{
             incumbent_id: string | null;
-          }>(sql`SELECT ${qbLedgerPaymentIdForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)} AS incumbent_id`)
+          }>(
+            sql`SELECT ${qbLedgerPaymentIdForGiftExcludingPayment(sql`${giftId}`, sql`${stagedPaymentId}`)} AS incumbent_id`,
+          )
           .then((r) => r.rows[0]?.incumbent_id ?? null);
         const displaceLinkedPayment = body.displaceLinkedPayment === true;
         let incumbentStagedPayment: typeof stagedPayments.$inferSelect | null =
@@ -834,7 +841,9 @@ router.post(
         const ownAppliedGiftId = await tx
           .execute<{
             applied_gift_id: string | null;
-          }>(sql`SELECT ${qbLedgerGiftIdForPaymentExcludingGift(sql`${stagedPaymentId}`, sql`${giftId}`)} AS applied_gift_id`)
+          }>(
+            sql`SELECT ${qbLedgerGiftIdForPaymentExcludingGift(sql`${stagedPaymentId}`, sql`${giftId}`)} AS applied_gift_id`,
+          )
           .then((r) => r.rows[0]?.applied_gift_id ?? null);
         const moveOwnApplication = body.moveOwnApplication === true;
         let oldAppliedGift: typeof giftsAndPayments.$inferSelect | null = null;

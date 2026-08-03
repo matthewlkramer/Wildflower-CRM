@@ -15,6 +15,7 @@ import {
   paymentIntermediaries,
   paymentUnits,
   sourceLinks,
+  opportunitiesAndPledges,
 } from "@workspace/db/schema";
 import {
   and,
@@ -58,10 +59,13 @@ import {
 } from "../lib/reconciliationBundleCommit";
 import {
   ReconcileAbort,
-  lockAndValidatePledgeForPayment,
   orphanStripeSourceChargeInTx,
 } from "../lib/reconciliationCommit";
-import { donorOf, hasExactlyOneDonor, donorsMatch } from "../lib/quickbooksLink";
+import {
+  donorOf,
+  hasExactlyOneDonor,
+  donorsMatch,
+} from "../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { buildGiftValuesFromStripeCharge } from "../lib/stripeGift";
 import {
@@ -76,11 +80,7 @@ import {
   chargeCountedLedgerRow,
 } from "../lib/paymentApplications";
 import { applySupersedeForPayoutInTx } from "../lib/settlementSupersede";
-import {
-  reconAudit,
-  fmtMoney,
-  payerLabel,
-} from "../lib/reconciliationAudit";
+import { reconAudit, fmtMoney, payerLabel } from "../lib/reconciliationAudit";
 import { giftHeaderColumns } from "./giftsAndPayments";
 import { logger } from "../lib/logger";
 import {
@@ -153,7 +153,10 @@ function requireAdmin(
   return true;
 }
 
-function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
+function respondInvariantFailure(
+  res: Response,
+  issues: InvariantIssue[],
+): void {
   res.status(400).json({
     error: "validation_error",
     message: "Request validation failed",
@@ -333,7 +336,8 @@ function queueWhere(queue: Queue) {
 router.get(
   "/stripe-staged-charges",
   asyncHandler(async (req, res) => {
-    const raw = typeof req.query["queue"] === "string" ? req.query["queue"] : "";
+    const raw =
+      typeof req.query["queue"] === "string" ? req.query["queue"] : "";
     const queue: Queue = (
       [
         "needs_review",
@@ -508,7 +512,11 @@ router.post(
     const body = parsed.data;
 
     const existing = await db
-      .select({ status: chargeStatusSql })
+      .select({
+        status: chargeStatusSql,
+        matchedPaymentIntermediaryId:
+          stripeStagedCharges.matchedPaymentIntermediaryId,
+      })
       .from(stripeStagedCharges)
       .where(eq(stripeStagedCharges.id, id))
       .then((r) => r[0]);
@@ -535,14 +543,15 @@ router.post(
         ...donor,
         matchStatus: "matched",
         matchMethod: "manual",
-        matchedPaymentIntermediaryId: body.paymentIntermediaryId ?? null,
+        matchedPaymentIntermediaryId:
+          body.paymentIntermediaryId === undefined
+            ? existing.matchedPaymentIntermediaryId
+            : body.paymentIntermediaryId,
         matchConfirmedByUserId: user.id,
         matchConfirmedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(
-        and(eq(stripeStagedCharges.id, id), chargeStatusWhere.pending),
-      )
+      .where(and(eq(stripeStagedCharges.id, id), chargeStatusWhere.pending))
       .returning();
     if (!row) {
       res.status(409).json({
@@ -729,7 +738,8 @@ router.post(
         if (parsed.data.switchGiftDonor === true) {
           const chosen = {
             organizationId: parsed.data.organizationId ?? null,
-            individualGiverPersonId: parsed.data.individualGiverPersonId ?? null,
+            individualGiverPersonId:
+              parsed.data.individualGiverPersonId ?? null,
             householdId: parsed.data.householdId ?? null,
           };
           if (!hasExactlyOneDonor(chosen)) {
@@ -883,12 +893,39 @@ router.post(
     const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
-        // Payment-on-pledge: lock + validate the pledge BEFORE the charge
-        // (opp → charge lock order, matching approve.ts) and derive the
-        // donor from it.
+        // Record-local received-money action: lock the selected opportunity or
+        // pledge BEFORE the charge (opp → charge lock order). An open
+        // opportunity produces a direct gift outcome; a previously finalized
+        // pledge produces a pledge payment. The donor always derives from the
+        // selected record.
         const opp = overrides.opportunityId
-          ? await lockAndValidatePledgeForPayment(tx, overrides.opportunityId)
+          ? await tx
+              .select()
+              .from(opportunitiesAndPledges)
+              .where(eq(opportunitiesAndPledges.id, overrides.opportunityId))
+              .for("update")
+              .then((rows) => rows[0] ?? null)
           : null;
+        if (overrides.opportunityId && !opp) {
+          throw new ReconcileAbort(404, {
+            error: "not_found",
+            message: "opportunity not found",
+          });
+        }
+        if (opp?.archivedAt) {
+          throw new ReconcileAbort(409, {
+            error: "opportunity_archived",
+            message:
+              "Restore this opportunity before recording received money against it.",
+          });
+        }
+        if (opp?.lossType) {
+          throw new ReconcileAbort(409, {
+            error: "opportunity_closed",
+            message:
+              "Reopen this opportunity before recording received money against it.",
+          });
+        }
         const locked = await tx
           .select()
           .from(stripeStagedCharges)
@@ -920,7 +957,8 @@ router.post(
             paymentIntermediaryId: null,
             opportunityId: opp.id,
             audit: {
-              summary: "Minted gift from Stripe charge as a payment on a pledge",
+              summary:
+                "Minted gift from Stripe charge as a payment on a pledge",
               metadata: {
                 stripeChargeId: locked.id,
                 outcome: "create_gift_from_opportunity",
@@ -1044,8 +1082,8 @@ router.post(
       throw e;
     }
 
-    // Payment-on-pledge: the pledge's status/paid totals DERIVE from its live
-    // payments — recompute after the mint committed.
+    // Opportunity/pledge lifecycle and paid totals derive from linked live
+    // gifts — recompute after the mint committed.
     if (overrides.opportunityId) {
       await applyDerivedOppFieldsMany(overrides.opportunityId);
     }
@@ -1167,12 +1205,7 @@ router.post(
         classificationSource: "manual",
         updatedAt: new Date(),
       })
-      .where(
-        and(
-          eq(stripeStagedCharges.id, id),
-          chargeStatusWhere.excluded,
-        ),
-      )
+      .where(and(eq(stripeStagedCharges.id, id), chargeStatusWhere.excluded))
       .returning();
     if (!row) {
       res.status(409).json({
@@ -1575,7 +1608,11 @@ router.post(
     try {
       const summary = await rematchStripeCharges();
       req.log.info(
-        { ran: summary.ran, scanned: summary.scanned, matched: summary.matched },
+        {
+          ran: summary.ran,
+          scanned: summary.scanned,
+          matched: summary.matched,
+        },
         "Stripe staged-charge rematch run",
       );
       res.json(summary);
@@ -1669,7 +1706,8 @@ router.get(
       total: rows.length,
       withExactQbRow: rows.filter((r) => r.hasExactQbRow).length,
       deposits: rows.filter((r) => r.suggestedGrain === "deposit-lump").length,
-      payments: rows.filter((r) => r.suggestedGrain === "charge-payment").length,
+      payments: rows.filter((r) => r.suggestedGrain === "charge-payment")
+        .length,
       orphans: rows.filter((r) => r.suggestedGrain === "none").length,
       rows,
     });
@@ -1764,9 +1802,10 @@ const reconSelect = {
   // fragment can't be interpolated here (drizzle renders alias columns
   // unqualified inside sql``), so the SAME derivation comes from the
   // single-source alias-parameterized builder.
-  depositStatus: sql<string>`${sql.raw(qbStatusCaseText("settled_deposit"))}`.as(
-    "deposit_status",
-  ),
+  depositStatus:
+    sql<string>`${sql.raw(qbStatusCaseText("settled_deposit"))}`.as(
+      "deposit_status",
+    ),
 };
 
 // ─── GET /stripe-payouts/reconciliation ────────────────────────────────────

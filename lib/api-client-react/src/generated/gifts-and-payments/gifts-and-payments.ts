@@ -25,7 +25,9 @@ import type {
   BulkUpdateGiftsBody,
   BulkUpdateResult,
   CandidateThankYouEmailList,
+  CorrectionReasonBody,
   CreateGiftOrPaymentBody,
+  DetachGiftFromPledgeResult,
   ErrorResponse,
   ForbiddenResponse,
   GiftAuditReconciliation,
@@ -63,7 +65,7 @@ export const getListGiftsAndPaymentsUrl = (params?: ListGiftsAndPaymentsParams,)
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -75,16 +77,16 @@ export const getListGiftsAndPaymentsUrl = (params?: ListGiftsAndPaymentsParams,)
 }
 
 export const listGiftsAndPayments = async (params?: ListGiftsAndPaymentsParams, options?: RequestInit): Promise<GiftOrPaymentList> => {
-  
+
   return customFetch<GiftOrPaymentList>(getListGiftsAndPaymentsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -95,7 +97,7 @@ export const getListGiftsAndPaymentsQueryKey = (params?: ListGiftsAndPaymentsPar
     ] as const;
     }
 
-    
+
 export const getListGiftsAndPaymentsQueryOptions = <TData = Awaited<ReturnType<typeof listGiftsAndPayments>>, TError = ErrorType<unknown>>(params?: ListGiftsAndPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftsAndPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -103,13 +105,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListGiftsAndPaymentsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listGiftsAndPayments>>> = ({ signal }) => listGiftsAndPayments(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listGiftsAndPayments>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -121,7 +123,7 @@ export type ListGiftsAndPaymentsQueryError = ErrorType<unknown>
 
 export function useListGiftsAndPayments<TData = Awaited<ReturnType<typeof listGiftsAndPayments>>, TError = ErrorType<unknown>>(
  params?: ListGiftsAndPaymentsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listGiftsAndPayments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListGiftsAndPaymentsQueryOptions(params,options)
@@ -137,15 +139,15 @@ export function useListGiftsAndPayments<TData = Awaited<ReturnType<typeof listGi
 export const getCreateGiftOrPaymentUrl = () => {
 
 
-  
+
 
   return `/api/gifts-and-payments`
 }
 
 export const createGiftOrPayment = async (createGiftOrPaymentBody: CreateGiftOrPaymentBody, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getCreateGiftOrPaymentUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -153,7 +155,7 @@ export const createGiftOrPayment = async (createGiftOrPaymentBody: CreateGiftOrP
       createGiftOrPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -168,7 +170,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createGiftOrPayment>>, {data: BodyType<CreateGiftOrPaymentBody>}> = (props) => {
@@ -179,7 +181,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -201,22 +203,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetGiftOrPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}`
 }
 
 export const getGiftOrPayment = async (id: string, options?: RequestInit): Promise<GiftOrPaymentDetail> => {
-  
+
   return customFetch<GiftOrPaymentDetail>(getGetGiftOrPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -227,7 +229,7 @@ export const getGetGiftOrPaymentQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetGiftOrPaymentQueryOptions = <TData = Awaited<ReturnType<typeof getGiftOrPayment>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftOrPayment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -235,13 +237,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGiftOrPaymentQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftOrPayment>>> = ({ signal }) => getGiftOrPayment(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGiftOrPayment>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -253,7 +255,7 @@ export type GetGiftOrPaymentQueryError = ErrorType<NotFoundResponse>
 
 export function useGetGiftOrPayment<TData = Awaited<ReturnType<typeof getGiftOrPayment>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftOrPayment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGiftOrPaymentQueryOptions(id,options)
@@ -269,16 +271,16 @@ export function useGetGiftOrPayment<TData = Awaited<ReturnType<typeof getGiftOrP
 export const getUpdateGiftOrPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}`
 }
 
 export const updateGiftOrPayment = async (id: string,
     updateGiftOrPaymentBody: UpdateGiftOrPaymentBody, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getUpdateGiftOrPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -286,7 +288,7 @@ export const updateGiftOrPayment = async (id: string,
       updateGiftOrPaymentBody,)
   }
 );}
-  
+
 
 
 
@@ -301,7 +303,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateGiftOrPayment>>, {id: string;data: BodyType<UpdateGiftOrPaymentBody>}> = (props) => {
@@ -312,7 +314,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -332,6 +334,78 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(getUpdateGiftOrPaymentMutationOptions(options));
     }
     /**
+ * Clears only gift.opportunityId and re-derives the former pledge. The gift, allocations, payment units, QuickBooks/Stripe/Donorbox evidence, amount, date, and intermediary remain unchanged.
+ * @summary Admin correction that detaches a mislinked pledge payment and treats it as a stand-alone gift.
+ */
+export const getDetachGiftFromPledgeUrl = (id: string,) => {
+
+
+
+
+  return `/api/gifts-and-payments/${id}/detach-from-pledge`
+}
+
+export const detachGiftFromPledge = async (id: string,
+    correctionReasonBody?: CorrectionReasonBody, options?: RequestInit): Promise<DetachGiftFromPledgeResult> => {
+
+  return customFetch<DetachGiftFromPledgeResult>(getDetachGiftFromPledgeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctionReasonBody,)
+  }
+);}
+
+
+
+
+export const getDetachGiftFromPledgeMutationOptions = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof detachGiftFromPledge>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof detachGiftFromPledge>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext> => {
+
+const mutationKey = ['detachGiftFromPledge'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof detachGiftFromPledge>>, {id: string;data: BodyType<CorrectionReasonBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  detachGiftFromPledge(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DetachGiftFromPledgeMutationResult = NonNullable<Awaited<ReturnType<typeof detachGiftFromPledge>>>
+    export type DetachGiftFromPledgeMutationBody = BodyType<CorrectionReasonBody>
+    export type DetachGiftFromPledgeMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Admin correction that detaches a mislinked pledge payment and treats it as a stand-alone gift.
+ */
+export const useDetachGiftFromPledge = <TError = ErrorType<ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof detachGiftFromPledge>>, TError,{id: string;data: BodyType<CorrectionReasonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof detachGiftFromPledge>>,
+        TError,
+        {id: string;data: BodyType<CorrectionReasonBody>},
+        TContext
+      > => {
+      return useMutation(getDetachGiftFromPledgeMutationOptions(options));
+    }
+    /**
  * Recent outbound emails from the caller's mailbox to any contact
 of the gift's funder, within 90 days of the gift's dateReceived.
 Each result is flagged `autoSuggested: true` when it matches the
@@ -342,22 +416,22 @@ attachment, sent within 30 days of dateReceived).
 export const getListCandidateThankYouEmailsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/candidate-thank-you-emails`
 }
 
 export const listCandidateThankYouEmails = async (id: string, options?: RequestInit): Promise<CandidateThankYouEmailList> => {
-  
+
   return customFetch<CandidateThankYouEmailList>(getListCandidateThankYouEmailsUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -368,7 +442,7 @@ export const getListCandidateThankYouEmailsQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getListCandidateThankYouEmailsQueryOptions = <TData = Awaited<ReturnType<typeof listCandidateThankYouEmails>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCandidateThankYouEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -376,13 +450,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListCandidateThankYouEmailsQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listCandidateThankYouEmails>>> = ({ signal }) => listCandidateThankYouEmails(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCandidateThankYouEmails>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -394,7 +468,7 @@ export type ListCandidateThankYouEmailsQueryError = ErrorType<NotFoundResponse>
 
 export function useListCandidateThankYouEmails<TData = Awaited<ReturnType<typeof listCandidateThankYouEmails>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCandidateThankYouEmails>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListCandidateThankYouEmailsQueryOptions(id,options)
@@ -410,16 +484,16 @@ export function useListCandidateThankYouEmails<TData = Awaited<ReturnType<typeof
 export const getLinkThankYouEmailUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/link-thank-you-email`
 }
 
 export const linkThankYouEmail = async (id: string,
     linkThankYouEmailBody: LinkThankYouEmailBody, options?: RequestInit): Promise<GiftOrPaymentDetail> => {
-  
+
   return customFetch<GiftOrPaymentDetail>(getLinkThankYouEmailUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -427,7 +501,7 @@ export const linkThankYouEmail = async (id: string,
       linkThankYouEmailBody,)
   }
 );}
-  
+
 
 
 
@@ -442,7 +516,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof linkThankYouEmail>>, {id: string;data: BodyType<LinkThankYouEmailBody>}> = (props) => {
@@ -453,7 +527,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -475,22 +549,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnlinkThankYouEmailUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/link-thank-you-email`
 }
 
 export const unlinkThankYouEmail = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getUnlinkThankYouEmailUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -505,7 +579,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkThankYouEmail>>, {id: string}> = (props) => {
@@ -516,13 +590,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnlinkThankYouEmailMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkThankYouEmail>>>
-    
+
     export type UnlinkThankYouEmailMutationError = ErrorType<unknown>
 
     export const useUnlinkThankYouEmail = <TError = ErrorType<unknown>,
@@ -541,22 +615,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getGetGiftStripeChainUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/stripe-chain`
 }
 
 export const getGiftStripeChain = async (id: string, options?: RequestInit): Promise<GiftStripeChain> => {
-  
+
   return customFetch<GiftStripeChain>(getGetGiftStripeChainUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -567,7 +641,7 @@ export const getGetGiftStripeChainQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetGiftStripeChainQueryOptions = <TData = Awaited<ReturnType<typeof getGiftStripeChain>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftStripeChain>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -575,13 +649,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGiftStripeChainQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftStripeChain>>> = ({ signal }) => getGiftStripeChain(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGiftStripeChain>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -596,7 +670,7 @@ export type GetGiftStripeChainQueryError = ErrorType<NotFoundResponse>
 
 export function useGetGiftStripeChain<TData = Awaited<ReturnType<typeof getGiftStripeChain>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftStripeChain>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGiftStripeChainQueryOptions(id,options)
@@ -619,22 +693,22 @@ carry no QuickBooks expectation.
 export const getGetGiftAuditReconciliationUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/audit-reconciliation`
 }
 
 export const getGiftAuditReconciliation = async (id: string, options?: RequestInit): Promise<GiftAuditReconciliation> => {
-  
+
   return customFetch<GiftAuditReconciliation>(getGetGiftAuditReconciliationUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -645,7 +719,7 @@ export const getGetGiftAuditReconciliationQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetGiftAuditReconciliationQueryOptions = <TData = Awaited<ReturnType<typeof getGiftAuditReconciliation>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAuditReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -653,13 +727,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetGiftAuditReconciliationQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getGiftAuditReconciliation>>> = ({ signal }) => getGiftAuditReconciliation(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGiftAuditReconciliation>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -678,7 +752,7 @@ carry no QuickBooks expectation.
 
 export function useGetGiftAuditReconciliation<TData = Awaited<ReturnType<typeof getGiftAuditReconciliation>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGiftAuditReconciliation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetGiftAuditReconciliationQueryOptions(id,options)
@@ -705,23 +779,23 @@ export const getUntieGiftPaymentUnitUrl = (id: string,
     unitId: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/payment-units/${unitId}/untie`
 }
 
 export const untieGiftPaymentUnit = async (id: string,
     unitId: string, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getUntieGiftPaymentUnitUrl(id,unitId),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -736,7 +810,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof untieGiftPaymentUnit>>, {id: string;unitId: string}> = (props) => {
@@ -747,13 +821,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UntieGiftPaymentUnitMutationResult = NonNullable<Awaited<ReturnType<typeof untieGiftPaymentUnit>>>
-    
+
     export type UntieGiftPaymentUnitMutationError = ErrorType<ForbiddenResponse | NotFoundResponse | ErrorResponse>
 
     /**
@@ -782,15 +856,15 @@ export const useUntieGiftPaymentUnit = <TError = ErrorType<ForbiddenResponse | N
 export const getMergeGiftsAndPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/gifts-and-payments/merge`
 }
 
 export const mergeGiftsAndPayments = async (mergeGiftsBody: MergeGiftsBody, options?: RequestInit): Promise<MergeResult> => {
-  
+
   return customFetch<MergeResult>(getMergeGiftsAndPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -798,7 +872,7 @@ export const mergeGiftsAndPayments = async (mergeGiftsBody: MergeGiftsBody, opti
       mergeGiftsBody,)
   }
 );}
-  
+
 
 
 
@@ -813,7 +887,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeGiftsAndPayments>>, {data: BodyType<MergeGiftsBody>}> = (props) => {
@@ -824,7 +898,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -852,15 +926,15 @@ export const useMergeGiftsAndPayments = <TError = ErrorType<BadRequestResponse |
 export const getMergeGiftsIntoPledgeUrl = () => {
 
 
-  
+
 
   return `/api/gifts-and-payments/merge-into-pledge`
 }
 
 export const mergeGiftsIntoPledge = async (mergeGiftsIntoPledgeBody: MergeGiftsIntoPledgeBody, options?: RequestInit): Promise<MergeIntoPledgeResult> => {
-  
+
   return customFetch<MergeIntoPledgeResult>(getMergeGiftsIntoPledgeUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -868,7 +942,7 @@ export const mergeGiftsIntoPledge = async (mergeGiftsIntoPledgeBody: MergeGiftsI
       mergeGiftsIntoPledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -883,7 +957,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeGiftsIntoPledge>>, {data: BodyType<MergeGiftsIntoPledgeBody>}> = (props) => {
@@ -894,7 +968,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -932,16 +1006,16 @@ fewer than two allocations or the sub-amounts do not sum to the amount.
 export const getSplitGiftIntoPledgeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/split-into-pledge`
 }
 
 export const splitGiftIntoPledge = async (id: string,
     splitGiftIntoPledgeBody?: SplitGiftIntoPledgeBody, options?: RequestInit): Promise<MergeIntoPledgeResult> => {
-  
+
   return customFetch<MergeIntoPledgeResult>(getSplitGiftIntoPledgeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -949,7 +1023,7 @@ export const splitGiftIntoPledge = async (id: string,
       splitGiftIntoPledgeBody,)
   }
 );}
-  
+
 
 
 
@@ -964,7 +1038,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof splitGiftIntoPledge>>, {id: string;data: BodyType<SplitGiftIntoPledgeBody>}> = (props) => {
@@ -975,7 +1049,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1013,16 +1087,16 @@ a pledge, or is linked to a QuickBooks staged payment (resolve that first).
 export const getRevertGiftToOpportunityUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/revert-to-opportunity`
 }
 
 export const revertGiftToOpportunity = async (id: string,
     revertGiftToOpportunityBody?: RevertGiftToOpportunityBody, options?: RequestInit): Promise<RevertGiftToOpportunityResult> => {
-  
+
   return customFetch<RevertGiftToOpportunityResult>(getRevertGiftToOpportunityUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1030,7 +1104,7 @@ export const revertGiftToOpportunity = async (id: string,
       revertGiftToOpportunityBody,)
   }
 );}
-  
+
 
 
 
@@ -1045,7 +1119,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof revertGiftToOpportunity>>, {id: string;data: BodyType<RevertGiftToOpportunityBody>}> = (props) => {
@@ -1056,7 +1130,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1081,15 +1155,15 @@ export const useRevertGiftToOpportunity = <TError = ErrorType<BadRequestResponse
     export const getBulkUpdateGiftsAndPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/gifts-and-payments/bulk-update`
 }
 
 export const bulkUpdateGiftsAndPayments = async (bulkUpdateGiftsBody: BulkUpdateGiftsBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkUpdateGiftsAndPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1097,7 +1171,7 @@ export const bulkUpdateGiftsAndPayments = async (bulkUpdateGiftsBody: BulkUpdate
       bulkUpdateGiftsBody,)
   }
 );}
-  
+
 
 
 
@@ -1112,7 +1186,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdateGiftsAndPayments>>, {data: BodyType<BulkUpdateGiftsBody>}> = (props) => {
@@ -1123,7 +1197,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1148,15 +1222,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getBulkArchiveGiftsAndPaymentsUrl = () => {
 
 
-  
+
 
   return `/api/gifts-and-payments/bulk-archive`
 }
 
 export const bulkArchiveGiftsAndPayments = async (bulkArchiveBody: BulkArchiveBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkArchiveGiftsAndPaymentsUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1164,7 +1238,7 @@ export const bulkArchiveGiftsAndPayments = async (bulkArchiveBody: BulkArchiveBo
       bulkArchiveBody,)
   }
 );}
-  
+
 
 
 
@@ -1179,7 +1253,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkArchiveGiftsAndPayments>>, {data: BodyType<BulkArchiveBody>}> = (props) => {
@@ -1190,7 +1264,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1232,16 +1306,16 @@ already exists for it; and a current OPEN fiscal year exists to book into.
 export const getResolveGiftOverpayUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/resolve-overpay`
 }
 
 export const resolveGiftOverpay = async (id: string,
     resolveGiftOverpayBody?: ResolveGiftOverpayBody, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getResolveGiftOverpayUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1249,7 +1323,7 @@ export const resolveGiftOverpay = async (id: string,
       resolveGiftOverpayBody,)
   }
 );}
-  
+
 
 
 
@@ -1264,7 +1338,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveGiftOverpay>>, {id: string;data: BodyType<ResolveGiftOverpayBody>}> = (props) => {
@@ -1275,7 +1349,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1300,22 +1374,22 @@ export const useResolveGiftOverpay = <TError = ErrorType<BadRequestResponse | No
     export const getArchiveGiftOrPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/archive`
 }
 
 export const archiveGiftOrPayment = async (id: string, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getArchiveGiftOrPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1330,7 +1404,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveGiftOrPayment>>, {id: string}> = (props) => {
@@ -1341,13 +1415,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveGiftOrPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof archiveGiftOrPayment>>>
-    
+
     export type ArchiveGiftOrPaymentMutationError = ErrorType<NotFoundResponse>
 
     export const useArchiveGiftOrPayment = <TError = ErrorType<NotFoundResponse>,
@@ -1363,22 +1437,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchiveGiftOrPaymentUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/gifts-and-payments/${id}/unarchive`
 }
 
 export const unarchiveGiftOrPayment = async (id: string, options?: RequestInit): Promise<GiftOrPayment> => {
-  
+
   return customFetch<GiftOrPayment>(getUnarchiveGiftOrPaymentUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1393,7 +1467,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveGiftOrPayment>>, {id: string}> = (props) => {
@@ -1404,13 +1478,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchiveGiftOrPaymentMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveGiftOrPayment>>>
-    
+
     export type UnarchiveGiftOrPaymentMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchiveGiftOrPayment = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -1423,4 +1497,3 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchiveGiftOrPaymentMutationOptions(options));
     }
-    

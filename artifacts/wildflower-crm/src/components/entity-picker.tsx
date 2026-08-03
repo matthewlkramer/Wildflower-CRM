@@ -155,9 +155,7 @@ export function EntityCombobox({
     [rawItems, excludeIds],
   );
   const resolvedLabel = useResolve(value);
-  const triggerLabel = value
-    ? (resolvedLabel ?? value)
-    : placeholder;
+  const triggerLabel = value ? (resolvedLabel ?? value) : placeholder;
 
   const trimmedQuery = query.trim();
   const hasExactMatch = items.some(
@@ -362,7 +360,10 @@ export function InlineEditEntityPicker({
   const canSave = dirty && (allowNull || draft !== null);
   const trySave = () => {
     if (!canSave || busy) return;
-    run(() => onSave(draft), () => setEditing(false));
+    run(
+      () => onSave(draft),
+      () => setEditing(false),
+    );
   };
 
   return (
@@ -778,6 +779,7 @@ export function InlineEditDonor({
   individualLabel = "Individual",
   align = "right",
   intermediary,
+  donorReadOnly = false,
 }: {
   testIdBase?: string;
   value: DonorValue;
@@ -794,6 +796,12 @@ export function InlineEditDonor({
    * and the save body carries `paymentIntermediaryId` alongside the donor FKs.
    */
   intermediary?: { value: string | null };
+  /**
+   * Keep the donor fixed while still allowing the intermediary to be edited.
+   * Used for gifts linked to an opportunity/pledge: changing the donor would
+   * change the meaning of the linked payment and requires an explicit correction.
+   */
+  donorReadOnly?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const { busy, run } = useSaveRunner();
@@ -825,7 +833,7 @@ export function InlineEditDonor({
             EDIT_VALUE_CLICKABLE,
           )}
           onClick={makeEditValueClick(() => setEditing(true))}
-          title="Edit donor"
+          title={donorReadOnly ? "Edit payment intermediary" : "Edit donor"}
         >
           {display}
         </div>
@@ -838,7 +846,9 @@ export function InlineEditDonor({
             EDIT_PENCIL_REVEAL,
           )}
           onClick={() => setEditing(true)}
-          aria-label="Edit donor"
+          aria-label={
+            donorReadOnly ? "Edit payment intermediary" : "Edit donor"
+          }
           data-testid={testIdBase ? `button-edit-${testIdBase}` : undefined}
         >
           <Pencil className="h-3.5 w-3.5" />
@@ -848,17 +858,26 @@ export function InlineEditDonor({
   }
 
   const body: DonorSaveBody & { paymentIntermediaryId?: string | null } =
-    buildDonorBody(type, pickedId);
+    donorReadOnly
+      ? {
+          organizationId: value.organizationId ?? null,
+          individualGiverPersonId: value.individualGiverPersonId ?? null,
+          householdId: value.householdId ?? null,
+        }
+      : buildDonorBody(type, pickedId);
   if (intermediary) body.paymentIntermediaryId = intermediaryId;
   const dirty =
     body.organizationId !== (value.organizationId ?? null) ||
     body.individualGiverPersonId !== (value.individualGiverPersonId ?? null) ||
     body.householdId !== (value.householdId ?? null) ||
     (intermediary ? intermediaryId !== intermediaryValue : false);
-  const canSave = dirty && pickedId !== null && !busy;
+  const canSave = dirty && (donorReadOnly || pickedId !== null) && !busy;
   const trySave = () => {
     if (!canSave) return;
-    run(() => onSave(body), () => setEditing(false));
+    run(
+      () => onSave(body),
+      () => setEditing(false),
+    );
   };
 
   const saveCancelButtons = (
@@ -892,66 +911,77 @@ export function InlineEditDonor({
 
   return (
     <div className="flex flex-col gap-2 min-w-0">
-      <div className="flex gap-1">
-        {(["organization", "individual", "household"] as const).map((t) => (
-          <Button
-            key={t}
-            type="button"
-            size="sm"
-            variant={type === t ? "default" : "outline"}
-            className="h-7 px-2 text-xs"
-            disabled={busy}
-            onClick={() => {
-              if (t !== type) {
-                setType(t);
-                setPickedId(null);
+      {donorReadOnly ? (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Donor
+          </div>
+          <div>{display}</div>
+        </div>
+      ) : (
+        <div className="flex gap-1">
+          {(["organization", "individual", "household"] as const).map((t) => (
+            <Button
+              key={t}
+              type="button"
+              size="sm"
+              variant={type === t ? "default" : "outline"}
+              className="h-7 px-2 text-xs"
+              disabled={busy}
+              onClick={() => {
+                if (t !== type) {
+                  setType(t);
+                  setPickedId(null);
+                }
+              }}
+              data-testid={
+                testIdBase ? `button-${testIdBase}-type-${t}` : undefined
               }
-            }}
-            data-testid={
-              testIdBase ? `button-${testIdBase}-type-${t}` : undefined
-            }
-          >
-            {t === "individual" ? individualLabel : DONOR_TYPE_LABEL[t]}
-          </Button>
-        ))}
-      </div>
-      <div className="flex items-center gap-1 min-w-0">
-        {type === "organization" ? (
-          <EntityCombobox
-            useSearch={useOrganizationSearch}
-            useResolve={useOrganizationName}
-            value={pickedId}
-            onChange={setPickedId}
-            allowNull={false}
-            placeholder="Search funders…"
-            disabled={busy}
-            testId={testIdBase ? `select-${testIdBase}` : undefined}
-          />
-        ) : type === "individual" ? (
-          <EntityCombobox
-            useSearch={usePersonSearch}
-            useResolve={usePersonName}
-            value={pickedId}
-            onChange={setPickedId}
-            allowNull={false}
-            placeholder="Search people…"
-            disabled={busy}
-            testId={testIdBase ? `select-${testIdBase}` : undefined}
-          />
-        ) : (
-          <EntityCombobox
-            useSearch={useHouseholdSearch}
-            useResolve={useHouseholdName}
-            value={pickedId}
-            onChange={setPickedId}
-            allowNull={false}
-            placeholder="Search households…"
-            disabled={busy}
-            testId={testIdBase ? `select-${testIdBase}` : undefined}
-          />
-        )}
-        {intermediary ? null : saveCancelButtons}
-      </div>
+            >
+              {t === "individual" ? individualLabel : DONOR_TYPE_LABEL[t]}
+            </Button>
+          ))}
+        </div>
+      )}
+      {!donorReadOnly ? (
+        <div className="flex items-center gap-1 min-w-0">
+          {type === "organization" ? (
+            <EntityCombobox
+              useSearch={useOrganizationSearch}
+              useResolve={useOrganizationName}
+              value={pickedId}
+              onChange={setPickedId}
+              allowNull={false}
+              placeholder="Search funders…"
+              disabled={busy}
+              testId={testIdBase ? `select-${testIdBase}` : undefined}
+            />
+          ) : type === "individual" ? (
+            <EntityCombobox
+              useSearch={usePersonSearch}
+              useResolve={usePersonName}
+              value={pickedId}
+              onChange={setPickedId}
+              allowNull={false}
+              placeholder="Search people…"
+              disabled={busy}
+              testId={testIdBase ? `select-${testIdBase}` : undefined}
+            />
+          ) : (
+            <EntityCombobox
+              useSearch={useHouseholdSearch}
+              useResolve={useHouseholdName}
+              value={pickedId}
+              onChange={setPickedId}
+              allowNull={false}
+              placeholder="Search households…"
+              disabled={busy}
+              testId={testIdBase ? `select-${testIdBase}` : undefined}
+            />
+          )}
+          {intermediary ? null : saveCancelButtons}
+        </div>
+      ) : null}
       {intermediary ? (
         <div className="flex items-center gap-1 min-w-0">
           <span className="shrink-0 text-xs text-muted-foreground">via</span>
@@ -970,9 +1000,11 @@ export function InlineEditDonor({
           {saveCancelButtons}
         </div>
       ) : null}
-      <DafSponsorDonorWarning
-        organizationId={type === "organization" ? pickedId : null}
-      />
+      {!donorReadOnly ? (
+        <DafSponsorDonorWarning
+          organizationId={type === "organization" ? pickedId : null}
+        />
+      ) : null}
     </div>
   );
 }

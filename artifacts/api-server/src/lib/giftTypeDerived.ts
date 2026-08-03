@@ -11,11 +11,14 @@ import { giftsAndPayments } from "@workspace/db/schema";
  *                          loan pledge payment stays as loan_fund_investment).
  *   matching_gift        — gift_being_matched_id IS NOT NULL
  *   directed_gift        — advisor_person_id IS NOT NULL
- *   reimbursement        — opportunity_id linked to a pledge with
+ *   reimbursement        — opportunity_id linked to a FINALIZED pledge with
  *                          disbursement_model='cost_reimbursement' (Task #788;
  *                          replaces the retired conditional='reimbursable').
- *   pledge_payment       — opportunity_id IS NOT NULL (fixed-commitment pledge).
- *   standard_gift        — else (outright donation, no special links).
+ *   pledge_payment       — opportunity_id linked to a finalized fixed-commitment
+ *                          pledge. A gift may retain an originating opportunity
+ *                          link without becoming a pledge payment.
+ *   standard_gift        — else (outright donation, including an opportunity
+ *                          that completed directly as a gift).
  *
  * Uses Drizzle column references that Drizzle qualifies as
  * "gifts_and_payments"."<col>" — safe only in an UN-ALIASED
@@ -31,8 +34,19 @@ export function deriveGiftTypeExpr(): SQL<string> {
       SELECT 1 FROM opportunities_and_pledges o_dm
       WHERE o_dm.id = ${giftsAndPayments.opportunityId}
         AND o_dm.disbursement_model = 'cost_reimbursement'
+        AND (
+          o_dm.pledge_committed_at IS NOT NULL
+          OR (o_dm.commitment_path IS NULL AND o_dm.written_pledge = true)
+        )
     ) THEN 'reimbursement'
-    WHEN ${giftsAndPayments.opportunityId} IS NOT NULL THEN 'pledge_payment'
+    WHEN ${giftsAndPayments.opportunityId} IS NOT NULL AND EXISTS (
+      SELECT 1 FROM opportunities_and_pledges o_pp
+      WHERE o_pp.id = ${giftsAndPayments.opportunityId}
+        AND (
+          o_pp.pledge_committed_at IS NOT NULL
+          OR (o_pp.commitment_path IS NULL AND o_pp.written_pledge = true)
+        )
+    ) THEN 'pledge_payment'
     ELSE 'standard_gift'
   END`;
 }

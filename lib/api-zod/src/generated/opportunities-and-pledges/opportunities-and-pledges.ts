@@ -128,6 +128,8 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   "actualCompletionDate": zod.string().date().optional(),
   "winProbability": zod.string().optional(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).optional().describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n'),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).optional().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().optional(),
   "lossReason": zod.string().optional(),
   "applicationDeadline": zod.string().date().optional(),
   "paymentDetails": zod.string().optional(),
@@ -259,7 +261,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
-  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement > pledge_payment > standard_gift. Never written — follows from setting opportunity\/advisor\/matched-gift links.'),
+  "type": zod.enum(['standard_gift', 'pledge_payment', 'directed_gift', 'loan_fund_investment', 'matching_gift', 'reimbursement']).optional().describe('Live-derived read-only gift classification. Precedence: loan_fund_investment (loan_or_grant=loan) > matching_gift > directed_gift > reimbursement (linked finalized cost-reimbursement pledge) > pledge_payment (linked finalized pledge) > standard_gift. A gift may retain its originating non-pledge opportunity link and still be a standard stand-alone gift. Never written directly.'),
   "opportunityId": zod.string().nullish(),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
@@ -379,6 +381,171 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
 })
 
 export const UpdateOpportunityOrPledgeResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "organizationId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "loanOrGrant": zod.enum(['loan', 'grant']).describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n').describe('Authoritative loan-vs-grant classification. User-settable on create\/update; defaults to \'grant\'. Analytics, goals, and revenue coding all read from this.'),
+  "disbursementModel": zod.enum(['fixed_commitment', 'cost_reimbursement']).describe('How a pledge\'s money is disbursed (Task #788). fixed_commitment: the\nfunder pays N installments on known dates — the explicit installment\nschedule (pledge_expected_payments) is the cash forecast and the pledge\ncompletes when paid >= awarded. cost_reimbursement: the award is a\nCEILING drawn down as costs are incurred — annual pledge allocations\nare the forecast (fiscal-year grain), no installments required, overdue\nnagging is suppressed, and the pledge completes ONLY via the explicit\nClose-award action (never by paid >= ceiling alone). Replaces the\nretired conditional=\'reimbursable\' signal.\n').optional().describe('How the money is disbursed. User-settable on create\/update; defaults to \'fixed_commitment\'. Drives cash forecasting (installments vs annual allocations), overdue nagging, completion semantics, and win-probability weighting.'),
+  "awardClosedAt": zod.string().date().nullish().describe('Explicit award-closure date on a cost-reimbursement pledge — set ONLY via the POST \/opportunities-and-pledges\/{id}\/close-award action (finance-permitted), never via PATCH. Non-null = the award is closed and derives status cash_in regardless of paid vs ceiling.'),
+  "awardCloseReason": zod.enum(['fully_collected', 'award_period_ended', 'unused_balance', 'terminated']).describe('Why a cost-reimbursement award was explicitly closed. Captured by the\nfinance-permitted Close-award action alongside the close date — the\nsecond user-set lifecycle input alongside lossType.\n').nullish().describe('Why the award was closed. Set\/cleared together with awardClosedAt by the close-award \/ reopen-award actions.'),
+  "askAmount": zod.string().nullish(),
+  "awardedAmount": zod.string().nullish().describe('Fixed commitment: the legal commitment amount (completion target). Cost reimbursement: the award CEILING (informational cap — allocations need not sum to it and reaching it never completes the award).'),
+  "paidAmount": zod.string().optional(),
+  "type": zod.enum(['solicitation', 'renewal', 'open_application']).nullish(),
+  "conditional": zod.enum(['unconditional', 'conditional_unspecified', 'reimbursable', 'conditional_on_funder_determination', 'conditional_on_target']).nullish(),
+  "conditions": zod.string().nullish(),
+  "conditionsMet": zod.enum(['no', 'partial', 'yes']).describe('Tri-state record of whether a grant\'s conditions have been met:\n\'no\' (none met), \'partial\' (some met), or \'yes\' (fully met).\nReplaces the prior boolean flag (false→\'no\', true→\'yes\').\n'),
+  "conditionalRollup": zod.enum(['unconditional', 'conditional_unspecified', 'reimbursable', 'conditional_on_funder_determination', 'conditional_on_target']).nullish().describe('Derived from the opportunity\'s pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set.'),
+  "conditionsMetRollup": zod.enum(['no', 'partial', 'yes']).describe('Tri-state record of whether a grant\'s conditions have been met:\n\'no\' (none met), \'partial\' (some met), or \'yes\' (fully met).\nReplaces the prior boolean flag (false→\'no\', true→\'yes\').\n').optional().describe('Derived from the opportunity\'s pledge allocations: \'yes\' only when every conditional allocation\'s conditions are met; otherwise \'no\'.'),
+  "reimbursable": zod.boolean().optional().describe('Derived from the opportunity\'s pledge allocations: true when ANY allocation is conditional=\'reimbursable\'. A reimbursable grant is a pledge paid as many real 1:1 reimbursement checks, so the UI warns before booking a single placeholder gift for the full award amount against it.'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "individualAdvisorPersonId": zod.string().nullish(),
+  "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
+  "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
+  "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
+  "projectedCloseDate": zod.string().date().nullish(),
+  "actualCompletionDate": zod.string().date().nullish(),
+  "winProbability": zod.string().nullish(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
+  "lossReason": zod.string().nullish(),
+  "applicationDeadline": zod.string().date().nullish(),
+  "paymentDetails": zod.string().nullish(),
+  "usageNotes": zod.string().nullish(),
+  "copperPledgeId": zod.string().nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
+  "grantLetterUrl": zod.string().nullish(),
+  "grantLetterFilename": zod.string().nullish(),
+  "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
+  "primaryContactPersonId": zod.string().nullish(),
+  "ownerUserId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "primaryContactPersonName": zod.string().nullish(),
+  "fiscalYear": zod.string().nullish(),
+  "coveredFiscalYears": zod.array(zod.string()).nullish(),
+  "entityIds": zod.array(zod.string()).nullish(),
+  "fundableProjectIds": zod.array(zod.string()).nullish().describe('Distinct fundable_project_id values from pledge_allocations.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}),
+  "promptForReportingDeadlines": zod.boolean().optional()
+})
+
+/**
+ * Admin-only data correction. Requires a finalized fixed-commitment pledge with exactly one linked gift and exactly one received payment unit, where the payment, gift, and pledge amounts agree. Rewrites the lifecycle as though the donor had always committed to one stand-alone gift, keeps the gift linked to its originating opportunity, removes the obsolete pledge schedule and boundary, and preserves all payment and accounting evidence.
+ * @summary Correct a one-payment pledge that should always have been a stand-alone gift.
+ */
+export const ConvertPledgeToStandaloneGiftParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ConvertPledgeToStandaloneGiftBody = zod.object({
+  "reason": zod.string().nullish().describe('Optional explanation stored in the audit history.')
+})
+
+export const ConvertPledgeToStandaloneGiftResponse = zod.object({
+  "giftId": zod.string(),
+  "opportunityId": zod.string().describe('The rewritten originating opportunity, now completed as a gift outcome.')
+})
+
+/**
+ * @summary Revert a mischaracterized pledge to a verbally committed gift opportunity awaiting payment.
+ */
+export const RevertPledgeToVerbalGiftParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RevertPledgeToVerbalGiftBody = zod.object({
+  "commitmentDate": zod.string().date(),
+  "expectedDate": zod.string().date().nullish(),
+  "reason": zod.string().nullish()
+})
+
+export const RevertPledgeToVerbalGiftResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string().nullish(),
+  "organizationId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "loanOrGrant": zod.enum(['loan', 'grant']).describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n').describe('Authoritative loan-vs-grant classification. User-settable on create\/update; defaults to \'grant\'. Analytics, goals, and revenue coding all read from this.'),
+  "disbursementModel": zod.enum(['fixed_commitment', 'cost_reimbursement']).describe('How a pledge\'s money is disbursed (Task #788). fixed_commitment: the\nfunder pays N installments on known dates — the explicit installment\nschedule (pledge_expected_payments) is the cash forecast and the pledge\ncompletes when paid >= awarded. cost_reimbursement: the award is a\nCEILING drawn down as costs are incurred — annual pledge allocations\nare the forecast (fiscal-year grain), no installments required, overdue\nnagging is suppressed, and the pledge completes ONLY via the explicit\nClose-award action (never by paid >= ceiling alone). Replaces the\nretired conditional=\'reimbursable\' signal.\n').optional().describe('How the money is disbursed. User-settable on create\/update; defaults to \'fixed_commitment\'. Drives cash forecasting (installments vs annual allocations), overdue nagging, completion semantics, and win-probability weighting.'),
+  "awardClosedAt": zod.string().date().nullish().describe('Explicit award-closure date on a cost-reimbursement pledge — set ONLY via the POST \/opportunities-and-pledges\/{id}\/close-award action (finance-permitted), never via PATCH. Non-null = the award is closed and derives status cash_in regardless of paid vs ceiling.'),
+  "awardCloseReason": zod.enum(['fully_collected', 'award_period_ended', 'unused_balance', 'terminated']).describe('Why a cost-reimbursement award was explicitly closed. Captured by the\nfinance-permitted Close-award action alongside the close date — the\nsecond user-set lifecycle input alongside lossType.\n').nullish().describe('Why the award was closed. Set\/cleared together with awardClosedAt by the close-award \/ reopen-award actions.'),
+  "askAmount": zod.string().nullish(),
+  "awardedAmount": zod.string().nullish().describe('Fixed commitment: the legal commitment amount (completion target). Cost reimbursement: the award CEILING (informational cap — allocations need not sum to it and reaching it never completes the award).'),
+  "paidAmount": zod.string().optional(),
+  "type": zod.enum(['solicitation', 'renewal', 'open_application']).nullish(),
+  "conditional": zod.enum(['unconditional', 'conditional_unspecified', 'reimbursable', 'conditional_on_funder_determination', 'conditional_on_target']).nullish(),
+  "conditions": zod.string().nullish(),
+  "conditionsMet": zod.enum(['no', 'partial', 'yes']).describe('Tri-state record of whether a grant\'s conditions have been met:\n\'no\' (none met), \'partial\' (some met), or \'yes\' (fully met).\nReplaces the prior boolean flag (false→\'no\', true→\'yes\').\n'),
+  "conditionalRollup": zod.enum(['unconditional', 'conditional_unspecified', 'reimbursable', 'conditional_on_funder_determination', 'conditional_on_target']).nullish().describe('Derived from the opportunity\'s pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set.'),
+  "conditionsMetRollup": zod.enum(['no', 'partial', 'yes']).describe('Tri-state record of whether a grant\'s conditions have been met:\n\'no\' (none met), \'partial\' (some met), or \'yes\' (fully met).\nReplaces the prior boolean flag (false→\'no\', true→\'yes\').\n').optional().describe('Derived from the opportunity\'s pledge allocations: \'yes\' only when every conditional allocation\'s conditions are met; otherwise \'no\'.'),
+  "reimbursable": zod.boolean().optional().describe('Derived from the opportunity\'s pledge allocations: true when ANY allocation is conditional=\'reimbursable\'. A reimbursable grant is a pledge paid as many real 1:1 reimbursement checks, so the UI warns before booking a single placeholder gift for the full award amount against it.'),
+  "individualGiverPersonId": zod.string().nullish(),
+  "individualAdvisorPersonId": zod.string().nullish(),
+  "matchId": zod.string().nullish(),
+  "isWriteOff": zod.boolean().optional().describe('True when this row IS an audit-close write-off: a NEGATIVE offsetting pledge booked in the current open FY against an audited, frozen, under-paid original. Excluded from open-pipeline \/ committed \/ win-probability analytics and surfaced as its own negative \'written off\' line.'),
+  "writeOffOfPledgeId": zod.string().nullish().describe('When set, the audited original pledge this write-off offsets. On an audited original, the PRESENCE of an active (non-archived) write-off pointing back at it is what marks it \'resolved\' in the underpaid-pledge checklist (its own numbers are never mutated).'),
+  "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
+  "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
+  "projectedCloseDate": zod.string().date().nullish(),
+  "actualCompletionDate": zod.string().date().nullish(),
+  "winProbability": zod.string().nullish(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
+  "lossReason": zod.string().nullish(),
+  "applicationDeadline": zod.string().date().nullish(),
+  "paymentDetails": zod.string().nullish(),
+  "usageNotes": zod.string().nullish(),
+  "copperPledgeId": zod.string().nullish(),
+  "commitmentPath": zod.enum(['gift', 'written_pledge', 'verbal_pledge']).describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.').nullish().describe('The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.'),
+  "verbalCommitmentAt": zod.string().date().nullish(),
+  "pledgeCommittedAt": zod.string().date().nullish().describe('Authoritative date this opportunity became a real pledge. Null for verbally confirmed gifts awaiting money.'),
+  "outcomeType": zod.enum(['gift', 'pledge']).describe('Actual positive outcome, derived from pledge finalization or received money.').nullish().describe('Actual positive outcome, derived from pledge finalization or received money.'),
+  "writtenPledge": zod.boolean().describe('Compatibility mirror of pledgeCommittedAt != null; never write directly.'),
+  "grantLetterUrl": zod.string().nullish(),
+  "grantLetterFilename": zod.string().nullish(),
+  "grantLetterUploadedAt": zod.string().datetime({}).nullish(),
+  "primaryContactPersonId": zod.string().nullish(),
+  "ownerUserId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "householdName": zod.string().nullish(),
+  "individualGiverPersonName": zod.string().nullish(),
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "primaryContactPersonName": zod.string().nullish(),
+  "fiscalYear": zod.string().nullish(),
+  "coveredFiscalYears": zod.array(zod.string()).nullish(),
+  "entityIds": zod.array(zod.string()).nullish(),
+  "fundableProjectIds": zod.array(zod.string()).nullish().describe('Distinct fundable_project_id values from pledge_allocations.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}),
+  "promptForReportingDeadlines": zod.boolean().optional()
+})
+
+/**
+ * @summary Revert a mischaracterized pledge to a general fundraising opportunity.
+ */
+export const RevertPledgeToOpportunityParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RevertPledgeToOpportunityBody = zod.object({
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish().describe('Open funnel stage after correction; defaults to in_conversation.'),
+  "projectedCloseDate": zod.string().date().nullish(),
+  "reason": zod.string().nullish()
+})
+
+export const RevertPledgeToOpportunityResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
   "organizationId": zod.string().nullish(),

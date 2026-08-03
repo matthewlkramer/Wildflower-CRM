@@ -9,10 +9,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { asyncHandler, notFound, paramId } from "../../lib/helpers";
 import { donorOf } from "../../lib/quickbooksLink";
 import { giftMatchAmountBounds } from "../../lib/giftMatch";
-import {
-  stagedStatusWhere,
-  chargeStatusWhere,
-} from "../../lib/derivedStatus";
+import { stagedStatusWhere, chargeStatusWhere } from "../../lib/derivedStatus";
 import { giftCandidateJoins, giftCandidateSelect } from "./shared";
 
 const router: IRouter = Router();
@@ -136,8 +133,7 @@ router.get(
 router.get(
   "/staged-payments-donor-search",
   asyncHandler(async (req, res) => {
-    const q =
-      typeof req.query["q"] === "string" ? req.query["q"].trim() : "";
+    const q = typeof req.query["q"] === "string" ? req.query["q"].trim() : "";
     if (q.length < 2) {
       res.json({ data: [] });
       return;
@@ -187,7 +183,8 @@ router.get(
     ) {
       res.status(400).json({
         error: "bad_request",
-        message: "donorType (organization|individual|household) and donorId required.",
+        message:
+          "donorType (organization|individual|household) and donorId required.",
       });
       return;
     }
@@ -208,44 +205,60 @@ router.get(
     const [qbRows, stripeRows] = await Promise.all([
       db
         .select({
+          id: stagedPayments.id,
           amount: stagedPayments.amount,
           dateReceived: stagedPayments.dateReceived,
           payerName: stagedPayments.payerName,
+          description: stagedPayments.lineDescription,
+          paymentIntermediaryId: stagedPayments.matchedPaymentIntermediaryId,
         })
         .from(stagedPayments)
         .where(and(stagedStatusWhere.pending, stagedDonor))
         .orderBy(desc(stagedPayments.dateReceived))
-        .limit(25),
+        .limit(50),
       db
         .select({
+          id: stripeStagedCharges.id,
           amount: stripeStagedCharges.grossAmount,
           chargeCreated: stripeStagedCharges.chargeCreated,
           payerName: stripeStagedCharges.payerName,
+          description: stripeStagedCharges.description,
+          paymentIntermediaryId:
+            stripeStagedCharges.matchedPaymentIntermediaryId,
         })
         .from(stripeStagedCharges)
         .where(and(chargeStatusWhere.pending, chargeDonor))
         .orderBy(desc(stripeStagedCharges.chargeCreated))
-        .limit(25),
+        .limit(50),
     ]);
 
     const items = [
       ...qbRows.map((r) => ({
+        id: r.id,
         source: "quickbooks" as const,
         amount: r.amount,
         dateReceived: r.dateReceived,
         payerName: r.payerName,
+        description: r.description,
+        paymentIntermediaryId: r.paymentIntermediaryId,
       })),
       ...stripeRows.map((r) => ({
+        id: r.id,
         source: "stripe" as const,
         amount: r.amount,
         dateReceived: r.chargeCreated
           ? r.chargeCreated.toISOString().slice(0, 10)
           : null,
         payerName: r.payerName,
+        description: r.description,
+        paymentIntermediaryId: r.paymentIntermediaryId,
       })),
     ];
 
-    res.json({ count: items.length, items: items.slice(0, 8) });
+    items.sort((a, b) =>
+      (b.dateReceived ?? "").localeCompare(a.dateReceived ?? ""),
+    );
+    res.json({ count: items.length, items: items.slice(0, 50) });
   }),
 );
 
