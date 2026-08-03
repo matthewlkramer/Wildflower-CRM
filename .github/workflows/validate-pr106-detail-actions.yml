@@ -1,8 +1,11 @@
 name: Validate PR 106 detail actions
 
 on:
-  issue_comment:
-    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/detail-actions-validation-trigger.txt
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -11,10 +14,6 @@ permissions:
 
 jobs:
   validate:
-    if: >-
-      github.event.issue.pull_request &&
-      github.event.issue.number == 106 &&
-      github.event.comment.body == '/validate-detail-actions'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
