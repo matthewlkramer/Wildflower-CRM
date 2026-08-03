@@ -2,7 +2,7 @@ name: Apply and validate PR 106 detail actions
 
 on:
   pull_request_target:
-    types: [opened, reopened, edited, ready_for_review]
+    types: [opened, reopened, edited, ready_for_review, synchronize]
 
 permissions:
   contents: write
