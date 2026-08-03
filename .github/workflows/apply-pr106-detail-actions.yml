@@ -1,6 +1,8 @@
 name: Apply and validate PR 106 detail actions
 
 on:
+  issue_comment:
+    types: [created]
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
@@ -14,6 +16,10 @@ concurrency:
 
 jobs:
   apply-and-validate:
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.number == 106 && github.event.comment.body == '/apply-detail-actions')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     services:
