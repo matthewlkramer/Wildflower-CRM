@@ -6,6 +6,9 @@ on:
       - agent/fix-relink-and-pledge-actions
     paths:
       - .github/workflows/apply-relink-and-pledge-actions.yml
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -16,11 +19,13 @@ concurrency:
 
 jobs:
   apply-and-test:
+    if: github.event_name == 'push' || github.head_ref == 'agent/fix-relink-and-pledge-actions'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: agent/fix-relink-and-pledge-actions
 
       - uses: pnpm/action-setup@v4
 
@@ -55,6 +60,4 @@ jobs:
             artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx \
             artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
           git commit -m "Fix relink and pledge payment actions"
-          git push
-
-# Triggered after the workflow file was present on the branch.
+          git push origin HEAD:agent/fix-relink-and-pledge-actions
