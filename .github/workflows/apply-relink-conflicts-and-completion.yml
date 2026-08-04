@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/apply-relink-conflicts-and-completion.yml
       - scripts/apply-relink-conflicts-and-completion.py
+      - scripts/refine-provisional-composition.py
 
 permissions:
   contents: write
@@ -68,6 +69,7 @@ jobs:
           path.write_text(text.replace("correction_needed' '''", "correction_needed'''"))
           PY
           python scripts/apply-relink-conflicts-and-completion.py
+          python scripts/refine-provisional-composition.py
 
       - name: Format changed files
         run: >-
