@@ -50,3 +50,21 @@ export function apiErrorMessage(err: unknown): string | null {
   const message = (data as { message?: unknown }).message;
   return typeof message === "string" && message.trim() !== "" ? message : null;
 }
+
+/** True when an API error includes the named machine-readable gate issue. */
+export function apiErrorHasIssue(err: unknown, code: string): boolean {
+  if (!err || typeof err !== "object") return false;
+  const data = (err as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return false;
+  const details = (data as { details?: unknown }).details;
+  if (!details || typeof details !== "object") return false;
+  const issues = (details as { issues?: unknown }).issues;
+  if (!Array.isArray(issues)) return false;
+  return issues.some(
+    (issue) =>
+      typeof issue === "object" &&
+      issue !== null &&
+      "code" in issue &&
+      (issue as { code?: unknown }).code === code,
+  );
+}

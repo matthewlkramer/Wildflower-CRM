@@ -32,6 +32,7 @@ import {
   singleAllocationPresentation,
   type DepositAccountingRecord,
 } from "./presentation";
+import { componentAnchor } from "./gift-placement";
 
 export type DepositActions = Omit<
   ClusterActions,
@@ -1735,23 +1736,16 @@ export function DepositRow({
               component.label,
               componentTitle(component),
             );
-            // Staged anchor only while the QB row is actionable (pending);
-            // otherwise act on the decomposed payment unit directly.
-            const anchor: AnchorRef =
-              component.stagedPaymentId && component.stagedActionable === true
-                ? {
-                    kind: "staged",
-                    id: component.stagedPaymentId,
-                    label: componentTitle(component),
-                  }
-                : {
-                    kind: "component",
-                    id: component.componentId,
-                    label: componentTitle(component),
-                    bankDepositId: deposit.anchorId,
-                    amount: component.amount,
-                    paymentUnitId: component.paymentUnitId ?? undefined,
-                  };
+            // Use the same canonical resolver as column-level placement: an
+            // existing payment unit wins over its actionable QuickBooks source.
+            const anchor: AnchorRef = componentAnchor(deposit, component) ?? {
+              kind: "component",
+              id: component.componentId,
+              label: componentTitle(component),
+              bankDepositId: deposit.anchorId,
+              amount: component.amount,
+              paymentUnitId: component.paymentUnitId ?? undefined,
+            };
             const manualNoQb =
               anchor.kind === "component" && !anchor.paymentUnitId;
             const preview: EvidencePreview = {

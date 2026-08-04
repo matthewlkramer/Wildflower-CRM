@@ -44,7 +44,7 @@ export type GiftPlacementPlan = {
 const cents = (value: string | number | null | undefined) =>
   Math.round(Number(value ?? 0) * 100);
 
-function componentAnchor(
+export function componentAnchor(
   deposit: WorkbenchDeposit,
   component: WorkbenchDepositCompositionComponentsItem,
 ): AnchorRef | null {
