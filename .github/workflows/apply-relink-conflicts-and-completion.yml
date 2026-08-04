@@ -58,7 +58,14 @@ jobs:
         run: pnpm --filter @workspace/db push-force
 
       - name: Apply source changes
-        run: python scripts/apply-relink-conflicts-and-completion.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/apply-relink-conflicts-and-completion.py")
+          text = path.read_text()
+          path.write_text(text.replace("correction_needed' '''", "correction_needed'''"))
+          PY
+          python scripts/apply-relink-conflicts-and-completion.py
 
       - name: Format changed files
         run: >-
