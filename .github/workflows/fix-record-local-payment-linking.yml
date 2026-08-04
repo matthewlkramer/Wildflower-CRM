@@ -1,0 +1,133 @@
+name: Fix record-local payment linking
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/fix-record-local-payment-linking-trigger.txt
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: fix-record-local-payment-linking
+  cancel-in-progress: false
+
+jobs:
+  repair-and-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: wildflower_record_local_fix
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d wildflower_record_local_fix"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/wildflower_record_local_fix
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: record-local-test-key
+      CLERK_PUBLISHABLE_KEY: pk_test_dGVzdC5jbGVyay5hY2NvdW50cy5kZXYk
+      GH_TOKEN: ${{ github.token }}
+      FIX_BRANCH: agent/fix-record-local-payment-linking-v2
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Apply focused repair
+        run: python3 .github/fix-record-local-payment-linking.py
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Format changed source
+        run: |
+          pnpm exec prettier --write \
+            artifacts/api-server/src/routes/quickbooks/actions.ts \
+            artifacts/api-server/src/routes/stripe.ts \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+
+      - name: Establish disposable database
+        run: pnpm --filter @workspace/db run push-force
+
+      - name: Validate generated contract and types
+        run: |
+          pnpm --filter @workspace/api-spec run codegen:check
+          pnpm --filter @workspace/api-server run typecheck
+          pnpm --filter @workspace/wildflower-crm run typecheck
+
+      - name: Run focused regression suites
+        run: |
+          pnpm --filter @workspace/api-server exec vitest run \
+            src/__tests__/stripe-link-gift.integration.test.ts \
+            src/__tests__/create-gift-overrides.integration.test.ts \
+            src/__tests__/charge-tie-supersede.integration.test.ts \
+            --reporter=verbose
+          pnpm --filter @workspace/wildflower-crm exec vitest run \
+            src/components/reconciliation-deposits/gift-placement.test.ts \
+            src/components/reconciliation-deposits/gift-column-dialogs.test.ts \
+            --reporter=verbose
+
+      - name: Verify diff
+        run: |
+          git diff --check
+          git diff --stat
+          test -z "$(git diff --name-only -- lib/db/migrations)"
+
+      - name: Push repair branch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch -C "$FIX_BRANCH"
+          git add \
+            artifacts/api-server/src/routes/quickbooks/actions.ts \
+            artifacts/api-server/src/routes/stripe.ts \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          git commit -m "Fix record-local gift and pledge payment linking"
+          git push --force origin "$FIX_BRANCH"
+
+      - name: Create and merge pull request
+        run: |
+          existing=$(gh pr list --head "$FIX_BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --head "$FIX_BRANCH" \
+              --base main \
+              --title "Fix record-local gift and pledge payment linking" \
+              --body $'Fix the two production failures left after PR #107:\n\n- When a selected gift is already backed by the same QuickBooks payment, a Stripe link confirms the charge↔QB evidence tie and moves the one counted application to charge grain instead of attempting to count a second payment.\n- Finalized pledge payments from staged QuickBooks records mint directly against the pledge instead of depending on a reconciliation graph.\n- Existing-gift staged links also use the direct write path.\n\nValidated with API/web typechecks, codegen consistency, disposable PostgreSQL, and focused reconciliation tests.'
+            existing=$(gh pr list --head "$FIX_BRANCH" --base main --state open --json number --jq '.[0].number')
+          fi
+          gh pr merge "$existing" --squash --admin --delete-branch
+
+      - name: Remove temporary repair machinery
+        run: |
+          git switch main
+          git pull --ff-only origin main
+          rm -f \
+            .github/fix-record-local-payment-linking.py \
+            .github/fix-record-local-payment-linking-trigger.txt \
+            .github/workflows/fix-record-local-payment-linking.yml
+          git add -A
+          git commit -m "Remove temporary payment-linking repair workflow"
+          git push origin main
