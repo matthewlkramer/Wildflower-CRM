@@ -1,3 +1,4 @@
+# One-time repair workflow; deletes itself after a validated source commit.
 name: Apply relink conflicts and completion fixes to main
 
 on:
