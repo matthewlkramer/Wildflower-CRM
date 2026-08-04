@@ -55,7 +55,7 @@ jobs:
             artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx \
             artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
             artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
-          git rm \
+          git rm -f \
             .github/workflows/apply-relink-conflicts-and-completion.yml \
             scripts/apply-relink-conflicts-and-completion.py \
             scripts/refine-provisional-composition.py
