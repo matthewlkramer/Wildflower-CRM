@@ -1,0 +1,92 @@
+name: Validate materialized reconciliation fixes
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/validate-materialized-reconciliation.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/materialize-reconciliation-fixes'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      NODE_ENV: test
+      AI_INTEGRATIONS_ANTHROPIC_BASE_URL: http://127.0.0.1:9
+      AI_INTEGRATIONS_ANTHROPIC_API_KEY: test-key
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/materialize-reconciliation-fixes
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create test schema
+        run: pnpm --filter @workspace/db push-force
+
+      - name: Format changed source
+        run: >-
+          pnpm exec prettier --write
+          artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts
+          artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Run focused web tests
+        run: >-
+          pnpm --filter @workspace/wildflower-crm exec vitest run
+          src/components/reconciliation-bundles/settlement-actions.test.ts
+          src/components/reconciliation-deposits/gift-placement.test.ts
+
+      - name: Run deposit integration tests
+        run: >-
+          pnpm --filter @workspace/api-server exec vitest run
+          src/__tests__/workbench-deposits.integration.test.ts
+
+      - name: Run typechecks
+        run: |
+          pnpm --filter @workspace/api-server typecheck
+          pnpm --filter @workspace/wildflower-crm typecheck
+
+      - name: Commit formatting if needed
+        run: |
+          git diff --check
+          git config user.name "OpenAI"
+          git config user.email "openai@users.noreply.github.com"
+          git add \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx \
+            artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts \
+            artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
+          if ! git diff --cached --quiet; then
+            git commit -m "Format reconciliation fixes"
+            git push origin HEAD:agent/materialize-reconciliation-fixes
+          fi
