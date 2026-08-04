@@ -1,27 +1,30 @@
-name: Apply reconciliation source fixes to main
+name: Materialize reconciliation source fixes
 
 on:
-  push:
+  pull_request:
     branches:
       - main
     paths:
       - .github/workflows/apply-relink-conflicts-and-completion.yml
+      - scripts/apply-relink-conflicts-and-completion.py
+      - scripts/refine-provisional-composition.py
 
 permissions:
   contents: write
 
 concurrency:
-  group: apply-reconciliation-source-fixes-main
+  group: materialize-reconciliation-source-fixes
   cancel-in-progress: false
 
 jobs:
   apply-and-commit:
+    if: github.head_ref == 'agent/materialize-reconciliation-fixes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main
+          ref: agent/materialize-reconciliation-fixes
 
       - name: Apply reviewed source transformations
         run: |
@@ -44,7 +47,7 @@ jobs:
           grep -q 'Matched gift plus excluded payment' artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts
           git diff --check
 
-      - name: Commit real source files directly to main
+      - name: Commit real source files to the branch
         run: |
           git config user.name "OpenAI"
           git config user.email "openai@users.noreply.github.com"
@@ -57,4 +60,4 @@ jobs:
             scripts/apply-relink-conflicts-and-completion.py \
             scripts/refine-provisional-composition.py
           git commit -m "Fix relinking and excluded-payment completion"
-          git push origin HEAD:main
+          git push origin HEAD:agent/materialize-reconciliation-fixes
