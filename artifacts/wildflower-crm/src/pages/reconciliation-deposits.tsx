@@ -142,6 +142,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  apiErrorHasIssue,
   apiErrorMessage,
   is409,
 } from "@/components/reconciliation-bundles/settlement-actions";
@@ -652,7 +653,19 @@ export default function ReconciliationDepositsPage() {
 
   const linkAnchorToGift = async (anchor: AnchorRef, giftId: string) => {
     if (anchor.kind === "charge") {
-      await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
+      try {
+        await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
+      } catch (err) {
+        if (!apiErrorHasIssue(err, "gift_already_stripe_sourced")) throw err;
+        const confirmed = window.confirm(
+          "This gift is currently backed by a different Stripe charge.\n\nSwitch it to this charge? The prior charge will return to the unmatched-payment queue; the gift itself will remain unchanged.",
+        );
+        if (!confirmed) throw err;
+        await linkCharge.mutateAsync({
+          id: anchor.id,
+          data: { giftId, switchStripeSource: true },
+        });
+      }
     } else if (anchor.kind === "staged") {
       await reconcileStaged.mutateAsync({ id: anchor.id, data: { giftId } });
     } else {
