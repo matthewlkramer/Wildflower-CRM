@@ -1,11 +1,12 @@
 name: Apply relink conflicts and completion fixes
 
 on:
-  push:
+  pull_request:
     branches:
-      - agent/fix-relink-conflicts-and-completion
+      - main
     paths:
       - .github/workflows/apply-relink-conflicts-and-completion.yml
+      - scripts/apply-relink-conflicts-and-completion.py
 
 permissions:
   contents: write
@@ -16,6 +17,7 @@ concurrency:
 
 jobs:
   apply-and-test:
+    if: github.head_ref == 'agent/fix-relink-conflicts-and-completion'
     runs-on: ubuntu-latest
     services:
       postgres:
