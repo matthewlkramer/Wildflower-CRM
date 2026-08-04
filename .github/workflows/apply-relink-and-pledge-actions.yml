@@ -1,0 +1,58 @@
+name: Apply relink and pledge-action hotfix
+
+on:
+  push:
+    branches:
+      - agent/fix-relink-and-pledge-actions
+    paths:
+      - .github/workflows/apply-relink-and-pledge-actions.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-relink-and-pledge-actions
+  cancel-in-progress: false
+
+jobs:
+  apply-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply source changes
+        run: git apply --check hotfixes/relink-and-pledge-actions.patch && git apply hotfixes/relink-and-pledge-actions.patch
+
+      - name: Run focused tests
+        run: >-
+          pnpm --filter @workspace/wildflower-crm exec vitest run
+          src/components/reconciliation-bundles/settlement-actions.test.ts
+          src/components/reconciliation-deposits/gift-placement.test.ts
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Commit source changes
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "openai@users.noreply.github.com"
+          git add \
+            artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.ts \
+            artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.test.ts \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/gift-placement.tsx \
+            artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx \
+            artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+          git commit -m "Fix relink and pledge payment actions"
+          git push
