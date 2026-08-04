@@ -56,3 +56,5 @@ jobs:
             artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
           git commit -m "Fix relink and pledge payment actions"
           git push
+
+# Triggered after the workflow file was present on the branch.
