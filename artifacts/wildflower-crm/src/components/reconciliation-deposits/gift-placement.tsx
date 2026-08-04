@@ -48,6 +48,16 @@ function componentAnchor(
   deposit: WorkbenchDeposit,
   component: WorkbenchDepositCompositionComponentsItem,
 ): AnchorRef | null {
+  if (component.paymentUnitId) {
+    return {
+      kind: "component",
+      id: component.componentId,
+      label: component.label ?? component.kind,
+      bankDepositId: deposit.anchorId,
+      amount: component.amount,
+      paymentUnitId: component.paymentUnitId,
+    };
+  }
   if (component.stagedPaymentId && component.stagedActionable === true) {
     return {
       kind: "staged",
@@ -55,15 +65,7 @@ function componentAnchor(
       label: component.label ?? component.kind,
     };
   }
-  if (!component.paymentUnitId) return null;
-  return {
-    kind: "component",
-    id: component.componentId,
-    label: component.label ?? component.kind,
-    bankDepositId: deposit.anchorId,
-    amount: component.amount,
-    paymentUnitId: component.paymentUnitId,
-  };
+  return null;
 }
 
 function liveChargesOf(deposit: WorkbenchDeposit) {
@@ -82,7 +84,8 @@ function chargeTargetsOf(
   return liveCharges
     .filter(
       (charge) =>
-        !charge.linkedGiftId || (giftId != null && charge.linkedGiftId === giftId),
+        !charge.linkedGiftId ||
+        (giftId != null && charge.linkedGiftId === giftId),
     )
     .map((charge) => ({
       key: `charge:${charge.chargeId}`,
@@ -99,7 +102,8 @@ function chargeTargetsOf(
 }
 
 function componentTargetsOf(deposit: WorkbenchDeposit): GiftPlacementTarget[] {
-  return deposit.composition.kind === "components"
+  return deposit.composition.kind === "components" ||
+    deposit.composition.kind === "qbo_provisional"
     ? deposit.composition.components.flatMap((component) => {
         if (
           component.exclusionReason ||
@@ -292,7 +296,9 @@ export function GiftPlacementDialog({
 
         <div className="space-y-2">
           <p className="text-xs font-medium">
-            {pledgeName ? "Open payments on this row" : "Or link it to one payment"}
+            {pledgeName
+              ? "Open payments on this row"
+              : "Or link it to one payment"}
           </p>
           {plan?.targets.map((target) => (
             <button
@@ -347,7 +353,9 @@ export function GiftPlacementDialog({
             onClick={() => selected && onLink(selected)}
             data-testid="button-link-gift-to-selected-payment"
           >
-            {pledgeName ? "Record payment on pledge" : "Link to selected payment"}
+            {pledgeName
+              ? "Record payment on pledge"
+              : "Link to selected payment"}
           </Button>
         </DialogFooter>
       </DialogContent>
