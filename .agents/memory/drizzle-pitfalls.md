@@ -149,3 +149,15 @@ wildcards, so literal `%`/`_` searches silently return nothing (no error).
 **Fix:** write `ESCAPE '\\'` in the template literal (emits `ESCAPE '\'` in SQL).
 Verify with a test that searches for a literal `%`. Sweep any ILIKE/LIKE + ESCAPE
 in sql templates when you find one instance.
+
+## 9. COALESCE(enum_col, '') → runtime "invalid input value for enum"
+
+Comparing a Postgres enum column with an empty-string fallback, e.g.
+`COALESCE(qsp.funding_source, '') <> 'stripe'`, makes Postgres coerce `''` to
+the enum type and 500s at runtime ("invalid input value for enum
+staged_payment_funding_source: ''"). Invisible to typecheck; only fires when
+the query path executes (broke the workbench deposit list, Aug 2026).
+
+**Fix:** `(col IS NULL OR col <> 'value')` or `col IS DISTINCT FROM 'value'`.
+Never coalesce an enum with `''`. (Sibling of the prod executeSql enum-cast
+note: always `::text` enums in SELECT lists too.)
