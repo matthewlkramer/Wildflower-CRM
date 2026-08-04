@@ -1,0 +1,144 @@
+diff --git a/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.ts b/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.ts
+--- a/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.ts
++++ b/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.ts
+@@ -54,3 +54,21 @@ export function apiErrorMessage(err: unknown): string | null {
+   const message = (data as { message?: unknown }).message;
+   return typeof message === "string" && message.trim() !== "" ? message : null;
+ }
++
++/** True when an API error includes the named machine-readable gate issue. */
++export function apiErrorHasIssue(err: unknown, code: string): boolean {
++  if (!err || typeof err !== "object") return false;
++  const data = (err as { data?: unknown }).data;
++  if (!data || typeof data !== "object") return false;
++  const details = (data as { details?: unknown }).details;
++  if (!details || typeof details !== "object") return false;
++  const issues = (details as { issues?: unknown }).issues;
++  if (!Array.isArray(issues)) return false;
++  return issues.some(
++    (issue) =>
++      typeof issue === "object" &&
++      issue !== null &&
++      "code" in issue &&
++      (issue as { code?: unknown }).code === code,
++  );
++}
+diff --git a/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.test.ts b/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.test.ts
+new file mode 100644
+--- /dev/null
++++ b/artifacts/wildflower-crm/src/components/reconciliation-bundles/settlement-actions.test.ts
+@@ -0,0 +1,31 @@
++import { describe, expect, it } from "vitest";
++import { apiErrorHasIssue } from "./settlement-actions";
++
++describe("apiErrorHasIssue", () => {
++  it("finds a nested consistency-gate issue", () => {
++    const err = {
++      status: 409,
++      data: {
++        error: "consistency_gate",
++        details: {
++          issues: [
++            {
++              code: "gift_already_stripe_sourced",
++              message: "Already sourced",
++            },
++          ],
++        },
++      },
++    };
++
++    expect(apiErrorHasIssue(err, "gift_already_stripe_sourced")).toBe(true);
++    expect(apiErrorHasIssue(err, "gift_already_qb_linked")).toBe(false);
++  });
++
++  it("returns false for ordinary API errors", () => {
++    expect(
++      apiErrorHasIssue(
++        { status: 409, data: { error: "not_pending" } },
++        "gift_already_stripe_sourced",
++      ),
++    ).toBe(false);
++  });
++});
+diff --git a/artifacts/wildflower-crm/src/components/reconciliation-deposits/gift-placement.tsx b/artifacts/wildflower-crm/src/components/reconciliation-deposits/gift-placement.tsx
+--- a/artifacts/wildflower-crm/src/components/reconciliation-deposits/gift-placement.tsx
++++ b/artifacts/wildflower-crm/src/components/reconciliation-deposits/gift-placement.tsx
+@@ -33,7 +33,7 @@ const cents = (value: string | number | null | undefined) =>
+   Math.round(Number(value ?? 0) * 100);
+ 
+-function componentAnchor(
++export function componentAnchor(
+   deposit: WorkbenchDeposit,
+   component: WorkbenchDepositCompositionComponentsItem,
+ ): AnchorRef | null {
+diff --git a/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx b/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+--- a/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
++++ b/artifacts/wildflower-crm/src/components/reconciliation-deposits/rows.tsx
+@@ -30,6 +30,7 @@ import {
+   type DepositAccountingRecord,
+ } from "./presentation";
++import { componentAnchor } from "./gift-placement";
+ 
+ export type DepositActions = Omit<
+   ClusterActions,
+@@ -1732,25 +1733,17 @@ export function DepositRow({
+               component.label,
+               componentTitle(component),
+             );
+-            // Staged anchor only while the QB row is actionable (pending);
+-            // otherwise act on the decomposed payment unit directly.
+-            const anchor: AnchorRef =
+-              component.stagedPaymentId && component.stagedActionable === true
+-                ? {
+-                    kind: "staged",
+-                    id: component.stagedPaymentId,
+-                    label: componentTitle(component),
+-                  }
+-                : {
++            // Use the same canonical resolver as column-level placement: an
++            // existing payment unit wins over its actionable QuickBooks source.
++            const anchor: AnchorRef =
++              componentAnchor(deposit, component) ?? {
+                     kind: "component",
+                     id: component.componentId,
+                     label: componentTitle(component),
+                     bankDepositId: deposit.anchorId,
+                     amount: component.amount,
+                     paymentUnitId: component.paymentUnitId ?? undefined,
+-                  };
++                };
+             const manualNoQb =
+               anchor.kind === "component" && !anchor.paymentUnitId;
+             const preview: EvidencePreview = {
+diff --git a/artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx b/artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+--- a/artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
++++ b/artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx
+@@ -119,6 +119,7 @@ import {
+ } from "@/components/ui/textarea";
+ import {
++  apiErrorHasIssue,
+   apiErrorMessage,
+   is409,
+ } from "@/components/reconciliation-bundles/settlement-actions";
+@@ -634,7 +635,27 @@ export default function ReconciliationDepositsPage() {
+ 
+   const linkAnchorToGift = async (anchor: AnchorRef, giftId: string) => {
+     if (anchor.kind === "charge") {
+-      await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
++      try {
++        await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
++      } catch (err) {
++        if (!apiErrorHasIssue(err, "gift_already_stripe_sourced")) throw err;
++        const confirmed = window.confirm(
++          "This gift is currently backed by a different Stripe charge.\n\nSwitch it to this charge? The prior charge will return to the unmatched-payment queue; the gift itself will remain unchanged.",
++        );
++        if (!confirmed) throw err;
++        await linkCharge.mutateAsync({
++          id: anchor.id,
++          data: { giftId, switchStripeSource: true },
++        });
++      }
+     } else if (anchor.kind === "staged") {
+       await reconcileStaged.mutateAsync({ id: anchor.id, data: { giftId } });
+     } else {
