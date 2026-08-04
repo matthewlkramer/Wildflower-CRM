@@ -860,6 +860,100 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row.lenses).toContain("accounting_corrections");
   });
 
+
+  it("completes a deposit when its matched gift plus an excluded payment explain the full amount", async () => {
+    const deposit = await seedDeposit(
+      "Matched gift plus excluded payment",
+      "100.00",
+    );
+    const includedUnit = await seedUnit(deposit, "60.00");
+    const giftId = nextId("included_gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      name: "Included gift",
+      amount: "60.00",
+      dateReceived: "2099-12-31",
+      organizationId: ORG_ID,
+    });
+    giftIds.push(giftId);
+    await db.insert(schema.giftAllocations).values({
+      id: nextId("included_gift_allocation"),
+      giftId,
+      subAmount: "60.00",
+    });
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId, giftMatchMethod: "human" })
+      .where(eqFn(schema.paymentUnits.id, includedUnit));
+
+    const excludedUnit = await seedUnit(deposit, "40.00", true);
+    const excludedComponent = await db
+      .select({ id: schema.bankDepositComponents.id })
+      .from(schema.bankDepositComponents)
+      .where(
+        eqFn(schema.bankDepositComponents.paymentUnitId, excludedUnit),
+      )
+      .then((rows) => rows[0]);
+    await db
+      .update(schema.bankDepositComponents)
+      .set({
+        exclusionReason: "membership",
+        needsReview: true,
+        ambiguousDepositMatch: true,
+      })
+      .where(eqFn(schema.bankDepositComponents.id, excludedComponent!.id));
+
+    const completed = await listDeposits(
+      "completed",
+      "Matched gift plus excluded payment",
+    );
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.lenses).toContain("completed");
+    expect(row?.lenses).not.toContain("ambiguous_pairing");
+    expect(row?.lenses).not.toContain("accounting_corrections");
+    expect(row?.coverage.state.flags.attentionRequired).toBe(false);
+    expect(row?.coverage.state.transactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ state: "matched", livePayment: true }),
+        expect.objectContaining({ state: "excluded", livePayment: false }),
+      ]),
+    );
+
+    const open = await listDeposits(
+      "all_open",
+      "Matched gift plus excluded payment",
+    );
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+  });
+
+  it("counts confirmed QBO lines toward composition but still requires a gift for live money", async () => {
+    const deposit = await seedDeposit(
+      "Confirmed QBO composition with excluded line",
+      "100.00",
+    );
+    await seedDepositQboComponent(deposit, "60.00");
+    await seedDepositQboComponent(deposit, "40.00", {
+      exclusionReason: "membership",
+    });
+
+    const unresolved = await listDeposits(
+      "unresolved_composition",
+      "Confirmed QBO composition with excluded line",
+    );
+    expect(
+      unresolved.data.some((item: any) => item.anchorId === deposit),
+    ).toBe(false);
+
+    const needsGift = await listDeposits(
+      "needs_gift",
+      "Confirmed QBO composition with excluded line",
+    );
+    const row = needsGift.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.composition.kind).toBe("qbo_provisional");
+    expect(Number(row?.composition.unexplainedAmount ?? 0)).toBeCloseTo(0);
+    expect(row?.lenses).toContain("needs_gift");
+  });
+
   it("derives not_fundraising for loan/interest but keeps brokerage transfers visible", async () => {
     const loan = await seedDeposit("WILDFLOWER LOAN FUND");
     const interest = await seedDeposit("Interest credit");
