@@ -43,6 +43,7 @@ export type DepositActions = Omit<
   ) => void;
   openAddKnownPayment?: (bankDepositId: string, remainder: string) => void;
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
+  openExcludeRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
   openChargeQbSearch?: (charge: WorkbenchDepositCharge) => void;
   openComponentQbSearch?: (
@@ -228,6 +229,7 @@ const NOOP_ACTIONS: DepositActions = {
   confirmChargeProposal: () => undefined,
   openAddKnownPayment: () => undefined,
   openFlagRemainder: () => undefined,
+  openExcludeRemainder: () => undefined,
   removeManualComponent: () => undefined,
   openChargeQbSearch: () => undefined,
   openComponentQbSearch: () => undefined,
@@ -311,6 +313,18 @@ function Composition({
         }
       >
         Flag remainder for research
+      </button>
+      <button
+        type="button"
+        className="text-[10px] font-medium text-destructive hover:underline"
+        onClick={() =>
+          actions.openExcludeRemainder?.(
+            deposit.anchorId,
+            composition.unexplainedAmount,
+          )
+        }
+      >
+        Mark remainder as excluded…
       </button>
     </div>
   ) : null;
@@ -1123,58 +1137,51 @@ export function DepositRow({
         },
       };
     }
-    // Staged anchor only when the backing QB row is still actionable
-    // (pending) — a row booked elsewhere, excluded, or derived-excluded (e.g.
-    // by a confirmed charge tie) would 409 every staged action.
-    const component =
-      deposit.composition.kind === "components"
-        ? deposit.composition.components.find(
-            (item) =>
-              (item.countedGiftIds?.length ?? 0) === 0 &&
-              Boolean(item.stagedPaymentId) &&
-              item.stagedActionable === true,
-          )
-        : undefined;
-    if (component?.stagedPaymentId) {
-      return {
-        anchor: {
-          kind: "staged",
-          id: component.stagedPaymentId,
-          label: component.label ?? component.kind,
-        },
-        prefill: {
-          name: null,
-          dateReceived: component.receivedDate?.slice(0, 10) ?? null,
-        },
-      };
-    }
-    // Gift-less payment without an actionable QB row (manual entry, or its
-    // staged row is unavailable): gift actions target the decomposed payment
-    // unit itself — link adopts it, create-gift mints from it.
-    const unitComponent =
-      deposit.composition.kind === "components"
-        ? deposit.composition.components.find(
-            (item) =>
-              item.source === "bank_spine" &&
-              (item.countedGiftIds?.length ?? 0) === 0 &&
-              !(item.stagedPaymentId && item.stagedActionable === true) &&
-              Boolean(item.paymentUnitId) &&
-              !item.exclusionReason,
-          )
-        : undefined;
-    if (unitComponent) {
+    const components =
+      deposit.composition.kind === "components" ||
+      deposit.composition.kind === "qbo_provisional"
+        ? deposit.composition.components
+        : [];
+    const unit = components.find(
+      (item) =>
+        item.source === "bank_spine" &&
+        (item.countedGiftIds?.length ?? 0) === 0 &&
+        Boolean(item.paymentUnitId) &&
+        !item.exclusionReason,
+    );
+    if (unit) {
       return {
         anchor: {
           kind: "component",
-          id: unitComponent.componentId,
-          label: componentTitle(unitComponent),
+          id: unit.componentId,
+          label: componentTitle(unit),
           bankDepositId: deposit.anchorId,
-          amount: unitComponent.amount,
-          paymentUnitId: unitComponent.paymentUnitId ?? undefined,
+          amount: unit.amount,
+          paymentUnitId: unit.paymentUnitId ?? undefined,
         },
         prefill: {
-          name: unitComponent.label ?? null,
-          dateReceived: unitComponent.receivedDate?.slice(0, 10) ?? null,
+          name: unit.label ?? null,
+          dateReceived: unit.receivedDate?.slice(0, 10) ?? null,
+        },
+      };
+    }
+    const staged = components.find(
+      (item) =>
+        (item.countedGiftIds?.length ?? 0) === 0 &&
+        Boolean(item.stagedPaymentId) &&
+        item.stagedActionable === true &&
+        !item.exclusionReason,
+    );
+    if (staged?.stagedPaymentId) {
+      return {
+        anchor: {
+          kind: "staged",
+          id: staged.stagedPaymentId,
+          label: staged.label ?? staged.kind,
+        },
+        prefill: {
+          name: null,
+          dateReceived: staged.receivedDate?.slice(0, 10) ?? null,
         },
       };
     }
@@ -1196,14 +1203,15 @@ export function DepositRow({
     (charge) => !charge.linkedGiftId,
   );
   const unlinkedComponents =
-    deposit.composition.kind === "components"
+    deposit.composition.kind === "components" ||
+    deposit.composition.kind === "qbo_provisional"
       ? deposit.composition.components.filter(
           (component) =>
-            component.source === "bank_spine" &&
             (component.countedGiftIds?.length ?? 0) === 0 &&
-            ((Boolean(component.stagedPaymentId) &&
-              component.stagedActionable === true) ||
-              (Boolean(component.paymentUnitId) && !component.exclusionReason)),
+            !component.exclusionReason &&
+            (Boolean(component.paymentUnitId) ||
+              (Boolean(component.stagedPaymentId) &&
+                component.stagedActionable === true)),
         )
       : [];
   const hasGiftColumnCards =

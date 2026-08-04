@@ -58,6 +58,23 @@ import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 const EVIDENCE_DEFAULT = "__evidence_default__";
 const NO_ENTITY = "__none__";
 
+export function pledgePaymentBlockedReason(
+  opp: OpportunityOrPledge,
+  pledgeOnly: boolean,
+): string | null {
+  if (opp.archivedAt) return "Archived — restore it before recording money.";
+  if (opp.lossType === "lost")
+    return "Marked lost — payments can't be recorded on a lost record.";
+  if (opp.lossType === "dormant")
+    return "Marked dormant — reactivate the pledge to record a payment.";
+  const finalized =
+    opp.pledgeCommittedAt != null ||
+    (opp.commitmentPath == null && opp.writtenPledge === true);
+  if (pledgeOnly && !finalized)
+    return "Still an open opportunity — finalize it as a written or verbal pledge before recording a payment.";
+  return null;
+}
+
 export function CreateStandaloneGiftDialog({
   open,
   onOpenChange,
@@ -216,7 +233,9 @@ export function CreateStandaloneGiftDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="default">Default (from evidence)</SelectItem>
+                  <SelectItem value="default">
+                    Default (from evidence)
+                  </SelectItem>
                   <SelectItem value="yes">Counts toward goals</SelectItem>
                   <SelectItem value="no">Doesn't count</SelectItem>
                 </SelectContent>
@@ -259,7 +278,9 @@ export function CreateStandaloneGiftDialog({
             }}
             data-testid="button-standalone-gift-create"
           >
-            {busy ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : null}
+            {busy ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+            ) : null}
             Create gift
           </Button>
         </DialogFooter>
@@ -340,16 +361,8 @@ export function LinkEvidenceSearchDialog({
   // approve-with-outcome flow, where an OPEN opportunity is also bookable
   // (one-time gift or convert-to-pledge), but dead records never take money.
   const pledgeOnly = anchorKind !== "staged";
-  const oppRowBlockedReason = (opp: OpportunityOrPledge): string | null => {
-    if (opp.archivedAt) return "Archived — restore it before recording money.";
-    if (opp.lossType === "lost")
-      return "Marked lost — payments can't be recorded on a lost record.";
-    if (opp.lossType === "dormant")
-      return "Marked dormant — reactivate the pledge to record a payment.";
-    if (pledgeOnly && !opp.writtenPledge)
-      return "Still an open opportunity — convert it to a pledge first, or book its QuickBooks record via the staged flow.";
-    return null;
-  };
+  const oppRowBlockedReason = (opp: OpportunityOrPledge): string | null =>
+    pledgePaymentBlockedReason(opp, pledgeOnly);
 
   const giftRows = gifts.data?.data ?? [];
   const oppRows = opps.data?.data ?? [];
@@ -417,9 +430,7 @@ export function LinkEvidenceSearchDialog({
                             ? formatDateShort(g.dateReceived)
                             : null,
                           g.type ? formatEnum(g.type) : null,
-                          g.name && g.name !== giftDonorName(g)
-                            ? g.name
-                            : null,
+                          g.name && g.name !== giftDonorName(g) ? g.name : null,
                         ]
                           .filter(Boolean)
                           .join(" · ") || "Gift"}
@@ -481,7 +492,7 @@ export function LinkEvidenceSearchDialog({
                             opp.householdName ??
                             opp.individualGiverPersonName ??
                             null,
-                          opp.awardedAmount ?? opp.askAmount
+                          (opp.awardedAmount ?? opp.askAmount)
                             ? formatCurrency(
                                 (opp.awardedAmount ?? opp.askAmount) as string,
                               )

@@ -43,6 +43,34 @@ describe("gift placement", () => {
     expect(plan.directTarget).toBeNull();
   });
 
+  it("prefers the canonical unit over its actionable QB source", () => {
+    const plan = buildGiftPlacementPlan(
+      {
+        anchorId: "deposit_1",
+        composition: {
+          kind: "components",
+          components: [
+            {
+              componentId: "component_1",
+              paymentUnitId: "unit_1",
+              stagedPaymentId: "staged_1",
+              stagedActionable: true,
+              source: "bank_spine",
+              amount: "1000.00",
+              countedGiftIds: [],
+            },
+          ],
+        },
+        charges: [],
+      } as any,
+      { id: "gift_1", amount: "1000.00" } as any,
+    );
+    expect(plan.directTarget?.anchor).toMatchObject({
+      kind: "component",
+      paymentUnitId: "unit_1",
+    });
+  });
+
   it("links directly only when one remaining payment exactly matches", () => {
     const one = {
       ...deposit,

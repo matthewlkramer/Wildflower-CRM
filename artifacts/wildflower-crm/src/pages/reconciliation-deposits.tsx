@@ -344,6 +344,10 @@ export default function ReconciliationDepositsPage() {
     depositId: string;
     remainder: string;
   } | null>(null);
+  const [excludeRemainderFor, setExcludeRemainderFor] = useState<{
+    depositId: string;
+    remainder: string;
+  } | null>(null);
   const [knownPaymentMode, setKnownPaymentMode] = useState<"search" | "create">(
     "search",
   );
@@ -1286,6 +1290,42 @@ export default function ReconciliationDepositsPage() {
     });
     invalidate();
   };
+  const handleExcludeRemainder = async (
+    reason: StagedPaymentExclusionReason,
+  ) => {
+    const target = excludeRemainderFor;
+    if (!target) return;
+    let componentId: string | null = null;
+    try {
+      const component = await addBankComponent.mutateAsync({
+        bankDepositId: target.depositId,
+        data: { mode: "create", kind: "other", amount: target.remainder },
+      });
+      componentId = component.id;
+      await excludeComponent.mutateAsync({
+        id: component.id,
+        data: { exclusionReason: reason },
+      });
+      setExcludeRemainderFor(null);
+      toast({
+        title: "Remainder excluded",
+        description: `${formatCurrency(target.remainder)} was excluded; the valid gifts and the rest of the deposit are unchanged.`,
+      });
+      invalidate();
+    } catch (err) {
+      if (componentId) {
+        await removeManualComponent
+          .mutateAsync({ id: componentId })
+          .catch(() => undefined);
+      }
+      toast({
+        title: "Couldn't exclude remainder",
+        description: apiErrorMessage(err) ?? errMessage(err),
+        variant: "destructive",
+      });
+      invalidate();
+    }
+  };
   const handleAttachPaymentUnit = async (
     candidate: CandidatePaymentUnitWithClaim,
   ) => {
@@ -1530,6 +1570,9 @@ export default function ReconciliationDepositsPage() {
     },
     openFlagRemainder: (depositId, remainder) => {
       void handleFlagRemainder(depositId, remainder);
+    },
+    openExcludeRemainder: (depositId, remainder) => {
+      setExcludeRemainderFor({ depositId, remainder });
     },
     removeManualComponent: (id, label) => setManualComponentFor({ id, label }),
     openChargeQbSearch: (charge) => {
@@ -2383,6 +2426,19 @@ export default function ReconciliationDepositsPage() {
         recordLabel={excludeFor?.label ?? "this record"}
         busy={busy}
         onSubmit={(reason) => void handleExclude(reason)}
+      />
+      <ExcludeReasonDialog
+        open={excludeRemainderFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setExcludeRemainderFor(null);
+        }}
+        recordLabel={
+          excludeRemainderFor
+            ? `${formatCurrency(excludeRemainderFor.remainder)} deposit remainder`
+            : "this remainder"
+        }
+        busy={busy}
+        onSubmit={(reason) => void handleExcludeRemainder(reason)}
       />
       <AlertDialog
         open={revertFor != null}
