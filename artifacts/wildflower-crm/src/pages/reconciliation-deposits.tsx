@@ -149,6 +149,7 @@ import {
 import {
   deriveApproveBody,
   deriveApproveBodyFromProposal,
+  extractGateIssues,
   hasAmountBlocker,
 } from "@/lib/reconciliation";
 
@@ -971,7 +972,9 @@ export default function ReconciliationDepositsPage() {
     } catch (err) {
       toast({
         title: "Couldn't create gift",
-        description: is409(err) ? apiErrorMessage(err) : errMessage(err),
+        description: is409(err)
+          ? extractGateIssues(err)[0] ?? apiErrorMessage(err) ?? errMessage(err)
+          : errMessage(err),
         variant: "destructive",
       });
       if (is409(err)) invalidate();
@@ -1031,7 +1034,60 @@ export default function ReconciliationDepositsPage() {
     ) {
       return false;
     }
-    await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+    try {
+      await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+    } catch (err) {
+      const switchStripeSource = apiErrorHasIssue(
+        err,
+        "gift_already_stripe_sourced",
+      );
+      const displaceLinkedPayment = apiErrorHasIssue(
+        err,
+        "gift_already_qb_linked",
+      );
+      const moveOwnApplication = apiErrorHasIssue(
+        err,
+        "payment_already_applied",
+      );
+      if (
+        !switchStripeSource &&
+        !displaceLinkedPayment &&
+        !moveOwnApplication
+      ) {
+        throw err;
+      }
+      const changes = [
+        switchStripeSource
+          ? "replace the Stripe charge currently sourcing the selected gift"
+          : null,
+        displaceLinkedPayment
+          ? "unlink the QuickBooks payment currently paying the selected gift"
+          : null,
+        moveOwnApplication
+          ? "move this payment from the gift it currently pays"
+          : null,
+      ].filter(Boolean);
+      if (
+        !window.confirm(
+          `This relink requires the system to ${changes.join(
+            ", and ",
+          )}.\n\nContinue? The displaced payment will return to the unmatched queue; no gift will be deleted.`,
+        )
+      ) {
+        return false;
+      }
+      await approveCard.mutateAsync({
+        stagedPaymentId,
+        data: {
+          ...derived.body,
+          ...(switchStripeSource ? { switchStripeSource: true } : {}),
+          ...(displaceLinkedPayment
+            ? { displaceLinkedPayment: true }
+            : {}),
+          ...(moveOwnApplication ? { moveOwnApplication: true } : {}),
+        },
+      });
+    }
     return true;
   };
   const handleColumnGiftPick = async (gift: GiftOrPayment) => {
@@ -1208,20 +1264,15 @@ export default function ReconciliationDepositsPage() {
     const target = linkEvidenceFor;
     if (!target) return;
     try {
-      if (target.anchor.kind === "charge") {
-        await linkCharge.mutateAsync({
-          id: target.anchor.id,
-          data: { giftId: gift.id },
-        });
-      } else if (target.anchor.kind === "component") {
-        await linkAnchorToGift(target.anchor, gift.id);
-      } else {
+      if (target.anchor.kind === "staged") {
         const done = await approveStagedAgainst(
           target.anchor.id,
           { giftId: gift.id, giftLabel: gift.name ?? gift.id },
           "create_gift_from_opportunity",
         );
         if (!done) return;
+      } else {
+        await linkAnchorToGift(target.anchor, gift.id);
       }
       setLinkEvidenceFor(null);
       invalidate();

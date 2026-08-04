@@ -541,10 +541,17 @@ function stateForDeposit(
       : null,
   }));
 
+  const excludedQbPaymentIds = new Set(
+    [...deposit.components, ...deposit.provisional_components]
+      .filter((component) => Boolean(component.exclusionReason))
+      .map((component) => component.stagedPaymentId)
+      .filter((id): id is string => Boolean(id)),
+  );
   const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
     qbRecordId: String(c.stagedPaymentId),
-    state:
-      c.disposition === "consistent" || c.disposition === "corrected"
+    state: excludedQbPaymentIds.has(String(c.stagedPaymentId))
+      ? "excluded"
+      : c.disposition === "consistent" || c.disposition === "corrected"
         ? "matched_complete"
         : c.disposition === "accepted_historical"
           ? "excluded"
@@ -560,7 +567,9 @@ function stateForDeposit(
   const compositionComplete =
     compositionPresent && !row.f_unresolved && !row.f_ambiguous;
   const accountingCorrection = deposit.accounting_checks.some(
-    (check) => check.disposition === "correction_needed",
+    (check) =>
+      check.disposition === "correction_needed" &&
+      !excludedQbPaymentIds.has(String(check.stagedPaymentId)),
   );
 
   return deriveDepositWorkbenchState({
@@ -639,10 +648,29 @@ function buildUniverse(q: string | null) {
         d.id,
         d.deposit_date AS anchor_date,
         (
-        (
-          p.id IS NULL AND (
-            count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
-          )
+          (
+            p.id IS NULL AND abs(
+              COALESCE(sum(c.amount), 0)
+              + COALESCE((
+                SELECT sum(qsp.amount)
+                FROM source_links dqc
+                JOIN staged_payments qsp
+                  ON qsp.id = dqc.qb_staged_payment_id
+                WHERE dqc.link_type = 'qbo_line_deposit'
+                  AND dqc.lifecycle = 'confirmed'
+                  AND dqc.bank_deposit_id = d.id
+                  AND COALESCE(qsp.funding_source, '') <> 'stripe'
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM bank_deposit_components pc
+                    JOIN payment_units pcu
+                      ON pcu.id = pc.payment_unit_id
+                    WHERE pc.bank_deposit_id = d.id
+                      AND pcu.source_staged_payment_id = qsp.id
+                  )
+              ), 0)
+              - d.amount
+            ) >= 0.005
           ) OR (
             p.id IS NOT NULL AND p.net_total IS NOT NULL
             AND abs(p.net_total - d.amount) >= 0.005
@@ -650,7 +678,10 @@ function buildUniverse(q: string | null) {
         ) AS f_unresolved,
         (
           COALESCE(p.ambiguous_bank_match, false) OR
-          COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)
+          COALESCE(bool_or(
+            c.exclusion_reason IS NULL
+            AND (c.needs_review OR c.ambiguous_deposit_match)
+          ), false)
         ) AS f_ambiguous,
       (
         EXISTS (
@@ -676,13 +707,37 @@ function buildUniverse(q: string | null) {
               AND pu.gift_id IS NOT NULL
           )), false)
         )
+        OR (
+          p.id IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM source_links gift_dqc
+            JOIN staged_payments gift_qsp
+              ON gift_qsp.id = gift_dqc.qb_staged_payment_id
+            WHERE gift_dqc.link_type = 'qbo_line_deposit'
+              AND gift_dqc.lifecycle = 'confirmed'
+              AND gift_dqc.bank_deposit_id = d.id
+              AND COALESCE(gift_qsp.funding_source, '') <> 'stripe'
+              AND gift_qsp.exclusion_reason IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM bank_deposit_components gift_pc
+                JOIN payment_units gift_pcu
+                  ON gift_pcu.id = gift_pc.payment_unit_id
+                WHERE gift_pc.bank_deposit_id = d.id
+                  AND gift_pcu.source_staged_payment_id = gift_qsp.id
+              )
+          )
+        )
       ) AS f_needs_gift,
       EXISTS (
         SELECT 1
         FROM qbo_accounting_checks qc
         JOIN payment_units qu ON qu.source_staged_payment_id = qc.staged_payment_id
         JOIN bank_deposit_components qbc ON qbc.payment_unit_id = qu.id
-        WHERE qbc.bank_deposit_id = d.id AND qc.disposition = 'correction_needed'
+        WHERE qbc.bank_deposit_id = d.id
+          AND qbc.exclusion_reason IS NULL
+          AND qc.disposition = 'correction_needed'
       ) OR EXISTS (
         SELECT 1
         FROM qbo_accounting_checks pqc
