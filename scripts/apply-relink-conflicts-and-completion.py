@@ -1,0 +1,387 @@
+from pathlib import Path
+
+
+def replace_once(path: str, old: str, new: str) -> None:
+    file = Path(path)
+    text = file.read_text()
+    if old not in text:
+        raise SystemExit(f"Expected source block not found in {path}")
+    file.write_text(text.replace(old, new, 1))
+
+
+page = "artifacts/wildflower-crm/src/pages/reconciliation-deposits.tsx"
+
+replace_once(
+    page,
+    '''import {
+  deriveApproveBody,
+  deriveApproveBodyFromProposal,
+  hasAmountBlocker,
+} from "@/lib/reconciliation";''',
+    '''import {
+  deriveApproveBody,
+  deriveApproveBodyFromProposal,
+  extractGateIssues,
+  hasAmountBlocker,
+} from "@/lib/reconciliation";''',
+)
+
+replace_once(
+    page,
+    '''    await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+    return true;''',
+    '''    try {
+      await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+    } catch (err) {
+      const switchStripeSource = apiErrorHasIssue(
+        err,
+        "gift_already_stripe_sourced",
+      );
+      const displaceLinkedPayment = apiErrorHasIssue(
+        err,
+        "gift_already_qb_linked",
+      );
+      const moveOwnApplication = apiErrorHasIssue(
+        err,
+        "payment_already_applied",
+      );
+      if (
+        !switchStripeSource &&
+        !displaceLinkedPayment &&
+        !moveOwnApplication
+      ) {
+        throw err;
+      }
+      const changes = [
+        switchStripeSource
+          ? "replace the Stripe charge currently sourcing the selected gift"
+          : null,
+        displaceLinkedPayment
+          ? "unlink the QuickBooks payment currently paying the selected gift"
+          : null,
+        moveOwnApplication
+          ? "move this payment from the gift it currently pays"
+          : null,
+      ].filter(Boolean);
+      if (
+        !window.confirm(
+          `This relink requires the system to ${changes.join(
+            ", and ",
+          )}.\\n\\nContinue? The displaced payment will return to the unmatched queue; no gift will be deleted.`,
+        )
+      ) {
+        return false;
+      }
+      await approveCard.mutateAsync({
+        stagedPaymentId,
+        data: {
+          ...derived.body,
+          ...(switchStripeSource ? { switchStripeSource: true } : {}),
+          ...(displaceLinkedPayment
+            ? { displaceLinkedPayment: true }
+            : {}),
+          ...(moveOwnApplication ? { moveOwnApplication: true } : {}),
+        },
+      });
+    }
+    return true;''',
+)
+
+replace_once(
+    page,
+    '''    try {
+      if (target.anchor.kind === "charge") {
+        await linkCharge.mutateAsync({
+          id: target.anchor.id,
+          data: { giftId: gift.id },
+        });
+      } else if (target.anchor.kind === "component") {
+        await linkAnchorToGift(target.anchor, gift.id);
+      } else {
+        const done = await approveStagedAgainst(
+          target.anchor.id,
+          { giftId: gift.id, giftLabel: gift.name ?? gift.id },
+          "create_gift_from_opportunity",
+        );
+        if (!done) return;
+      }''',
+    '''    try {
+      if (target.anchor.kind === "staged") {
+        const done = await approveStagedAgainst(
+          target.anchor.id,
+          { giftId: gift.id, giftLabel: gift.name ?? gift.id },
+          "create_gift_from_opportunity",
+        );
+        if (!done) return;
+      } else {
+        await linkAnchorToGift(target.anchor, gift.id);
+      }''',
+)
+
+replace_once(
+    page,
+    '''        description: is409(err) ? apiErrorMessage(err) : errMessage(err),''',
+    '''        description: is409(err)
+          ? extractGateIssues(err)[0] ?? apiErrorMessage(err) ?? errMessage(err)
+          : errMessage(err),''',
+)
+
+route = "artifacts/api-server/src/routes/reconciliation/workbenchDeposits.ts"
+
+replace_once(
+    route,
+    '''  const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
+    qbRecordId: String(c.stagedPaymentId),
+    state:
+      c.disposition === "consistent" || c.disposition === "corrected"
+        ? "matched_complete"
+        : c.disposition === "accepted_historical"
+          ? "excluded"
+          : "matched_conflict",
+    isTransactionEvidence: false,
+  }));''',
+    '''  const excludedQbPaymentIds = new Set(
+    [...deposit.components, ...deposit.provisional_components]
+      .filter((component) => Boolean(component.exclusionReason))
+      .map((component) => component.stagedPaymentId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const qbCards: QbCardEntry[] = deposit.accounting_checks.map((c) => ({
+    qbRecordId: String(c.stagedPaymentId),
+    state: excludedQbPaymentIds.has(String(c.stagedPaymentId))
+      ? "excluded"
+      : c.disposition === "consistent" || c.disposition === "corrected"
+        ? "matched_complete"
+        : c.disposition === "accepted_historical"
+          ? "excluded"
+          : "matched_conflict",
+    isTransactionEvidence: false,
+  }));''',
+)
+
+replace_once(
+    route,
+    '''  const accountingCorrection = deposit.accounting_checks.some(
+    (check) => check.disposition === "correction_needed",
+  );''',
+    '''  const accountingCorrection = deposit.accounting_checks.some(
+    (check) =>
+      check.disposition === "correction_needed" &&
+      !excludedQbPaymentIds.has(String(check.stagedPaymentId)),
+  );''',
+)
+
+replace_once(
+    route,
+    '''        (
+        (
+          p.id IS NULL AND (
+            count(c.id) = 0 OR abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
+          )
+          ) OR (
+            p.id IS NOT NULL AND p.net_total IS NOT NULL
+            AND abs(p.net_total - d.amount) >= 0.005
+          )
+        ) AS f_unresolved,''',
+    '''        (
+          (
+            p.id IS NULL AND abs(
+              COALESCE(sum(c.amount), 0)
+              + COALESCE((
+                SELECT sum(qsp.amount)
+                FROM source_links dqc
+                JOIN staged_payments qsp
+                  ON qsp.id = dqc.qb_staged_payment_id
+                WHERE dqc.link_type = 'qbo_line_deposit'
+                  AND dqc.lifecycle = 'confirmed'
+                  AND dqc.bank_deposit_id = d.id
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM bank_deposit_components pc
+                    JOIN payment_units pcu
+                      ON pcu.id = pc.payment_unit_id
+                    WHERE pc.bank_deposit_id = d.id
+                      AND pcu.source_staged_payment_id = qsp.id
+                  )
+              ), 0)
+              - d.amount
+            ) >= 0.005
+          ) OR (
+            p.id IS NOT NULL AND p.net_total IS NOT NULL
+            AND abs(p.net_total - d.amount) >= 0.005
+          )
+        ) AS f_unresolved,''',
+)
+
+replace_once(
+    route,
+    '''          COALESCE(p.ambiguous_bank_match, false) OR
+          COALESCE(bool_or(c.needs_review OR c.ambiguous_deposit_match), false)''',
+    '''          COALESCE(p.ambiguous_bank_match, false) OR
+          COALESCE(bool_or(
+            c.exclusion_reason IS NULL
+            AND (c.needs_review OR c.ambiguous_deposit_match)
+          ), false)''',
+)
+
+replace_once(
+    route,
+    '''        OR (
+          p.id IS NULL
+          AND COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
+            SELECT 1 FROM payment_units pu
+            WHERE pu.id = c.payment_unit_id
+              AND pu.gift_id IS NOT NULL
+          )), false)
+        )
+      ) AS f_needs_gift,''',
+    '''        OR (
+          p.id IS NULL
+          AND COALESCE(bool_or(c.id IS NOT NULL AND c.exclusion_reason IS NULL AND NOT EXISTS (
+            SELECT 1 FROM payment_units pu
+            WHERE pu.id = c.payment_unit_id
+              AND pu.gift_id IS NOT NULL
+          )), false)
+        )
+        OR (
+          p.id IS NULL
+          AND EXISTS (
+            SELECT 1
+            FROM source_links gift_dqc
+            JOIN staged_payments gift_qsp
+              ON gift_qsp.id = gift_dqc.qb_staged_payment_id
+            WHERE gift_dqc.link_type = 'qbo_line_deposit'
+              AND gift_dqc.lifecycle = 'confirmed'
+              AND gift_dqc.bank_deposit_id = d.id
+              AND gift_qsp.exclusion_reason IS NULL
+              AND NOT EXISTS (
+                SELECT 1
+                FROM bank_deposit_components gift_pc
+                JOIN payment_units gift_pcu
+                  ON gift_pcu.id = gift_pc.payment_unit_id
+                WHERE gift_pc.bank_deposit_id = d.id
+                  AND gift_pcu.source_staged_payment_id = gift_qsp.id
+              )
+          )
+        )
+      ) AS f_needs_gift,''',
+)
+
+replace_once(
+    route,
+    '''        WHERE qbc.bank_deposit_id = d.id AND qc.disposition = 'correction_needed' ''',
+    '''        WHERE qbc.bank_deposit_id = d.id
+          AND qbc.exclusion_reason IS NULL
+          AND qc.disposition = 'correction_needed' ''',
+)
+
+tests = "artifacts/api-server/src/__tests__/workbench-deposits.integration.test.ts"
+marker = '''  it("surfaces correction_needed accounting checks for component units", async () => {
+    const deposit = await seedDeposit("QBO correction deposit", "50.00");
+    await seedUnit(deposit, "50.00", true);
+    const result = await listDeposits(
+      "accounting_corrections",
+      "QBO correction",
+    );
+    const row = result.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.accountingChecks).toHaveLength(1);
+    expect(row.accountingChecks[0].disposition).toBe("correction_needed");
+    expect(row.lenses).toContain("accounting_corrections");
+  });
+'''
+addition = marker + '''
+
+  it("completes a deposit when its matched gift plus an excluded payment explain the full amount", async () => {
+    const deposit = await seedDeposit(
+      "Matched gift plus excluded payment",
+      "100.00",
+    );
+    const includedUnit = await seedUnit(deposit, "60.00");
+    const giftId = nextId("included_gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      name: "Included gift",
+      amount: "60.00",
+      dateReceived: "2099-12-31",
+      organizationId: ORG_ID,
+    });
+    giftIds.push(giftId);
+    await db.insert(schema.giftAllocations).values({
+      id: nextId("included_gift_allocation"),
+      giftId,
+      subAmount: "60.00",
+    });
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId, giftMatchMethod: "human" })
+      .where(eqFn(schema.paymentUnits.id, includedUnit));
+
+    const excludedUnit = await seedUnit(deposit, "40.00", true);
+    const excludedComponent = await db
+      .select({ id: schema.bankDepositComponents.id })
+      .from(schema.bankDepositComponents)
+      .where(
+        eqFn(schema.bankDepositComponents.paymentUnitId, excludedUnit),
+      )
+      .then((rows) => rows[0]);
+    await db
+      .update(schema.bankDepositComponents)
+      .set({
+        exclusionReason: "membership",
+        needsReview: true,
+        ambiguousDepositMatch: true,
+      })
+      .where(eqFn(schema.bankDepositComponents.id, excludedComponent!.id));
+
+    const completed = await listDeposits(
+      "completed",
+      "Matched gift plus excluded payment",
+    );
+    const row = completed.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.lenses).toContain("completed");
+    expect(row?.lenses).not.toContain("ambiguous_pairing");
+    expect(row?.lenses).not.toContain("accounting_corrections");
+    expect(row?.coverage.state.flags.attentionRequired).toBe(false);
+    expect(row?.coverage.state.transactions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ state: "matched", livePayment: true }),
+        expect.objectContaining({ state: "excluded", livePayment: false }),
+      ]),
+    );
+
+    const open = await listDeposits(
+      "all_open",
+      "Matched gift plus excluded payment",
+    );
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+  });
+
+  it("counts confirmed QBO lines toward composition but still requires a gift for live money", async () => {
+    const deposit = await seedDeposit(
+      "Confirmed QBO composition with excluded line",
+      "100.00",
+    );
+    await seedDepositQboComponent(deposit, "60.00");
+    await seedDepositQboComponent(deposit, "40.00", {
+      exclusionReason: "membership",
+    });
+
+    const unresolved = await listDeposits(
+      "unresolved_composition",
+      "Confirmed QBO composition with excluded line",
+    );
+    expect(
+      unresolved.data.some((item: any) => item.anchorId === deposit),
+    ).toBe(false);
+
+    const needsGift = await listDeposits(
+      "needs_gift",
+      "Confirmed QBO composition with excluded line",
+    );
+    const row = needsGift.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.composition.kind).toBe("qbo_provisional");
+    expect(Number(row?.composition.unexplainedAmount ?? 0)).toBeCloseTo(0);
+    expect(row?.lenses).toContain("needs_gift");
+  });
+'''
+replace_once(tests, marker, addition)
