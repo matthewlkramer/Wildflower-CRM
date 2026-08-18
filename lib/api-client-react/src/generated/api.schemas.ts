@@ -2484,6 +2484,40 @@ export interface CreatePledgeAllocationBody {
   restrictionDescription?: string;
 }
 
+/**
+ * Allocation template cross-applied to every scheduled expected payment
+of the pledge. Same fields as CreatePledgeAllocationBody EXCEPT
+grantYear, which is derived per row from each payment's expectedDate.
+
+ */
+export interface ApplyPledgeAllocationToScheduleBody {
+  pledgeOrOpportunityId: string;
+  subAmount?: string;
+  entityId?: string;
+  intendedUsage?: IntendedUsage;
+  fundableProjectId?: string;
+  directToSchool?: boolean;
+  schoolRecipientId?: string;
+  regionalRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
+  reimbursementType?: ReimbursementType;
+  conditional?: OpportunityConditionalWritable;
+  conditionsMet?: OpportunityConditionsMet;
+  status?: PledgeAllocationStatus;
+  contingent?: boolean;
+  conditions?: string;
+  notes?: string;
+  regionIds?: string[];
+  purposeVerbatim?: string;
+  restrictionDescription?: string;
+}
+
+export interface ApplyPledgeAllocationToScheduleResult {
+  createdCount: number;
+  data: PledgeAllocation[];
+}
+
 export interface UpdatePledgeAllocationBody {
   pledgeOrOpportunityId?: string | null;
   subAmount?: string | null;

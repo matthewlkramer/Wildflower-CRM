@@ -3869,6 +3869,50 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /pledge-allocations/apply-to-schedule:
+    post:
+      operationId: applyPledgeAllocationToSchedule
+      tags: [pledge-allocations]
+      summary: Create one allocation per scheduled expected payment on a pledge.
+      description: |
+        Cross-applies a single allocation template across the pledge's entire
+        installment schedule (pledge_expected_payments): one pledge_allocations
+        row is created per scheduled payment, copying every template field.
+        Each row's grantYear is derived SERVER-SIDE from that payment's
+        expectedDate (Wildflower fiscal year, Jul–Jun) — the caller cannot set
+        it. All-or-nothing: rows are inserted in one transaction. 400 when the
+        pledge has no scheduled payments.
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "#/components/schemas/ApplyPledgeAllocationToScheduleBody",
+                    },
+                },
+            },
+        }
+      responses:
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/ApplyPledgeAllocationToScheduleResult",
+                      },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /pledge-allocations/{id}:
     patch:
       operationId: updatePledgeAllocation
@@ -14978,6 +15022,46 @@ components:
         regionIds: { type: array, items: { type: string } }
         purposeVerbatim: { type: string }
         restrictionDescription: { type: string }
+    ApplyPledgeAllocationToScheduleBody:
+      type: object
+      description: |
+        Allocation template cross-applied to every scheduled expected payment
+        of the pledge. Same fields as CreatePledgeAllocationBody EXCEPT
+        grantYear, which is derived per row from each payment's expectedDate.
+      required: [pledgeOrOpportunityId]
+      properties:
+        pledgeOrOpportunityId: { type: string }
+        subAmount: { type: string }
+        entityId: { type: string }
+        intendedUsage: { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId: { type: string }
+        directToSchool: { type: boolean }
+        schoolRecipientId: { type: string }
+        regionalRestrictionType:
+          { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType: { $ref: "#/components/schemas/ReimbursementType" }
+        conditional:
+          { $ref: "#/components/schemas/OpportunityConditionalWritable" }
+        conditionsMet: { $ref: "#/components/schemas/OpportunityConditionsMet" }
+        status: { $ref: "#/components/schemas/PledgeAllocationStatus" }
+        contingent: { type: boolean }
+        conditions: { type: string }
+        notes: { type: string }
+        regionIds: { type: array, items: { type: string } }
+        purposeVerbatim: { type: string }
+        restrictionDescription: { type: string }
+    ApplyPledgeAllocationToScheduleResult:
+      type: object
+      required: [createdCount, data]
+      properties:
+        createdCount: { type: integer }
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/PledgeAllocation" },
+          }
     UpdatePledgeAllocationBody:
       type: object
       properties:

@@ -20,6 +20,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ApplyPledgeAllocationToScheduleBody,
+  ApplyPledgeAllocationToScheduleResult,
   BadRequestResponse,
   CreatePledgeAllocationBody,
   ListPledgeAllocationsParams,
@@ -180,6 +182,84 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreatePledgeAllocationMutationOptions(options));
+    }
+    /**
+ * Cross-applies a single allocation template across the pledge's entire
+installment schedule (pledge_expected_payments): one pledge_allocations
+row is created per scheduled payment, copying every template field.
+Each row's grantYear is derived SERVER-SIDE from that payment's
+expectedDate (Wildflower fiscal year, Jul–Jun) — the caller cannot set
+it. All-or-nothing: rows are inserted in one transaction. 400 when the
+pledge has no scheduled payments.
+
+ * @summary Create one allocation per scheduled expected payment on a pledge.
+ */
+export const getApplyPledgeAllocationToScheduleUrl = () => {
+
+
+  
+
+  return `/api/pledge-allocations/apply-to-schedule`
+}
+
+export const applyPledgeAllocationToSchedule = async (applyPledgeAllocationToScheduleBody: ApplyPledgeAllocationToScheduleBody, options?: RequestInit): Promise<ApplyPledgeAllocationToScheduleResult> => {
+  
+  return customFetch<ApplyPledgeAllocationToScheduleResult>(getApplyPledgeAllocationToScheduleUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      applyPledgeAllocationToScheduleBody,)
+  }
+);}
+  
+
+
+
+export const getApplyPledgeAllocationToScheduleMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>, TError,{data: BodyType<ApplyPledgeAllocationToScheduleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>, TError,{data: BodyType<ApplyPledgeAllocationToScheduleBody>}, TContext> => {
+
+const mutationKey = ['applyPledgeAllocationToSchedule'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>, {data: BodyType<ApplyPledgeAllocationToScheduleBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  applyPledgeAllocationToSchedule(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyPledgeAllocationToScheduleMutationResult = NonNullable<Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>>
+    export type ApplyPledgeAllocationToScheduleMutationBody = BodyType<ApplyPledgeAllocationToScheduleBody>
+    export type ApplyPledgeAllocationToScheduleMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Create one allocation per scheduled expected payment on a pledge.
+ */
+export const useApplyPledgeAllocationToSchedule = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>, TError,{data: BodyType<ApplyPledgeAllocationToScheduleBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyPledgeAllocationToSchedule>>,
+        TError,
+        {data: BodyType<ApplyPledgeAllocationToScheduleBody>},
+        TContext
+      > => {
+      return useMutation(getApplyPledgeAllocationToScheduleMutationOptions(options));
     }
     export const getUpdatePledgeAllocationUrl = (id: string,) => {
 
