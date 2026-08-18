@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { emails } from "@workspace/db/schema";
-import { and, count, desc, eq, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   ListEmailsQueryParams,
   CreateEmailBody,
@@ -33,6 +33,7 @@ router.get(
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
+    if (q.email) filters.push(sql`lower(${emails.email}) = lower(${q.email.trim()})`);
     if (q.personId) filters.push(eq(emails.personId, q.personId));
     
     if (q.organizationId) filters.push(eq(emails.organizationId, q.organizationId));
@@ -61,6 +62,26 @@ router.post(
       // suppression set (an internal-domain address makes them staff). Bust
       // the cache so the next sync match sees it within the TTL window.
       invalidateStaffDefaultSuppressionCache();
+      // Re-attribute HISTORY: synced messages store matched_person_ids at
+      // sync time, so messages that predate this link would never surface on
+      // the person's activity feed. Append the person to every message that
+      // involves the address (from/to/cc/bcc, case-insensitive).
+      if (row.personId && row.email) {
+        await db.execute(sql`
+          UPDATE email_messages
+          SET matched_person_ids =
+            COALESCE(matched_person_ids, '{}') || ARRAY[${row.personId}]::text[]
+          WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${row.personId}]::text[])
+            AND (
+              lower(COALESCE(from_email, '')) = lower(${row.email})
+              OR EXISTS (
+                SELECT 1 FROM unnest(
+                  COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
+                ) AS addr WHERE lower(addr) = lower(${row.email})
+              )
+            )
+        `);
+      }
       res.status(201).json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {

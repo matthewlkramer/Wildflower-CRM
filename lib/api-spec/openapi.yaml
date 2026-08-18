@@ -3198,6 +3198,12 @@ paths:
       operationId: listEmails
       tags: [emails]
       parameters:
+        - {
+            name: email,
+            in: query,
+            schema: { type: string },
+            description: "Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.",
+          }
         - { name: personId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: paymentIntermediaryId, in: query, schema: { type: string } }
@@ -15059,6 +15065,20 @@ components:
         expectedDate: { type: string, format: date }
         amount: { type: string }
         notes: { type: string }
+        repeatCount:
+          {
+            type: integer,
+            minimum: 2,
+            maximum: 100,
+            description: "Optional schedule generation: TOTAL number of installments to create including this first one. Requires repeatIntervalMonths. All rows share this amount and notes; dates advance by the interval (month-end clamped). Created atomically; the first row is returned.",
+          }
+        repeatIntervalMonths:
+          {
+            type: integer,
+            minimum: 1,
+            maximum: 60,
+            description: "Months between installments (1 = monthly, 3 = quarterly, 12 = annual). Requires repeatCount.",
+          }
     UpdatePledgeExpectedPaymentBody:
       type: object
       properties:

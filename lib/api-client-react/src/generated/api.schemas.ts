@@ -2518,6 +2518,18 @@ export interface CreatePledgeExpectedPaymentBody {
   expectedDate: string;
   amount?: string;
   notes?: string;
+  /**
+   * Optional schedule generation: TOTAL number of installments to create including this first one. Requires repeatIntervalMonths. All rows share this amount and notes; dates advance by the interval (month-end clamped). Created atomically; the first row is returned.
+   * @minimum 2
+   * @maximum 100
+   */
+  repeatCount?: number;
+  /**
+   * Months between installments (1 = monthly, 3 = quarterly, 12 = annual). Requires repeatCount.
+   * @minimum 1
+   * @maximum 60
+   */
+  repeatIntervalMonths?: number;
 }
 
 export interface UpdatePledgeExpectedPaymentBody {
@@ -10208,6 +10220,10 @@ householdId?: string;
 };
 
 export type ListEmailsParams = {
+/**
+ * Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.
+ */
+email?: string;
 personId?: string;
 organizationId?: string;
 paymentIntermediaryId?: string;

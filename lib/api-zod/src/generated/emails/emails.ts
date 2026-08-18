@@ -16,6 +16,7 @@ export const listEmailsQueryPageDefault = 1;
 
 
 export const ListEmailsQueryParams = zod.object({
+  "email": zod.coerce.string().optional().describe('Exact address lookup (case-insensitive). Used to preflight \'is this address already on file\' before creating a person from a correspondent.'),
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
   "paymentIntermediaryId": zod.coerce.string().optional(),

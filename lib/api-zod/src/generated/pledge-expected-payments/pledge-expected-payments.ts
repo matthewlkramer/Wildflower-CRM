@@ -38,11 +38,20 @@ export const ListPledgeExpectedPaymentsResponse = zod.object({
 })
 })
 
+export const createPledgeExpectedPaymentBodyRepeatCountMin = 2;
+export const createPledgeExpectedPaymentBodyRepeatCountMax = 100;
+
+export const createPledgeExpectedPaymentBodyRepeatIntervalMonthsMax = 60;
+
+
+
 export const CreatePledgeExpectedPaymentBody = zod.object({
   "pledgeOrOpportunityId": zod.string(),
   "expectedDate": zod.string().date(),
   "amount": zod.string().optional(),
-  "notes": zod.string().optional()
+  "notes": zod.string().optional(),
+  "repeatCount": zod.number().min(createPledgeExpectedPaymentBodyRepeatCountMin).max(createPledgeExpectedPaymentBodyRepeatCountMax).optional().describe('Optional schedule generation: TOTAL number of installments to create including this first one. Requires repeatIntervalMonths. All rows share this amount and notes; dates advance by the interval (month-end clamped). Created atomically; the first row is returned.'),
+  "repeatIntervalMonths": zod.number().min(1).max(createPledgeExpectedPaymentBodyRepeatIntervalMonthsMax).optional().describe('Months between installments (1 = monthly, 3 = quarterly, 12 = annual). Requires repeatCount.')
 })
 
 export const UpdatePledgeExpectedPaymentParams = zod.object({
