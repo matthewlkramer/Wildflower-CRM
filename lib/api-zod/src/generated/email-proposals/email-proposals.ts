@@ -19,6 +19,7 @@ export const ListEmailProposalsQueryParams = zod.object({
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']).optional(),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']).optional(),
   "mailboxUserId": zod.coerce.string().optional(),
+  "allMailboxes": zod.coerce.boolean().optional().describe('Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.'),
   "personId": zod.coerce.string().optional().describe('Filter to proposals targeting this person.'),
   "organizationId": zod.coerce.string().optional().describe('Filter to proposals targeting this funder.'),
   "limit": zod.coerce.number().min(1).max(listEmailProposalsQueryLimitMax).default(listEmailProposalsQueryLimitDefault),
@@ -29,6 +30,7 @@ export const ListEmailProposalsResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -87,6 +89,7 @@ export const AcceptEmailProposalBody = zod.object({
 export const AcceptEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -130,6 +133,7 @@ export const RejectEmailProposalBody = zod.object({
 export const RejectEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -172,6 +176,7 @@ export const RetryEmailProposalParams = zod.object({
 export const RetryEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -221,6 +226,7 @@ export const ReviseEmailProposalBody = zod.object({
 export const ReviseEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -263,6 +269,7 @@ export const ReopenEmailProposalParams = zod.object({
 export const ReopenEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),

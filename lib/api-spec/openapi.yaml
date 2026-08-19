@@ -1034,6 +1034,15 @@ paths:
           }
         - { name: mailboxUserId, in: query, schema: { type: string } }
         - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean },
+            description:
+              "Admin-only: when true, list proposals across ALL synced
+              mailboxes (each row carries mailboxUserName). Ignored for
+              non-admins — they only ever see their own mailbox.",
+          }
+        - {
             name: personId,
             in: query,
             schema: { type: string },
@@ -1585,6 +1594,15 @@ paths:
       tags: [correspondents]
       parameters:
         - { name: mailboxUserId, in: query, schema: { type: string } }
+        - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean },
+            description:
+              "Admin-only: when true, aggregate unrecognized correspondents
+              across ALL synced mailboxes (each row carries mailboxUserId +
+              mailboxUserName). Ignored for non-admins.",
+          }
         - {
             name: days,
             in: query,
@@ -23332,6 +23350,10 @@ components:
       properties:
         id: { type: string }
         mailboxUserId: { type: string }
+        # Display name of the mailbox owner. Populated only in the
+        # admin all-mailboxes review mode so reviewers can see whose
+        # inbox produced each suggestion; null/omitted otherwise.
+        mailboxUserName: { type: string, nullable: true }
         kind: { $ref: "#/components/schemas/EmailProposalKind" }
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         sourceMessageId: { type: string, nullable: true }
@@ -23701,6 +23723,11 @@ components:
       properties:
         emailAddress: { type: string }
         displayName: { type: string, nullable: true }
+        # Mailbox attribution — populated only in the admin
+        # all-mailboxes mode so each row identifies whose sent mail
+        # produced it; null/omitted in the normal own-mailbox mode.
+        mailboxUserId: { type: string, nullable: true }
+        mailboxUserName: { type: string, nullable: true }
         domain: { type: string, nullable: true }
         threadCount: { type: integer }
         firstSeenAt: { type: string, format: date-time }
@@ -23720,6 +23747,10 @@ components:
       required: [emailAddress]
       properties:
         emailAddress: { type: string }
+        # Admin-only: ignore on behalf of this mailbox owner (used by the
+        # all-mailboxes review mode so the item leaves THAT user's queue).
+        # Non-admins get a 403 if they pass someone else's id.
+        mailboxUserId: { type: string, nullable: true }
 
     # ─── Notes ───────────────────────────────────────────────────────────────
     Note:

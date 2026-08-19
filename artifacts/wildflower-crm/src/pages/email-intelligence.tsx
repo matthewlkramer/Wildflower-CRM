@@ -41,6 +41,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useToast } from "@/hooks/use-toast";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
 import { Mail, Check, X, MessageSquarePlus, ExternalLink, RefreshCw, Lightbulb, ChevronDown, ChevronRight, Undo2, EyeOff } from "lucide-react";
@@ -92,6 +94,12 @@ export default function EmailIntelligencePage() {
       : (KIND_TABS.find((t) => t.value === kindParam)?.value ??
           "linkedin_job_change");
   const [tab, setTab] = useState<TabValue>(initialTab);
+  // Admin-only "review all mailboxes" mode. The switch is hidden for
+  // non-admins and the server independently enforces the role check, so
+  // this state only ever widens the view for genuine admins.
+  const isAdmin = useIsAdmin();
+  const [allMailboxes, setAllMailboxes] = useState(false);
+  const showAll = isAdmin && allMailboxes;
 
   const setTabAndUrl = (next: TabValue) => {
     setTab(next);
@@ -102,16 +110,34 @@ export default function EmailIntelligencePage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">
-          Email intelligence
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Review signals the sync pass pulled out of your inbox — job
-          changes spotted on LinkedIn, addresses that bounced, "I've
-          moved" auto-replies, and people you've been emailing who
-          aren't in the CRM yet.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-serif font-bold text-foreground">
+            Email intelligence
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Review signals the sync pass pulled out of your inbox — job
+            changes spotted on LinkedIn, addresses that bounced, "I've
+            moved" auto-replies, and people you've been emailing who
+            aren't in the CRM yet.
+          </p>
+        </div>
+        {isAdmin ? (
+          <label
+            className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer select-none"
+            data-testid="toggle-all-mailboxes"
+          >
+            <Switch
+              checked={allMailboxes}
+              onCheckedChange={setAllMailboxes}
+              data-testid="switch-all-mailboxes"
+            />
+            <span className="font-medium">All mailboxes</span>
+            <span className="text-xs text-muted-foreground">
+              (admin: review everyone's suggestions)
+            </span>
+          </label>
+        ) : null}
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTabAndUrl(v as TabValue)}>
@@ -132,29 +158,43 @@ export default function EmailIntelligencePage() {
 
         {KIND_TABS.map((t) => (
           <TabsContent key={t.value} value={t.value} className="mt-4">
-            <ProposalList kind={t.value} />
+            <ProposalList kind={t.value} allMailboxes={showAll} />
           </TabsContent>
         ))}
 
         <TabsContent value={UNRECOGNIZED_TAB} className="mt-4">
-          <UnrecognizedCorrespondents />
+          <UnrecognizedCorrespondents allMailboxes={showAll} />
         </TabsContent>
       </Tabs>
     </div>
   );
 }
 
-function ProposalList({ kind }: { kind: Kind }) {
+function ProposalList({
+  kind,
+  allMailboxes,
+}: {
+  kind: Kind;
+  allMailboxes: boolean;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const params = { kind, status: "pending" as const, limit: 100 };
+  const params = {
+    kind,
+    status: "pending" as const,
+    limit: 100,
+    ...(allMailboxes ? { allMailboxes: true } : {}),
+  };
   const { data, isLoading, isError } = useListEmailProposals(params, {
     query: { queryKey: getListEmailProposalsQueryKey(params) },
   });
 
   const invalidate = () => {
+    // Prefix-invalidate every proposal list (own-mailbox AND
+    // all-mailboxes variants) so toggling the admin mode never shows a
+    // stale queue after acting on a row.
     void qc.invalidateQueries({
-      queryKey: getListEmailProposalsQueryKey({ kind, status: "pending" }),
+      queryKey: [getListEmailProposalsQueryKey()[0]],
     });
     void qc.invalidateQueries({
       queryKey: getGetEmailProposalSummaryQueryKey(),
@@ -400,7 +440,7 @@ function ProposalList({ kind }: { kind: Kind }) {
             Nothing pending in this category.
           </CardContent>
         </Card>
-        <AutoHandledSection kind={kind} />
+        <AutoHandledSection kind={kind} allMailboxes={allMailboxes} />
       </div>
     );
   }
@@ -435,9 +475,21 @@ function ProposalList({ kind }: { kind: Kind }) {
               <CardTitle className="text-base font-medium truncate">
                 {summarizeProposal(p)}
               </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {allMailboxes ? (
+                  <Badge
+                    variant="secondary"
+                    className="font-normal"
+                    data-testid={`badge-mailbox-${p.id}`}
+                  >
+                    <Mail className="h-3 w-3 mr-1" />
+                    {p.mailboxUserName ?? "Unknown mailbox"}
+                  </Badge>
+                ) : null}
+                <p className="text-xs text-muted-foreground">
+                  {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
+                </p>
+              </div>
               {p.reviewerNote &&
               p.reviewerNote.startsWith("Flagged inaccurate") ? (
                 <p
@@ -602,7 +654,7 @@ function ProposalList({ kind }: { kind: Kind }) {
           </CardContent>
         </Card>
       ))}
-      <AutoHandledSection kind={kind} />
+      <AutoHandledSection kind={kind} allMailboxes={allMailboxes} />
       <Dialog
         open={noteTarget !== null}
         onOpenChange={(open) => {
@@ -787,11 +839,22 @@ function ProposalList({ kind }: { kind: Kind }) {
  * suppressed) read off the reviewer note prefix. Re-open does NOT re-run
  * the AI — it just restores the existing analysis to pending.
  */
-function AutoHandledSection({ kind }: { kind: Kind }) {
+function AutoHandledSection({
+  kind,
+  allMailboxes,
+}: {
+  kind: Kind;
+  allMailboxes: boolean;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
-  const params = { kind, status: "ignored" as const, limit: 50 };
+  const params = {
+    kind,
+    status: "ignored" as const,
+    limit: 50,
+    ...(allMailboxes ? { allMailboxes: true } : {}),
+  };
   const { data, isLoading } = useListEmailProposals(params, {
     query: { queryKey: getListEmailProposalsQueryKey(params) },
   });
@@ -801,10 +864,7 @@ function AutoHandledSection({ kind }: { kind: Kind }) {
     mutation: {
       onSuccess: () => {
         void qc.invalidateQueries({
-          queryKey: getListEmailProposalsQueryKey({ kind, status: "ignored" }),
-        });
-        void qc.invalidateQueries({
-          queryKey: getListEmailProposalsQueryKey({ kind, status: "pending" }),
+          queryKey: [getListEmailProposalsQueryKey()[0]],
         });
         void qc.invalidateQueries({
           queryKey: getGetEmailProposalSummaryQueryKey(),
@@ -849,6 +909,16 @@ function AutoHandledSection({ kind }: { kind: Kind }) {
         <div className="text-sm font-medium truncate">
           {summarizeProposal(p)}
         </div>
+        {allMailboxes ? (
+          <Badge
+            variant="secondary"
+            className="font-normal"
+            data-testid={`badge-auto-handled-mailbox-${p.id}`}
+          >
+            <Mail className="h-3 w-3 mr-1" />
+            {p.mailboxUserName ?? "Unknown mailbox"}
+          </Badge>
+        ) : null}
         <div className="text-xs text-muted-foreground">
           {new Date(p.emailSentAt ?? p.createdAt).toLocaleString()}
         </div>
@@ -1324,13 +1394,18 @@ function ProposalDetail({
   }
 }
 
-function UnrecognizedCorrespondents() {
+function UnrecognizedCorrespondents({
+  allMailboxes,
+}: {
+  allMailboxes: boolean;
+}) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const params = allMailboxes ? { allMailboxes: true } : undefined;
   const { data, isLoading, isError } = useListUnrecognizedCorrespondents(
-    undefined,
+    params,
     {
-      query: { queryKey: getListUnrecognizedCorrespondentsQueryKey() },
+      query: { queryKey: getListUnrecognizedCorrespondentsQueryKey(params) },
     },
   );
 
@@ -1340,8 +1415,9 @@ function UnrecognizedCorrespondents() {
   const [linkPersonId, setLinkPersonId] = useState<string | null>(null);
 
   const invalidateCorrespondents = () =>
+    // Prefix-invalidate both the own-mailbox and all-mailboxes variants.
     void qc.invalidateQueries({
-      queryKey: getListUnrecognizedCorrespondentsQueryKey(),
+      queryKey: [getListUnrecognizedCorrespondentsQueryKey()[0]],
     });
 
   const ignore = useCreateCorrespondentIgnore({
@@ -1423,13 +1499,25 @@ function UnrecognizedCorrespondents() {
         <ul className="divide-y">
           {rows.map((r) => (
             <li
-              key={r.emailAddress}
+              key={`${r.mailboxUserId ?? "me"}:${r.emailAddress}`}
               className="px-4 py-3 space-y-2"
               data-testid={`correspondent-${r.emailAddress}`}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="font-medium truncate">{r.emailAddress}</div>
+                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <div className="font-medium truncate">{r.emailAddress}</div>
+                    {allMailboxes ? (
+                      <Badge
+                        variant="secondary"
+                        className="font-normal shrink-0"
+                        data-testid={`badge-correspondent-mailbox-${r.emailAddress}`}
+                      >
+                        <Mail className="h-3 w-3 mr-1" />
+                        {r.mailboxUserName ?? "Unknown mailbox"}
+                      </Badge>
+                    ) : null}
+                  </div>
                   <div className="text-xs text-muted-foreground">
                     {r.threadCount} thread{r.threadCount === 1 ? "" : "s"} ·
                     last on {new Date(r.lastSeenAt).toLocaleDateString()}
@@ -1459,7 +1547,16 @@ function UnrecognizedCorrespondents() {
                     variant="outline"
                     disabled={ignore.isPending}
                     onClick={() =>
-                      ignore.mutate({ data: { emailAddress: r.emailAddress } })
+                      ignore.mutate({
+                        data: {
+                          emailAddress: r.emailAddress,
+                          // In all-mailboxes mode, ignore on behalf of the
+                          // originating mailbox so it leaves THAT queue.
+                          ...(allMailboxes && r.mailboxUserId
+                            ? { mailboxUserId: r.mailboxUserId }
+                            : {}),
+                        },
+                      })
                     }
                     data-testid={`btn-ignore-${r.emailAddress}`}
                   >

@@ -8335,6 +8335,7 @@ export interface ApplyActionResult {
 export interface EmailProposal {
   id: string;
   mailboxUserId: string;
+  mailboxUserName?: string | null;
   kind: EmailProposalKind;
   status: EmailProposalStatus;
   sourceMessageId?: string | null;
@@ -8615,6 +8616,8 @@ export interface EmailIntelFeedbackList {
 export interface UnrecognizedCorrespondent {
   emailAddress: string;
   displayName?: string | null;
+  mailboxUserId?: string | null;
+  mailboxUserName?: string | null;
   domain?: string | null;
   threadCount: number;
   firstSeenAt: string;
@@ -8628,6 +8631,7 @@ export interface UnrecognizedCorrespondentList {
 
 export interface CreateCorrespondentIgnoreBody {
   emailAddress: string;
+  mailboxUserId?: string | null;
 }
 
 export interface Note {
@@ -9812,6 +9816,10 @@ kind?: EmailProposalKind;
 status?: EmailProposalStatus;
 mailboxUserId?: string;
 /**
+ * Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.
+ */
+allMailboxes?: boolean;
+/**
  * Filter to proposals targeting this person.
  */
 personId?: string;
@@ -9874,6 +9882,10 @@ export const AdminListEmailIntelFeedbackReviewerSource = {
 
 export type ListUnrecognizedCorrespondentsParams = {
 mailboxUserId?: string;
+/**
+ * Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.
+ */
+allMailboxes?: boolean;
 /**
  * @minimum 1
  * @maximum 365

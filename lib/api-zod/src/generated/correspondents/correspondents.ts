@@ -17,6 +17,7 @@ export const listUnrecognizedCorrespondentsQueryMinThreadsDefault = 2;
 
 export const ListUnrecognizedCorrespondentsQueryParams = zod.object({
   "mailboxUserId": zod.coerce.string().optional(),
+  "allMailboxes": zod.coerce.boolean().optional().describe('Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.'),
   "days": zod.coerce.number().min(1).max(listUnrecognizedCorrespondentsQueryDaysMax).default(listUnrecognizedCorrespondentsQueryDaysDefault),
   "minThreads": zod.coerce.number().min(1).default(listUnrecognizedCorrespondentsQueryMinThreadsDefault)
 })
@@ -25,6 +26,8 @@ export const ListUnrecognizedCorrespondentsResponse = zod.object({
   "data": zod.array(zod.object({
   "emailAddress": zod.string(),
   "displayName": zod.string().nullish(),
+  "mailboxUserId": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish(),
   "domain": zod.string().nullish(),
   "threadCount": zod.number(),
   "firstSeenAt": zod.string().datetime({}),
@@ -34,6 +37,7 @@ export const ListUnrecognizedCorrespondentsResponse = zod.object({
 })
 
 export const CreateCorrespondentIgnoreBody = zod.object({
-  "emailAddress": zod.string()
+  "emailAddress": zod.string(),
+  "mailboxUserId": zod.string().nullish()
 })
 
