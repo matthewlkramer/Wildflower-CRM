@@ -47,6 +47,7 @@ import {
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
 import { ListPageHeader } from "@/components/list-page-header";
+import { ExportCsvDialog } from "@/components/export-csv-dialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -1033,6 +1034,18 @@ export default function Opportunities({
         }
         controls={
           <>
+            <ExportCsvDialog
+              entityPath="opportunities-and-pledges"
+              filteredParams={params}
+              allRowsParams={{
+                // Keep the baseline view split (opps vs pledges) and the
+                // archive toggle; clear every user-selected filter.
+                ...(pledgeView ? { pledgeView } : {}),
+                ...(isAdmin && showArchived ? { includeArchived: true } : {}),
+              }}
+              visibleFieldKeys={visibleCols.map((c) => c.key)}
+              entityLabel={isPledgeView ? "pledges" : "opportunities"}
+            />
             <ShowArchivedToggle
               value={showArchived}
               onChange={(v) => {

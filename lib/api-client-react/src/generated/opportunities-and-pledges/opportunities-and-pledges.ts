@@ -28,6 +28,7 @@ import type {
   ConvertPledgeToGiftResult,
   CorrectionReasonBody,
   CreateOpportunityOrPledgeBody,
+  ExportOpportunitiesAndPledgesCsvParams,
   FinalizePledgeBody,
   ForbiddenResponse,
   GiftOrPayment,
@@ -54,6 +55,84 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
+
+/**
+ * Download the Opportunities or Pledges list as CSV. Accepts the same filter query params as `listOpportunitiesAndPledges` (including `pledgeView`) plus optional comma-separated `fields`.
+ */
+export const getExportOpportunitiesAndPledgesCsvUrl = (params?: ExportOpportunitiesAndPledgesCsvParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/opportunities-and-pledges/export.csv?${stringifiedParams}` : `/api/opportunities-and-pledges/export.csv`
+}
+
+export const exportOpportunitiesAndPledgesCsv = async (params?: ExportOpportunitiesAndPledgesCsvParams, options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getExportOpportunitiesAndPledgesCsvUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportOpportunitiesAndPledgesCsvQueryKey = (params?: ExportOpportunitiesAndPledgesCsvParams,) => {
+    return [
+    `/api/opportunities-and-pledges/export.csv`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportOpportunitiesAndPledgesCsvQueryOptions = <TData = Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>, TError = ErrorType<unknown>>(params?: ExportOpportunitiesAndPledgesCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportOpportunitiesAndPledgesCsvQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>> = ({ signal }) => exportOpportunitiesAndPledgesCsv(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportOpportunitiesAndPledgesCsvQueryResult = NonNullable<Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>>
+export type ExportOpportunitiesAndPledgesCsvQueryError = ErrorType<unknown>
+
+
+
+export function useExportOpportunitiesAndPledgesCsv<TData = Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>, TError = ErrorType<unknown>>(
+ params?: ExportOpportunitiesAndPledgesCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportOpportunitiesAndPledgesCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportOpportunitiesAndPledgesCsvQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 
 
 

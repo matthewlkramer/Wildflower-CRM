@@ -8,6 +8,13 @@
 import * as zod from 'zod';
 
 
+/**
+ * Download the Individuals list as CSV. Accepts the same filter query params as `listPeople`; `fields` is an optional comma-separated list of column keys (omit for all permitted fields). Masking and archive rules match the JSON list exactly.
+ */
+export const ExportPeopleCsvQueryParams = zod.object({
+  "fields": zod.coerce.string().optional()
+})
+
 export const listPeopleQueryLimitDefault = 50;
 export const listPeopleQueryLimitMax = 10000;
 

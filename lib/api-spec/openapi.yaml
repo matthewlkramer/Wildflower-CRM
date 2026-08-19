@@ -2843,6 +2843,75 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── People ────────────────────────────────────────────────────────────────
+  # ---- CSV list exports -------------------------------------------------
+  # Each export endpoint accepts the SAME filter query params as its JSON
+  # list counterpart (they share the server-side filter builder verbatim)
+  # plus an optional `fields` param. `limit`/`page` are ignored — exports
+  # always cover every authorized matching row.
+  /people/export.csv:
+    get:
+      operationId: exportPeopleCsv
+      tags: [people]
+      description: >-
+        Download the Individuals list as CSV. Accepts the same filter query
+        params as `listPeople`; `fields` is an optional comma-separated list
+        of column keys (omit for all permitted fields). Masking and archive
+        rules match the JSON list exactly.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /organizations/export.csv:
+    get:
+      operationId: exportOrganizationsCsv
+      tags: [organizations]
+      description: >-
+        Download the Organizations list as CSV. Accepts the same filter query
+        params as `listOrganizations` plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /opportunities-and-pledges/export.csv:
+    get:
+      operationId: exportOpportunitiesAndPledgesCsv
+      tags: [opportunities-and-pledges]
+      description: >-
+        Download the Opportunities or Pledges list as CSV. Accepts the same
+        filter query params as `listOpportunitiesAndPledges` (including
+        `pledgeView`) plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /gifts-and-payments/export.csv:
+    get:
+      operationId: exportGiftsAndPaymentsCsv
+      tags: [gifts-and-payments]
+      description: >-
+        Download the Gifts list as CSV. Accepts the same filter query params
+        as `listGiftsAndPayments` plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+
   /people:
     get:
       operationId: listPeople

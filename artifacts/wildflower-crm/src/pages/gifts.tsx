@@ -67,6 +67,7 @@ import {
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
 import { ListPageHeader } from "@/components/list-page-header";
+import { ExportCsvDialog } from "@/components/export-csv-dialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -1574,6 +1575,15 @@ export default function Gifts() {
         addAction={<RecordReceivedGiftDialog />}
         controls={
           <>
+            <ExportCsvDialog
+              entityPath="gifts-and-payments"
+              filteredParams={params}
+              allRowsParams={{
+                ...(isAdmin && showArchived ? { includeArchived: true } : {}),
+              }}
+              visibleFieldKeys={visibleCols.map((c) => c.key)}
+              entityLabel="gifts"
+            />
             <ShowArchivedToggle
               value={showArchived}
               onChange={(v) => {

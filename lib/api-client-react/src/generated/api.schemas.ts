@@ -10108,6 +10108,22 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
+export type ExportPeopleCsvParams = {
+fields?: string;
+};
+
+export type ExportOrganizationsCsvParams = {
+fields?: string;
+};
+
+export type ExportOpportunitiesAndPledgesCsvParams = {
+fields?: string;
+};
+
+export type ExportGiftsAndPaymentsCsvParams = {
+fields?: string;
+};
+
 export type ListPeopleParams = {
 /**
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
