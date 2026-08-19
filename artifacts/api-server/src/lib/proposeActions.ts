@@ -17,6 +17,10 @@ import { deadlineHasPassed } from "./intelDetectors";
 import { aiProposalLimit } from "./aiConcurrency";
 import { logger } from "./logger";
 import { newId } from "./helpers";
+import {
+  canonicalOrganizationName,
+  organizationNamesEquivalent,
+} from "./organizationNameMatching";
 import { loadWildflowerUpdateNote } from "./wildflowerUpdatesNote";
 import {
   buildActionProposingCorePrompt,
@@ -629,21 +633,54 @@ async function findOrganizationCandidates(
   name: string | null | undefined,
 ): Promise<OrganizationCandidate[]> {
   if (!name || name.trim().length < 3) return [];
-  const term = name.trim().toLowerCase();
   const rows = await db
-    .select({ id: organizations.id, name: organizations.name, issuesGrants: organizations.issuesGrants })
-    .from(organizations)
-    .where(
-      or(
-        ilike(organizations.name, term),
-        ilike(organizations.name, `%${term}%`),
-        sql`EXISTS (SELECT 1 FROM unnest(${organizations.historicalNames}) AS hn WHERE hn ILIKE ${`%${term}%`})`,
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      historicalNames: organizations.historicalNames,
+      issuesGrants: organizations.issuesGrants,
+    })
+    .from(organizations);
+  const target = canonicalOrganizationName(name);
+  const candidates = rows.filter(
+    (row): row is {
+      id: string;
+      name: string;
+      historicalNames: string[] | null;
+      issuesGrants: boolean;
+    } => row.name !== null,
+  );
+  // Exact conservative matches take priority. The loose pass keeps the
+  // existing prompt context useful for related-but-not-equivalent names, but
+  // it is never used for automatic deduplication.
+  const exact = candidates.filter(
+    (row) =>
+      organizationNamesEquivalent(name, row.name) ||
+      (row.historicalNames ?? []).some((historicalName) =>
+        organizationNamesEquivalent(name, historicalName),
       ),
-    )
-    .limit(5);
-  return rows
-    .filter((r): r is { id: string; name: string; issuesGrants: boolean } => r.name !== null)
-    .map((r) => ({ id: r.id, name: r.name, issuesGrants: r.issuesGrants }));
+  );
+  const related = candidates.filter((row) => {
+    if (exact.some((exactRow) => exactRow.id === row.id)) return false;
+    return (
+      canonicalOrganizationName(row.name).includes(target) ||
+      target.includes(canonicalOrganizationName(row.name)) ||
+      (row.historicalNames ?? []).some((historicalName) => {
+        const canonicalHistorical = canonicalOrganizationName(historicalName);
+        return (
+          canonicalHistorical.includes(target) ||
+          target.includes(canonicalHistorical)
+        );
+      })
+    );
+  });
+  return [...exact, ...related]
+    .slice(0, 5)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      issuesGrants: row.issuesGrants,
+    }));
 }
 
 // Resolve an organization by the sender's email domain (e.g.
@@ -683,12 +720,12 @@ function emailDomainOf(email: string | null | undefined): string | null {
 // exists — under its primary name or a known PRIOR name (`historicalNames`,
 // case-insensitive match) — rewrite to a plain create_per against that existing
 // entity so we never propose a duplicate for a renamed org. Matching is
-// case-insensitive; % / _ are escaped so names can't act as LIKE wildcards.
-// With no match the action is kept exactly as the model emitted it.
-async function reconcileCreateOrgWithPer(
+// conservative and complete across all primary and prior names: only one
+// equivalent normalized name is linked automatically; similar or ambiguous
+// names remain for the reviewer to decide.
+export async function reconcileCreateOrgWithPer(
   actions: ProposedAction[],
 ): Promise<ProposedAction[]> {
-  const escapeLike = (s: string) => s.replace(/([%_\\])/g, "\\$1");
   const out: ProposedAction[] = [];
   for (const action of actions) {
     if (
@@ -706,18 +743,22 @@ async function reconcileCreateOrgWithPer(
       out.push(action);
       continue;
     }
-    const pattern = escapeLike(name);
-    const [orgMatch] = await db
-      .select({ id: organizations.id })
-      .from(organizations)
-      .where(
-        or(
-          ilike(organizations.name, pattern),
-          sql`EXISTS (SELECT 1 FROM unnest(${organizations.historicalNames}) AS hn WHERE hn ILIKE ${pattern})`,
+    const candidates = await db
+      .select({
+        id: organizations.id,
+        name: organizations.name,
+        historicalNames: organizations.historicalNames,
+      })
+      .from(organizations);
+    const matches = candidates.filter(
+      (candidate) =>
+        organizationNamesEquivalent(name, candidate.name) ||
+        (candidate.historicalNames ?? []).some((historicalName) =>
+          organizationNamesEquivalent(name, historicalName),
         ),
-      )
-      .limit(1);
-    if (orgMatch) {
+    );
+    if (matches.length === 1) {
+      const orgMatch = matches[0];
       out.push({
         type: "create_per",
         personId: action.personId,

@@ -34,6 +34,7 @@ code/docs and update or archive the stale memory.
 - [Loan vs revenue tracks + loan_or_grant flag](loan-capital-fundraising-category.md) — loan_or_grant is the SOLE authority; gift `type` and fundraising_category columns are DROPPED (never revive); goals PK includes loan_or_grant.
 - [Gift scope → allocation migration](gift-scope-allocation-migration.md) — settled/fees + off-books all DERIVED in giftPaymentSummary.ts (off-books = all allocs on no-payment entities); QB tie is live-derived, no stored column.
 - [Donor-routing trigger vs test fixtures](donor-routing-trigger-test-fixtures.md) — gift inserts get rerouted person→household by trigger; fixtures needing individual donor-of-record must seed mode='self' prefs.
+- [Conservative organization-name deduplication](organization-name-deduplication.md) — exact presentation-only normalization must examine all primary and historical organization names before reusing a record.
 
 ## Delivery, database, and verification
 
