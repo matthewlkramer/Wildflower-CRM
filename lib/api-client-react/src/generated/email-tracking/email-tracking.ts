@@ -23,9 +23,14 @@ import type {
   BadRequestResponse,
   CreateTrackedEmailBody,
   DeleteLatestTrackedEmailView200,
+  EmailTrackingInboundQueue,
+  EmailTrackingOutboundQueue,
+  EmailTrackingResolution,
   ExtensionTokenResponse,
   ListTrackedEmailsByContactParams,
   ListTrackedEmailsParams,
+  ListTrackedInboundQueueParams,
+  ListTrackedOutboundQueueParams,
   NotFoundResponse,
   SearchTrackedEmailParams,
   SendTrackedEmailBody,
@@ -192,6 +197,241 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateTrackedEmailMutationOptions(options));
+    }
+    /**
+ * Returns tracked outbound messages from the last 14 days. Staff see only their own mailbox. Admins may pass allMailboxes=true to review every mailbox; private email-message access rules are unchanged.
+ * @summary Recent unresolved tracked emails sent to CRM contacts.
+ */
+export const getListTrackedOutboundQueueUrl = (params?: ListTrackedOutboundQueueParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/email-tracking/outbound?${stringifiedParams}` : `/api/email-tracking/outbound`
+}
+
+export const listTrackedOutboundQueue = async (params?: ListTrackedOutboundQueueParams, options?: RequestInit): Promise<EmailTrackingOutboundQueue> => {
+  
+  return customFetch<EmailTrackingOutboundQueue>(getListTrackedOutboundQueueUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListTrackedOutboundQueueQueryKey = (params?: ListTrackedOutboundQueueParams,) => {
+    return [
+    `/api/email-tracking/outbound`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListTrackedOutboundQueueQueryOptions = <TData = Awaited<ReturnType<typeof listTrackedOutboundQueue>>, TError = ErrorType<void>>(params?: ListTrackedOutboundQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedOutboundQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTrackedOutboundQueueQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrackedOutboundQueue>>> = ({ signal }) => listTrackedOutboundQueue(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrackedOutboundQueue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTrackedOutboundQueueQueryResult = NonNullable<Awaited<ReturnType<typeof listTrackedOutboundQueue>>>
+export type ListTrackedOutboundQueueQueryError = ErrorType<void>
+
+
+/**
+ * @summary Recent unresolved tracked emails sent to CRM contacts.
+ */
+
+export function useListTrackedOutboundQueue<TData = Awaited<ReturnType<typeof listTrackedOutboundQueue>>, TError = ErrorType<void>>(
+ params?: ListTrackedOutboundQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedOutboundQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTrackedOutboundQueueQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Returns incoming CRM-associated Gmail messages at least 24 hours old with no later sent reply in the same Gmail thread. Staff see only their own mailbox. Admins may pass allMailboxes=true.
+ * @summary Incoming CRM emails waiting for a reply.
+ */
+export const getListTrackedInboundQueueUrl = (params?: ListTrackedInboundQueueParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/email-tracking/inbound?${stringifiedParams}` : `/api/email-tracking/inbound`
+}
+
+export const listTrackedInboundQueue = async (params?: ListTrackedInboundQueueParams, options?: RequestInit): Promise<EmailTrackingInboundQueue> => {
+  
+  return customFetch<EmailTrackingInboundQueue>(getListTrackedInboundQueueUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListTrackedInboundQueueQueryKey = (params?: ListTrackedInboundQueueParams,) => {
+    return [
+    `/api/email-tracking/inbound`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListTrackedInboundQueueQueryOptions = <TData = Awaited<ReturnType<typeof listTrackedInboundQueue>>, TError = ErrorType<void>>(params?: ListTrackedInboundQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedInboundQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTrackedInboundQueueQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTrackedInboundQueue>>> = ({ signal }) => listTrackedInboundQueue(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTrackedInboundQueue>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTrackedInboundQueueQueryResult = NonNullable<Awaited<ReturnType<typeof listTrackedInboundQueue>>>
+export type ListTrackedInboundQueueQueryError = ErrorType<void>
+
+
+/**
+ * @summary Incoming CRM emails waiting for a reply.
+ */
+
+export function useListTrackedInboundQueue<TData = Awaited<ReturnType<typeof listTrackedInboundQueue>>, TError = ErrorType<void>>(
+ params?: ListTrackedInboundQueueParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTrackedInboundQueue>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTrackedInboundQueueQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Resolve an outbound or inbound tracking queue item.
+ */
+export const getResolveEmailTrackingQueueItemUrl = (queueType: 'outbound' | 'inbound',
+    id: string,) => {
+
+
+  
+
+  return `/api/email-tracking/queue/${queueType}/${id}/resolve`
+}
+
+export const resolveEmailTrackingQueueItem = async (queueType: 'outbound' | 'inbound',
+    id: string, options?: RequestInit): Promise<EmailTrackingResolution> => {
+  
+  return customFetch<EmailTrackingResolution>(getResolveEmailTrackingQueueItemUrl(queueType,id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getResolveEmailTrackingQueueItemMutationOptions = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>, TError,{queueType: 'outbound' | 'inbound';id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>, TError,{queueType: 'outbound' | 'inbound';id: string}, TContext> => {
+
+const mutationKey = ['resolveEmailTrackingQueueItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>, {queueType: 'outbound' | 'inbound';id: string}> = (props) => {
+          const {queueType,id} = props ?? {};
+
+          return  resolveEmailTrackingQueueItem(queueType,id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveEmailTrackingQueueItemMutationResult = NonNullable<Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>>
+    
+    export type ResolveEmailTrackingQueueItemMutationError = ErrorType<void | NotFoundResponse>
+
+    /**
+ * @summary Resolve an outbound or inbound tracking queue item.
+ */
+export const useResolveEmailTrackingQueueItem = <TError = ErrorType<void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>, TError,{queueType: 'outbound' | 'inbound';id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveEmailTrackingQueueItem>>,
+        TError,
+        {queueType: 'outbound' | 'inbound';id: string},
+        TContext
+      > => {
+      return useMutation(getResolveEmailTrackingQueueItemMutationOptions(options));
     }
     /**
  * Superhuman-style per-recipient send. The extension posts the composed message; the server delivers one individualized copy per recipient through the sender's own Gmail (each copy carries a unique tracking pixel but shows the full To/Cc group). Authenticated by the per-user X-Extension-Token header (not Clerk).

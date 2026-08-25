@@ -434,6 +434,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
 - `google_oauth_tokens`, `email_messages` (one row per mailbox per Gmail
   message, de-duplicated in the list endpoint), `email_attachments`,
   `tracked_emails` — Gmail sync + open tracking.
+- `email_tracking_resolutions` — idempotent per-mailbox resolution state for
+  active outbound and inbound email follow-up queues, with acting-reviewer
+  provenance.
 - `email_sync_state` / `calendar_sync_state` — cursors; `no_progress_runs`
   flags a stuck mailbox. `email_sync_skip`, `correspondent_ignore`,
   `person_suppression_windows`, `calendar_meeting_filters` — suppression and

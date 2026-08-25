@@ -15,6 +15,7 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
 
 - [Activity-feed email open-tracking enrich](wildflower-activity-feed-tracking-enrich.md) — tracked open status merged onto synced email_messages server-side; exact gmail-id beats fuzzy; shows only after sync.
 - [Per-recipient open tracking (Path A)](wildflower-per-recipient-tracking.md) — multi-recipient server-send guardrails (Bcc/attachment/reply fallback, region-scoped chip extraction, extension-token auth, gmail.send reconnect).
+- [Private email derived signals](email-private-derived-signals.md) — cross-mailbox views must exclude private messages from booleans/counts as well as rows; otherwise aggregates disclose existence.
 
 ## Email intelligence (AI proposals)
 

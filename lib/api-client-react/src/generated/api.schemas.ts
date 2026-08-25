@@ -9052,6 +9052,60 @@ export interface TrackedEmailList {
   data: TrackedEmail[];
 }
 
+export interface EmailTrackingOutboundQueueRow {
+  id: string;
+  subject: string;
+  recipient: string;
+  sender: string;
+  sentAt: string;
+  totalViews: number;
+  lastView?: string | null;
+  laterReply: boolean;
+  gmailThreadId?: string | null;
+  mailboxUserId: string;
+  mailboxUserName?: string | null;
+}
+
+export interface EmailTrackingOutboundQueue {
+  data: EmailTrackingOutboundQueueRow[];
+}
+
+export interface EmailTrackingInboundQueueRow {
+  id: string;
+  subject: string | null;
+  snippet?: string | null;
+  fromEmail: string | null;
+  receivedAt: string;
+  gmailThreadId?: string | null;
+  mailboxUserId: string;
+  mailboxUserName?: string | null;
+  isPrivate?: boolean;
+  matchedPersonIds?: string[] | null;
+  matchedOrganizationIds?: string[] | null;
+  matchedHouseholdIds?: string[] | null;
+}
+
+export interface EmailTrackingInboundQueue {
+  data: EmailTrackingInboundQueueRow[];
+}
+
+export type EmailTrackingResolutionQueueType = typeof EmailTrackingResolutionQueueType[keyof typeof EmailTrackingResolutionQueueType];
+
+
+export const EmailTrackingResolutionQueueType = {
+  outbound: 'outbound',
+  inbound: 'inbound',
+} as const;
+
+export interface EmailTrackingResolution {
+  id: string;
+  queueType: EmailTrackingResolutionQueueType;
+  sourceId: string;
+  mailboxUserId: string;
+  resolvedByUserId: string;
+  resolvedAt: string;
+}
+
 export interface TrackedEmailStatus {
   subject: string;
   viewCount: number;
@@ -10941,6 +10995,14 @@ export type ListTrackedEmailsParams = {
  * @maximum 1000
  */
 limit?: number;
+};
+
+export type ListTrackedOutboundQueueParams = {
+allMailboxes?: boolean;
+};
+
+export type ListTrackedInboundQueueParams = {
+allMailboxes?: boolean;
 };
 
 export type SearchTrackedEmailParams = {

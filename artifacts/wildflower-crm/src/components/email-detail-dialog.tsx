@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -70,6 +71,9 @@ export function EmailDetailDialog({ emailId, onClose }: Props) {
               {data?.subject ? decodeHtmlEntities(data.subject) : "(no subject)"}
             </span>
           </DialogTitle>
+          <DialogDescription>
+            Synced email details for this Gmail message.
+          </DialogDescription>
         </DialogHeader>
         {isLoading || !data ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

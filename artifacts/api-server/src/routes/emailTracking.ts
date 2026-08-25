@@ -5,9 +5,20 @@ import {
   emails as emailsTable,
   trackedEmails,
   trackedEmailViews,
+  emailMessages,
+  emailTrackingResolutions,
   users,
 } from "@workspace/db/schema";
-import { and, asc, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  inArray,
+  sql,
+  type SQLWrapper,
+} from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireExtensionToken } from "../middlewares/requireExtensionToken";
 import { publicTrackingLimiter } from "../middlewares/rateLimit";
@@ -713,6 +724,273 @@ router.get(
   }),
 );
 
+// ─── Actionable outbound/inbound queues ─────────────────────────────────────
+
+type QueueType = "outbound" | "inbound";
+
+function wantsAllMailboxes(req: import("express").Request): boolean {
+  return String(req.query.allMailboxes ?? "").toLowerCase() === "true";
+}
+
+function canReviewAllMailboxes(
+  me: { id: string; role: string },
+  requested: boolean,
+): boolean {
+  return requested && me.role === "admin";
+}
+
+function mailboxScope(
+  me: { id: string; role: string },
+  allMailboxes: boolean,
+  mailboxColumn: SQLWrapper,
+) {
+  return allMailboxes ? sql`TRUE` : sql`${mailboxColumn} = ${me.id}`;
+}
+
+function privateVisibility(
+  me: { id: string; role: string },
+  privateColumn: typeof emailMessages.isPrivate,
+  mailboxColumn: typeof emailMessages.mailboxUserId,
+) {
+  // Admin all-mailboxes review does not grant access to private source email.
+  return sql`(${privateColumn} = false OR ${mailboxColumn} = ${me.id})`;
+}
+
+router.get(
+  "/email-tracking/outbound",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    const allMailboxes = canReviewAllMailboxes(me, wantsAllMailboxes(req));
+    const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60_000);
+    const hasCrmRecipient = sql`(
+      cardinality(${trackedEmails.recipientPersonIds}) > 0 OR
+      cardinality(${trackedEmails.recipientOrganizationIds}) > 0 OR
+      cardinality(${trackedEmails.recipientHouseholdIds}) > 0
+    )`;
+    const laterReply = sql<boolean>`EXISTS (
+      SELECT 1
+      FROM email_messages AS reply_message
+      WHERE reply_message.gmail_thread_id = ${trackedEmails.gmailThreadId}
+        AND reply_message.mailbox_user_id = ${users.id}
+        AND reply_message.direction = 'received'
+        AND reply_message.sent_at > ${trackedEmails.createdAt}
+        AND (
+          reply_message.is_private = false
+          OR reply_message.mailbox_user_id = ${me.id}
+        )
+    )`;
+    const rows = await db
+      .select({
+        id: trackedEmails.id,
+        subject: trackedEmails.subject,
+        recipient: trackedEmails.recipient,
+        sender: trackedEmails.sender,
+        sentAt: trackedEmails.createdAt,
+        totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
+        lastView: sql<Date | null>`MAX(${trackedEmailViews.viewedAt})`,
+        laterReply,
+        gmailThreadId: trackedEmails.gmailThreadId,
+        mailboxUserId: users.id,
+        mailboxUserName: users.displayName,
+      })
+      .from(trackedEmails)
+      .innerJoin(users, sql`lower(${users.email}) = lower(${trackedEmails.sender})`)
+      .leftJoin(
+        trackedEmailViews,
+        eq(trackedEmailViews.emailId, trackedEmails.id),
+      )
+      .where(
+        and(
+          gte(trackedEmails.createdAt, fourteenDaysAgo),
+          hasCrmRecipient,
+          mailboxScope(me, allMailboxes, users.id),
+          sql`NOT EXISTS (
+            SELECT 1 FROM email_tracking_resolutions AS resolution
+            WHERE resolution.queue_type = 'outbound'
+              AND resolution.source_id = ${trackedEmails.id}
+          )`,
+        ),
+      )
+      .groupBy(trackedEmails.id, users.id, users.displayName)
+      .orderBy(desc(trackedEmails.createdAt), asc(trackedEmails.id));
+
+    res.json({
+      data: rows.map((r) => ({
+        ...r,
+        sentAt: r.sentAt.toISOString(),
+        lastView: r.lastView?.toISOString() ?? null,
+        laterReply: Boolean(r.laterReply),
+        totalViews: r.totalViews ?? 0,
+        mailboxUserName: allMailboxes ? r.mailboxUserName : null,
+      })),
+    });
+  }),
+);
+
+router.get(
+  "/email-tracking/inbound",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    const allMailboxes = canReviewAllMailboxes(me, wantsAllMailboxes(req));
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60_000);
+    const hasCrmContact = sql`(
+      cardinality(COALESCE(${emailMessages.matchedPersonIds}, '{}'::text[])) > 0 OR
+      cardinality(COALESCE(${emailMessages.matchedOrganizationIds}, '{}'::text[])) > 0 OR
+      cardinality(COALESCE(${emailMessages.matchedHouseholdIds}, '{}'::text[])) > 0
+    )`;
+    const noLaterReply = sql`NOT EXISTS (
+      SELECT 1
+      FROM email_messages AS sent_message
+      WHERE sent_message.mailbox_user_id = ${emailMessages.mailboxUserId}
+        AND sent_message.gmail_thread_id = ${emailMessages.gmailThreadId}
+        AND sent_message.direction = 'sent'
+        AND sent_message.sent_at > ${emailMessages.sentAt}
+    )`;
+    const rows = await db
+      .select({
+        id: emailMessages.id,
+        subject: emailMessages.subject,
+        snippet: emailMessages.snippet,
+        fromEmail: emailMessages.fromEmail,
+        receivedAt: emailMessages.sentAt,
+        gmailThreadId: emailMessages.gmailThreadId,
+        mailboxUserId: users.id,
+        mailboxUserName: users.displayName,
+        isPrivate: emailMessages.isPrivate,
+        matchedPersonIds: emailMessages.matchedPersonIds,
+        matchedOrganizationIds: emailMessages.matchedOrganizationIds,
+        matchedHouseholdIds: emailMessages.matchedHouseholdIds,
+      })
+      .from(emailMessages)
+      .innerJoin(users, eq(users.id, emailMessages.mailboxUserId))
+      .where(
+        and(
+          eq(emailMessages.direction, "received"),
+          sql`${emailMessages.sentAt} <= ${twentyFourHoursAgo}`,
+          hasCrmContact,
+          noLaterReply,
+          mailboxScope(me, allMailboxes, emailMessages.mailboxUserId),
+          privateVisibility(me, emailMessages.isPrivate, emailMessages.mailboxUserId),
+          sql`NOT EXISTS (
+            SELECT 1 FROM email_tracking_resolutions AS resolution
+            WHERE resolution.queue_type = 'inbound'
+              AND resolution.source_id = ${emailMessages.id}
+          )`,
+        ),
+      )
+      .orderBy(desc(emailMessages.sentAt), asc(emailMessages.id));
+
+    res.json({
+      data: rows.map((r) => ({
+        ...r,
+        receivedAt: r.receivedAt.toISOString(),
+        mailboxUserName: allMailboxes ? r.mailboxUserName : null,
+      })),
+    });
+  }),
+);
+
+router.post(
+  "/email-tracking/queue/:queueType/:id/resolve",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
+    const queueType = String(req.params.queueType) as QueueType;
+    if (queueType !== "outbound" && queueType !== "inbound") {
+      res.status(404).json({ error: "not_found", message: "Queue item not found" });
+      return;
+    }
+    const sourceId = paramId(req);
+    const allMailboxes = me.role === "admin";
+    let mailboxUserId: string | null = null;
+
+    if (queueType === "outbound") {
+      const row = await db
+        .select({ mailboxUserId: users.id })
+        .from(trackedEmails)
+        .innerJoin(users, sql`lower(${users.email}) = lower(${trackedEmails.sender})`)
+        .where(
+          and(
+            eq(trackedEmails.id, sourceId),
+            sql`(
+              ${users.id} = ${me.id}
+              OR ${allMailboxes ? sql`TRUE` : sql`FALSE`}
+            )`,
+          ),
+        )
+        .then((r) => r[0]);
+      mailboxUserId = row?.mailboxUserId ?? null;
+    } else {
+      const row = await db
+        .select({
+          mailboxUserId: emailMessages.mailboxUserId,
+          isPrivate: emailMessages.isPrivate,
+        })
+        .from(emailMessages)
+        .where(
+          and(
+            eq(emailMessages.id, sourceId),
+            sql`(
+              ${emailMessages.mailboxUserId} = ${me.id}
+              OR (${allMailboxes ? sql`TRUE` : sql`FALSE`} AND ${emailMessages.isPrivate} = false)
+            )`,
+          ),
+        )
+        .then((r) => r[0]);
+      mailboxUserId = row?.mailboxUserId ?? null;
+    }
+    if (!mailboxUserId) {
+      res.status(404).json({ error: "not_found", message: "Queue item not found" });
+      return;
+    }
+
+    const [inserted] = await db
+      .insert(emailTrackingResolutions)
+      .values({
+        id: newId(),
+        queueType,
+        sourceId,
+        mailboxUserId,
+        resolvedByUserId: me.id,
+      })
+      .onConflictDoNothing({
+        target: [emailTrackingResolutions.queueType, emailTrackingResolutions.sourceId],
+      })
+      .returning();
+    const resolution =
+      inserted ??
+      (await db
+        .select()
+        .from(emailTrackingResolutions)
+        .where(
+          and(
+            eq(emailTrackingResolutions.queueType, queueType),
+            eq(emailTrackingResolutions.sourceId, sourceId),
+          ),
+        )
+        .then((r) => r[0]));
+    if (!resolution) {
+      res.status(500).json({ error: "resolution_failed" });
+      return;
+    }
+    res.json(resolution);
+  }),
+);
+
 // ─── Extension-token management (auth required) ────────────────────────────
 // The user generates a token here, then pastes it into the tracking extension
 // so the extension can authenticate the per-recipient send endpoint.
@@ -748,10 +1026,22 @@ router.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const id = paramId(req);
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized", message: "No user" });
+      return;
+    }
     const email = await db
       .select()
       .from(trackedEmails)
-      .where(eq(trackedEmails.id, id))
+      .where(
+        and(
+          eq(trackedEmails.id, id),
+          me?.role === "admin"
+            ? sql`TRUE`
+            : sql`lower(${trackedEmails.sender}) = lower(${me?.email ?? ""})`,
+        ),
+      )
       .then((r) => r[0]);
     if (!email) return notFound(res, "tracked email");
     res.json(await shapeGroupWithViews(email));

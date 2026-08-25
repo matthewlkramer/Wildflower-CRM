@@ -1,13 +1,19 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 import {
-  useListTrackedEmails,
-  getListTrackedEmailsQueryKey,
   useGetTrackedEmail,
   getGetTrackedEmailQueryKey,
+  useGetCurrentUser,
+  useListTrackedOutboundQueue,
+  getListTrackedOutboundQueueQueryKey,
+  useListTrackedInboundQueue,
+  getListTrackedInboundQueueQueryKey,
+  useResolveEmailTrackingQueueItem,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { decodeHtmlEntities } from "@/lib/format";
+import { EmailDetailDialog as SyncedEmailDetailDialog } from "@/components/email-detail-dialog";
 import {
   Table,
   TableBody,
@@ -18,6 +24,9 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -25,7 +34,16 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Eye, EyeOff, MailOpen, Send, Users } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock3,
+  Eye,
+  EyeOff,
+  Inbox,
+  MailOpen,
+  Reply,
+  Send,
+} from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
 /**
@@ -48,12 +66,6 @@ function parseUA(ua: string | null | undefined): { browser: string; os: string }
   else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
   else if (ua.includes("Linux")) os = "Linux";
   return { browser, os };
-}
-
-function todayStartUtc(): Date {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d;
 }
 
 function EmailDetailDialog({
@@ -180,85 +192,135 @@ function EmailDetailDialog({
 }
 
 export default function EmailTrackingPage() {
-  const listParams = { limit: 200 };
-  const { data, isLoading } = useListTrackedEmails(listParams, {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: me } = useGetCurrentUser();
+  const [allMailboxes, setAllMailboxes] = useState(false);
+  const [openTrackedId, setOpenTrackedId] = useState<string | null>(null);
+  const [openMessageId, setOpenMessageId] = useState<string | null>(null);
+  const params = { allMailboxes };
+  const outbound = useListTrackedOutboundQueue(params, {
     query: {
-      queryKey: getListTrackedEmailsQueryKey(listParams),
+      queryKey: getListTrackedOutboundQueueQueryKey(params),
       refetchInterval: 15_000,
     },
   });
-  const [openId, setOpenId] = useState<string | null>(null);
+  const inbound = useListTrackedInboundQueue(params, {
+    query: {
+      queryKey: getListTrackedInboundQueueQueryKey(params),
+      refetchInterval: 15_000,
+    },
+  });
+  const resolveItem = useResolveEmailTrackingQueueItem({
+    mutation: {
+      onSuccess: (_data, variables) => {
+        qc.invalidateQueries({
+          queryKey:
+            variables.queueType === "outbound"
+              ? getListTrackedOutboundQueueQueryKey(params)
+              : getListTrackedInboundQueueQueryKey(params),
+        });
+        toast({ title: "Marked resolved" });
+      },
+      onError: () => {
+        toast({
+          title: "Could not resolve email",
+          description: "Please try again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  const outboundRows = outbound.data?.data ?? [];
+  const inboundRows = inbound.data?.data ?? [];
+  const isAdmin = me?.role === "admin";
+  const showMailbox = isAdmin && allMailboxes;
 
-  const rows = data?.data ?? [];
-
-  const kpis = useMemo(() => {
-    const todayStart = todayStartUtc().getTime();
-    const sentToday = rows.filter(
-      (r) => new Date(r.createdAt).getTime() >= todayStart,
-    ).length;
-    const opensToday = rows.filter(
-      (r) =>
-        r.lastView && new Date(r.lastView).getTime() >= todayStart,
-    ).length;
-    const totalOpens = rows.reduce((acc, r) => acc + (r.totalViews ?? 0), 0);
-    return { sentToday, opensToday, totalOpens };
-  }, [rows]);
+  const resolve = (
+    queueType: "outbound" | "inbound",
+    id: string,
+  ) => {
+    resolveItem.mutate({ queueType, id });
+  };
 
   return (
     <div className="space-y-4 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Email tracking</h1>
           <p className="text-sm text-muted-foreground">
-            Open events from the Wildflower Tracking browser extension.
+            Follow up on recent outreach and messages waiting for a reply.
           </p>
         </div>
+        {isAdmin ? (
+          <div className="flex items-center gap-2 rounded-md border px-3 py-2">
+            <Switch
+              id="all-mailboxes"
+              checked={allMailboxes}
+              onCheckedChange={setAllMailboxes}
+            />
+            <Label htmlFor="all-mailboxes">All mailboxes</Label>
+          </div>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Send className="h-4 w-4" /> Tracked sends today
+              <Send className="h-4 w-4" /> Recent outbound
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{kpis.sentToday}</div>
+            <div className="text-3xl font-semibold">{outboundRows.length}</div>
+            <p className="text-xs text-muted-foreground">last 14 days</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <MailOpen className="h-4 w-4" /> Emails opened today
+              <Inbox className="h-4 w-4" /> Waiting for reply
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{kpis.opensToday}</div>
+            <div className="text-3xl font-semibold">{inboundRows.length}</div>
+            <p className="text-xs text-muted-foreground">at least 24 hours old</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-              <Users className="h-4 w-4" /> Total opens (last 200)
+              <MailOpen className="h-4 w-4" /> Observed opens
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-3xl font-semibold">{kpis.totalOpens}</div>
+            <div className="text-3xl font-semibold">
+              {outboundRows.reduce((sum, row) => sum + row.totalViews, 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">across recent outbound</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Recent tracked sends</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Send className="h-5 w-5" /> Outbound
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Tracked messages sent to CRM contacts in the last 14 days.
+          </p>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {outbound.isLoading ? (
             <div className="text-sm text-muted-foreground">Loading…</div>
-          ) : rows.length === 0 ? (
+          ) : outbound.isError ? (
+            <div className="text-sm text-destructive">
+              Could not load outbound email.
+            </div>
+          ) : outboundRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No tracked emails yet. Install the Wildflower Tracking
-              extension and send a message from Gmail to see it here.
+              No unresolved tracked messages from the last 14 days.
             </div>
           ) : (
             <Table>
@@ -267,16 +329,18 @@ export default function EmailTrackingPage() {
                   <TableHead>Subject</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead>Sent</TableHead>
-                  <TableHead className="text-right">Opens</TableHead>
-                  <TableHead>Last open</TableHead>
+                  <TableHead>Open status</TableHead>
+                  <TableHead>Reply</TableHead>
+                  {showMailbox ? <TableHead>Mailbox</TableHead> : null}
+                  <TableHead className="text-right">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((r) => (
+                {outboundRows.map((r) => (
                   <TableRow
                     key={r.id}
                     className="cursor-pointer"
-                    onClick={() => setOpenId(r.id)}
+                    onClick={() => setOpenTrackedId(r.id)}
                   >
                     <TableCell className="font-medium max-w-xs truncate">
                       {decodeHtmlEntities(r.subject)}
@@ -285,48 +349,164 @@ export default function EmailTrackingPage() {
                       {r.recipient}
                     </TableCell>
                     <TableCell className="text-sm whitespace-nowrap">
-                      {formatDistanceToNow(new Date(r.createdAt), {
+                      {formatDistanceToNow(new Date(r.sentAt), {
                         addSuffix: true,
                       })}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>
                       <Badge
                         variant={
-                          (r.totalViews ?? 0) > 0 ? "default" : "secondary"
+                          r.totalViews > 0 ? "default" : "secondary"
                         }
                         className="gap-1"
                       >
-                        {(r.totalViews ?? 0) > 0 ? (
+                        {r.totalViews > 0 ? (
                           <Eye className="h-3 w-3" />
                         ) : (
                           <EyeOff className="h-3 w-3" />
                         )}
-                        {r.totalViews ?? 0}
+                        {r.totalViews > 0
+                          ? `Opened ${r.totalViews}×`
+                          : "Not observed"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">
-                      {r.lastView
-                        ? formatDistanceToNow(new Date(r.lastView), {
-                            addSuffix: true,
-                          })
-                        : "—"}
+                    <TableCell>
+                      <Badge variant={r.laterReply ? "default" : "outline"}>
+                        {r.laterReply ? (
+                          <Reply className="mr-1 h-3 w-3" />
+                        ) : (
+                          <Clock3 className="mr-1 h-3 w-3" />
+                        )}
+                        {r.laterReply ? "Replied" : "No reply"}
+                      </Badge>
+                    </TableCell>
+                    {showMailbox ? (
+                      <TableCell className="text-sm">
+                        {r.mailboxUserName ?? r.sender}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={
+                          resolveItem.isPending &&
+                          resolveItem.variables?.id === r.id
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          resolve("outbound", r.id);
+                        }}
+                      >
+                        <CheckCircle2 className="mr-1 h-4 w-4" />
+                        Resolve
+                      </Button>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           )}
-          {rows.length > 0 && (
-            <div className="mt-3">
-              <Button variant="link" onClick={() => setOpenId(rows[0].id)}>
-                Open most recent
-              </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Inbox className="h-5 w-5" /> Inbound
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            CRM messages at least 24 hours old without a later sent reply in the
+            same Gmail thread.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {inbound.isLoading ? (
+            <div className="text-sm text-muted-foreground">Loading…</div>
+          ) : inbound.isError ? (
+            <div className="text-sm text-destructive">
+              Could not load inbound email.
             </div>
+          ) : inboundRows.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              No unresolved incoming messages are waiting for a reply.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>From</TableHead>
+                  <TableHead>Received</TableHead>
+                  {showMailbox ? <TableHead>Mailbox</TableHead> : null}
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {inboundRows.map((r) => (
+                  <TableRow
+                    key={r.id}
+                    className="cursor-pointer"
+                    onClick={() => setOpenMessageId(r.id)}
+                  >
+                    <TableCell className="max-w-md">
+                      <div className="font-medium truncate">
+                        {r.subject
+                          ? decodeHtmlEntities(r.subject)
+                          : "(no subject)"}
+                      </div>
+                      {r.snippet ? (
+                        <div className="text-xs text-muted-foreground truncate">
+                          {decodeHtmlEntities(r.snippet)}
+                        </div>
+                      ) : null}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {r.fromEmail ?? "Unknown sender"}
+                    </TableCell>
+                    <TableCell className="text-sm whitespace-nowrap">
+                      {formatDistanceToNow(new Date(r.receivedAt), {
+                        addSuffix: true,
+                      })}
+                    </TableCell>
+                    {showMailbox ? (
+                      <TableCell className="text-sm">
+                        {r.mailboxUserName ?? "Unknown mailbox"}
+                      </TableCell>
+                    ) : null}
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={
+                          resolveItem.isPending &&
+                          resolveItem.variables?.id === r.id
+                        }
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          resolve("inbound", r.id);
+                        }}
+                      >
+                        <CheckCircle2 className="mr-1 h-4 w-4" />
+                        Resolve
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           )}
         </CardContent>
       </Card>
 
-      <EmailDetailDialog id={openId} onClose={() => setOpenId(null)} />
+      <EmailDetailDialog
+        id={openTrackedId}
+        onClose={() => setOpenTrackedId(null)}
+      />
+      <SyncedEmailDetailDialog
+        emailId={openMessageId}
+        onClose={() => setOpenMessageId(null)}
+      />
     </div>
   );
 }
