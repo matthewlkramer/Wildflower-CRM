@@ -18,6 +18,7 @@
     "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../tsconfig.json && tsc -p tsconfig.json --noEmit'"
   },
   "dependencies": {
+    "@workspace/bank-reports": "workspace:*",
     "@workspace/coding-forms": "workspace:*",
     "@workspace/db": "workspace:*",
     "xlsx": "0.18.5"

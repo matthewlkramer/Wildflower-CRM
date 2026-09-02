@@ -16,6 +16,9 @@
       "path": "./lib/coding-forms"
     },
     {
+      "path": "./lib/bank-reports"
+    },
+    {
       "path": "./lib/integrations-anthropic-ai"
     }
   ]
