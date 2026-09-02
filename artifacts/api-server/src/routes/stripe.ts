@@ -59,6 +59,7 @@ import {
 } from "../lib/reconciliationBundleCommit";
 import {
   ReconcileAbort,
+  lockAndValidatePledgeForPayment,
   orphanStripeSourceChargeInTx,
 } from "../lib/reconciliationCommit";
 import {
@@ -893,39 +894,13 @@ router.post(
     const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
-        // Record-local received-money action: lock the selected opportunity or
-        // pledge BEFORE the charge (opp → charge lock order). An open
-        // opportunity produces a direct gift outcome; a previously finalized
-        // pledge produces a pledge payment. The donor always derives from the
-        // selected record.
+        // Payment-on-pledge: lock + validate the selected pledge BEFORE the
+        // charge (opp → charge lock order). This must happen before the shared
+        // mint primitive so a non-pledge cannot create a gift or adopt its
+        // donor onto the charge.
         const opp = overrides.opportunityId
-          ? await tx
-              .select()
-              .from(opportunitiesAndPledges)
-              .where(eq(opportunitiesAndPledges.id, overrides.opportunityId))
-              .for("update")
-              .then((rows) => rows[0] ?? null)
+          ? await lockAndValidatePledgeForPayment(tx, overrides.opportunityId)
           : null;
-        if (overrides.opportunityId && !opp) {
-          throw new ReconcileAbort(404, {
-            error: "not_found",
-            message: "opportunity not found",
-          });
-        }
-        if (opp?.archivedAt) {
-          throw new ReconcileAbort(409, {
-            error: "opportunity_archived",
-            message:
-              "Restore this opportunity before recording received money against it.",
-          });
-        }
-        if (opp?.lossType) {
-          throw new ReconcileAbort(409, {
-            error: "opportunity_closed",
-            message:
-              "Reopen this opportunity before recording received money against it.",
-          });
-        }
         const locked = await tx
           .select()
           .from(stripeStagedCharges)

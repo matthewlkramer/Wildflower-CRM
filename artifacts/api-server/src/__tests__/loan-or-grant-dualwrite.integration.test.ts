@@ -63,6 +63,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
+  pledgeExpectedPayments: Db["pledgeExpectedPayments"];
   fiscalYearEntityGoals: Db["fiscalYearEntityGoals"];
   bulkOperations: Db["bulkOperations"];
 };
@@ -196,6 +197,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
+    pledgeExpectedPayments: dbMod.pledgeExpectedPayments,
     fiscalYearEntityGoals: dbMod.fiscalYearEntityGoals,
     bulkOperations: dbMod.bulkOperations,
   };
@@ -228,6 +230,16 @@ afterAll(async () => {
   await db
     .delete(schema.giftAllocations)
     .where(inArrayFn(schema.giftAllocations.giftId, seededGiftIds.length ? seededGiftIds : [""]));
+  if (seededPledgeIds.length) {
+    await db
+      .delete(schema.pledgeExpectedPayments)
+      .where(
+        inArrayFn(
+          schema.pledgeExpectedPayments.pledgeOrOpportunityId,
+          seededPledgeIds,
+        ),
+      );
+  }
   if (seededPledgeIds.length) {
     await db
       .delete(schema.pledgeAllocations)

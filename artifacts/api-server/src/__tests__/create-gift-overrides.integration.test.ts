@@ -2,7 +2,6 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   clearPaymentUnitsForStagedIds,
   clearPaymentUnitsForChargeIds,
-  clearPaymentApplicationsForGiftIds,
   qbMintedGiftIdForPayment,
 } from "./paymentApplicationsTestUtil";
 import type { AddressInfo } from "node:net";
@@ -248,7 +247,6 @@ afterAll(async () => {
   // entities/org → user.
   await clearPaymentUnitsForStagedIds(stagedIds);
   await clearPaymentUnitsForChargeIds(chargeIds);
-  await clearPaymentApplicationsForGiftIds(giftIds);
   if (giftIds.length) {
     await db
       .delete(schema.giftAllocations)

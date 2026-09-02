@@ -14,9 +14,8 @@ import type { Server } from "node:http";
  *     reconcile gift_allocations rows correctly;
  *   - fundableProjectId is only honored when intendedUsage='project'; any
  *     other usage clears it;
- *   - OPPS: scalar whitelist (ownerUserId / type / writtenPledge /
- *     projectedCloseDate / applicationDeadline) persists, derived fields are
- *     recomputed after (writtenPledge=true ⇒ derived status='pledge');
+ *   - OPPS: scalar whitelist (ownerUserId / type / projectedCloseDate /
+ *     applicationDeadline) persists;
  *   - the close-transition rule is enforced PER ROW: lossType without an
  *     actualCompletionDate fails that row (row-level failure, not a 400),
  *     while supplying the date lets it close;
@@ -330,14 +329,13 @@ describe.skipIf(!HAS_DB)("bulk-update field coverage", () => {
     }
   });
 
-  it("opps: scalar whitelist persists and derived status recomputes (writtenPledge ⇒ 'pledge')", async () => {
+  it("opps: scalar whitelist fields persist on every row", async () => {
     auth.current = { id: ADMIN_ID, role: "admin" };
     const { status, json } = await bulk("opportunities-and-pledges", {
       ids: [OPP_1, OPP_2],
       patch: {
         ownerUserId: OWNER_ID,
         type: "renewal",
-        writtenPledge: true,
         projectedCloseDate: "2099-06-30",
         applicationDeadline: "2099-05-15",
       },
@@ -352,11 +350,8 @@ describe.skipIf(!HAS_DB)("bulk-update field coverage", () => {
     for (const o of rows) {
       expect(o.ownerUserId).toBe(OWNER_ID);
       expect(o.type).toBe("renewal");
-      expect(o.writtenPledge).toBe(true);
       expect(String(o.projectedCloseDate)).toBe("2099-06-30");
       expect(String(o.applicationDeadline)).toBe("2099-05-15");
-      // afterApply re-derived the lifecycle: a written pledge is status='pledge'.
-      expect(o.status).toBe("pledge");
     }
   });
 

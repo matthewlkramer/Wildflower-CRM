@@ -331,9 +331,9 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
     // Paid >= ceiling NEVER completes a cost-reimbursement award.
     expect(row?.status).toBe("pledge");
-    // A won row's funnel stage always reads 'complete' (deriveOppFields);
-    // the derived STATUS stays 'pledge' until the award is closed.
-    expect(row?.stage).toBe("complete");
+    // Legacy commitment stages normalize to the current cultivation stage;
+    // status stays 'pledge' until the award is closed.
+    expect(row?.stage).toBe("verbal_confirmation");
 
     // Explicit close-award (the only completion path for cost_reimbursement).
     await db
@@ -350,6 +350,6 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
       .from(schema.opportunitiesAndPledges)
       .where(eqFn(schema.opportunitiesAndPledges.id, oppId));
     expect(row?.status).toBe("cash_in");
-    expect(row?.stage).toBe("complete");
+    expect(row?.stage).toBe("verbal_confirmation");
   });
 });

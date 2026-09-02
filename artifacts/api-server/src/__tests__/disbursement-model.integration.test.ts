@@ -241,7 +241,7 @@ describe.skipIf(!HAS_DB)("evidence-only also covers PATCH re-pointing (Task #788
     return { status: res.status, json: await res.json().catch(() => null) };
   }
 
-  it("blocks the create-then-patch bypass (setting opportunityId on an unlinked gift)", async () => {
+  it("requires the correction flow when setting opportunityId on an unlinked gift", async () => {
     const oppId = await seedOpp();
     const { status: s1, json: gift } = await post("/api/gifts-and-payments", {
       name: "DM patch bypass",
@@ -255,10 +255,10 @@ describe.skipIf(!HAS_DB)("evidence-only also covers PATCH re-pointing (Task #788
       opportunityId: oppId,
     });
     expect(status).toBe(409);
-    expect(json?.error).toBe("manual_gift_on_pledge_blocked");
+    expect(json?.error).toBe("gift_pledge_link_correction_required");
   });
 
-  it("blocks re-pointing a linked gift at a DIFFERENT pledge without the exception", async () => {
+  it("requires the correction flow when re-pointing a linked gift at a different pledge", async () => {
     const oppA = await seedOpp();
     const oppB = await seedOpp();
     const { status: s1, json: gift } = await post("/api/gifts-and-payments", {
@@ -275,10 +275,10 @@ describe.skipIf(!HAS_DB)("evidence-only also covers PATCH re-pointing (Task #788
       opportunityId: oppB,
     });
     expect(status).toBe(409);
-    expect(json?.error).toBe("manual_gift_on_pledge_blocked");
+    expect(json?.error).toBe("gift_pledge_link_correction_required");
   });
 
-  it("allows PATCH re-pointing with offBooksException=true (finance/admin), never persisting the flag; clearing the link needs no exception", async () => {
+  it("requires the correction workflow for every PATCH link change, while allowing unrelated edits", async () => {
     const oppA = await seedOpp();
     const oppB = await seedOpp();
     const { json: gift } = await post("/api/gifts-and-payments", {
@@ -294,22 +294,22 @@ describe.skipIf(!HAS_DB)("evidence-only also covers PATCH re-pointing (Task #788
       opportunityId: oppB,
       offBooksException: true,
     });
-    expect(status).toBe(200);
-    expect(json?.opportunityId).toBe(oppB);
-    expect(json).not.toHaveProperty("offBooksException");
+    expect(status).toBe(409);
+    expect(json?.error).toBe("gift_pledge_link_correction_required");
 
-    // Clearing the link is always allowed — no exception required.
+    // Detaching is likewise a correction, not a generic PATCH operation.
     const { status: s3, json: j3 } = await patch(`/api/gifts-and-payments/${gift.id}`, {
       opportunityId: null,
     });
-    expect(s3).toBe(200);
-    expect(j3?.opportunityId).toBeNull();
+    expect(s3).toBe(409);
+    expect(j3?.error).toBe("gift_pledge_link_correction_required");
 
     // Unrelated PATCHes (opportunityId untouched) are unaffected on a linked gift.
-    const { status: s4 } = await patch(`/api/gifts-and-payments/${gift.id}`, {
+    const { status: s4, json: j4 } = await patch(`/api/gifts-and-payments/${gift.id}`, {
       name: "DM patch renamed",
     });
     expect(s4).toBe(200);
+    expect(j4?.opportunityId).toBe(oppA);
   });
 });
 

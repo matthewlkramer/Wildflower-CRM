@@ -64,7 +64,7 @@ export async function mergeUnambiguousQboDepositLines(
         AND sl.match_basis = 'deposit_header_exact'
         AND (${onlySourceLinkId ?? null}::text IS NULL OR sl.id = ${onlySourceLinkId ?? null})
         AND sp.exclusion_reason IS NULL
-        AND COALESCE(sp.funding_source, '') <> 'stripe'
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
         AND c.exclusion_reason IS NULL
         AND c.source_staged_payment_id IS NULL
         AND NOT c.needs_review
@@ -138,7 +138,7 @@ export async function mergeUnambiguousQboDepositLines(
           AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
           AND sp.id = ${candidate.staged_payment_id}
           AND sp.exclusion_reason IS NULL
-          AND COALESCE(sp.funding_source, '') <> 'stripe'
+          AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
           AND c.exclusion_reason IS NULL
           AND c.source_staged_payment_id IS NULL
           AND NOT c.needs_review
@@ -186,7 +186,7 @@ export async function mergeUnambiguousQboDepositLines(
               AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
               AND sp.amount = ${locked.component_amount}::numeric
               AND sp.exclusion_reason IS NULL
-              AND COALESCE(sp.funding_source, '') <> 'stripe'
+              AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
           ) AS line_count
       `);
       const counts = (
@@ -447,9 +447,14 @@ async function runBankSpineRecompute(): Promise<void> {
     FROM bank_transactions bt
     WHERE bt.source = 'bank_csv_export'
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
-    ON CONFLICT (id) DO UPDATE SET
+    -- The source transaction is the canonical projection identity. A legacy
+    -- row can already carry that key under a non-deterministic id; key the
+    -- upsert by that source identity so its spine id remains stable while the
+    -- bank-owned projection facts continue to refresh.
+    ON CONFLICT (source_bank_transaction_id)
+      WHERE source_bank_transaction_id IS NOT NULL
+    DO UPDATE SET
       source = EXCLUDED.source,
-      source_bank_transaction_id = EXCLUDED.source_bank_transaction_id,
       deposit_date = EXCLUDED.deposit_date,
       amount = EXCLUDED.amount,
       account = EXCLUDED.account,
