@@ -59,15 +59,39 @@ export interface LockOutcome<T> {
   result?: T;
 }
 
+export interface SyncLockOptions {
+  /**
+   * Queue behind the current holder rather than reporting a skipped run.
+   * Use only for explicit maintenance operations whose caller requires the
+   * requested pass to complete.
+   */
+  wait?: boolean;
+}
+
 export async function withSyncLock<T>(
   userId: string,
   source: SyncSource,
   fn: () => Promise<T>,
+  options: SyncLockOptions = {},
 ): Promise<LockOutcome<T>> {
   const key1 = SOURCE_TAG[source];
   const key2 = userIdInt32(userId);
   const client = await pool.connect();
   try {
+    if (options.wait) {
+      await client.query("SELECT pg_advisory_lock($1::int4, $2::int4)", [
+        key1,
+        key2,
+      ]);
+      try {
+        return { ran: true, result: await fn() };
+      } finally {
+        await client.query("SELECT pg_advisory_unlock($1::int4, $2::int4)", [
+          key1,
+          key2,
+        ]);
+      }
+    }
     const r = await client.query<{ pg_try_advisory_lock: boolean }>(
       "SELECT pg_try_advisory_lock($1::int4, $2::int4)",
       [key1, key2],

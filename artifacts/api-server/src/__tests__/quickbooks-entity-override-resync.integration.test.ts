@@ -211,7 +211,8 @@ describe.skipIf(!HAS_DB)(
     it(
       "never re-files a manual row, but re-attributes an auto row from markers",
       async () => {
-        await reclassifyStagedPayments();
+        const summary = await reclassifyStagedPayments();
+        expect(summary.ran).toBe(true);
 
         // Manual pin survives even though the marker text would detect ENTITY_B.
         const pinned = await readEntity(RC_PINNED);
