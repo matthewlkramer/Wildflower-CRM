@@ -20761,16 +20761,37 @@ components:
         not_fundraising: { type: integer }
     WorkbenchDepositListResponse:
       type: object
-      required: [data, lensCounts, pagination, viewerCanManageAccounting]
+      required:
+        [data, bankImport, lensCounts, pagination, viewerCanManageAccounting]
       properties:
         data:
           {
             type: array,
             items: { $ref: "#/components/schemas/WorkbenchDeposit" },
           }
+        bankImport:
+          { $ref: "#/components/schemas/WorkbenchBankImportFreshness" }
         lensCounts: { $ref: "#/components/schemas/WorkbenchDepositLensCounts" }
         pagination: { $ref: "#/components/schemas/Pagination" }
         viewerCanManageAccounting: { type: boolean }
+    WorkbenchBankImportFreshness:
+      type: object
+      required: [lastImportedAt, latestTransactionDate, sourceFileCount]
+      description: Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.
+      properties:
+        lastImportedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the newest currently stored bank spreadsheet row was imported; null when no spreadsheet rows exist.
+        latestTransactionDate:
+          type: string
+          format: date
+          nullable: true
+          description: Latest bank transaction date present in the imported spreadsheet data.
+        sourceFileCount:
+          type: integer
+          description: Number of distinct spreadsheet files represented by the stored bank transaction rows.
     WorkbenchRecentChangeUndo:
       type: object
       required: [kind, targetId]

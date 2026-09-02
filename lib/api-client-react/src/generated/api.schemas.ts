@@ -6491,8 +6491,21 @@ export interface WorkbenchDepositLensCounts {
   not_fundraising: number;
 }
 
+/**
+ * Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.
+ */
+export interface WorkbenchBankImportFreshness {
+  /** When the newest currently stored bank spreadsheet row was imported; null when no spreadsheet rows exist. */
+  lastImportedAt: string | null;
+  /** Latest bank transaction date present in the imported spreadsheet data. */
+  latestTransactionDate: string | null;
+  /** Number of distinct spreadsheet files represented by the stored bank transaction rows. */
+  sourceFileCount: number;
+}
+
 export interface WorkbenchDepositListResponse {
   data: WorkbenchDeposit[];
+  bankImport: WorkbenchBankImportFreshness;
   lensCounts: WorkbenchDepositLensCounts;
   pagination: Pagination;
   viewerCanManageAccounting: boolean;

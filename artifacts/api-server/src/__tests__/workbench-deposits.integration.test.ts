@@ -550,6 +550,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     );
 
     const result = await listDeposits("all_open", "Source bank memo");
+    expect(result.bankImport.latestTransactionDate).toBe("2099-12-31");
+    expect(Date.parse(result.bankImport.lastImportedAt)).not.toBeNaN();
+    expect(result.bankImport.sourceFileCount).toBeGreaterThanOrEqual(1);
     const row = result.data.find((item: any) => item.anchorId === deposit);
     expect(row?.bank).toMatchObject({
       payee: "Example Payee",

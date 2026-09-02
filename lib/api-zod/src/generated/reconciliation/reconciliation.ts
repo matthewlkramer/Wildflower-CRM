@@ -1658,6 +1658,11 @@ export const ListWorkbenchDepositsResponse = zod.object({
 }).describe('Canonical row-level state per docs\/workbench-business-rules.md §10.\nComputed once per cluster from authoritative DB\/hydration data. All\nother per-cluster display fields (coverage.complete, lenses) are derived\nfrom this — never maintained independently.\n').describe('Canonical row-level state (Option C). Required — the server always derives it; coverage.complete and all lens flags are derived from this.')
 }).describe('Three-dimension canonical cluster state. Derived once and used for both lens counts and\nthe hydrated response — a cluster whose complete=false never appears in the Completed lens.\nPresent for all cluster kinds (stripe_payout, qb_standalone, crm_only).\n')
 })),
+  "bankImport": zod.object({
+  "lastImportedAt": zod.string().datetime({}).nullable().describe('When the newest currently stored bank spreadsheet row was imported; null when no spreadsheet rows exist.'),
+  "latestTransactionDate": zod.string().date().nullable().describe('Latest bank transaction date present in the imported spreadsheet data.'),
+  "sourceFileCount": zod.number().describe('Number of distinct spreadsheet files represented by the stored bank transaction rows.')
+}).describe('Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.'),
   "lensCounts": zod.object({
   "all_open": zod.number(),
   "unresolved_composition": zod.number(),
