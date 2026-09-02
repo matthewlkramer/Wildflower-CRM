@@ -14,6 +14,359 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  */
 const BANK_SPINE_ADVISORY_LOCK_KEY = 728411001;
 
+type QboDepositLineMergeCandidate = {
+  source_link_id: string;
+  staged_payment_id: string;
+  bank_deposit_id: string;
+  component_id: string;
+  target_unit_id: string;
+  auto_unit_id: string;
+};
+
+/**
+ * Collapse the one safe duplicate shape produced when a direct deposit was
+ * decomposed manually before its QuickBooks Deposit arrived.
+ *
+ * A qbo_line_deposit row is accounting evidence, not a second payment. When
+ * exactly one live QBO line and exactly one existing direct component on the
+ * same deposit have the same amount, attach the QBO provenance to that
+ * component's payment unit and retire the deterministic QBO-only unit. The
+ * merge is intentionally silent for amount ties or incompatible CRM/Donorbox
+ * identities; those remain human decisions.
+ *
+ * This is the shared identity-consolidation boundary used by both forward
+ * recompute and the human confirmation route. It also repairs previously
+ * generated duplicates (including duplicate gift pointers) on the next run.
+ */
+export async function mergeUnambiguousQboDepositLines(
+  onlySourceLinkId?: string,
+): Promise<number> {
+  const candidatesResult = await db.execute(sql`
+    WITH candidate_pairs AS (
+      SELECT
+        sl.id AS source_link_id,
+        sp.id AS staged_payment_id,
+        sl.bank_deposit_id,
+        c.id AS component_id,
+        c.payment_unit_id AS target_unit_id,
+        'pu_' || sp.id AS auto_unit_id,
+        count(*) OVER (PARTITION BY sl.id) AS line_match_count,
+        count(*) OVER (PARTITION BY c.id) AS component_match_count
+      FROM source_links sl
+      JOIN staged_payments sp ON sp.id = sl.qb_staged_payment_id
+      JOIN bank_deposit_components c
+        ON c.bank_deposit_id = sl.bank_deposit_id
+       AND c.amount = sp.amount
+      JOIN payment_units target_unit ON target_unit.id = c.payment_unit_id
+      LEFT JOIN payment_units auto_unit ON auto_unit.id = 'pu_' || sp.id
+      WHERE sl.link_type = 'qbo_line_deposit'
+        AND sl.match_basis = 'deposit_header_exact'
+        AND (${onlySourceLinkId ?? null}::text IS NULL OR sl.id = ${onlySourceLinkId ?? null})
+        AND sp.exclusion_reason IS NULL
+        AND COALESCE(sp.funding_source, '') <> 'stripe'
+        AND c.exclusion_reason IS NULL
+        AND c.source_staged_payment_id IS NULL
+        AND NOT c.needs_review
+        AND NOT c.ambiguous_deposit_match
+        AND target_unit.stripe_charge_id IS NULL
+        AND target_unit.id <> 'pu_' || sp.id
+        AND (
+          target_unit.source_staged_payment_id IS NULL
+          OR target_unit.source_staged_payment_id = sp.id
+        )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM bank_deposit_components auto_component
+          WHERE auto_component.payment_unit_id = auto_unit.id
+        )
+        AND (
+          auto_unit.id IS NULL
+          OR target_unit.gift_id IS NULL
+          OR auto_unit.gift_id IS NULL
+          OR target_unit.gift_id = auto_unit.gift_id
+        )
+        AND (
+          auto_unit.id IS NULL
+          OR target_unit.donorbox_donation_id IS NULL
+          OR auto_unit.donorbox_donation_id IS NULL
+          OR target_unit.donorbox_donation_id = auto_unit.donorbox_donation_id
+        )
+    )
+    SELECT source_link_id, staged_payment_id, bank_deposit_id, component_id,
+           target_unit_id, auto_unit_id
+    FROM candidate_pairs
+    WHERE line_match_count = 1 AND component_match_count = 1
+    ORDER BY source_link_id
+  `);
+
+  let merged = 0;
+  for (const candidate of candidatesResult.rows as QboDepositLineMergeCandidate[]) {
+    const didMerge = await db.transaction(async (tx) => {
+      // Serialize with component creation/moves on this deposit. The mutation
+      // routes take the same row lock before calculating remaining capacity.
+      const lockedDeposit = await tx.execute(sql`
+        SELECT id
+        FROM bank_deposits
+        WHERE id = ${candidate.bank_deposit_id}
+        FOR UPDATE
+      `);
+      if (!lockedDeposit.rows.length) return false;
+
+      const lockedResult = await tx.execute(sql`
+        SELECT
+          sl.id AS source_link_id,
+          sp.id AS staged_payment_id,
+          sp.amount::text AS staged_amount,
+          c.id AS component_id,
+          c.amount::text AS component_amount,
+          target_unit.id AS target_unit_id,
+          target_unit.source_staged_payment_id AS target_source_id,
+          target_unit.gift_id AS target_gift_id,
+          target_unit.donorbox_donation_id AS target_donorbox_id
+        FROM source_links sl
+        JOIN staged_payments sp ON sp.id = sl.qb_staged_payment_id
+        JOIN bank_deposit_components c
+          ON c.id = ${candidate.component_id}
+         AND c.bank_deposit_id = sl.bank_deposit_id
+         AND c.amount = sp.amount
+        JOIN payment_units target_unit ON target_unit.id = c.payment_unit_id
+        WHERE sl.id = ${candidate.source_link_id}
+          AND sl.link_type = 'qbo_line_deposit'
+          AND sl.match_basis = 'deposit_header_exact'
+          AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
+          AND sp.id = ${candidate.staged_payment_id}
+          AND sp.exclusion_reason IS NULL
+          AND COALESCE(sp.funding_source, '') <> 'stripe'
+          AND c.exclusion_reason IS NULL
+          AND c.source_staged_payment_id IS NULL
+          AND NOT c.needs_review
+          AND NOT c.ambiguous_deposit_match
+          AND target_unit.stripe_charge_id IS NULL
+          AND target_unit.id = ${candidate.target_unit_id}
+          AND (
+            target_unit.source_staged_payment_id IS NULL
+            OR target_unit.source_staged_payment_id = sp.id
+          )
+        FOR UPDATE OF sl, sp, c, target_unit
+      `);
+      const locked = (
+        lockedResult.rows as Array<{
+          source_link_id: string;
+          staged_payment_id: string;
+          staged_amount: string;
+          component_id: string;
+          component_amount: string;
+          target_unit_id: string;
+          target_source_id: string | null;
+          target_gift_id: string | null;
+          target_donorbox_id: string | null;
+        }>
+      )[0];
+      if (!locked) return false;
+
+      // Recheck one-to-one cardinality under the deposit lock so a concurrent
+      // human component edit cannot turn a safe merge into a guess.
+      const cardinality = await tx.execute(sql`
+        SELECT
+          (
+            SELECT count(*)::int
+            FROM bank_deposit_components c
+            WHERE c.bank_deposit_id = ${candidate.bank_deposit_id}
+              AND c.amount = ${locked.staged_amount}::numeric
+              AND c.exclusion_reason IS NULL
+              AND c.payment_unit_id <> ${candidate.auto_unit_id}
+          ) AS component_count,
+          (
+            SELECT count(*)::int
+            FROM source_links sl
+            JOIN staged_payments sp ON sp.id = sl.qb_staged_payment_id
+            WHERE sl.link_type = 'qbo_line_deposit'
+              AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
+              AND sp.amount = ${locked.component_amount}::numeric
+              AND sp.exclusion_reason IS NULL
+              AND COALESCE(sp.funding_source, '') <> 'stripe'
+          ) AS line_count
+      `);
+      const counts = (
+        cardinality.rows as Array<{
+          component_count: number;
+          line_count: number;
+        }>
+      )[0];
+      if (counts?.component_count !== 1 || counts?.line_count !== 1)
+        return false;
+
+      const autoResult = await tx.execute(sql`
+        SELECT id, gift_id, gift_allocation_id, gift_match_method,
+               gift_confirmed_by_user_id, gift_confirmed_at, gift_note,
+               created_the_gift, donorbox_donation_id
+        FROM payment_units
+        WHERE id = ${candidate.auto_unit_id}
+        FOR UPDATE
+      `);
+      const autoUnit = (
+        autoResult.rows as Array<{
+          id: string;
+          gift_id: string | null;
+          gift_allocation_id: string | null;
+          gift_match_method: string | null;
+          gift_confirmed_by_user_id: string | null;
+          gift_confirmed_at: Date | null;
+          gift_note: string | null;
+          created_the_gift: boolean;
+          donorbox_donation_id: string | null;
+        }>
+      )[0];
+
+      if (autoUnit) {
+        if (
+          locked.target_gift_id &&
+          autoUnit.gift_id &&
+          locked.target_gift_id !== autoUnit.gift_id
+        ) {
+          return false;
+        }
+        if (
+          locked.target_donorbox_id &&
+          autoUnit.donorbox_donation_id &&
+          locked.target_donorbox_id !== autoUnit.donorbox_donation_id
+        ) {
+          return false;
+        }
+        const legacyConflict = await tx.execute(sql`
+          SELECT 1
+          FROM payment_applications auto_app
+          JOIN payment_applications target_app
+            ON target_app.payment_unit_id = ${candidate.target_unit_id}
+           AND target_app.link_role = 'counted'
+          WHERE auto_app.payment_unit_id = ${candidate.auto_unit_id}
+            AND auto_app.link_role = 'counted'
+            AND auto_app.gift_id <> target_app.gift_id
+          LIMIT 1
+        `);
+        if (legacyConflict.rows.length) return false;
+
+        // payment_applications is a retired read path, but its restrictive FK
+        // can still exist on historical rows. Consolidate equivalent legacy
+        // rows so the duplicate unit can be removed without resurrecting that
+        // table as an authority.
+        await tx.execute(sql`
+          DELETE FROM payment_applications auto_app
+          USING payment_applications target_app
+          WHERE auto_app.payment_unit_id = ${candidate.auto_unit_id}
+            AND target_app.payment_unit_id = ${candidate.target_unit_id}
+            AND (
+              (auto_app.link_role = 'counted' AND target_app.link_role = 'counted')
+              OR (
+                auto_app.link_role = 'corroborating'
+                AND target_app.link_role = 'corroborating'
+                AND auto_app.gift_id = target_app.gift_id
+              )
+            )
+        `);
+        await tx.execute(sql`
+          UPDATE payment_applications
+          SET payment_unit_id = ${candidate.target_unit_id}, updated_at = now()
+          WHERE payment_unit_id = ${candidate.auto_unit_id}
+        `);
+
+        await tx.execute(sql`
+          DELETE FROM source_links auto_link
+          USING source_links target_link
+          WHERE auto_link.payment_unit_id = ${candidate.auto_unit_id}
+            AND target_link.payment_unit_id = ${candidate.target_unit_id}
+            AND auto_link.link_type = 'unit_gift_corroboration'
+            AND target_link.link_type = 'unit_gift_corroboration'
+            AND auto_link.gift_id = target_link.gift_id
+        `);
+        await tx.execute(sql`
+          UPDATE source_links
+          SET payment_unit_id = ${candidate.target_unit_id}, updated_at = now()
+          WHERE payment_unit_id = ${candidate.auto_unit_id}
+        `);
+
+        // Release the one-to-one Donorbox key before moving it to the survivor.
+        if (autoUnit.donorbox_donation_id && !locked.target_donorbox_id) {
+          await tx.execute(sql`
+            UPDATE payment_units
+            SET donorbox_donation_id = NULL, updated_at = now()
+            WHERE id = ${candidate.auto_unit_id}
+          `);
+        }
+      }
+
+      await tx.execute(sql`
+        UPDATE payment_units
+        SET source_staged_payment_id = ${candidate.staged_payment_id},
+            donorbox_donation_id = COALESCE(
+              donorbox_donation_id,
+              ${autoUnit?.donorbox_donation_id ?? null}
+            ),
+            gift_id = COALESCE(gift_id, ${autoUnit?.gift_id ?? null}),
+            gift_allocation_id = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.gift_allocation_id ?? null}
+              ELSE gift_allocation_id END,
+            gift_match_method = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.gift_match_method ?? null}::payment_application_match_method
+              ELSE gift_match_method END,
+            gift_confirmed_by_user_id = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.gift_confirmed_by_user_id ?? null}
+              ELSE gift_confirmed_by_user_id END,
+            gift_confirmed_at = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.gift_confirmed_at ?? null}
+              ELSE gift_confirmed_at END,
+            gift_note = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.gift_note ?? null}
+              ELSE gift_note END,
+            created_the_gift = CASE WHEN gift_id IS NULL
+              THEN ${autoUnit?.created_the_gift ?? false}
+              ELSE created_the_gift END,
+            updated_at = now()
+        WHERE id = ${candidate.target_unit_id}
+      `);
+      await tx.execute(sql`
+        UPDATE bank_deposit_components
+        SET source_staged_payment_id = ${candidate.staged_payment_id},
+            updated_at = now()
+        WHERE id = ${candidate.component_id}
+      `);
+      await tx.execute(sql`
+        DELETE FROM source_links
+        WHERE id = ${candidate.source_link_id}
+          AND link_type = 'qbo_line_deposit'
+      `);
+
+      if (autoUnit) {
+        const deletedAuto = await tx.execute(sql`
+          DELETE FROM payment_units auto_unit
+          WHERE auto_unit.id = ${candidate.auto_unit_id}
+            AND NOT EXISTS (
+              SELECT 1 FROM bank_deposit_components c
+              WHERE c.payment_unit_id = auto_unit.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM payment_applications pa
+              WHERE pa.payment_unit_id = auto_unit.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM source_links sl
+              WHERE sl.payment_unit_id = auto_unit.id
+            )
+          RETURNING id
+        `);
+        if (!deletedAuto.rows.length) {
+          throw new Error(
+            `Could not retire duplicate QBO payment unit ${candidate.auto_unit_id}`,
+          );
+        }
+      }
+      return true;
+    });
+    if (didMerge) merged += 1;
+  }
+  return merged;
+}
+
 /**
  * Forward maintenance of the bank-spine money model
  * (docs/adr-bank-spine-money-model.md): the SAME deterministic, idempotent
@@ -30,7 +383,7 @@ const BANK_SPINE_ADVISORY_LOCK_KEY = 728411001;
  *      deterministic rank-pairing for equal amount/date classes with
  *      ambiguous_bank_match=true — the approved flag-not-workflow policy)
  *   4. check units+components  ← QBO deposit-composing rows     (0162)
- *   4e. QBO-grain source_links ← register↔deposit matching
+ *   4f. QBO-grain source_links ← register↔deposit matching
  *       (docs/adr-qbo-evidence-grain.md; 0189–0191, legacy tables retired 0192)
  *   5. donorbox pointer        ← pulled charge id / human link  (0165)
  *   6. (retired) unit→gift pointer sync — payment_units.gift_id IS the
@@ -205,7 +558,88 @@ async function runBankSpineRecompute(): Promise<void> {
       AND p.bank_deposit_id IS NULL
   `);
 
-  // 4a. Provisional check/direct-payment units from QBO deposit-composing rows
+  // 4a. Deposit-grain QBO evidence is written before any QBO-backed payment
+  //     unit is minted. This ordering lets a late QBO Deposit corroborate an
+  //     existing manual component at the shared identity boundary first.
+  await db.execute(sql`
+    WITH scope AS (
+      SELECT sp.*
+      FROM staged_payments sp
+      WHERE sp.qb_deposit_id IS NOT NULL
+        AND sp.qb_entity_type <> 'deposit_header'
+        AND sp.amount IS NOT NULL AND sp.amount > 0
+        AND NOT EXISTS (SELECT 1 FROM staged_payments child WHERE child.split_parent_id = sp.id)
+    ),
+    depinfo AS (
+      SELECT g.realm_id, g.qb_deposit_id,
+        (SELECT (h.qb_raw->>'TotalAmt')::numeric
+         FROM staged_payments h
+         WHERE h.realm_id = g.realm_id
+           AND h.qb_entity_id = g.qb_deposit_id
+           AND h.qb_entity_type IN ('deposit', 'deposit_header')
+           AND h.qb_raw ? 'TotalAmt'
+         ORDER BY h.id LIMIT 1) AS total,
+        (SELECT COALESCE((h.qb_raw->>'TxnDate')::date, h.date_received)
+         FROM staged_payments h
+         WHERE h.realm_id = g.realm_id
+           AND h.qb_entity_id = g.qb_deposit_id
+           AND h.qb_entity_type IN ('deposit', 'deposit_header')
+         ORDER BY h.id LIMIT 1) AS txn_date
+      FROM (SELECT DISTINCT realm_id, qb_deposit_id FROM scope) g
+    ),
+    qside AS (
+      SELECT *,
+        count(*) OVER (PARTITION BY total, txn_date) AS class_n,
+        row_number() OVER (PARTITION BY total, txn_date ORDER BY realm_id, qb_deposit_id) AS rn
+      FROM depinfo
+      WHERE total IS NOT NULL AND txn_date IS NOT NULL
+    ),
+    bside AS (
+      SELECT d.id, d.amount, d.deposit_date,
+        count(*) OVER (PARTITION BY d.amount, d.deposit_date) AS class_n,
+        row_number() OVER (PARTITION BY d.amount, d.deposit_date ORDER BY d.id) AS rn
+      FROM bank_deposits d
+      WHERE d.source = 'bank_csv_export'
+        AND NOT EXISTS (SELECT 1 FROM stripe_payouts p WHERE p.bank_deposit_id = d.id)
+    ),
+    pairs AS (
+      SELECT q.realm_id, q.qb_deposit_id, b.id AS bank_deposit_id,
+        (q.class_n > 1 OR b.class_n > 1) AS ambiguous
+      FROM qside q
+      JOIN bside b
+        ON b.amount = q.total
+       AND b.deposit_date = q.txn_date
+       AND b.rn = q.rn
+    )
+    INSERT INTO source_links (
+      id, link_type, qb_staged_payment_id, bank_deposit_id,
+      lifecycle, provenance, match_basis
+    )
+    SELECT
+      'srcl_qld_' || m.id, 'qbo_line_deposit',
+      m.id, p.bank_deposit_id, 'confirmed', 'system',
+      CASE WHEN p.ambiguous
+        THEN 'deposit_header_ambiguous'::source_link_match_basis
+        ELSE 'deposit_header_exact'::source_link_match_basis
+      END
+    FROM scope m
+    JOIN pairs p
+      ON p.realm_id = m.realm_id AND p.qb_deposit_id = m.qb_deposit_id
+    WHERE NOT EXISTS (
+      SELECT 1
+      FROM bank_deposit_components real_component
+      WHERE real_component.source_staged_payment_id = m.id
+    )
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  // 4b. A QBO Deposit arriving after a manual decomposition is corroborating
+  //     evidence for the existing unit, not permission to mint a parallel
+  //     payment. Consolidate only the unique same-deposit/same-amount shape;
+  //     ambiguous equal-amount rows remain untouched for human review.
+  await mergeUnambiguousQboDepositLines();
+
+  // 4c. Provisional check/direct-payment units from QBO deposit-composing rows
   //     (0162 unit scope: not excluded, not a Stripe lump, not a split parent,
   //     not Stripe-tied, not a card-Donorbox duplicate).
   await db.execute(sql`
@@ -256,13 +690,19 @@ async function runBankSpineRecompute(): Promise<void> {
       upper(COALESCE(u.qb_currency, 'USD')),
       u.date_received
     FROM units u
-    WHERE NOT EXISTS (SELECT 1 FROM payment_units x
-                      WHERE x.donorbox_donation_id = u.unit_donorbox_donation_id)
-       OR u.unit_donorbox_donation_id IS NULL
+    WHERE (
+      NOT EXISTS (SELECT 1 FROM payment_units x
+                  WHERE x.donorbox_donation_id = u.unit_donorbox_donation_id)
+      OR u.unit_donorbox_donation_id IS NULL
+    )
+      AND NOT EXISTS (
+        SELECT 1 FROM payment_units existing_source
+        WHERE existing_source.source_staged_payment_id = u.id
+      )
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4b. Deposit components where the QBO Deposit pairs to a register deposit
+  // 4d. Deposit components where the QBO Deposit pairs to a register deposit
   //     (0162 pairing: exact TotalAmt+TxnDate, rank-paired, ambiguous flagged,
   //     payout-claimed deposits excluded).
   await db.execute(sql`
@@ -338,91 +778,24 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4c. Provisional accounting-only decomposition of QBO Deposit member
-  //     lines. This deliberately includes excluded staged payments and does
-  //     not require a payment_unit: it is evidence for the accounting column,
-  //     never counted money. Real bank components win and are excluded by
-  //     source_staged_payment_id; payout-claimed deposits stay on the Stripe
-  //     authority path.
+  // 4e. Once a newly minted QBO unit becomes a real bank component, its
+  //     deposit-line sidecar is redundant. QBO provenance now lives on the
+  //     unit/component and renders in Accounting from there.
   await db.execute(sql`
-    WITH scope AS (
-      SELECT sp.*
-      FROM staged_payments sp
-      WHERE sp.qb_deposit_id IS NOT NULL
-        AND sp.qb_entity_type <> 'deposit_header'
-        AND sp.amount IS NOT NULL AND sp.amount > 0
-        AND NOT EXISTS (SELECT 1 FROM staged_payments child WHERE child.split_parent_id = sp.id)
-    ),
-    depinfo AS (
-      SELECT g.realm_id, g.qb_deposit_id,
-        (SELECT (h.qb_raw->>'TotalAmt')::numeric
-         FROM staged_payments h
-         WHERE h.realm_id = g.realm_id
-           AND h.qb_entity_id = g.qb_deposit_id
-           AND h.qb_entity_type IN ('deposit', 'deposit_header')
-           AND h.qb_raw ? 'TotalAmt'
-         ORDER BY h.id LIMIT 1) AS total,
-        (SELECT COALESCE((h.qb_raw->>'TxnDate')::date, h.date_received)
-         FROM staged_payments h
-         WHERE h.realm_id = g.realm_id
-           AND h.qb_entity_id = g.qb_deposit_id
-           AND h.qb_entity_type IN ('deposit', 'deposit_header')
-         ORDER BY h.id LIMIT 1) AS txn_date
-      FROM (SELECT DISTINCT realm_id, qb_deposit_id FROM scope) g
-    ),
-    qside AS (
-      SELECT *,
-        count(*) OVER (PARTITION BY total, txn_date) AS class_n,
-        row_number() OVER (PARTITION BY total, txn_date ORDER BY realm_id, qb_deposit_id) AS rn
-      FROM depinfo
-      WHERE total IS NOT NULL AND txn_date IS NOT NULL
-    ),
-    bside AS (
-      SELECT d.id, d.amount, d.deposit_date,
-        count(*) OVER (PARTITION BY d.amount, d.deposit_date) AS class_n,
-        row_number() OVER (PARTITION BY d.amount, d.deposit_date ORDER BY d.id) AS rn
-      FROM bank_deposits d
-      WHERE d.source = 'bank_csv_export'
-        AND NOT EXISTS (SELECT 1 FROM stripe_payouts p WHERE p.bank_deposit_id = d.id)
-    ),
-    pairs AS (
-      SELECT q.realm_id, q.qb_deposit_id, b.id AS bank_deposit_id,
-        (q.class_n > 1 OR b.class_n > 1) AS ambiguous
-      FROM qside q
-      JOIN bside b
-        ON b.amount = q.total
-       AND b.deposit_date = q.txn_date
-       AND b.rn = q.rn
-    )
-    INSERT INTO source_links (
-      id, link_type, qb_staged_payment_id, bank_deposit_id,
-      lifecycle, provenance, match_basis
-    )
-    SELECT
-      'srcl_qld_' || m.id, 'qbo_line_deposit',
-      m.id, p.bank_deposit_id, 'confirmed', 'system',
-      CASE WHEN p.ambiguous
-        THEN 'deposit_header_ambiguous'::source_link_match_basis
-        ELSE 'deposit_header_exact'::source_link_match_basis
-      END
-    FROM scope m
-    JOIN pairs p
-      ON p.realm_id = m.realm_id AND p.qb_deposit_id = m.qb_deposit_id
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM bank_deposit_components real_component
-      WHERE real_component.source_staged_payment_id = m.id
-    )
-    ON CONFLICT (id) DO NOTHING
+    DELETE FROM source_links qbo_line
+    USING bank_deposit_components component
+    WHERE qbo_line.link_type = 'qbo_line_deposit'
+      AND component.bank_deposit_id = qbo_line.bank_deposit_id
+      AND component.source_staged_payment_id = qbo_line.qb_staged_payment_id
   `);
 
-  // 4e. QBO-grain source_links (docs/adr-qbo-evidence-grain.md) — THE tie
+  // 4f. QBO-grain source_links (docs/adr-qbo-evidence-grain.md) — THE tie
   //     mechanism for all QBO evidence (the legacy tables are retired).
   //     Everything here is fill-only with deterministic ids. The
   //     payout_qb_settlement pairing is written where it is decided
   //     (qboAccountingRecompute + the reconciliation commit flows).
 
-  // 4e-ii. Broadened register↔deposit matching, WITHOUT the legacy residual
+  // 4f-ii. Broadened register↔deposit matching, WITHOUT the legacy residual
   //        gating: register accounting evidence coexists with payouts,
   //        components, and provisional decomposition (the tie is downstream
   //        accounting documentation, never money composition). Single-row:
@@ -478,7 +851,7 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4e-ii-b. Equal-count same-day matching: N identical-amount register rows
+  // 4f-ii-b. Equal-count same-day matching: N identical-amount register rows
   //          on one date and exactly N same-amount open deposits on the same
   //          date are interchangeable, so they pair one-to-one — the strict
   //          both-sides-unique rule above can never match them (e.g. two
@@ -547,7 +920,7 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4e-iii. Same-day/same-donor multi-row sums: when ≥2 positive register
+  // 4f-iii. Same-day/same-donor multi-row sums: when ≥2 positive register
   //         rows share a date + normalized payee and their SUM uniquely
   //         equals a still-unlinked deposit within ±3 days, each row ties to
   //         that deposit (presumed one physical payment posted as
@@ -610,7 +983,7 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
-  // 4e-iv. Unit-grain register claims where the deposit's composition makes
+  // 4f-iv. Unit-grain register claims where the deposit's composition makes
   //        the row↔unit correspondence exact: a register row tied to a
   //        deposit whose components include exactly one payment unit of the
   //        SAME amount. Dollars count once — the unit link is the finer

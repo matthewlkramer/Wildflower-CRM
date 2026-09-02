@@ -1305,7 +1305,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "txnType": zod.string().nullable()
 }),
   "composition": zod.object({
-  "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'qbo_provisional', 'unresolved']),
+  "kind": zod.enum(['stripe_payout', 'stripe_unlinked', 'components', 'unresolved']),
   "payoutId": zod.string().nullable(),
   "payoutDate": zod.string().date().nullish().describe('Stripe payout arrival date.'),
   "grossTotal": zod.string().nullish().describe('Authoritative Stripe payout gross total.'),
@@ -1326,10 +1326,10 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "ambiguousDepositMatch": zod.boolean(),
   "manual": zod.boolean().optional().describe('True when this direct component was added manually through the remainder-resolution flow.'),
   "countedGiftIds": zod.array(zod.string()).optional(),
-  "unconfirmed": zod.boolean().optional().describe('True for a provisional QBO accounting-plane decomposition row.'),
-  "source": zod.enum(['bank_spine', 'qbo_provisional']).optional(),
+  "unconfirmed": zod.boolean().optional().describe('Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition.'),
+  "source": zod.enum(['bank_spine']).optional(),
   "stagedPaymentId": zod.string().nullish(),
-  "stagedActionable": zod.boolean().nullish().describe('True when stagedPaymentId is set AND that QBO row\'s derived status is pending, so the staged-payment flows (identify\/mint\/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId.'),
+  "stagedActionable": zod.boolean().nullish().describe('True when stagedPaymentId is set AND that QBO row\'s derived status is pending, so the staged-payment flows (identify\/mint\/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Null only for rows with no stagedPaymentId.'),
   "receivedDate": zod.string().date().nullish().describe('The backing payment unit\'s received date (bank_spine components only).'),
   "sourceStagedPaymentManual": zod.boolean().optional().describe('Derived UI hint: the payment-unit pointer differs from the bank component\'s recompute provenance pointer, so finance can clear the human-attached source without a migration-backed audit column.'),
   "label": zod.string().nullish(),

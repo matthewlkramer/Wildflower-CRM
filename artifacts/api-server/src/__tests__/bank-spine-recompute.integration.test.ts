@@ -355,7 +355,7 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
   });
 
-  it("does not insert a QBO-inferred component past the deposit amount", async () => {
+  it("merges a late QBO line into the unique full manual component", async () => {
     const stagedId = nextId("overfill_sp");
     const deposit = await seedDeposit("605.00", "2026-06-25");
     const qbDepositId = nextId("qbd");
@@ -400,10 +400,35 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       .select({
         id: schema.bankDepositComponents.id,
         amount: schema.bankDepositComponents.amount,
+        sourceStagedPaymentId:
+          schema.bankDepositComponents.sourceStagedPaymentId,
       })
       .from(schema.bankDepositComponents)
       .where(eqFn(schema.bankDepositComponents.bankDepositId, deposit));
-    expect(rows).toEqual([{ id: fullComponentId, amount: "605.00" }]);
+    expect(rows).toEqual([
+      {
+        id: fullComponentId,
+        amount: "605.00",
+        sourceStagedPaymentId: stagedId,
+      },
+    ]);
+
+    const units = await db
+      .select({
+        id: schema.paymentUnits.id,
+        sourceStagedPaymentId: schema.paymentUnits.sourceStagedPaymentId,
+      })
+      .from(schema.paymentUnits)
+      .where(inArrayFn(schema.paymentUnits.id, [fullUnitId, `pu_${stagedId}`]));
+    expect(units).toEqual([
+      { id: fullUnitId, sourceStagedPaymentId: stagedId },
+    ]);
+
+    const duplicateLinks = await db
+      .select({ id: schema.sourceLinks.id })
+      .from(schema.sourceLinks)
+      .where(eqFn(schema.sourceLinks.qbStagedPaymentId, stagedId));
+    expect(duplicateLinks).toEqual([]);
   });
 
   it("links a unique exact-amount register row within the +/- 3-day window and is idempotent", async () => {

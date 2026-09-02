@@ -68,6 +68,21 @@ review/matching state migrates to the reconciliation workflow over time.
 | `payout_qb_settlement` | `qb_staged_payment_id` + `stripe_payout_id` | this QBO row is the booked lump for that Stripe payout (replaces `staged_payments.settled_stripe_payout_id`) |
 | `qbo_line_allocation` | `qb_staged_payment_id` + `gift_allocation_id` | this QBO line was booked at allocation grain — one physical payment split by the bookkeeper into several allocation-level lines; the line ties to the `gift_allocations` row it generated (dollars live once on the merged payment unit) |
 
+### Deposit-line identity convergence
+
+A `qbo_line_deposit` is never counted as a second composition component. When
+an exact deposit header contains one line whose amount matches exactly one
+existing direct `bank_deposit_component`, forward recompute attaches that
+line's `staged_payments.id` to the existing component and payment unit before
+it considers minting a QBO-backed unit. If an older run already minted the
+deterministic `pu_<staged_payment_id>` unit, the same boundary consolidates its
+compatible gift/Donorbox ties into the surviving unit and retires the duplicate.
+Amount ties, ambiguous deposit headers, review-flagged components, conflicting
+gift identities, and conflicting Donorbox identities are left for a human;
+none is silently guessed. The workbench renders any unresolved
+`qbo_line_deposit` only in Accounting and never includes it in explained or
+unexplained composition arithmetic.
+
 A structured `match_basis` column records HOW a machine tie was made
 (`same_day_unique_amount` … `three_day_unique_amount`,
 `same_donor_multi_row_sum`, `deposit_header_exact/ambiguous`,

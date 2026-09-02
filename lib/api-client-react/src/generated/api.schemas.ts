@@ -6037,7 +6037,6 @@ export const WorkbenchDepositCompositionKind = {
   stripe_payout: 'stripe_payout',
   stripe_unlinked: 'stripe_unlinked',
   components: 'components',
-  qbo_provisional: 'qbo_provisional',
   unresolved: 'unresolved',
 } as const;
 
@@ -6057,7 +6056,6 @@ export type WorkbenchDepositCompositionComponentsItemSource = typeof WorkbenchDe
 
 export const WorkbenchDepositCompositionComponentsItemSource = {
   bank_spine: 'bank_spine',
-  qbo_provisional: 'qbo_provisional',
 } as const;
 
 export type WorkbenchDepositCompositionComponentsItemMatchBasis = typeof WorkbenchDepositCompositionComponentsItemMatchBasis[keyof typeof WorkbenchDepositCompositionComponentsItemMatchBasis] | null;
@@ -6078,11 +6076,11 @@ export type WorkbenchDepositCompositionComponentsItem = {
   /** True when this direct component was added manually through the remainder-resolution flow. */
   manual?: boolean;
   countedGiftIds?: string[];
-  /** True for a provisional QBO accounting-plane decomposition row. */
+  /** Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition. */
   unconfirmed?: boolean;
   source?: WorkbenchDepositCompositionComponentsItemSource;
   stagedPaymentId?: string | null;
-  /** True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId. */
+  /** True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Null only for rows with no stagedPaymentId. */
   stagedActionable?: boolean | null;
   /** The backing payment unit's received date (bank_spine components only). */
   receivedDate?: string | null;
