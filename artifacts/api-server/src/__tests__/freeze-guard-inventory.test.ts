@@ -78,6 +78,16 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Pledge/opportunity create + PATCH call resolvePledgeFreeze; archive/unarchive/bulk-archive wire resolvePledgeFreezeById and bulk-update wires resolvePledgeFreeze via freezeCheck.",
   },
+  "routes/opportunityCommitments.ts": {
+    classification: "guarded",
+    reason:
+      "Human verbal-commitment and pledge-finalization actions check the pledge's current and target governing fiscal years before changing audited lifecycle facts.",
+  },
+  "routes/fundraisingRecordActions.ts": {
+    classification: "guarded",
+    reason:
+      "Admin correction actions check the gift and pledge governing fiscal years before rewriting lifecycle facts or detaching a pledge-payment relationship.",
+  },
   "routes/pledgeAllocations.ts": {
     classification: "guarded",
     reason:
@@ -183,11 +193,6 @@ const EXPECTED: Record<string, FileClass> = {
   "routes/stripe.ts": {
     classification: "exempt",
     reason: "Stripe reconciliation engine mint/revert (system ground-truth).",
-  },
-  "routes/reconciliation/approve.ts": {
-    classification: "exempt",
-    reason:
-      "Unified reconciler approve: the charge-anchored escape hatch latches an OPEN opportunity into a pledge at mint time (writtenPledge/awardedAmount) — the exact write the exempt mint engine (lib/reconciliationCommit.ts mintGiftInTx) performs on the QB-anchored path; system ground-truth booking, not a human edit of an audited fact.",
   },
   "routes/reconciliation/workbenchDeposits.ts": {
     classification: "exempt",

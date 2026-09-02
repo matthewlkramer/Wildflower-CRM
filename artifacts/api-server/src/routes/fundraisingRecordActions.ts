@@ -28,6 +28,13 @@ import {
   applyDerivedOppFields,
   applyDerivedOppFieldsMany,
 } from "../lib/pledgeStage";
+import {
+  freezeMessage,
+  resolveGiftFreeze,
+  resolvePledgeFreeze,
+  resolvePledgeFreezeById,
+  type FreezeDecision,
+} from "../lib/freezeGuard";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -38,6 +45,22 @@ type ActionFailure = {
   status: number;
   body: Record<string, unknown>;
 };
+
+function freezeFailure(decision: FreezeDecision): ActionFailure | null {
+  if (!decision.frozen) return null;
+  return {
+    status: 409,
+    body: {
+      error: "fiscal_year_frozen",
+      message: freezeMessage(decision),
+      details: {
+        side: decision.side,
+        fiscalYearId: decision.fiscalYearId,
+        fiscalYearLabel: decision.fiscalYearLabel,
+      },
+    },
+  };
+}
 
 type PledgeConversionOutcome =
   | { ok: true; giftId: string }
@@ -109,6 +132,10 @@ async function ensureRevertiblePledge(
       },
     };
   }
+  const frozen = freezeFailure(
+    await resolvePledgeFreeze(pledge.actualCompletionDate),
+  );
+  if (frozen) return { ok: false, ...frozen };
   const [{ n }] = await tx
     .select({ n: sql<number>`count(*)::int` })
     .from(giftsAndPayments)
@@ -285,6 +312,32 @@ router.post(
           };
           return;
         }
+      }
+
+      // This correction changes both the gift's classification metadata and
+      // the pledge's audited lifecycle. It must not rewrite either side of a
+      // closed fiscal year, nor move the pledge's recognition date into one.
+      const giftFrozen = freezeFailure(
+        await resolveGiftFreeze(gift.dateReceived),
+      );
+      if (giftFrozen) {
+        outcome = { ok: false, ...giftFrozen };
+        return;
+      }
+      const targetCompletionDate =
+        gift.dateReceived ??
+        unit.receivedDate ??
+        pledge.actualCompletionDate ??
+        null;
+      const pledgeFrozen = freezeFailure(
+        await resolvePledgeFreeze(
+          pledge.actualCompletionDate,
+          targetCompletionDate,
+        ),
+      );
+      if (pledgeFrozen) {
+        outcome = { ok: false, ...pledgeFrozen };
+        return;
       }
 
       const [writeOffChild, surplusChild] = await Promise.all([
@@ -617,6 +670,22 @@ router.post(
         .then((rows) => rows[0]);
       if (!gift) return null;
       if (!gift.opportunityId) return { kind: "not_linked" as const };
+
+      // Detaching changes both the gift's audited pledge relationship and the
+      // former pledge's derived paid/lifecycle state. Either closed side makes
+      // the correction immutable.
+      const giftFrozen = freezeFailure(
+        await resolveGiftFreeze(gift.dateReceived),
+      );
+      if (giftFrozen) {
+        return { kind: "frozen" as const, failure: giftFrozen };
+      }
+      const pledgeFrozen = freezeFailure(
+        await resolvePledgeFreezeById(gift.opportunityId),
+      );
+      if (pledgeFrozen) {
+        return { kind: "frozen" as const, failure: pledgeFrozen };
+      }
       formerOpportunityId = gift.opportunityId;
       await tx
         .update(giftsAndPayments)
@@ -646,6 +715,10 @@ router.post(
         error: "gift_not_on_pledge",
         message: "This gift is already a stand-alone gift.",
       });
+      return;
+    }
+    if (changed.kind === "frozen") {
+      res.status(changed.failure.status).json(changed.failure.body);
       return;
     }
     await applyDerivedOppFieldsMany(formerOpportunityId);

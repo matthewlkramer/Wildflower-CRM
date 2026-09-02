@@ -442,19 +442,26 @@ async function runBankSpineRecompute(): Promise<void> {
       currency, account, location, reference, memo
     )
     SELECT
-      'bdep_' || substring(bt.id FROM 5), 'bank_csv_export', bt.id,
+      COALESCE(
+        (
+          SELECT d.id
+          FROM bank_deposits d
+          WHERE d.source_bank_transaction_id = bt.id
+        ),
+        'bdep_' || substring(bt.id FROM 5)
+      ),
+      'bank_csv_export', bt.id,
       bt.txn_date, bt.deposit, 'USD', bt.account, bt.location, bt.ref_no, bt.memo
     FROM bank_transactions bt
     WHERE bt.source = 'bank_csv_export'
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
-    -- The source transaction is the canonical projection identity. A legacy
-    -- row can already carry that key under a non-deterministic id; key the
-    -- upsert by that source identity so its spine id remains stable while the
-    -- bank-owned projection facts continue to refresh.
-    ON CONFLICT (source_bank_transaction_id)
-      WHERE source_bank_transaction_id IS NOT NULL
-    DO UPDATE SET
+    -- The source transaction is the canonical projection identity. Resolve an
+    -- already-linked legacy row's id before inserting; otherwise use the
+    -- deterministic id. Conflict-on-id also reattaches a deterministic curated
+    -- row whose source pointer was cleared when its raw row was removed.
+    ON CONFLICT (id) DO UPDATE SET
       source = EXCLUDED.source,
+      source_bank_transaction_id = EXCLUDED.source_bank_transaction_id,
       deposit_date = EXCLUDED.deposit_date,
       amount = EXCLUDED.amount,
       account = EXCLUDED.account,

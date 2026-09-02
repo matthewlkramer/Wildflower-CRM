@@ -1291,7 +1291,9 @@ router.patch(
     );
     if (freeze.frozen) return respondFrozen(res, freeze);
 
-    // Request-level flag only (evidence-only escape hatch) — not a column.
+    // Deprecated compatibility field only — pledge relationship corrections
+    // are rejected above and handled by explicit audited actions. Never write
+    // this request-only field to the gift table.
     const { offBooksException: _patchOffBooksException, ...bodyColumns } = body;
     const giftWrite: typeof bodyColumns & {
       loanOrGrant?: "loan" | "grant";
@@ -1316,8 +1318,9 @@ router.patch(
       .where(eq(giftsAndPayments.id, id))
       .returning(giftHeaderColumns);
     if (!row) return notFound(res, "gift");
-    // PATCH may re-point opportunity_id — recompute on both the
-    // old and the new pledge so a newly-covered target advances.
+    // Amount/date edits can change the linked pledge's derived paid/lifecycle
+    // state. Generic PATCH cannot change opportunity_id, so these normally
+    // name the same pledge; keeping both values is harmless and defensive.
     await applyDerivedOppFieldsMany(existing.opportunityId, row.opportunityId);
     // Revenue coding is no longer a persisted snapshot on the allocation
     // (Task #449) — it's derived on demand from the allocation's scope + the

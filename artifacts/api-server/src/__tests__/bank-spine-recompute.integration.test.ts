@@ -273,6 +273,59 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     ]);
   });
 
+  it("reattaches a deterministic deposit after its raw source pointer was cleared", async () => {
+    const bankTransactionId = `bnk_${nextId("returning_source")}`;
+    const depositId = `bdep_${bankTransactionId.slice(4)}`;
+    await db.insert(schema.bankTransactions).values({
+      id: bankTransactionId,
+      source: "bank_csv_export",
+      sourceFile: "bank-spine-recompute-test.csv",
+      txnDate: "2026-01-16",
+      deposit: "225.00",
+      account: ACCOUNT_ID,
+      refNo: "original reference",
+      memo: "original memo",
+      dedupKey: nextId("dedup"),
+      occurrence: 0,
+    });
+    bankTransactionIds.push(bankTransactionId);
+
+    await recompute.recomputeBankSpine();
+    depositIds.push(depositId);
+    await db
+      .update(schema.bankDeposits)
+      .set({ sourceBankTransactionId: null })
+      .where(eqFn(schema.bankDeposits.id, depositId));
+    await db
+      .update(schema.bankTransactions)
+      .set({
+        deposit: "250.00",
+        refNo: "returning reference",
+        memo: "returning memo",
+      })
+      .where(eqFn(schema.bankTransactions.id, bankTransactionId));
+
+    await recompute.recomputeBankSpine();
+
+    const [row] = await db
+      .select({
+        id: schema.bankDeposits.id,
+        sourceBankTransactionId: schema.bankDeposits.sourceBankTransactionId,
+        amount: schema.bankDeposits.amount,
+        reference: schema.bankDeposits.reference,
+        memo: schema.bankDeposits.memo,
+      })
+      .from(schema.bankDeposits)
+      .where(eqFn(schema.bankDeposits.id, depositId));
+    expect(row).toEqual({
+      id: depositId,
+      sourceBankTransactionId: bankTransactionId,
+      amount: "250.00",
+      reference: "returning reference",
+      memo: "returning memo",
+    });
+  });
+
   it("comparer: exact-amount lump in the bank window checks consistent", async () => {
     const po = await seedPayout("512.34", "2026-06-01");
     const sp = await seedLump("512.34", "2026-06-03");

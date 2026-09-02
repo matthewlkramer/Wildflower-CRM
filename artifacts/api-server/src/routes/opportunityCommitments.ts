@@ -19,7 +19,11 @@ import {
 } from "../lib/helpers";
 import { auditUpdate } from "../lib/audit";
 import { applyDerivedOppFields, isConditionalPledge } from "../lib/pledgeStage";
-import { resolvePledgeFreeze, respondFrozen } from "../lib/freezeGuard";
+import {
+  resolvePledgeFreeze,
+  respondFrozen,
+  type FreezeDecision,
+} from "../lib/freezeGuard";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -109,6 +113,11 @@ router.post(
       });
       return;
     }
+    const freeze = await resolvePledgeFreeze(before.actualCompletionDate);
+    if (freeze.frozen) {
+      respondFrozen(res, freeze);
+      return;
+    }
 
     const [updated] = await db
       .update(opportunitiesAndPledges)
@@ -159,16 +168,11 @@ router.post(
     if (!body) return;
     const id = paramId(req);
 
-    const freeze = await resolvePledgeFreeze(undefined, body.pledgeCommittedAt);
-    if (freeze.frozen) {
-      respondFrozen(res, freeze);
-      return;
-    }
-
     let before: typeof opportunitiesAndPledges.$inferSelect | undefined;
     let finalizationError:
       | { error: string; message: string; details?: unknown }
       | undefined;
+    let freezeDecision: Extract<FreezeDecision, { frozen: true }> | undefined;
 
     await db.transaction(async (tx) => {
       before = await tx
@@ -178,6 +182,15 @@ router.post(
         .for("update")
         .then((rows) => rows[0]);
       if (!before) return;
+
+      const freeze = await resolvePledgeFreeze(
+        before.actualCompletionDate,
+        before.actualCompletionDate ?? body.pledgeCommittedAt,
+      );
+      if (freeze.frozen) {
+        freezeDecision = freeze;
+        return;
+      }
 
       if (before.archivedAt) {
         finalizationError = {
@@ -351,6 +364,10 @@ router.post(
     });
 
     if (!before) return notFound(res, "opportunity");
+    if (freezeDecision) {
+      respondFrozen(res, freezeDecision);
+      return;
+    }
     if (finalizationError) {
       res.status(409).json(finalizationError);
       return;
