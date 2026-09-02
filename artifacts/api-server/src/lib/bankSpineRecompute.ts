@@ -1,6 +1,7 @@
 import { db, pool } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
+import { applyDerivedOppFieldsMany } from "./pledgeStage";
 import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
 
 /**
@@ -100,8 +101,9 @@ export async function mergeUnambiguousQboDepositLines(
   `);
 
   let merged = 0;
+  const opportunityIdsToRederive = new Set<string>();
   for (const candidate of candidatesResult.rows as QboDepositLineMergeCandidate[]) {
-    const didMerge = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       // Serialize with component creation/moves on this deposit. The mutation
       // routes take the same row lock before calculating remaining capacity.
       const lockedDeposit = await tx.execute(sql`
@@ -110,7 +112,7 @@ export async function mergeUnambiguousQboDepositLines(
         WHERE id = ${candidate.bank_deposit_id}
         FOR UPDATE
       `);
-      if (!lockedDeposit.rows.length) return false;
+      if (!lockedDeposit.rows.length) return null;
 
       const lockedResult = await tx.execute(sql`
         SELECT
@@ -162,7 +164,7 @@ export async function mergeUnambiguousQboDepositLines(
           target_donorbox_id: string | null;
         }>
       )[0];
-      if (!locked) return false;
+      if (!locked) return null;
 
       // Recheck one-to-one cardinality under the deposit lock so a concurrent
       // human component edit cannot turn a safe merge into a guess.
@@ -194,7 +196,7 @@ export async function mergeUnambiguousQboDepositLines(
         }>
       )[0];
       if (counts?.component_count !== 1 || counts?.line_count !== 1)
-        return false;
+        return null;
 
       const autoResult = await tx.execute(sql`
         SELECT id, gift_id, gift_allocation_id, gift_match_method,
@@ -224,14 +226,14 @@ export async function mergeUnambiguousQboDepositLines(
           autoUnit.gift_id &&
           locked.target_gift_id !== autoUnit.gift_id
         ) {
-          return false;
+          return null;
         }
         if (
           locked.target_donorbox_id &&
           autoUnit.donorbox_donation_id &&
           locked.target_donorbox_id !== autoUnit.donorbox_donation_id
         ) {
-          return false;
+          return null;
         }
         const legacyConflict = await tx.execute(sql`
           SELECT 1
@@ -244,7 +246,7 @@ export async function mergeUnambiguousQboDepositLines(
             AND auto_app.gift_id <> target_app.gift_id
           LIMIT 1
         `);
-        if (legacyConflict.rows.length) return false;
+        if (legacyConflict.rows.length) return null;
 
         // payment_applications is a retired read path, but its restrictive FK
         // can still exist on historical rows. Consolidate equivalent legacy
@@ -360,9 +362,30 @@ export async function mergeUnambiguousQboDepositLines(
           );
         }
       }
-      return true;
+      const effectiveGiftId = locked.target_gift_id ?? autoUnit?.gift_id ?? null;
+      const opportunityResult = effectiveGiftId
+        ? await tx.execute(sql`
+            SELECT opportunity_id
+            FROM gifts_and_payments
+            WHERE id = ${effectiveGiftId}
+          `)
+        : null;
+      const opportunityId = (
+        opportunityResult?.rows as
+          | Array<{ opportunity_id: string | null }>
+          | undefined
+      )?.[0]?.opportunity_id;
+      return { opportunityId };
     });
-    if (didMerge) merged += 1;
+    if (outcome) {
+      merged += 1;
+      if (outcome.opportunityId) {
+        opportunityIdsToRederive.add(outcome.opportunityId);
+      }
+    }
+  }
+  if (opportunityIdsToRederive.size) {
+    await applyDerivedOppFieldsMany(...opportunityIdsToRederive);
   }
   return merged;
 }
