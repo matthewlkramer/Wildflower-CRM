@@ -274,9 +274,7 @@ function Composition({
   const showRemainderActions =
     actions.isFinanceOrAdmin &&
     (composition.kind === "unresolved" ||
-      ((composition.kind === "components" ||
-        composition.kind === "qbo_provisional") &&
-        remainder > 0.005));
+      (composition.kind === "components" && remainder > 0.005));
   const remainderLinks = showRemainderActions ? (
     <div className="mt-1.5 flex flex-wrap gap-2">
       <button
@@ -589,32 +587,27 @@ function Composition({
                           },
                         ]
                       : []),
-                    ...(component.source !== "qbo_provisional"
-                      ? [
-                          component.exclusionReason
-                            ? {
-                                label: "Re-include",
-                                onSelect: () =>
-                                  actions.reInclude({
-                                    kind: "component",
-                                    id: component.componentId,
-                                    label: componentTitle(component),
-                                  }),
-                              }
-                            : {
-                                label: "Exclude…",
-                                onSelect: () =>
-                                  actions.openExclude({
-                                    kind: "component",
-                                    id: component.componentId,
-                                    label: componentTitle(component),
-                                  }),
-                              },
-                        ]
-                      : []),
+                    component.exclusionReason
+                      ? {
+                          label: "Re-include",
+                          onSelect: () =>
+                            actions.reInclude({
+                              kind: "component",
+                              id: component.componentId,
+                              label: componentTitle(component),
+                            }),
+                        }
+                      : {
+                          label: "Exclude…",
+                          onSelect: () =>
+                            actions.openExclude({
+                              kind: "component",
+                              id: component.componentId,
+                              label: componentTitle(component),
+                            }),
+                        },
                     ...(!component.unconfirmed &&
                     component.kind !== "stripe_charge" &&
-                    component.source !== "qbo_provisional" &&
                     !component.stagedPaymentId
                       ? [
                           {
@@ -624,8 +617,7 @@ function Composition({
                           },
                         ]
                       : []),
-                    ...(!component.unconfirmed &&
-                    component.source !== "qbo_provisional"
+                    ...(!component.unconfirmed
                       ? [
                           {
                             label: "Unlink payment",
@@ -784,10 +776,12 @@ function NodeQbCard({
 function Accounting({
   deposit,
   actions,
+  onConfirmProvisional,
   onDismissProvisional,
 }: {
   deposit: WorkbenchDeposit;
   actions: DepositActions;
+  onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }) {
   const { accountingChecks: checks, qbRecords: records } = deposit;
@@ -991,6 +985,14 @@ function Accounting({
       {unalignedItems.map(({ record, check }) => {
         const display = record ?? check;
         if (!display) return null;
+        const provisionalLinkId =
+          record && "depositQboComponentId" in record
+            ? (record.depositQboComponentId ?? null)
+            : null;
+        const provisionalUnconfirmed =
+          record && "unconfirmed" in record
+            ? Boolean(record.unconfirmed)
+            : false;
         const anchor: AnchorRef = {
           kind: "staged",
           id: display.stagedPaymentId,
@@ -1050,18 +1052,35 @@ function Accounting({
                           check ? "matched" : "missing",
                         ),
                     },
-                    ...(record
+                    ...(provisionalLinkId
                       ? [
+                          ...(provisionalUnconfirmed
+                            ? [
+                                {
+                                  label: "Confirm match",
+                                  onSelect: () =>
+                                    onConfirmProvisional?.(provisionalLinkId),
+                                },
+                              ]
+                            : []),
                           {
-                            label: "Unlink",
+                            label: "Dismiss match",
                             onSelect: () =>
-                              actions.unlinkAccountingRecord?.(
-                                deposit.anchorId,
-                                record,
-                              ),
+                              onDismissProvisional?.(provisionalLinkId),
                           },
                         ]
-                      : []),
+                      : record
+                        ? [
+                            {
+                              label: "Unlink",
+                              onSelect: () =>
+                                actions.unlinkAccountingRecord?.(
+                                  deposit.anchorId,
+                                  record,
+                                ),
+                            },
+                          ]
+                        : []),
                     {
                       label: "Exclude",
                       onSelect: () => actions.openExclude(anchor),
@@ -1139,8 +1158,7 @@ export function DepositRow({
       };
     }
     const components =
-      deposit.composition.kind === "components" ||
-      deposit.composition.kind === "qbo_provisional"
+      deposit.composition.kind === "components"
         ? deposit.composition.components
         : [];
     const unit = components.find(
@@ -1204,8 +1222,7 @@ export function DepositRow({
     (charge) => !charge.linkedGiftId,
   );
   const unlinkedComponents =
-    deposit.composition.kind === "components" ||
-    deposit.composition.kind === "qbo_provisional"
+    deposit.composition.kind === "components"
       ? deposit.composition.components.filter(
           (component) =>
             (component.countedGiftIds?.length ?? 0) === 0 &&
@@ -1858,6 +1875,7 @@ export function DepositRow({
           <Accounting
             deposit={deposit}
             actions={actions}
+            onConfirmProvisional={onConfirmProvisional}
             onDismissProvisional={onDismissProvisional}
           />
         </span>

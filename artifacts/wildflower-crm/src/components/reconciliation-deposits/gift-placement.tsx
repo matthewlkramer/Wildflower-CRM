@@ -102,8 +102,7 @@ function chargeTargetsOf(
 }
 
 function componentTargetsOf(deposit: WorkbenchDeposit): GiftPlacementTarget[] {
-  return deposit.composition.kind === "components" ||
-    deposit.composition.kind === "qbo_provisional"
+  return deposit.composition.kind === "components"
     ? deposit.composition.components.flatMap((component) => {
         if (
           component.exclusionReason ||

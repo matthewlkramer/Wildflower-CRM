@@ -20148,7 +20148,6 @@ components:
               stripe_payout,
               stripe_unlinked,
               components,
-              qbo_provisional,
               unresolved,
             ]
         payoutId: { type: string, nullable: true }
@@ -20237,15 +20236,15 @@ components:
               unconfirmed:
                 {
                   type: boolean,
-                  description: "True for a provisional QBO accounting-plane decomposition row.",
+                  description: "Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition.",
                 }
-              source: { type: string, enum: [bank_spine, qbo_provisional] }
+              source: { type: string, enum: [bank_spine] }
               stagedPaymentId: { type: string, nullable: true }
               stagedActionable:
                 {
                   type: boolean,
                   nullable: true,
-                  description: "True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Emitted for both bank_spine and qbo_provisional rows; null only for rows with no stagedPaymentId.",
+                  description: "True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Null only for rows with no stagedPaymentId.",
                 }
               receivedDate:
                 {

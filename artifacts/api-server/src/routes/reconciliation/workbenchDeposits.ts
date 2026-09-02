@@ -71,6 +71,7 @@ import {
 } from "../../lib/reconciliationCommit";
 import { donorOf } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
+import { mergeUnambiguousQboDepositLines } from "../../lib/bankSpineRecompute";
 
 const router: IRouter = Router();
 
@@ -241,16 +242,13 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
     ),
   ];
   const componentRefs = rows.flatMap((row) =>
-    [...row.components, ...row.provisional_components]
+    row.components
       .filter((component) => component.stagedPaymentId)
       .map((component) => ({
         stagedPaymentId: component.stagedPaymentId as string,
         componentId: component.componentId,
         paymentUnitId: component.paymentUnitId,
-        role:
-          component.source === "qbo_provisional"
-            ? ("provisional" as const)
-            : ("component" as const),
+        role: "component" as const,
       })),
   );
   const stagedPaymentIds = [
@@ -374,10 +372,7 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
   }
 
   for (const row of rows) {
-    for (const component of [
-      ...row.components,
-      ...row.provisional_components,
-    ]) {
+    for (const component of row.components) {
       component.qboRecords = component.stagedPaymentId
         ? (recordsByStaged.get(component.stagedPaymentId) ?? [])
         : [];
@@ -390,7 +385,7 @@ async function hydrateQboRollups(rows: DepositRow[]): Promise<void> {
     // Records already rendered under this deposit's component or charge cards
     // are not repeated under the gift rollup.
     const rowComponentStaged = new Set(
-      [...row.components, ...row.provisional_components]
+      row.components
         .map((component) => component.stagedPaymentId)
         .filter((id): id is string => Boolean(id)),
     );
@@ -542,7 +537,7 @@ function stateForDeposit(
   }));
 
   const excludedQbPaymentIds = new Set(
-    [...deposit.components, ...deposit.provisional_components]
+    deposit.components
       .filter((component) => Boolean(component.exclusionReason))
       .map((component) => component.stagedPaymentId)
       .filter((id): id is string => Boolean(id)),
@@ -560,9 +555,7 @@ function stateForDeposit(
   }));
 
   const compositionPresent = Boolean(
-    deposit.payout_id ||
-    deposit.components.length ||
-    deposit.provisional_components.length,
+    deposit.payout_id || deposit.components.length,
   );
   const compositionComplete =
     compositionPresent && !row.f_unresolved && !row.f_ambiguous;
@@ -627,6 +620,10 @@ function buildUniverse(q: string | null) {
   const search = q
     ? `%${q.replaceAll("%", "\\%").replaceAll("_", "\\_")}%`
     : null;
+  const parsedSearchAmount = q ? Number(q.replace(/[$,\s]/g, "")) : Number.NaN;
+  const searchAmount = Number.isFinite(parsedSearchAmount)
+    ? parsedSearchAmount
+    : null;
   return sql`
     SELECT id, anchor_date,
       (f_unresolved AND NOT f_not_fundraising) AS f_unresolved,
@@ -649,28 +646,8 @@ function buildUniverse(q: string | null) {
         d.deposit_date AS anchor_date,
         (
           (
-            p.id IS NULL AND abs(
-              COALESCE(sum(c.amount), 0)
-              + COALESCE((
-                SELECT sum(qsp.amount)
-                FROM source_links dqc
-                JOIN staged_payments qsp
-                  ON qsp.id = dqc.qb_staged_payment_id
-                WHERE dqc.link_type = 'qbo_line_deposit'
-                  AND dqc.lifecycle = 'confirmed'
-                  AND dqc.bank_deposit_id = d.id
-                  AND COALESCE(qsp.funding_source, '') <> 'stripe'
-                  AND NOT EXISTS (
-                    SELECT 1
-                    FROM bank_deposit_components pc
-                    JOIN payment_units pcu
-                      ON pcu.id = pc.payment_unit_id
-                    WHERE pc.bank_deposit_id = d.id
-                      AND pcu.source_staged_payment_id = qsp.id
-                  )
-              ), 0)
-              - d.amount
-            ) >= 0.005
+            p.id IS NULL
+            AND abs(COALESCE(sum(c.amount), 0) - d.amount) >= 0.005
           ) OR (
             p.id IS NOT NULL AND p.net_total IS NOT NULL
             AND abs(p.net_total - d.amount) >= 0.005
@@ -706,28 +683,6 @@ function buildUniverse(q: string | null) {
             WHERE pu.id = c.payment_unit_id
               AND pu.gift_id IS NOT NULL
           )), false)
-        )
-        OR (
-          p.id IS NULL
-          AND EXISTS (
-            SELECT 1
-            FROM source_links gift_dqc
-            JOIN staged_payments gift_qsp
-              ON gift_qsp.id = gift_dqc.qb_staged_payment_id
-            WHERE gift_dqc.link_type = 'qbo_line_deposit'
-              AND gift_dqc.lifecycle = 'confirmed'
-              AND gift_dqc.bank_deposit_id = d.id
-              AND COALESCE(gift_qsp.funding_source, '') <> 'stripe'
-              AND gift_qsp.exclusion_reason IS NULL
-              AND NOT EXISTS (
-                SELECT 1
-                FROM bank_deposit_components gift_pc
-                JOIN payment_units gift_pcu
-                  ON gift_pcu.id = gift_pc.payment_unit_id
-                WHERE gift_pc.bank_deposit_id = d.id
-                  AND gift_pcu.source_staged_payment_id = gift_qsp.id
-              )
-          )
         )
       ) AS f_needs_gift,
       EXISTS (
@@ -864,6 +819,7 @@ function buildUniverse(q: string | null) {
             ? sql`TRUE`
             : sql`(
           d.id ILIKE ${search} OR d.memo ILIKE ${search} OR d.reference ILIKE ${search}
+          OR (${searchAmount}::numeric IS NOT NULL AND abs(d.amount - ${searchAmount}::numeric) < 0.005)
           OR EXISTS (
             SELECT 1 FROM bank_deposit_components sqc
             JOIN payment_units squ ON squ.id = sqc.payment_unit_id
@@ -1378,9 +1334,7 @@ router.get(
                 ? "stripe_unlinked"
                 : r.components.length
                   ? "components"
-                  : r.provisional_components.length
-                    ? "qbo_provisional"
-                    : "unresolved",
+                  : "unresolved",
             payoutId: r.payout_id,
             payoutDate: r.payout_date,
             grossTotal: r.payout_gross,
@@ -1392,7 +1346,7 @@ router.get(
             payoutAmbiguous: r.payout_ambiguous,
             explainedAmount: r.payout_id
               ? r.amount
-              : [...r.components, ...r.provisional_components]
+              : r.components
                   .reduce((sum, c) => sum + amount(c.amount), 0)
                   .toFixed(2),
             unexplainedAmount: r.payout_id
@@ -1400,12 +1354,9 @@ router.get(
               : Math.max(
                   0,
                   amount(r.amount) -
-                    [...r.components, ...r.provisional_components].reduce(
-                      (sum, c) => sum + amount(c.amount),
-                      0,
-                    ),
+                    r.components.reduce((sum, c) => sum + amount(c.amount), 0),
                 ).toFixed(2),
-            components: [...r.components, ...r.provisional_components],
+            components: r.components,
             units: r.units,
           },
           gifts,
@@ -1853,20 +1804,6 @@ router.get(
     const depositResult = await db.execute(sql`
       SELECT d.amount::text AS amount,
              COALESCE(SUM(c.amount), 0)::text AS component_total,
-             COALESCE((
-               SELECT SUM(dq_sp.amount)
-               FROM source_links dqc
-               JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
-               WHERE dqc.link_type = 'qbo_line_deposit'
-                 AND dqc.bank_deposit_id = d.id
-                 AND NOT EXISTS (
-                   SELECT 1
-                   FROM bank_deposit_components pc
-                   JOIN payment_units pcu ON pcu.id = pc.payment_unit_id
-                   WHERE pc.bank_deposit_id = d.id
-                     AND pcu.source_staged_payment_id = dq_sp.id
-                 )
-             ), 0)::text AS provisional_total,
              p.amount::text AS payout_amount
       FROM bank_deposits d
       LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
@@ -1878,7 +1815,6 @@ router.get(
       depositResult.rows as Array<{
         amount: string;
         component_total: string;
-        provisional_total: string;
         payout_amount: string | null;
       }>
     )[0];
@@ -1890,8 +1826,7 @@ router.get(
       0,
       Number(deposit.amount) -
         Number(deposit.payout_amount ?? 0) -
-        Number(deposit.component_total) -
-        Number(deposit.provisional_total),
+        Number(deposit.component_total),
     );
     const targetAmount = query.amount ? Number(query.amount) : remainder;
     const search = query.q?.trim() || null;
@@ -2030,24 +1965,18 @@ router.post(
     const user = getAppUser(req);
 
     const result = await db.transaction(async (tx) => {
+      // Serialize remaining-capacity decisions with the QBO-line identity
+      // merge in bankSpineRecompute.
+      await tx.execute(sql`
+        SELECT id
+        FROM bank_deposits
+        WHERE id = ${params.bankDepositId}
+        FOR UPDATE
+      `);
       const depositResult = await tx.execute(sql`
         SELECT d.amount::text AS amount, d.currency, d.deposit_date::text AS deposit_date,
                p.amount::text AS payout_amount,
-               COALESCE(SUM(c.amount), 0)::text AS component_total,
-               COALESCE((
-                 SELECT SUM(dq_sp.amount)
-                 FROM source_links dqc
-                 JOIN staged_payments dq_sp ON dq_sp.id = dqc.qb_staged_payment_id
-                 WHERE dqc.link_type = 'qbo_line_deposit'
-                   AND dqc.bank_deposit_id = d.id
-                   AND NOT EXISTS (
-                     SELECT 1
-                     FROM bank_deposit_components pc
-                     JOIN payment_units pcu ON pcu.id = pc.payment_unit_id
-                     WHERE pc.bank_deposit_id = d.id
-                       AND pcu.source_staged_payment_id = dq_sp.id
-                   )
-               ), 0)::text AS provisional_total
+               COALESCE(SUM(c.amount), 0)::text AS component_total
         FROM bank_deposits d
         LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
         LEFT JOIN bank_deposit_components c ON c.bank_deposit_id = d.id
@@ -2061,7 +1990,6 @@ router.post(
           deposit_date: string;
           payout_amount: string | null;
           component_total: string;
-          provisional_total: string;
         }>
       )[0];
       if (!deposit) return { kind: "not_found" as const };
@@ -2077,8 +2005,7 @@ router.post(
         0,
         Number(deposit.amount) -
           Number(deposit.payout_amount ?? 0) -
-          Number(deposit.component_total) -
-          Number(deposit.provisional_total),
+          Number(deposit.component_total),
       );
 
       let paymentUnitId: string;
@@ -2464,7 +2391,11 @@ router.post(
       res,
     );
     if (!params) return;
-    const body = parseOrBadRequest(CreateGiftFromPaymentUnitBody, req.body, res);
+    const body = parseOrBadRequest(
+      CreateGiftFromPaymentUnitBody,
+      req.body,
+      res,
+    );
     if (!body) return;
 
     // Payment-on-pledge: the donor DERIVES from the pledge (locked in-tx below)
@@ -2483,8 +2414,9 @@ router.post(
     }
 
     const giftId = newId();
-    const result = await db.transaction(async (tx) => {
-      const unitResult = await tx.execute(sql`
+    const result = await db
+      .transaction(async (tx) => {
+        const unitResult = await tx.execute(sql`
         SELECT u.id, u.kind, u.stripe_charge_id, u.gift_id,
                COALESCE(u.gross_amount, u.net_amount)::text AS amount,
                u.received_date::text AS received_date,
@@ -2501,118 +2433,119 @@ router.post(
         WHERE u.id = ${params.id}
         FOR UPDATE OF u
       `);
-      const unit = (
-        unitResult.rows as Array<{
-          id: string;
-          kind: string;
-          stripe_charge_id: string | null;
-          gift_id: string | null;
-          amount: string | null;
-          received_date: string | null;
-          bank_deposit_id: string | null;
-          component_exclusion_reason: string | null;
-          source_payer_name: string | null;
-          source_label: string | null;
-          source_entity_id: string | null;
-          source_intermediary_id: string | null;
-        }>
-      )[0];
-      if (!unit) return { kind: "not_found" as const };
-      if (
-        unit.stripe_charge_id ||
-        !["check", "direct_ach", "wire", "other"].includes(unit.kind)
-      ) {
-        return { kind: "not_direct" as const };
-      }
-      if (unit.gift_id) return { kind: "already_paying" as const };
-      if (!unit.bank_deposit_id) return { kind: "not_composed" as const };
-      // Excluded money is a component/payment-unit fact: never book a counted
-      // gift on a payment finance has marked not-fundraising.
-      if (unit.component_exclusion_reason) return { kind: "excluded" as const };
-      if (unit.amount == null || Number(unit.amount) <= 0) {
-        return { kind: "no_amount" as const };
-      }
+        const unit = (
+          unitResult.rows as Array<{
+            id: string;
+            kind: string;
+            stripe_charge_id: string | null;
+            gift_id: string | null;
+            amount: string | null;
+            received_date: string | null;
+            bank_deposit_id: string | null;
+            component_exclusion_reason: string | null;
+            source_payer_name: string | null;
+            source_label: string | null;
+            source_entity_id: string | null;
+            source_intermediary_id: string | null;
+          }>
+        )[0];
+        if (!unit) return { kind: "not_found" as const };
+        if (
+          unit.stripe_charge_id ||
+          !["check", "direct_ach", "wire", "other"].includes(unit.kind)
+        ) {
+          return { kind: "not_direct" as const };
+        }
+        if (unit.gift_id) return { kind: "already_paying" as const };
+        if (!unit.bank_deposit_id) return { kind: "not_composed" as const };
+        // Excluded money is a component/payment-unit fact: never book a counted
+        // gift on a payment finance has marked not-fundraising.
+        if (unit.component_exclusion_reason)
+          return { kind: "excluded" as const };
+        if (unit.amount == null || Number(unit.amount) <= 0) {
+          return { kind: "no_amount" as const };
+        }
 
-      // Payment-on-pledge: lock + validate the pledge (unit → opp lock order;
-      // see lockAndValidatePledgeForPayment) and derive the donor from it —
-      // the body's donor fields are ignored on this path.
-      const opp = pledgeOpportunityId
-        ? await lockAndValidatePledgeForPayment(tx, pledgeOpportunityId)
-        : null;
-      const donor = opp ? donorOf(opp) : bodyDonor;
+        // Payment-on-pledge: lock + validate the pledge (unit → opp lock order;
+        // see lockAndValidatePledgeForPayment) and derive the donor from it —
+        // the body's donor fields are ignored on this path.
+        const opp = pledgeOpportunityId
+          ? await lockAndValidatePledgeForPayment(tx, pledgeOpportunityId)
+          : null;
+        const donor = opp ? donorOf(opp) : bodyDonor;
 
-      const overrideName = body.name?.trim();
-      const giftDateReceived = body.dateReceived ?? unit.received_date;
-      const kindLabel =
-        unit.kind === "check"
-          ? "Check"
-          : unit.kind === "wire"
-            ? "Wire"
-            : unit.kind === "direct_ach"
-              ? "ACH"
-              : "Direct";
-      await tx.insert(giftsAndPayments).values({
-        id: giftId,
-        name: overrideName || (unit.source_label ?? `${kindLabel} payment`),
-        amount: unit.amount,
-        dateReceived: giftDateReceived,
-        organizationId: donor.organizationId,
-        individualGiverPersonId: donor.individualGiverPersonId,
-        householdId: donor.householdId,
-        // Payment-on-pledge: tie the gift to the pledge so it derives cash_in
-        // when fully paid (re-derived post-commit).
-        opportunityId: opp?.id ?? null,
-        paymentIntermediaryId:
-          body.paymentIntermediaryId ?? unit.source_intermediary_id ?? null,
-        details: `Created from a bank-deposit payment (${unit.kind}).`,
-        ownerUserId: user.id,
-      });
-      // Every gift needs at least one allocation (the sole home of money
-      // scope). Payment-on-pledge: seed from the pledge's allocation plan
-      // scaled to the unit's money (falling through to the default line when
-      // the pledge has none). Otherwise seed a default full-amount line
-      // carrying the source QBO row's attributed entity + goal-counting
-      // signal where one exists, each overridable by the human body field
-      // (entityId: explicit null clears).
-      if (opp) {
-        await copyPledgeAllocationsToGift(tx, opp.id, giftId, unit.amount);
-      }
-      const seededCount = opp
-        ? Number(
-            (
-              (
-                await tx.execute(
-                  sql`SELECT count(*)::int AS n FROM gift_allocations WHERE gift_id = ${giftId}`,
-                )
-              ).rows[0] as { n: number }
-            ).n,
-          )
-        : 0;
-      if (!opp || seededCount === 0) {
-        await seedInitialGiftAllocation(tx, {
-          giftId,
+        const overrideName = body.name?.trim();
+        const giftDateReceived = body.dateReceived ?? unit.received_date;
+        const kindLabel =
+          unit.kind === "check"
+            ? "Check"
+            : unit.kind === "wire"
+              ? "Wire"
+              : unit.kind === "direct_ach"
+                ? "ACH"
+                : "Direct";
+        await tx.insert(giftsAndPayments).values({
+          id: giftId,
+          name: overrideName || (unit.source_label ?? `${kindLabel} payment`),
           amount: unit.amount,
           dateReceived: giftDateReceived,
-          entityId:
-            body.entityId !== undefined
-              ? body.entityId
-              : (unit.source_entity_id ?? null),
-          countsTowardGoal:
-            body.countsTowardGoal ??
-            !isGovernmentReimbursement({
-              amount: unit.amount,
-              payerName: unit.source_payer_name,
-              lineItemNames: null,
-              lineAccountNames: null,
-              rawReference: null,
-              lineDescription: null,
-            }),
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          // Payment-on-pledge: tie the gift to the pledge so it derives cash_in
+          // when fully paid (re-derived post-commit).
+          opportunityId: opp?.id ?? null,
+          paymentIntermediaryId:
+            body.paymentIntermediaryId ?? unit.source_intermediary_id ?? null,
+          details: `Created from a bank-deposit payment (${unit.kind}).`,
+          ownerUserId: user.id,
         });
-      }
-      await assertGiftHasAllocations(tx, giftId);
-      // The unit's gift tie IS the resolution record (one authority): the
-      // minted gift is paid by this unit, human-confirmed, mint-owned.
-      await tx.execute(sql`
+        // Every gift needs at least one allocation (the sole home of money
+        // scope). Payment-on-pledge: seed from the pledge's allocation plan
+        // scaled to the unit's money (falling through to the default line when
+        // the pledge has none). Otherwise seed a default full-amount line
+        // carrying the source QBO row's attributed entity + goal-counting
+        // signal where one exists, each overridable by the human body field
+        // (entityId: explicit null clears).
+        if (opp) {
+          await copyPledgeAllocationsToGift(tx, opp.id, giftId, unit.amount);
+        }
+        const seededCount = opp
+          ? Number(
+              (
+                (
+                  await tx.execute(
+                    sql`SELECT count(*)::int AS n FROM gift_allocations WHERE gift_id = ${giftId}`,
+                  )
+                ).rows[0] as { n: number }
+              ).n,
+            )
+          : 0;
+        if (!opp || seededCount === 0) {
+          await seedInitialGiftAllocation(tx, {
+            giftId,
+            amount: unit.amount,
+            dateReceived: giftDateReceived,
+            entityId:
+              body.entityId !== undefined
+                ? body.entityId
+                : (unit.source_entity_id ?? null),
+            countsTowardGoal:
+              body.countsTowardGoal ??
+              !isGovernmentReimbursement({
+                amount: unit.amount,
+                payerName: unit.source_payer_name,
+                lineItemNames: null,
+                lineAccountNames: null,
+                rawReference: null,
+                lineDescription: null,
+              }),
+          });
+        }
+        await assertGiftHasAllocations(tx, giftId);
+        // The unit's gift tie IS the resolution record (one authority): the
+        // minted gift is paid by this unit, human-confirmed, mint-owned.
+        await tx.execute(sql`
         UPDATE payment_units
         SET gift_id = ${giftId},
             gift_match_method = 'human',
@@ -2621,13 +2554,15 @@ router.post(
             created_the_gift = true
         WHERE id = ${unit.id}
       `);
-      return { kind: "ok" as const, unit, oppId: opp?.id ?? null };
-    }).catch((e: unknown) => {
-      // Pledge eligibility aborts (404 / archived / lost / not-a-pledge) roll
-      // the whole mint back and map to their response below.
-      if (e instanceof ReconcileAbort) return { kind: "abort" as const, abort: e };
-      throw e;
-    });
+        return { kind: "ok" as const, unit, oppId: opp?.id ?? null };
+      })
+      .catch((e: unknown) => {
+        // Pledge eligibility aborts (404 / archived / lost / not-a-pledge) roll
+        // the whole mint back and map to their response below.
+        if (e instanceof ReconcileAbort)
+          return { kind: "abort" as const, abort: e };
+        throw e;
+      });
 
     if (result.kind === "abort") {
       res.status(result.abort.httpStatus).json(result.abort.payload);
@@ -3093,6 +3028,7 @@ router.post(
       });
       return;
     }
+    await mergeUnambiguousQboDepositLines(row.id);
     res.json(row);
   }),
 );

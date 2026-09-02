@@ -585,6 +585,14 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     ).toBe(true);
   });
 
+  it("searches bank deposits by formatted amount", async () => {
+    const deposit = await seedDeposit("Amount-only lookup", "2025.00");
+    const result = await listDeposits("unresolved_composition", "$2,025");
+    expect(result.data.some((item: any) => item.anchorId === deposit)).toBe(
+      true,
+    );
+  });
+
   it("does not demand a gift for a fully refunded later charge", async () => {
     const deposit = await seedDeposit("Later refunded Stripe charge", "100.00");
     const payout = await seedPayout("100.00", deposit);
@@ -926,7 +934,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);
   });
 
-  it("counts confirmed QBO lines toward composition but still requires a gift for live money", async () => {
+  it("keeps QBO deposit lines as accounting evidence, not composition", async () => {
     const deposit = await seedDeposit(
       "Confirmed QBO composition with excluded line",
       "100.00",
@@ -940,18 +948,19 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       "unresolved_composition",
       "Confirmed QBO composition with excluded line",
     );
-    expect(
-      unresolved.data.some((item: any) => item.anchorId === deposit),
-    ).toBe(false);
+    const row = unresolved.data.find((item: any) => item.anchorId === deposit);
+    expect(row?.composition.kind).toBe("unresolved");
+    expect(row?.composition.components).toEqual([]);
+    expect(Number(row?.composition.unexplainedAmount ?? 0)).toBeCloseTo(100);
+    expect(row?.qbRecords).toHaveLength(2);
 
     const needsGift = await listDeposits(
       "needs_gift",
       "Confirmed QBO composition with excluded line",
     );
-    const row = needsGift.data.find((item: any) => item.anchorId === deposit);
-    expect(row?.composition.kind).toBe("qbo_provisional");
-    expect(Number(row?.composition.unexplainedAmount ?? 0)).toBeCloseTo(0);
-    expect(row?.lenses).toContain("needs_gift");
+    expect(needsGift.data.some((item: any) => item.anchorId === deposit)).toBe(
+      false,
+    );
   });
 
   it("derives not_fundraising for loan/interest but keeps brokerage transfers visible", async () => {
@@ -1011,7 +1020,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row?.coverage.state.flags).toBeTruthy();
   });
 
-  it("surfaces provisional QBO composition and exclusion-driven classification", async () => {
+  it("surfaces QBO-only evidence in accounting and preserves exclusion classification", async () => {
     const deposit = await seedDeposit("Membership deposit", "125.00");
     const stagedPaymentId = nextId("provisional_staged");
     const componentId = nextId("provisional_component");
@@ -1041,8 +1050,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const result = await listDeposits("not_fundraising", "Membership deposit");
     const row = result.data.find((item: any) => item.anchorId === deposit);
     expect(row?.notFundraisingReason).toBe("membership");
-    expect(row?.composition.kind).toBe("qbo_provisional");
-    expect(row?.composition.components[0]).toMatchObject({
+    expect(row?.composition.kind).toBe("unresolved");
+    expect(row?.composition.components).toEqual([]);
+    expect(row?.qbRecords[0]).toMatchObject({
       unconfirmed: true,
       source: "qbo_provisional",
       exclusionReason: "membership",
