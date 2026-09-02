@@ -855,6 +855,10 @@ router.get(
         AND sent_message.gmail_thread_id = ${emailMessages.gmailThreadId}
         AND sent_message.direction = 'sent'
         AND sent_message.sent_at > ${emailMessages.sentAt}
+        AND (
+          sent_message.is_private = false
+          OR sent_message.mailbox_user_id = ${me.id}
+        )
     )`;
     const rows = await db
       .select({

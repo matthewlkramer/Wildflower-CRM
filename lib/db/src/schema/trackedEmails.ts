@@ -1,4 +1,5 @@
 import {
+  check,
   index,
   pgTable,
   text,
@@ -99,7 +100,9 @@ export const emailTrackingResolutions = pgTable(
     resolvedByUserId: text("resolved_by_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    resolvedAt: timestamp("resolved_at").defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
   },
   (t) => [
     uniqueIndex("email_tracking_resolutions_queue_source_uq").on(
@@ -107,6 +110,10 @@ export const emailTrackingResolutions = pgTable(
       t.sourceId,
     ),
     index("email_tracking_resolutions_mailbox_idx").on(t.mailboxUserId),
+    check(
+      "email_tracking_resolutions_queue_type_chk",
+      sql`${t.queueType} IN ('outbound', 'inbound')`,
+    ),
   ],
 );
 

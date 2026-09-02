@@ -24,6 +24,8 @@ const OWNER_REPLY = `${RUN}_owner_reply`;
 const OUTBOUND_REPLY = `${RUN}_outbound_reply`;
 const IN_MEMBER_WAIT = `${RUN}_in_member_wait`;
 const IN_MEMBER_PRIVATE = `${RUN}_in_member_private`;
+const IN_MEMBER_PRIVATE_REPLY_SOURCE = `${RUN}_in_member_private_reply_source`;
+const MEMBER_PRIVATE_REPLY = `${RUN}_member_private_reply`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "", email: "" } as {
@@ -172,6 +174,24 @@ beforeAll(async () => {
     },
     received(IN_MEMBER_WAIT, MEMBER_ID, `${RUN}_thread_in_member`, 32),
     received(
+      IN_MEMBER_PRIVATE_REPLY_SOURCE,
+      MEMBER_ID,
+      `${RUN}_thread_in_member_private_reply`,
+      40,
+    ),
+    {
+      id: MEMBER_PRIVATE_REPLY,
+      gmailMessageId: `${MEMBER_PRIVATE_REPLY}_gmail`,
+      gmailThreadId: `${RUN}_thread_in_member_private_reply`,
+      mailboxUserId: MEMBER_ID,
+      direction: "sent" as const,
+      sentAt: new Date(now - 30 * 60 * 60_000),
+      subject: "Private reply",
+      fromEmail: MEMBER_EMAIL,
+      toEmails: ["crm-person@example.org"],
+      isPrivate: true,
+    },
+    received(
       IN_MEMBER_PRIVATE,
       MEMBER_ID,
       `${RUN}_thread_out_member`,
@@ -214,6 +234,8 @@ afterAll(async () => {
         IN_OWNER_REPLIED,
         OWNER_REPLY,
         IN_MEMBER_WAIT,
+        IN_MEMBER_PRIVATE_REPLY_SOURCE,
+        MEMBER_PRIVATE_REPLY,
         IN_MEMBER_PRIVATE,
       ]),
     );
@@ -246,6 +268,7 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     const inboundIds = inbound.json.data.map((r) => r.id);
     expect(inboundIds).toContain(IN_MEMBER_WAIT);
     expect(inboundIds).toContain(IN_MEMBER_PRIVATE);
+    expect(inboundIds).not.toContain(IN_MEMBER_PRIVATE_REPLY_SOURCE);
     expect(inboundIds).not.toContain(IN_OWNER_WAIT);
   }, 30_000);
 
@@ -279,6 +302,9 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     const inboundIds = inbound.json.data.map((r) => r.id);
     expect(inboundIds).toContain(IN_OWNER_WAIT);
     expect(inboundIds).toContain(IN_MEMBER_WAIT);
+    // The mailbox owner replied, but marked that sent message private. The
+    // admin must not infer the private reply from this derived queue state.
+    expect(inboundIds).toContain(IN_MEMBER_PRIVATE_REPLY_SOURCE);
     expect(inboundIds).not.toContain(IN_MEMBER_PRIVATE);
   }, 30_000);
 

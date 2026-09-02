@@ -28,7 +28,15 @@ const OWNER_ID = `${RUN}_owner`;
 const PROP_OWNER_A = `${RUN}_prop_a`;
 const PROP_OWNER_B = `${RUN}_prop_b`;
 const PROP_MEMBER = `${RUN}_prop_m`;
+const PRIVATE_SOURCE_MESSAGE = `${RUN}_private_source_message`;
+const PRIVATE_PROP = `${RUN}_private_prop`;
 const IGNORE_ADDR = `${RUN}@example.org`.toLowerCase();
+const PRIVATE_CORRESPONDENT = `${RUN}.private@example.org`.toLowerCase();
+const PUBLIC_CORRESPONDENT = `${RUN}.public@example.org`.toLowerCase();
+const CORRESPONDENT_MESSAGE_IDS = Array.from(
+  { length: 4 },
+  (_, index) => `${RUN}_correspondent_message_${index}`,
+);
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "" } as { id: string; role: string },
@@ -94,6 +102,32 @@ beforeAll(async () => {
       displayName: "Mailbox Owner",
     },
   ]);
+  const now = Date.now();
+  await db.insert(dbMod.emailMessages).values([
+    {
+      id: PRIVATE_SOURCE_MESSAGE,
+      gmailMessageId: `${PRIVATE_SOURCE_MESSAGE}_gmail`,
+      gmailThreadId: `${PRIVATE_SOURCE_MESSAGE}_thread`,
+      mailboxUserId: OWNER_ID,
+      direction: "received" as const,
+      sentAt: new Date(now - 60_000),
+      subject: "Private proposal source",
+      fromEmail: "private-source@example.org",
+      isPrivate: true,
+    },
+    ...CORRESPONDENT_MESSAGE_IDS.map((id, index) => ({
+      id,
+      gmailMessageId: `${id}_gmail`,
+      gmailThreadId: `${id}_thread`,
+      mailboxUserId: OWNER_ID,
+      direction: "sent" as const,
+      sentAt: new Date(now - (index + 2) * 60_000),
+      subject: index < 2 ? "Private correspondent" : "Public correspondent",
+      fromEmail: `${OWNER_ID}@wildflowerschools.org`,
+      toEmails: [index < 2 ? PRIVATE_CORRESPONDENT : PUBLIC_CORRESPONDENT],
+      isPrivate: index < 2,
+    })),
+  ]);
   await db.insert(dbMod.emailProposals).values([
     {
       id: PROP_OWNER_A,
@@ -116,6 +150,14 @@ beforeAll(async () => {
       dedupeKey: `dedupe_${PROP_MEMBER}`,
       status: "pending",
     },
+    {
+      id: PRIVATE_PROP,
+      mailboxUserId: OWNER_ID,
+      kind: "bounce_soft" as const,
+      dedupeKey: `dedupe_${PRIVATE_PROP}`,
+      status: "pending",
+      sourceMessageId: PRIVATE_SOURCE_MESSAGE,
+    },
   ]);
 
   const { default: app } = await import("../app");
@@ -137,11 +179,20 @@ afterAll(async () => {
         PROP_OWNER_A,
         PROP_OWNER_B,
         PROP_MEMBER,
+        PRIVATE_PROP,
       ]),
     );
   await db
     .delete(dbMod.correspondentIgnore)
     .where(eqFn(dbMod.correspondentIgnore.emailLower, IGNORE_ADDR));
+  await db
+    .delete(dbMod.emailMessages)
+    .where(
+      inArrayFn(dbMod.emailMessages.id, [
+        PRIVATE_SOURCE_MESSAGE,
+        ...CORRESPONDENT_MESSAGE_IDS,
+      ]),
+    );
   await db
     .delete(dbMod.users)
     .where(inArrayFn(dbMod.users.id, [ADMIN_ID, MEMBER_ID, OWNER_ID]));
@@ -160,6 +211,21 @@ describe.skipIf(!HAS_DB)("admin all-mailboxes review", () => {
     expect(mine.length).toBe(3);
     const ownerRow = mine.find((r) => r.id === PROP_OWNER_A);
     expect(ownerRow?.mailboxUserName).toBe("Mailbox Owner");
+    expect((json.data ?? []).map((r) => r.id)).not.toContain(PRIVATE_PROP);
+  }, 30_000);
+
+  it("does not expose or mutate another mailbox's private-source proposal", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const denied = await fetch(
+      `${baseUrl}/api/email-proposals/${PRIVATE_PROP}/reject`,
+      { method: "POST", headers: { "content-type": "application/json" } },
+    );
+    expect(denied.status).toBe(404);
+
+    auth.current = { id: OWNER_ID, role: "team_member" };
+    const own = await listProposals("kind=bounce_soft&status=pending&limit=100");
+    expect(own.status).toBe(200);
+    expect((own.json.data ?? []).map((r) => r.id)).toContain(PRIVATE_PROP);
   }, 30_000);
 
   it("non-admin passing allMailboxes=true stays scoped to their own mailbox", async () => {
@@ -233,5 +299,31 @@ describe.skipIf(!HAS_DB)("admin all-mailboxes review", () => {
         ),
       );
     expect(rows.length).toBe(1);
+  }, 30_000);
+
+  it("does not derive cross-mailbox correspondent suggestions from private sent mail", async () => {
+    auth.current = { id: ADMIN_ID, role: "admin" };
+    const adminRes = await fetch(
+      `${baseUrl}/api/correspondents/unrecognized?allMailboxes=true&days=30&minThreads=2`,
+    );
+    expect(adminRes.status).toBe(200);
+    const adminJson = (await adminRes.json()) as {
+      data: Array<{ emailAddress: string }>;
+    };
+    const adminAddresses = adminJson.data.map((row) => row.emailAddress);
+    expect(adminAddresses).toContain(PUBLIC_CORRESPONDENT);
+    expect(adminAddresses).not.toContain(PRIVATE_CORRESPONDENT);
+
+    auth.current = { id: OWNER_ID, role: "team_member" };
+    const ownerRes = await fetch(
+      `${baseUrl}/api/correspondents/unrecognized?days=30&minThreads=2`,
+    );
+    expect(ownerRes.status).toBe(200);
+    const ownerJson = (await ownerRes.json()) as {
+      data: Array<{ emailAddress: string }>;
+    };
+    expect(ownerJson.data.map((row) => row.emailAddress)).toContain(
+      PRIVATE_CORRESPONDENT,
+    );
   }, 30_000);
 });

@@ -75,12 +75,31 @@ function isAdminUser(user: User): boolean {
 }
 
 /**
+ * A cross-mailbox reviewer may act on ordinary proposals, but a proposal
+ * backed by another user's private source message must be indistinguishable
+ * from a row that does not exist. Keeping this as a correlated NOT EXISTS
+ * also handles legacy proposals whose source message has been deleted.
+ */
+function sourceMessageVisibility(user: User): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1
+    FROM email_messages AS source_message
+    WHERE source_message.id = ${emailProposals.sourceMessageId}
+      AND source_message.is_private = true
+      AND source_message.mailbox_user_id <> ${user.id}
+  )`;
+}
+
+/**
  * WHERE fragments that scope one proposal row for a mutation: always
  * the row id; plus the caller-as-mailbox-owner condition unless the
  * caller is an admin (who may act on any mailbox's proposals).
  */
 function proposalMutationScope(user: User, id: string): SQL[] {
-  const filters: SQL[] = [eq(emailProposals.id, id)];
+  const filters: SQL[] = [
+    eq(emailProposals.id, id),
+    sourceMessageVisibility(user),
+  ];
   if (!isAdminUser(user)) {
     filters.push(eq(emailProposals.mailboxUserId, user.id));
   }
@@ -137,6 +156,7 @@ router.get(
       // Admin narrowing the all-mailboxes view to one specific mailbox.
       filters.push(eq(emailProposals.mailboxUserId, q.mailboxUserId));
     }
+    filters.push(sourceMessageVisibility(user));
     if (q.kind) filters.push(eq(emailProposals.kind, q.kind));
     if (q.status) filters.push(eq(emailProposals.status, q.status));
     // Per-record scoping for the unified activity timeline. Proposals

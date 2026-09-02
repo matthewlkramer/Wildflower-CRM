@@ -332,4 +332,29 @@ describe.skipIf(!HAS_DB)("proposal naming enrichment", () => {
     expect(result.status).toBe("applied");
     expect(result.createdId).toBe(ACCENT_ORG_ID);
   }, 30_000);
+
+  it("fails a stale create action when equivalent organization names are ambiguous", async () => {
+    const before = await db
+      .select({ id: dbMod.organizations.id })
+      .from(dbMod.organizations)
+      .where(eqFn(dbMod.organizations.name, AMBIGUOUS_ORG_NAME));
+    const result = await apply.applyAction(
+      db,
+      {
+        type: "create_org_with_per",
+        personId: PERSON_ID,
+        organizationName: AMBIGUOUS_ORG_NAME,
+        reason: "Delayed reviewer acceptance",
+      },
+      { mailboxUserId: `${RUN}_mailbox` },
+    );
+    const after = await db
+      .select({ id: dbMod.organizations.id })
+      .from(dbMod.organizations)
+      .where(eqFn(dbMod.organizations.name, AMBIGUOUS_ORG_NAME));
+
+    expect(result.status).toBe("failed");
+    expect(result.message).toContain("26 existing organizations");
+    expect(after).toHaveLength(before.length);
+  }, 30_000);
 });

@@ -57,31 +57,38 @@ router.post(
     // that slips past the case-insensitive uniqueness rule.
     if (typeof body.email === "string") body.email = body.email.trim();
     try {
-      const [row] = await db.insert(emails).values({ id: newId(), ...body }).returning();
+      const row = await db.transaction(async (tx) => {
+        const [created] = await tx
+          .insert(emails)
+          .values({ id: newId(), ...body })
+          .returning();
+        // Re-attribute HISTORY: synced messages store matched_person_ids at
+        // sync time, so messages that predate this link would never surface on
+        // the person's activity feed. Keep this in the same transaction as the
+        // email row so a failed history update cannot leave an un-linkable
+        // partial record behind.
+        if (created.personId && created.email) {
+          await tx.execute(sql`
+            UPDATE email_messages
+            SET matched_person_ids =
+              COALESCE(matched_person_ids, '{}') || ARRAY[${created.personId}]::text[]
+            WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${created.personId}]::text[])
+              AND (
+                lower(COALESCE(from_email, '')) = lower(${created.email})
+                OR EXISTS (
+                  SELECT 1 FROM unnest(
+                    COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
+                  ) AS addr WHERE lower(addr) = lower(${created.email})
+                )
+              )
+          `);
+        }
+        return created;
+      });
       // Adding/changing a person's email can change the staff-default
       // suppression set (an internal-domain address makes them staff). Bust
-      // the cache so the next sync match sees it within the TTL window.
+      // the cache only after the transaction commits.
       invalidateStaffDefaultSuppressionCache();
-      // Re-attribute HISTORY: synced messages store matched_person_ids at
-      // sync time, so messages that predate this link would never surface on
-      // the person's activity feed. Append the person to every message that
-      // involves the address (from/to/cc/bcc, case-insensitive).
-      if (row.personId && row.email) {
-        await db.execute(sql`
-          UPDATE email_messages
-          SET matched_person_ids =
-            COALESCE(matched_person_ids, '{}') || ARRAY[${row.personId}]::text[]
-          WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${row.personId}]::text[])
-            AND (
-              lower(COALESCE(from_email, '')) = lower(${row.email})
-              OR EXISTS (
-                SELECT 1 FROM unnest(
-                  COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
-                ) AS addr WHERE lower(addr) = lower(${row.email})
-              )
-            )
-        `);
-      }
       res.status(201).json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {

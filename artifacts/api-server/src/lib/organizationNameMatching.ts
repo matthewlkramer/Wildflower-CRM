@@ -11,7 +11,7 @@ export function canonicalOrganizationName(name: string): string {
   return name
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
-    .toLocaleLowerCase()
+    .toLowerCase()
     // Apostrophes are commonly optional within a word (O'Reilly/OReilly).
     .replace(/['’]/g, "")
     // Other punctuation is a word boundary, not a word to discard.

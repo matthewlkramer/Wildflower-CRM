@@ -156,7 +156,11 @@ type Tx = any;
 async function findExistingOrganizationByEquivalentName(
   tx: Tx,
   name: string,
-): Promise<string | null> {
+): Promise<
+  | { kind: "none" }
+  | { kind: "one"; id: string }
+  | { kind: "ambiguous"; count: number }
+> {
   const candidates = await tx
     .select({
       id: organizations.id,
@@ -174,7 +178,9 @@ async function findExistingOrganizationByEquivalentName(
         organizationNamesEquivalent(name, historicalName),
       ),
   );
-  return matches.length === 1 ? matches[0].id : null;
+  if (matches.length === 0) return { kind: "none" };
+  if (matches.length === 1) return { kind: "one", id: matches[0].id };
+  return { kind: "ambiguous", count: matches.length };
 }
 
 export async function applyAction(
@@ -463,12 +469,20 @@ async function applyCreateOrgWithPer(
 
   // Reuse a conservatively equivalent existing organization — it may have
   // been added since the proposal was generated.
-  const existingOrganizationId = await findExistingOrganizationByEquivalentName(
+  const organizationMatch = await findExistingOrganizationByEquivalentName(
     tx,
     a.organizationName,
   );
+  if (organizationMatch.kind === "ambiguous") {
+    return {
+      type: a.type,
+      status: "failed",
+      message: `Cannot create or link organization "${a.organizationName}": ${organizationMatch.count} existing organizations have an equivalent name. Resolve the duplicate organizations first.`,
+    };
+  }
 
-  let organizationId: string = existingOrganizationId ?? "";
+  let organizationId: string =
+    organizationMatch.kind === "one" ? organizationMatch.id : "";
   let createdOrg = false;
   if (!organizationId) {
     organizationId = newId();
@@ -543,12 +557,20 @@ async function applyCreateFunderWithPer(
   // All entities are now in the `organizations` table; grantmakers have
   // `issues_grants = true`, other orgs have `issues_grants = false`.
   // Recheck conservative equivalence at acceptance to avoid late duplicates.
-  const existingOrganizationId = await findExistingOrganizationByEquivalentName(
+  const organizationMatch = await findExistingOrganizationByEquivalentName(
     tx,
     a.funderName,
   );
+  if (organizationMatch.kind === "ambiguous") {
+    return {
+      type: a.type,
+      status: "failed",
+      message: `Cannot create or link grantmaker "${a.funderName}": ${organizationMatch.count} existing organizations have an equivalent name. Resolve the duplicate organizations first.`,
+    };
+  }
 
-  let organizationId: string = existingOrganizationId ?? "";
+  let organizationId: string =
+    organizationMatch.kind === "one" ? organizationMatch.id : "";
   let createdOrg = false;
   if (!organizationId) {
     organizationId = newId();

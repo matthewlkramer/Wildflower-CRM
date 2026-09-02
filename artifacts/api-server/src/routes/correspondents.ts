@@ -91,6 +91,7 @@ router.get(
         FROM email_messages
         WHERE ${allMailboxes ? sql`TRUE` : sql`mailbox_user_id = ${mailboxUserId}`}
           AND direction = 'sent'
+          AND (is_private = false OR mailbox_user_id = ${mailboxUserId})
           AND sent_at >= ${cutoffSql}
       ),
       candidate AS (
