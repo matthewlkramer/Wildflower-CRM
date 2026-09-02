@@ -447,7 +447,16 @@ async function runBankSpineRecompute(): Promise<void> {
     FROM bank_transactions bt
     WHERE bt.source = 'bank_csv_export'
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
-    ON CONFLICT (id) DO NOTHING
+    ON CONFLICT (id) DO UPDATE SET
+      source = EXCLUDED.source,
+      source_bank_transaction_id = EXCLUDED.source_bank_transaction_id,
+      deposit_date = EXCLUDED.deposit_date,
+      amount = EXCLUDED.amount,
+      account = EXCLUDED.account,
+      location = EXCLUDED.location,
+      reference = EXCLUDED.reference,
+      memo = EXCLUDED.memo,
+      updated_at = now()
   `);
 
   // 2. One unit per non-excluded Stripe charge (0160)…

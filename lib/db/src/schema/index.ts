@@ -62,6 +62,7 @@ export * from "./schoolSyncState";
 export * from "./donorboxDonations";
 export * from "./donorboxSyncState";
 export * from "./bankTransactions";
+export * from "./bankTransactionImports";
 export * from "./bankDeposits";
 export * from "./paymentUnits";
 export * from "./bankDepositComponents";

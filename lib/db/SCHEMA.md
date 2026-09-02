@@ -326,15 +326,19 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   The QBO pairing is the `payout_qb_settlement` source_link.
 - `donorbox_donations` / `donorbox_sync_state` — Donorbox donor/purpose
   evidence (not transaction evidence).
-- `bank_transactions` — raw bank-register evidence, one row per register line,
-  tagged by `source` (`qbo_register_export` today; `plaid` reserved). Loaded by
-  the scripts importer (`import:bank-register`) from the overlapping historical
-  QBO register XLS exports, merged + deduplicated (`dedup_key` = raw register
-  field values; `occurrence` disambiguates legitimate intra-file repeats — the
-  max count seen in any single file; unique on source+key+occurrence makes
-  re-imports idempotent). Read-only after import; never mints gifts, never
-  anchors `payment_applications` rows, and carries NO foreign keys — any
-  cross-evidence tie goes through the `source_links` ledger (implemented).
+- `bank_transactions` — raw bank evidence, one row per physical bank line,
+  tagged by `source`. Historical QBO account-register rows use
+  `qbo_register_export`; the Wells Fargo/QuickBooks Banking-page feed uses
+  `bank_csv_export` and is the current bank spine. Overlapping snapshots are
+  merged on stable bank facts; `occurrence` disambiguates legitimate identical
+  lines and unique source+key+occurrence makes YTD re-imports idempotent.
+  QuickBooks payee/category fields are refreshable annotations and never enter
+  the bank-line identity. The table never mints gifts or carries CRM FKs; all
+  cross-evidence ties live in `source_links`.
+- `bank_transaction_imports` — one receipt per scheduled Gmail report
+  attachment, including report coverage, row/insert counts, content hash, and
+  success/rejection state. This is the freshness authority: a successful daily
+  YTD report advances it even when every row already exists.
 - `bank_deposits` — **the SPINE of the bank-anchored money model**
   (docs/adr-bank-spine-money-model.md). One row per Wells Fargo bank credit,
   projected from immutable `bank_transactions` evidence and recorded by

@@ -175,6 +175,9 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
+      '@workspace/bank-reports':
+        specifier: workspace:*
+        version: link:../../lib/bank-reports
       '@workspace/coding-forms':
         specifier: workspace:*
         version: link:../../lib/coding-forms
@@ -700,6 +703,19 @@ importers:
         specifier: 'catalog:'
         version: 3.25.76
 
+  lib/bank-reports:
+    dependencies:
+      '@workspace/coding-forms':
+        specifier: workspace:*
+        version: link:../coding-forms
+      xlsx:
+        specifier: 0.18.5
+        version: 0.18.5
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.3.5
+
   lib/coding-forms: {}
 
   lib/db:
@@ -770,6 +786,9 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/bank-reports':
+        specifier: workspace:*
+        version: link:../lib/bank-reports
       '@workspace/coding-forms':
         specifier: workspace:*
         version: link:../lib/coding-forms

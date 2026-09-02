@@ -1,0 +1,16 @@
+{
+  "name": "@workspace/bank-reports",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@workspace/coding-forms": "workspace:*",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:"
+  }
+}

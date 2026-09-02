@@ -35,6 +35,10 @@ import {
   processIntelForUnmatched,
   shouldFetchFullForIntel,
 } from "./emailIntelligence";
+import {
+  isScheduledBankReportEmail,
+  processScheduledBankReportMessage,
+} from "./scheduledBankReport";
 
 /**
  * Per-mailbox Gmail sync orchestrator.
@@ -601,6 +605,66 @@ async function processOneMessage(
   if (dateHeaderRaw) {
     const parsed = new Date(dateHeaderRaw);
     if (!Number.isNaN(parsed.getTime())) messageDate = parsed;
+  }
+
+  // Trusted operational exception to ordinary relationship-email matching:
+  // Matthew's scheduled QuickBooks report is machine mail, so it will not
+  // match a CRM correspondent. Detect it from metadata, validate the exact
+  // attachment/report/account shape, import only deduplicated bank evidence,
+  // and record the email in the skip ledger without ever persisting its body.
+  // This remains safe in summary_only mode because no message content or
+  // attachment bytes are retained after the import transaction completes.
+  const bankReportSubject = getHeader(meta.payload, "Subject") ?? null;
+  if (
+    isScheduledBankReportEmail({
+      mailboxEmail: grant.googleEmail,
+      fromAddresses: fromAddrs,
+      toAddresses: toAddrs,
+    })
+  ) {
+    let bankReportAttachmentBytes = 0;
+    try {
+      const result = await processScheduledBankReportMessage({
+        accessToken: grant.accessToken,
+        mailboxUserId: grant.userId,
+        gmailMessageId: gmailId,
+        subject: bankReportSubject,
+      });
+      bankReportAttachmentBytes = result.attachmentBytes;
+    } catch (e) {
+      if (e instanceof GmailNotFoundError) {
+        await recordPermanentSkip(grant.userId, gmailId, {
+          fromAddrs,
+          toAddrs,
+          ccAddrs,
+          bccAddrs,
+          subject: bankReportSubject,
+          sentAt: messageDate,
+        });
+        report.skipped++;
+        return true;
+      }
+      logger.warn(
+        { err: e, userId: grant.userId, gmailId },
+        "Scheduled bank report processing failed; will retry next sync",
+      );
+      return false;
+    }
+
+    await recordPermanentSkip(grant.userId, gmailId, {
+      fromAddrs,
+      toAddrs,
+      ccAddrs,
+      bccAddrs,
+      subject: bankReportSubject,
+      sentAt: messageDate,
+    });
+    if (bankReportAttachmentBytes > 0) {
+      report.attachments++;
+      report.attachmentBytes += bankReportAttachmentBytes;
+    }
+    report.skipped++;
+    return true;
   }
 
   let match: EmailMatchResult;

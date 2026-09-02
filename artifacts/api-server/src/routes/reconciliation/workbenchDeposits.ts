@@ -906,11 +906,19 @@ router.get(
         LIMIT ${limit} OFFSET ${offset}
       `),
       db.execute(sql`
-        SELECT max(created_at) AS last_imported_at,
-               max(txn_date)::text AS latest_transaction_date,
-               count(DISTINCT source_file)::int AS source_file_count
-        FROM bank_transactions
-        WHERE source = 'bank_csv_export'
+        SELECT
+          COALESCE(
+            (
+              SELECT max(processed_at)
+              FROM bank_transaction_imports
+              WHERE source = 'bank_csv_export' AND status = 'succeeded'
+            ),
+            max(bt.created_at)
+          ) AS last_imported_at,
+          max(bt.txn_date)::text AS latest_transaction_date,
+          count(DISTINCT bt.source_file)::int AS source_file_count
+        FROM bank_transactions bt
+        WHERE bt.source = 'bank_csv_export'
       `),
     ]);
     const counts = (countsResult.rows[0] ?? {}) as Record<string, number>;

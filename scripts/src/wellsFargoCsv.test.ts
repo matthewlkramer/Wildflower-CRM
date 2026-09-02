@@ -32,6 +32,7 @@ test("normalizes both Wells Fargo header formats", () => {
     fromTo: "",
     donor: "Arthur Rock",
     qbPosting: "4000.1 Donations",
+    account: "",
   });
   assert.equal(batchB[0].qbPosting, "Added to: Deposit: Split income");
   assert.equal(batchB[0].donor, "");
