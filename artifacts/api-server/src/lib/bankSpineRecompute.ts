@@ -64,7 +64,7 @@ export async function mergeUnambiguousQboDepositLines(
         AND sl.match_basis = 'deposit_header_exact'
         AND (${onlySourceLinkId ?? null}::text IS NULL OR sl.id = ${onlySourceLinkId ?? null})
         AND sp.exclusion_reason IS NULL
-        AND COALESCE(sp.funding_source, '') <> 'stripe'
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
         AND c.exclusion_reason IS NULL
         AND c.source_staged_payment_id IS NULL
         AND NOT c.needs_review
@@ -138,7 +138,7 @@ export async function mergeUnambiguousQboDepositLines(
           AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
           AND sp.id = ${candidate.staged_payment_id}
           AND sp.exclusion_reason IS NULL
-          AND COALESCE(sp.funding_source, '') <> 'stripe'
+          AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
           AND c.exclusion_reason IS NULL
           AND c.source_staged_payment_id IS NULL
           AND NOT c.needs_review
@@ -186,7 +186,7 @@ export async function mergeUnambiguousQboDepositLines(
               AND sl.bank_deposit_id = ${candidate.bank_deposit_id}
               AND sp.amount = ${locked.component_amount}::numeric
               AND sp.exclusion_reason IS NULL
-              AND COALESCE(sp.funding_source, '') <> 'stripe'
+              AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
           ) AS line_count
       `);
       const counts = (
@@ -442,11 +442,23 @@ async function runBankSpineRecompute(): Promise<void> {
       currency, account, location, reference, memo
     )
     SELECT
-      'bdep_' || substring(bt.id FROM 5), 'bank_csv_export', bt.id,
+      COALESCE(
+        (
+          SELECT d.id
+          FROM bank_deposits d
+          WHERE d.source_bank_transaction_id = bt.id
+        ),
+        'bdep_' || substring(bt.id FROM 5)
+      ),
+      'bank_csv_export', bt.id,
       bt.txn_date, bt.deposit, 'USD', bt.account, bt.location, bt.ref_no, bt.memo
     FROM bank_transactions bt
     WHERE bt.source = 'bank_csv_export'
       AND bt.deposit IS NOT NULL AND bt.deposit > 0
+    -- The source transaction is the canonical projection identity. Resolve an
+    -- already-linked legacy row's id before inserting; otherwise use the
+    -- deterministic id. Conflict-on-id also reattaches a deterministic curated
+    -- row whose source pointer was cleared when its raw row was removed.
     ON CONFLICT (id) DO UPDATE SET
       source = EXCLUDED.source,
       source_bank_transaction_id = EXCLUDED.source_bank_transaction_id,
@@ -459,8 +471,27 @@ async function runBankSpineRecompute(): Promise<void> {
       updated_at = now()
   `);
 
-  // 2. One unit per non-excluded Stripe charge (0160)…
+  // 2. One unit per non-excluded Stripe charge (0160). Take the same
+  // parent-row lock mode required by the FK in one stable order before the
+  // insert. KEY SHARE prevents a concurrent delete or key change without
+  // unnecessarily blocking ordinary Stripe fact refreshes.
   await db.execute(sql`
+    WITH eligible_stripe_charges AS MATERIALIZED (
+      SELECT
+        sc.id,
+        sc.gross_amount,
+        sc.fee_amount,
+        sc.net_amount,
+        sc.currency,
+        sc.date_received,
+        sc.disputed,
+        sc.refunded,
+        sc.amount_refunded
+      FROM stripe_staged_charges sc
+      WHERE sc.exclusion_reason IS NULL
+      ORDER BY sc.id
+      FOR KEY SHARE OF sc
+    )
     INSERT INTO payment_units (
       id, kind, stripe_charge_id, gross_amount, fee_amount, net_amount,
       currency, received_date, lifecycle
@@ -475,8 +506,8 @@ async function runBankSpineRecompute(): Promise<void> {
         WHEN sc.amount_refunded IS NOT NULL AND sc.amount_refunded > 0 THEN 'partially_refunded'
         ELSE 'received'
       END::payment_unit_lifecycle
-    FROM stripe_staged_charges sc
-    WHERE sc.exclusion_reason IS NULL
+    FROM eligible_stripe_charges sc
+    ORDER BY sc.id
     ON CONFLICT (id) DO NOTHING
   `);
   // …and refresh lifecycle/amount facts on existing stripe units (read-only

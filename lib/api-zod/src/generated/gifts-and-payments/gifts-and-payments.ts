@@ -336,7 +336,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   "householdId": zod.string().nullish(),
   "loanOrGrant": zod.enum(['loan', 'grant']).optional().describe('The single authoritative loan-vs-grant classification. Gifts derive their\nflag from `type` (\'loan_fund_investment\' → loan) because the gift type IS\nthe user input. NOTE: `grant` means ALL non-loan money (individual\ndonations, foundation grants, earned revenue, …), not literally grants.\n'),
   "opportunityId": zod.string().nullish(),
-  "offBooksException": zod.boolean().optional().describe('Explicit off-books exception: allows re-pointing this gift at a pledge\/opportunity for money that never appears in QuickBooks. Finance\/admin only. Request-level flag; never persisted.'),
+  "offBooksException": zod.boolean().optional().describe('Deprecated compatibility field; ignored by PATCH. Use the explicit pledge-payment correction actions to attach, re-point, or detach a gift. Never persisted.'),
   "advisorPersonId": zod.string().nullish(),
   "giftBeingMatchedId": zod.string().nullish(),
   "primaryContactPersonId": zod.string().nullish(),

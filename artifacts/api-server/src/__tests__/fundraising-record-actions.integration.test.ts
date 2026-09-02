@@ -103,6 +103,7 @@ function pledgeValues(id: string, amount = "100.00") {
     commitmentPath: "written_pledge" as const,
     verbalCommitmentAt: "2026-01-15",
     pledgeCommittedAt: "2026-01-20",
+    grantLetterUrl: "https://example.org/pledge.pdf",
     writtenPledge: true,
   };
 }

@@ -1285,7 +1285,7 @@ export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySu
     }
 
     return { scanned: candidates.length, excluded, included };
-  });
+  }, { wait: true });
 
   if (!outcome.ran) {
     return { ran: false, scanned: 0, excluded: 0, included: 0 };

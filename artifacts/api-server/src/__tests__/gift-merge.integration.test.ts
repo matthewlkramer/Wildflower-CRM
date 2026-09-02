@@ -42,11 +42,11 @@ const { TEST_USER_ID } = vi.hoisted(() => ({
 // Replace the Clerk-backed auth gate with one that injects our seeded user.
 vi.mock("../middlewares/requireAuth", () => ({
   requireAuth: (
-    req: { appUser?: { id: string } },
+    req: { appUser?: { id: string; role: string } },
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID };
+    req.appUser = { id: TEST_USER_ID, role: "admin" };
     next();
   },
 }));
@@ -70,6 +70,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
+  pledgeExpectedPayments: Db["pledgeExpectedPayments"];
   stagedPayments: Db["stagedPayments"];
   paymentApplications: Db["paymentApplications"];
   fiscalYears: Db["fiscalYears"];
@@ -217,6 +218,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
+    pledgeExpectedPayments: dbMod.pledgeExpectedPayments,
     stagedPayments: dbMod.stagedPayments,
     paymentApplications: dbMod.paymentApplications,
     fiscalYears: dbMod.fiscalYears,
@@ -268,6 +270,16 @@ afterAll(async () => {
   // The new-pledge path mints pledge_allocations with a random id, so clean
   // them by their parent pledge id (a RESTRICT FK that would otherwise block
   // the pledge delete below) rather than by id prefix.
+  if (seededPledgeIds.length) {
+    await db
+      .delete(schema.pledgeExpectedPayments)
+      .where(
+        inArrayFn(
+          schema.pledgeExpectedPayments.pledgeOrOpportunityId,
+          seededPledgeIds,
+        ),
+      );
+  }
   if (seededPledgeIds.length) {
     await db
       .delete(schema.pledgeAllocations)
@@ -557,7 +569,11 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       name: `Existing Pledge ${RUN}`,
       organizationId: ORG_ID,
       awardedAmount: "1000.00",
-      stage: "written_commitment",
+      stage: "verbal_confirmation",
+      commitmentPath: "written_pledge",
+      verbalCommitmentAt: "2026-01-15",
+      pledgeCommittedAt: "2026-01-20",
+      grantLetterUrl: "https://example.org/pledge.pdf",
       writtenPledge: true,
     });
     seededPledgeIds.push(pledgeId);
@@ -581,7 +597,11 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       name: `Donor Mismatch Pledge ${RUN}`,
       organizationId: ORG_ID,
       awardedAmount: "500.00",
-      stage: "written_commitment",
+      stage: "verbal_confirmation",
+      commitmentPath: "written_pledge",
+      verbalCommitmentAt: "2026-01-15",
+      pledgeCommittedAt: "2026-01-20",
+      grantLetterUrl: "https://example.org/pledge.pdf",
       writtenPledge: true,
     });
     seededPledgeIds.push(pledgeId);
@@ -608,7 +628,11 @@ describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge-into-pledge", () => {
       name: `First Pledge ${RUN}`,
       organizationId: ORG_ID,
       awardedAmount: "100.00",
-      stage: "written_commitment",
+      stage: "verbal_confirmation",
+      commitmentPath: "written_pledge",
+      verbalCommitmentAt: "2026-01-15",
+      pledgeCommittedAt: "2026-01-20",
+      grantLetterUrl: "https://example.org/pledge.pdf",
       writtenPledge: true,
     });
     seededPledgeIds.push(firstPledgeId);
@@ -707,10 +731,9 @@ describe.skipIf(!HAS_DB)(
         .where(eqFn(schema.opportunitiesAndPledges.id, pledgeId));
       expect(Number(pledge.awardedAmount)).toBeCloseTo(100000);
       expect(pledge.writtenPledge).toBe(true);
-      // Stage is always derived (never written directly): the two payment-gifts
-      // fully fund the pledge (a win), so applyDerivedOppFieldsMany advances the
-      // funnel stage to the terminal `complete` (status resolves to cash_in).
-      expect(pledge.stage).toBe("complete");
+      // The two payment-gifts fully fund the pledge, so status resolves to
+      // cash_in while the current lifecycle preserves its cultivation stage.
+      expect(pledge.stage).toBe("verbal_confirmation");
       expect(pledge.status).toBe("cash_in");
       expect(pledge.organizationId).toBe(ORG_ID);
 
@@ -787,7 +810,11 @@ describe.skipIf(!HAS_DB)(
         name: `Already Paid Pledge ${RUN}`,
         organizationId: ORG_ID,
         awardedAmount: "1000.00",
-        stage: "written_commitment",
+        stage: "verbal_confirmation",
+        commitmentPath: "written_pledge",
+        verbalCommitmentAt: "2026-01-15",
+        pledgeCommittedAt: "2026-01-20",
+        grantLetterUrl: "https://example.org/pledge.pdf",
         writtenPledge: true,
       });
       seededPledgeIds.push(pledgeId);
