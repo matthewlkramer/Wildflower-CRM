@@ -17,9 +17,10 @@ import { logger } from "./logger";
  * user can still run in parallel (they share the OAuth grant but
  * use different Google endpoints with separate quotas).
  *
- * We use `pg_try_advisory_lock` (non-blocking) rather than
- * `pg_advisory_lock` so contention returns `skipped: true` instead
- * of stacking up callers waiting on each other.
+ * The default uses `pg_try_advisory_lock` so scheduled/background contention
+ * returns `ran: false` instead of stacking up callers. Explicit maintenance
+ * operations that promise completion may opt into the blocking lock with
+ * `{ wait: true }`.
  */
 
 type SyncSource =

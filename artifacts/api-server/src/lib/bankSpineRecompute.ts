@@ -471,10 +471,10 @@ async function runBankSpineRecompute(): Promise<void> {
       updated_at = now()
   `);
 
-  // 2. One unit per non-excluded Stripe charge (0160). Lock every eligible
-  // source row in one stable order before the FK-owning insert: separate
-  // recompute callers and source-pull writes cannot then acquire the same
-  // parent-row locks in opposing orders.
+  // 2. One unit per non-excluded Stripe charge (0160). Take the same
+  // parent-row lock mode required by the FK in one stable order before the
+  // insert. KEY SHARE prevents a concurrent delete or key change without
+  // unnecessarily blocking ordinary Stripe fact refreshes.
   await db.execute(sql`
     WITH eligible_stripe_charges AS MATERIALIZED (
       SELECT
@@ -490,7 +490,7 @@ async function runBankSpineRecompute(): Promise<void> {
       FROM stripe_staged_charges sc
       WHERE sc.exclusion_reason IS NULL
       ORDER BY sc.id
-      FOR UPDATE OF sc
+      FOR KEY SHARE OF sc
     )
     INSERT INTO payment_units (
       id, kind, stripe_charge_id, gross_amount, fee_amount, net_amount,

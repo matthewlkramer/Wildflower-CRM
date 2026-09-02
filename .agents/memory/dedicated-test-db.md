@@ -58,15 +58,18 @@ Isolation + 6-fork parallelism took the full suite 384s → ~100s with 0 flakes.
 
 ## Bank-spine stripe projection lock ordering
 
-The Stripe-to-`payment_units` projection must lock all eligible
-`stripe_staged_charges` in ascending ID order before its FK-owning insert.
+The Stripe-to-`payment_units` projection must take `KEY SHARE` locks on all
+eligible `stripe_staged_charges` in ascending ID order before its FK-owning
+insert.
 
 **Why:** parallel recomputes previously acquired parent-row locks in planner
 order, which could form a Postgres 40P01 cycle. The ordered materialized
 locking CTE serializes that parent set predictably; a rerun is not a fix.
 
-**How to apply:** retain the ordered `FOR UPDATE` CTE and ordered consuming
-`INSERT ... SELECT` whenever changing bank-spine Stripe projection SQL.
+**How to apply:** retain the ordered `FOR KEY SHARE` CTE and ordered consuming
+`INSERT ... SELECT` whenever changing bank-spine Stripe projection SQL. Do not
+strengthen this to `FOR UPDATE`: ordinary Stripe fact refreshes do not need to
+be blocked while the projection holds its parent rows stable.
 
 ## No DDL in parallel test files
 
