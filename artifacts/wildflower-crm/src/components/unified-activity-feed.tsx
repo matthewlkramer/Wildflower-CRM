@@ -86,7 +86,9 @@ import {
   Check,
   Search,
   Heart,
+  UserPlus,
 } from "lucide-react";
+import { AddSenderPersonDialog } from "@/components/add-sender-person-dialog";
 import { Input } from "@/components/ui/input";
 
 interface NotesContext {
@@ -261,6 +263,7 @@ export function UnifiedActivityFeed({
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [activeSource, setActiveSource] = useState<Source | null>(null);
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
+  const [addSenderEmail, setAddSenderEmail] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   // Notes/tasks scope — falls back to the relationship scope when no
@@ -943,6 +946,23 @@ export function UnifiedActivityFeed({
                       <span className="text-xs text-muted-foreground">
                         {fmtWhen(r.sentAt)}
                       </span>
+                      {r.direction === "received" && r.fromEmail ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto h-6 gap-1 px-2 text-xs"
+                          title="Create a person record for this sender"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setAddSenderEmail(r.fromEmail ?? null);
+                          }}
+                          data-testid={`add-sender-person-${r.id}`}
+                        >
+                          <UserPlus className="h-3 w-3" />
+                          Add sender
+                        </Button>
+                      ) : null}
                       {nt.giftId && r.direction === "sent" ? (
                         <Button
                           type="button"
@@ -1109,6 +1129,16 @@ export function UnifiedActivityFeed({
         emailId={openEmailId}
         onClose={() => setOpenEmailId(null)}
       />
+      {addSenderEmail ? (
+        <AddSenderPersonDialog
+          email={addSenderEmail}
+          organizationId={organizationId}
+          open={addSenderEmail != null}
+          onOpenChange={(v) => {
+            if (!v) setAddSenderEmail(null);
+          }}
+        />
+      ) : null}
     </Card>
   );
 }

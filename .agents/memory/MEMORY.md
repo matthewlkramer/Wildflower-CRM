@@ -34,6 +34,7 @@ code/docs and update or archive the stale memory.
 - [Loan vs revenue tracks + loan_or_grant flag](loan-capital-fundraising-category.md) — loan_or_grant is the SOLE authority; gift `type` and fundraising_category columns are DROPPED (never revive); goals PK includes loan_or_grant.
 - [Gift scope → allocation migration](gift-scope-allocation-migration.md) — settled/fees + off-books all DERIVED in giftPaymentSummary.ts (off-books = all allocs on no-payment entities); QB tie is live-derived, no stored column.
 - [Donor-routing trigger vs test fixtures](donor-routing-trigger-test-fixtures.md) — gift inserts get rerouted person→household by trigger; fixtures needing individual donor-of-record must seed mode='self' prefs.
+- [Conservative organization-name deduplication](organization-name-deduplication.md) — exact presentation-only normalization must examine all primary and historical organization names before reusing a record.
 
 ## Delivery, database, and verification
 
@@ -44,7 +45,7 @@ code/docs and update or archive the stale memory.
 - [cross-env DB schema drift](cross-env-db-schema-drift.md) — successor task's dev DB lacks predecessor's new column; fix additively via SQL, never blunt push (drops unrelated drifted columns = data loss).
 - [Data migration runs after Publish](data-migration-publish-ordering.md) — prod seed/backfill SQL dies "relation does not exist" unless Publish (schema diff) ran first; no BEGIN/COMMIT in a `psql -1` file.
 - [Prod-only migration rehearsal](prod-only-migration-rehearsal.md) — when dev lacks the prod rows, parse/plan-check via read-only PGOPTIONS + RAISE→WARNING sed; compensate with pre/postflight DO invariants.
-- [Drizzle SQL pitfalls](drizzle-pitfalls.md) — 8 runtime-only footguns invisible to typecheck: ANY(array) cast, outer-paren syntax, top-level-field unqualify, ORDER BY ordinal, alias collision, alias ordering, .desc() index churn, ESCAPE '\' template-literal collapse.
+- [Drizzle SQL pitfalls](drizzle-pitfalls.md) — 9 runtime-only footguns invisible to typecheck: ANY(array) cast, outer-paren syntax, top-level-field unqualify, ORDER BY ordinal, alias collision, alias ordering, .desc() index churn, ESCAPE '\' collapse, COALESCE(enum,'').
 - [Orval / React Query patterns](orval-guide.md) — /api invalidation prefix; query options need queryKey; coerce.boolean "false"→true; array query params arrive comma-joined (normalizeArrayQuery).
 - [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB.
 

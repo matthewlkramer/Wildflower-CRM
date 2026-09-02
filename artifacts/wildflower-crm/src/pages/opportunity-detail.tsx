@@ -1323,6 +1323,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                   pledgeOrOpportunityId={opp.id}
                   allocations={opp.allocations ?? []}
                   totalAmount={targetAmount}
+                  scheduleCount={(opp.expectedPayments ?? []).length}
                   reimbursablePrompt={
                     opp.disbursementModel === "cost_reimbursement"
                   }

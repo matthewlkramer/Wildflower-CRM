@@ -343,6 +343,13 @@ export const GetOrganizationRelationshipSummaryResponse = zod.object({
   "generatedAt": zod.string().datetime({})
 }).describe('On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it\'s requested.\n')
 
+/**
+ * Download the Organizations list as CSV. Accepts the same filter query params as `listOrganizations` plus optional comma-separated `fields`.
+ */
+export const ExportOrganizationsCsvQueryParams = zod.object({
+  "fields": zod.coerce.string().optional()
+})
+
 export const bulkUpdateOrganizationsBodyIdsMax = 1000;
 
 

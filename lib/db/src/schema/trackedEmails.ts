@@ -1,10 +1,13 @@
 import {
+  check,
   index,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { users } from "./users";
 
 /**
  * Email-tracking tables for the vendored Magio extension.
@@ -77,6 +80,40 @@ export const trackedEmails = pgTable(
       .using("gin", t.recipientOrganizationIds),
     index("tracked_emails_recipient_household_ids_gin")
       .using("gin", t.recipientHouseholdIds),
+  ],
+);
+
+/**
+ * Per-mailbox resolution state for the actionable tracking queues.
+ * `sourceId` is a tracked_emails id for outbound work or an email_messages id
+ * for inbound work. The unique key makes repeated resolve requests harmless.
+ */
+export const emailTrackingResolutions = pgTable(
+  "email_tracking_resolutions",
+  {
+    id: text("id").primaryKey(),
+    queueType: text("queue_type").$type<"outbound" | "inbound">().notNull(),
+    sourceId: text("source_id").notNull(),
+    mailboxUserId: text("mailbox_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    resolvedByUserId: text("resolved_by_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("email_tracking_resolutions_queue_source_uq").on(
+      t.queueType,
+      t.sourceId,
+    ),
+    index("email_tracking_resolutions_mailbox_idx").on(t.mailboxUserId),
+    check(
+      "email_tracking_resolutions_queue_type_chk",
+      sql`${t.queueType} IN ('outbound', 'inbound')`,
+    ),
   ],
 );
 

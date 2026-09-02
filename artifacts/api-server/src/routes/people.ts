@@ -1,4 +1,9 @@
-import { Router, type IRouter } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+} from "express";
 import { db } from "@workspace/db";
 import {
   people,
@@ -58,6 +63,14 @@ import {
 } from "../lib/peopleRolesSelect";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
+import { csvFilename, csvLine } from "../lib/csvExport";
+import {
+  EXPORT_BATCH_SIZE,
+  loadExportContext,
+  parseFieldsParam,
+  PEOPLE_EXPORT_FIELDS,
+  selectExportFields,
+} from "../lib/csvExportFields";
 import { syncPersonToFlodeskInBackground } from "../lib/flodeskSync";
 import { generateRelationshipSummary } from "../lib/relationshipSummary";
 
@@ -289,16 +302,23 @@ const peopleListSelect = {
   )`.as("past_organization_names"),
 };
 
-router.get(
-  "/people",
-  asyncHandler(async (req, res) => {
+// Build the WHERE clause for the people list from the request's query params.
+// Shared verbatim by the JSON list endpoint and the CSV export endpoint so
+// exports can never drift from the on-screen filters/archive rules.
+// Returns null after responding 400 when the query params are invalid.
+async function buildPeopleListWhere(
+  req: Request,
+  res: Response,
+): Promise<{
+  q: ReturnType<typeof ListPeopleQueryParams.parse>;
+  where: SQL | undefined;
+} | null> {
     const normalizedQuery = normalizeArrayQuery(
       req.query as Record<string, unknown>,
       PEOPLE_ARRAY_PARAMS,
     );
     const q = parseOrBadRequest(ListPeopleQueryParams, normalizedQuery, res);
-    if (!q) return;
-    const { limit, page, offset } = parsePagination(q);
+    if (!q) return null;
     const filters: SQL[] = [];
     if (q.search) {
       const term = `%${q.search}%`;
@@ -439,6 +459,16 @@ router.get(
     const archivedFilter = activeOnlyUnlessAdmin(req, people.archivedAt);
     if (archivedFilter) filters.push(archivedFilter);
     const where = filters.length ? and(...filters) : undefined;
+    return { q, where };
+}
+
+router.get(
+  "/people",
+  asyncHandler(async (req, res) => {
+    const built = await buildPeopleListWhere(req, res);
+    if (!built) return;
+    const { q, where } = built;
+    const { limit, page, offset } = parsePagination(q);
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select(peopleListSelect)
@@ -453,6 +483,63 @@ router.get(
     const viewer = getViewer(req);
     const data = rows.map((r) => maskPersonRow(r, viewer));
     res.json({ data, pagination: { page, limit, total: Number(total) } });
+  }),
+);
+
+// CSV export — same filters/masking as the JSON list, but batches through
+// EVERY matching row (no page limit). `?fields=` narrows to the requested
+// column keys; omitted = all permitted fields.
+router.get(
+  "/people/export.csv",
+  asyncHandler(async (req, res) => {
+    const built = await buildPeopleListWhere(req, res);
+    if (!built) return;
+    const { where } = built;
+    const viewer = getViewer(req);
+    const fields = selectExportFields(
+      PEOPLE_EXPORT_FIELDS,
+      parseFieldsParam(req.query.fields),
+    );
+    const ctx = await loadExportContext();
+    res
+      .status(200)
+      .type("text/csv; charset=utf-8")
+      .setHeader(
+        "Content-Disposition",
+        `attachment; filename="${csvFilename("individuals")}"`,
+      );
+    // Stream batch-by-batch so memory stays bounded regardless of row count.
+    res.write(`\uFEFF${csvLine(fields.map((f) => f.label))}`);
+    for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
+      const batch = await db
+        .select(peopleListSelect)
+        .from(people)
+        .where(where)
+        .orderBy(asc(peopleDisplayNameOrder), asc(people.id))
+        .limit(EXPORT_BATCH_SIZE)
+        .offset(offset);
+      for (const raw of batch) {
+        const row = maskPersonRow(raw, viewer) as Record<string, unknown>;
+        // The UI hides an anonymous person's own name from non-owner
+        // non-admins (client-side); the export must enforce the same rule.
+        const display = [row.fullName, [row.firstName, row.lastName].filter(Boolean).join(" ")]
+          .map((v) => String(v ?? "").trim())
+          .find(Boolean);
+        row.fullName = maskName(
+          display ?? null,
+          {
+            anonymous: (row.anonymous as boolean | null) ?? null,
+            ownerUserId: (row.ownerUserId as string | null) ?? null,
+          },
+          viewer,
+        );
+        row.firstName = "";
+        row.lastName = "";
+        res.write(csvLine(fields.map((f) => f.value(row, ctx))));
+      }
+      if (batch.length < EXPORT_BATCH_SIZE) break;
+    }
+    res.end();
   }),
 );
 

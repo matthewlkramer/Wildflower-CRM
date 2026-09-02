@@ -69,6 +69,10 @@ export function InstallmentSchedule({ opp }: { opp: OpportunityOrPledgeDetail })
   const [date, setDate] = useState("");
   const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
+  // Optional schedule generation (new rows only): "" = no repeat, otherwise
+  // months between installments. Count = TOTAL payments including the first.
+  const [repeatInterval, setRepeatInterval] = useState("");
+  const [repeatCount, setRepeatCount] = useState("");
 
   const invalidate = async () => {
     await Promise.all([
@@ -98,6 +102,8 @@ export function InstallmentSchedule({ opp }: { opp: OpportunityOrPledgeDetail })
       setDate("");
       setAmount("");
       setNotes("");
+      setRepeatInterval("");
+      setRepeatCount("");
     } else {
       setDate(row.expectedDate);
       setAmount(row.amount ?? "");
@@ -111,12 +117,32 @@ export function InstallmentSchedule({ opp }: { opp: OpportunityOrPledgeDetail })
     const trimmedAmount = amount.trim();
     const trimmedNotes = notes.trim();
     if (editing === "new") {
+      let repeatFields = {};
+      if (repeatInterval) {
+        // A repeat frequency is selected — the count must be a whole number
+        // in range. Never silently downgrade to a single installment.
+        const count = Number(repeatCount);
+        if (!Number.isInteger(count) || count < 2 || count > 100) {
+          toast({
+            title: "Invalid number of payments",
+            description:
+              "Enter a whole number between 2 and 100, or choose “No repeat”.",
+            variant: "destructive",
+          });
+          return;
+        }
+        repeatFields = {
+          repeatCount: count,
+          repeatIntervalMonths: Number.parseInt(repeatInterval, 10),
+        };
+      }
       await create.mutateAsync({
         data: {
           pledgeOrOpportunityId: opp.id,
           expectedDate: date,
           ...(trimmedAmount ? { amount: trimmedAmount } : {}),
           ...(trimmedNotes ? { notes: trimmedNotes } : {}),
+          ...repeatFields,
         },
       });
     } else if (editing) {
@@ -240,6 +266,59 @@ export function InstallmentSchedule({ opp }: { opp: OpportunityOrPledgeDetail })
                 data-testid="input-installment-notes"
               />
             </div>
+            {editing === "new" && (
+              <div className="space-y-2 rounded-md border p-3">
+                <Label>Repeat (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically create the rest of the schedule: same amount,
+                  spaced from the date above.
+                </p>
+                <RadioGroup
+                  value={repeatInterval || "none"}
+                  onValueChange={(v) => {
+                    setRepeatInterval(v === "none" ? "" : v);
+                    if (v !== "none" && !repeatCount) setRepeatCount("2");
+                  }}
+                  className="gap-1.5"
+                >
+                  {[
+                    ["none", "No repeat"],
+                    ["1", "Monthly"],
+                    ["3", "Quarterly"],
+                    ["6", "Every 6 months"],
+                    ["12", "Annually"],
+                  ].map(([value, label]) => (
+                    <div key={value} className="flex items-center space-x-2">
+                      <RadioGroupItem
+                        value={value!}
+                        id={`repeat-${value}`}
+                        data-testid={`radio-repeat-${value}`}
+                      />
+                      <Label htmlFor={`repeat-${value}`} className="font-normal">
+                        {label}
+                      </Label>
+                    </div>
+                  ))}
+                </RadioGroup>
+                {repeatInterval && (
+                  <div className="space-y-1">
+                    <Label htmlFor="installment-repeat-count">
+                      Total number of payments (including this one)
+                    </Label>
+                    <Input
+                      id="installment-repeat-count"
+                      type="number"
+                      min="2"
+                      max="100"
+                      step="1"
+                      value={repeatCount}
+                      onChange={(e) => setRepeatCount(e.target.value)}
+                      data-testid="input-installment-repeat-count"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>

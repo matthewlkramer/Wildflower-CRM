@@ -48,6 +48,7 @@ import {
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
 import { ListPageHeader } from "@/components/list-page-header";
+import { ExportCsvDialog } from "@/components/export-csv-dialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -1249,6 +1250,20 @@ export default function Organizations() {
         addAction={<CreateOrganizationDialog />}
         controls={
           <>
+            <ExportCsvDialog
+              entityPath="organizations"
+              filteredParams={params}
+              allRowsParams={{
+                ...(isAdmin && showArchived ? { includeArchived: true } : {}),
+                // "All rows" clears user filters but keeps the baseline
+                // "Show defunct" view scope, mirroring the list default.
+                ...(showDefunct
+                  ? {}
+                  : { activeStatus: NON_DEFUNCT_STATUS_PARAM as ActiveStatus[] }),
+              }}
+              visibleFieldKeys={visibleCols.map((c) => c.key)}
+              entityLabel="organizations"
+            />
             <ShowArchivedToggle
               value={showArchived}
               onChange={(v) => {

@@ -8,6 +8,13 @@
 import * as zod from 'zod';
 
 
+/**
+ * Download the Gifts list as CSV. Accepts the same filter query params as `listGiftsAndPayments` plus optional comma-separated `fields`.
+ */
+export const ExportGiftsAndPaymentsCsvQueryParams = zod.object({
+  "fields": zod.coerce.string().optional()
+})
+
 export const listGiftsAndPaymentsQueryLimitDefault = 50;
 export const listGiftsAndPaymentsQueryLimitMax = 10000;
 

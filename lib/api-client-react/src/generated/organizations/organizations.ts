@@ -25,6 +25,7 @@ import type {
   BulkUpdateOrganizationsBody,
   BulkUpdateResult,
   CreateOrganizationBody,
+  ExportOrganizationsCsvParams,
   ForbiddenResponse,
   ListOrganizationsParams,
   MergeOrganizationsBody,
@@ -384,6 +385,84 @@ export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetOrganizationRelationshipSummaryQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Download the Organizations list as CSV. Accepts the same filter query params as `listOrganizations` plus optional comma-separated `fields`.
+ */
+export const getExportOrganizationsCsvUrl = (params?: ExportOrganizationsCsvParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/organizations/export.csv?${stringifiedParams}` : `/api/organizations/export.csv`
+}
+
+export const exportOrganizationsCsv = async (params?: ExportOrganizationsCsvParams, options?: RequestInit): Promise<string> => {
+  
+  return customFetch<string>(getExportOrganizationsCsvUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getExportOrganizationsCsvQueryKey = (params?: ExportOrganizationsCsvParams,) => {
+    return [
+    `/api/organizations/export.csv`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getExportOrganizationsCsvQueryOptions = <TData = Awaited<ReturnType<typeof exportOrganizationsCsv>>, TError = ErrorType<unknown>>(params?: ExportOrganizationsCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportOrganizationsCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportOrganizationsCsvQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportOrganizationsCsv>>> = ({ signal }) => exportOrganizationsCsv(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportOrganizationsCsv>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportOrganizationsCsvQueryResult = NonNullable<Awaited<ReturnType<typeof exportOrganizationsCsv>>>
+export type ExportOrganizationsCsvQueryError = ErrorType<unknown>
+
+
+
+export function useExportOrganizationsCsv<TData = Awaited<ReturnType<typeof exportOrganizationsCsv>>, TError = ErrorType<unknown>>(
+ params?: ExportOrganizationsCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportOrganizationsCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportOrganizationsCsvQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

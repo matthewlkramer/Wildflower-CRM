@@ -5,8 +5,10 @@ import {
   emails,
   people,
   tasks,
+  users,
   wildflowerUpdates,
 } from "@workspace/db/schema";
+import type { User } from "@workspace/db/schema";
 import { and, count, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   ListEmailProposalsQueryParams,
@@ -20,6 +22,7 @@ import {
   newId,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
@@ -59,6 +62,57 @@ router.use(requireAuth);
  * prompt-tuning. When the column is currently empty we just store the
  * addition; otherwise we join with a visible separator.
  */
+/**
+ * Admin exception to the per-mailbox-owner scoping. Admins may review
+ * and resolve proposals across ALL synced mailboxes (the "review email
+ * intelligence for the whole team" mode); everyone else stays hard-
+ * scoped to their own mailbox. The check is server-side on the stored
+ * role — a non-admin manually passing allMailboxes still only sees /
+ * touches their own rows.
+ */
+function isAdminUser(user: User): boolean {
+  return user.role === "admin";
+}
+
+/**
+ * A cross-mailbox reviewer may act on ordinary proposals, but a proposal
+ * backed by another user's private source message must be indistinguishable
+ * from a row that does not exist. Keeping this as a correlated NOT EXISTS
+ * also handles legacy proposals whose source message has been deleted.
+ */
+function sourceMessageVisibility(user: User): SQL {
+  return sql`NOT EXISTS (
+    SELECT 1
+    FROM email_messages AS source_message
+    WHERE source_message.id = ${emailProposals.sourceMessageId}
+      AND source_message.is_private = true
+      AND source_message.mailbox_user_id <> ${user.id}
+  )`;
+}
+
+/**
+ * WHERE fragments that scope one proposal row for a mutation: always
+ * the row id; plus the caller-as-mailbox-owner condition unless the
+ * caller is an admin (who may act on any mailbox's proposals).
+ */
+function proposalMutationScope(user: User, id: string): SQL[] {
+  const filters: SQL[] = [
+    eq(emailProposals.id, id),
+    sourceMessageVisibility(user),
+  ];
+  if (!isAdminUser(user)) {
+    filters.push(eq(emailProposals.mailboxUserId, user.id));
+  }
+  return filters;
+}
+
+/** Display label for a mailbox owner, from the users row. */
+const mailboxUserNameSql = sql<string | null>`coalesce(
+  nullif(${users.displayName}, ''),
+  nullif(trim(coalesce(${users.firstName}, '') || ' ' || coalesce(${users.lastName}, '')), ''),
+  ${users.email}
+)`;
+
 function appendReviewerNoteSql(addition: string): SQL {
   return sql`case
     when ${emailProposals.reviewerNote} is null or ${emailProposals.reviewerNote} = ''
@@ -79,20 +133,30 @@ router.get(
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
 
-    // Hard scope to the caller's mailbox. An explicit `mailboxUserId`
-    // param is only respected when it matches the caller — keeps the
-    // generated client API symmetric without opening a cross-user
-    // read.
-    const callerScope = q.mailboxUserId && q.mailboxUserId !== user.id
-      ? q.mailboxUserId  // will yield 0 rows because of the eq below
-      : user.id;
+    // Admin-only all-mailboxes review mode. orval's coerce.boolean turns
+    // the string "false" into true, so read the raw query value instead
+    // of the parsed one. Non-admins requesting it are silently kept on
+    // their own mailbox — the flag never widens access for them.
+    const allMailboxes =
+      parseBoolQuery(req, "allMailboxes") === true && isAdminUser(user);
 
-    const filters: SQL[] = [eq(emailProposals.mailboxUserId, user.id)];
-    if (callerScope !== user.id) {
-      // Explicitly mismatched mailboxUserId — short-circuit empty.
-      res.json({ data: [], pagination: { page, limit, total: 0 } });
-      return;
+    // Hard scope to the caller's mailbox (unless in admin all-mailboxes
+    // mode). An explicit `mailboxUserId` param is only respected when it
+    // matches the caller — keeps the generated client API symmetric
+    // without opening a cross-user read.
+    const filters: SQL[] = [];
+    if (!allMailboxes) {
+      if (q.mailboxUserId && q.mailboxUserId !== user.id) {
+        // Explicitly mismatched mailboxUserId — short-circuit empty.
+        res.json({ data: [], pagination: { page, limit, total: 0 } });
+        return;
+      }
+      filters.push(eq(emailProposals.mailboxUserId, user.id));
+    } else if (q.mailboxUserId) {
+      // Admin narrowing the all-mailboxes view to one specific mailbox.
+      filters.push(eq(emailProposals.mailboxUserId, q.mailboxUserId));
     }
+    filters.push(sourceMessageVisibility(user));
     if (q.kind) filters.push(eq(emailProposals.kind, q.kind));
     if (q.status) filters.push(eq(emailProposals.status, q.status));
     // Per-record scoping for the unified activity timeline. Proposals
@@ -104,15 +168,26 @@ router.get(
 
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
-        .select()
+        .select({
+          proposal: emailProposals,
+          mailboxUserName: mailboxUserNameSql,
+        })
         .from(emailProposals)
+        .leftJoin(users, eq(users.id, emailProposals.mailboxUserId))
         .where(where)
         .orderBy(desc(emailProposals.createdAt))
         .limit(limit)
         .offset(offset),
       db.select({ value: count() }).from(emailProposals).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    const data = rows.map((r) => ({
+      ...r.proposal,
+      // Only expose the owner label in the all-mailboxes mode — the
+      // normal own-mailbox view doesn't need it and existing clients
+      // don't expect it.
+      ...(allMailboxes ? { mailboxUserName: r.mailboxUserName } : {}),
+    }));
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),
 );
 
@@ -186,8 +261,7 @@ router.post(
         })
         .where(
           and(
-            eq(emailProposals.id, paramId(req)),
-            eq(emailProposals.mailboxUserId, user.id),
+            ...proposalMutationScope(user, paramId(req)),
             eq(emailProposals.status, "pending"),
           ),
         )
@@ -218,13 +292,16 @@ router.post(
               ? payload.description.trim()
               : null;
           const taskId = newId();
+          // Assign the outreach task to the mailbox owner (it's their
+          // donor relationship), even when an admin reviews on their
+          // behalf; the acting reviewer stays on createdByUserId.
           await tx.insert(tasks).values({
             id: taskId,
             title: title.slice(0, 500),
             description,
             kind: "general",
             createdByUserId: user.id,
-            assigneeUserId: user.id,
+            assigneeUserId: proposal.mailboxUserId,
             personIds: proposal.targetPersonId ? [proposal.targetPersonId] : null,
             organizationIds: proposal.targetOrganizationId
               ? [proposal.targetOrganizationId]
@@ -403,8 +480,11 @@ router.post(
           applyResults.push(failed);
           throw new ProposalApplyError(failed, applyResults);
         }
+        // Created records (people, orgs, opportunities) are owned by the
+        // MAILBOX owner, not the acting reviewer — an admin resolving
+        // Erica's suggestion shouldn't become owner of Erica's contact.
         const result = await applyAction(tx, validated.action, {
-          mailboxUserId: user.id,
+          mailboxUserId: proposal.mailboxUserId,
         });
         applyResults.push(result);
         if (result.status === "failed") {
@@ -441,12 +521,7 @@ router.post(
       const [existing] = await db
         .select()
         .from(emailProposals)
-        .where(
-          and(
-            eq(emailProposals.id, paramId(req)),
-            eq(emailProposals.mailboxUserId, user.id),
-          ),
-        )
+        .where(and(...proposalMutationScope(user, paramId(req))))
         .limit(1);
       if (!existing) return notFound(res, "email proposal");
       if (existing.status === "applied") {
@@ -546,8 +621,7 @@ router.post(
       })
       .where(
         and(
-          eq(emailProposals.id, paramId(req)),
-          eq(emailProposals.mailboxUserId, user.id),
+          ...proposalMutationScope(user, paramId(req)),
           eq(emailProposals.status, "pending"),
         ),
       )
@@ -561,12 +635,7 @@ router.post(
     const [existing] = await db
       .select()
       .from(emailProposals)
-      .where(
-        and(
-          eq(emailProposals.id, paramId(req)),
-          eq(emailProposals.mailboxUserId, user.id),
-        ),
-      )
+      .where(and(...proposalMutationScope(user, paramId(req))))
       .limit(1);
     if (!existing) return notFound(res, "email proposal");
     if (existing.status === "rejected") {
@@ -612,8 +681,7 @@ router.post(
       .set({ actionsError: null, actionsAnalyzedAt: null, updatedAt: new Date() })
       .where(
         and(
-          eq(emailProposals.id, id),
-          eq(emailProposals.mailboxUserId, user.id),
+          ...proposalMutationScope(user, id),
           eq(emailProposals.status, "pending"),
         ),
       )
@@ -624,12 +692,7 @@ router.post(
       const [existing] = await db
         .select()
         .from(emailProposals)
-        .where(
-          and(
-            eq(emailProposals.id, id),
-            eq(emailProposals.mailboxUserId, user.id),
-          ),
-        )
+        .where(and(...proposalMutationScope(user, id)))
         .limit(1);
       if (!existing) return notFound(res, "email proposal");
       res.status(409).json({
@@ -703,8 +766,7 @@ router.post(
       })
       .where(
         and(
-          eq(emailProposals.id, id),
-          eq(emailProposals.mailboxUserId, user.id),
+          ...proposalMutationScope(user, id),
           eq(emailProposals.status, "pending"),
         ),
       )
@@ -715,12 +777,7 @@ router.post(
       const [existing] = await db
         .select()
         .from(emailProposals)
-        .where(
-          and(
-            eq(emailProposals.id, id),
-            eq(emailProposals.mailboxUserId, user.id),
-          ),
-        )
+        .where(and(...proposalMutationScope(user, id)))
         .limit(1);
       if (!existing) return notFound(res, "email proposal");
       res.status(409).json({
@@ -786,8 +843,7 @@ router.post(
       })
       .where(
         and(
-          eq(emailProposals.id, id),
-          eq(emailProposals.mailboxUserId, user.id),
+          ...proposalMutationScope(user, id),
           eq(emailProposals.status, "ignored"),
         ),
       )
@@ -798,12 +854,7 @@ router.post(
       const [existing] = await db
         .select()
         .from(emailProposals)
-        .where(
-          and(
-            eq(emailProposals.id, id),
-            eq(emailProposals.mailboxUserId, user.id),
-          ),
-        )
+        .where(and(...proposalMutationScope(user, id)))
         .limit(1);
       if (!existing) return notFound(res, "email proposal");
       res.status(409).json({

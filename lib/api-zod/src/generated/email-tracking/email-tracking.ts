@@ -49,6 +49,76 @@ export const CreateTrackedEmailBody = zod.object({
 }).describe('Posted by the extension at send-time.')
 
 /**
+ * Returns tracked outbound messages from the last 14 days. Staff see only their own mailbox. Admins may pass allMailboxes=true to review every mailbox; private email-message access rules are unchanged.
+ * @summary Recent unresolved tracked emails sent to CRM contacts.
+ */
+export const listTrackedOutboundQueueQueryAllMailboxesDefault = false;
+
+export const ListTrackedOutboundQueueQueryParams = zod.object({
+  "allMailboxes": zod.coerce.boolean().default(listTrackedOutboundQueueQueryAllMailboxesDefault)
+})
+
+export const ListTrackedOutboundQueueResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "subject": zod.string(),
+  "recipient": zod.string(),
+  "sender": zod.string(),
+  "sentAt": zod.string().datetime({}),
+  "totalViews": zod.number(),
+  "lastView": zod.string().datetime({}).nullish(),
+  "laterReply": zod.boolean(),
+  "gmailThreadId": zod.string().nullish(),
+  "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish()
+}))
+})
+
+/**
+ * Returns incoming CRM-associated Gmail messages at least 24 hours old with no later sent reply in the same Gmail thread. Staff see only their own mailbox. Admins may pass allMailboxes=true.
+ * @summary Incoming CRM emails waiting for a reply.
+ */
+export const listTrackedInboundQueueQueryAllMailboxesDefault = false;
+
+export const ListTrackedInboundQueueQueryParams = zod.object({
+  "allMailboxes": zod.coerce.boolean().default(listTrackedInboundQueueQueryAllMailboxesDefault)
+})
+
+export const ListTrackedInboundQueueResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "subject": zod.string().nullable(),
+  "snippet": zod.string().nullish(),
+  "fromEmail": zod.string().nullable(),
+  "receivedAt": zod.string().datetime({}),
+  "gmailThreadId": zod.string().nullish(),
+  "mailboxUserId": zod.string(),
+  "mailboxUserName": zod.string().nullish(),
+  "isPrivate": zod.boolean().optional(),
+  "matchedPersonIds": zod.array(zod.string()).nullish(),
+  "matchedOrganizationIds": zod.array(zod.string()).nullish(),
+  "matchedHouseholdIds": zod.array(zod.string()).nullish()
+}))
+})
+
+/**
+ * @summary Resolve an outbound or inbound tracking queue item.
+ */
+export const ResolveEmailTrackingQueueItemParams = zod.object({
+  "queueType": zod.enum(['outbound', 'inbound']),
+  "id": zod.coerce.string()
+})
+
+export const ResolveEmailTrackingQueueItemResponse = zod.object({
+  "id": zod.string(),
+  "queueType": zod.enum(['outbound', 'inbound']),
+  "sourceId": zod.string(),
+  "mailboxUserId": zod.string(),
+  "resolvedByUserId": zod.string(),
+  "resolvedAt": zod.string().datetime({})
+})
+
+/**
  * Superhuman-style per-recipient send. The extension posts the composed message; the server delivers one individualized copy per recipient through the sender's own Gmail (each copy carries a unique tracking pixel but shows the full To/Cc group). Authenticated by the per-user X-Extension-Token header (not Clerk).
  */
 

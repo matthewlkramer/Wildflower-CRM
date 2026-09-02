@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown, Lock } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  useApplyPledgeAllocationToSchedule,
   useCreatePledgeAllocation,
   useUpdatePledgeAllocation,
   useDeletePledgeAllocation,
@@ -238,15 +239,17 @@ function DialogSelect({
   onValueChange,
   options,
   placeholder = "— None —",
+  disabled = false,
 }: {
   id?: string;
   value: string;
   onValueChange: (v: string) => void;
   options: ReadonlyArray<Option>;
   placeholder?: string;
+  disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={onValueChange}>
+    <Select value={value} onValueChange={onValueChange} disabled={disabled}>
       <SelectTrigger id={id} className="h-8 text-sm">
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
@@ -655,6 +658,7 @@ function PledgeAllocationDialog({
   open,
   mode,
   initial,
+  scheduleCount = 0,
   onClose,
   onSubmit,
   onDelete,
@@ -662,8 +666,15 @@ function PledgeAllocationDialog({
   open: boolean;
   mode: "add" | "edit";
   initial: PledgeAllocation | null;
+  // Number of scheduled expected payments on the parent pledge. When > 0 the
+  // add dialog offers cross-applying this allocation to every scheduled
+  // payment (one row each, grant year derived server-side per payment date).
+  scheduleCount?: number;
   onClose: () => void;
-  onSubmit: (body: CreatePledgeAllocationBody | UpdatePledgeAllocationBody) => Promise<void>;
+  onSubmit: (
+    body: CreatePledgeAllocationBody | UpdatePledgeAllocationBody,
+    opts?: { applyToSchedule?: boolean },
+  ) => Promise<void>;
   onDelete?: () => Promise<void>;
 }) {
   const entityOptions = useEntityOptions();
@@ -674,6 +685,8 @@ function PledgeAllocationDialog({
   const [s, setS] = useState<PledgeFormState>(() => pledgeStateFrom(initial, defaults));
   const [saving, setSaving] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [applyToSchedule, setApplyToSchedule] = useState(false);
+  const showApplyToSchedule = mode === "add" && scheduleCount > 0;
 
   // Reset form whenever the dialog opens for a different row / mode.
   const [seededFor, setSeededFor] = useState<string | null>(null);
@@ -681,6 +694,7 @@ function PledgeAllocationDialog({
   if (open && seededFor !== seedKey) {
     setS(pledgeStateFrom(initial, defaults));
     setConfirmingDelete(false);
+    setApplyToSchedule(false);
     setSeededFor(seedKey);
   }
   if (!open && seededFor !== null) setSeededFor(null);
@@ -765,7 +779,9 @@ function PledgeAllocationDialog({
     if (saving) return;
     setSaving(true);
     try {
-      await onSubmit(buildBody());
+      await onSubmit(buildBody(), {
+        applyToSchedule: showApplyToSchedule && applyToSchedule,
+      });
     } finally {
       setSaving(false);
     }
@@ -820,8 +836,25 @@ function PledgeAllocationDialog({
               value={s.grantYear || NONE}
               onValueChange={(v) => set("grantYear", v)}
               options={fiscalYearOptions}
+              disabled={applyToSchedule && showApplyToSchedule}
             />
+            {applyToSchedule && showApplyToSchedule ? (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Set automatically per payment from each scheduled payment's date.
+              </p>
+            ) : null}
           </DialogField>
+          {showApplyToSchedule ? (
+            <DialogField label="Scheduled payments">
+              <CheckboxField
+                id="pa-apply-schedule"
+                checked={applyToSchedule}
+                onCheckedChange={(v) => setApplyToSchedule(v)}
+                label={`Apply to all ${scheduleCount} scheduled payments`}
+                hint="Creates one allocation per scheduled payment with these details; each row's grant year comes from that payment's date."
+              />
+            </DialogField>
+          ) : null}
           <DialogField label="Regions" htmlFor="pa-regions">
             <RegionMultiCombobox
               testId="pa-regions"
@@ -1016,6 +1049,7 @@ export function PledgeAllocationsEditor({
   allocations,
   totalAmount = null,
   reimbursablePrompt = false,
+  scheduleCount = 0,
 }: {
   pledgeOrOpportunityId: string;
   allocations: ReadonlyArray<PledgeAllocation>;
@@ -1024,6 +1058,9 @@ export function PledgeAllocationsEditor({
   // prompt to split each line into its direct vs indirect share so goal totals
   // exclude the direct portion.
   reimbursablePrompt?: boolean;
+  // Number of scheduled expected payments on this pledge; enables the add
+  // dialog's "apply to all scheduled payments" cross-apply option when > 0.
+  scheduleCount?: number;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1046,12 +1083,28 @@ export function PledgeAllocationsEditor({
   const create = useCreatePledgeAllocation();
   const update = useUpdatePledgeAllocation();
   const del = useDeletePledgeAllocation();
+  const applyToSchedule = useApplyPledgeAllocationToSchedule();
 
-  async function submit(body: CreatePledgeAllocationBody | UpdatePledgeAllocationBody) {
+  async function submit(
+    body: CreatePledgeAllocationBody | UpdatePledgeAllocationBody,
+    opts?: { applyToSchedule?: boolean },
+  ) {
     try {
       if (dialog?.mode === "edit") {
         await update.mutateAsync({ id: dialog.alloc.id, data: body as UpdatePledgeAllocationBody });
         toast({ title: "Allocation updated" });
+      } else if (opts?.applyToSchedule) {
+        // Cross-apply: one allocation per scheduled payment; the server derives
+        // each row's grant year from that payment's date, so drop any
+        // client-side grantYear from the template.
+        const { grantYear: _ignored, ...template } = body as CreatePledgeAllocationBody;
+        const result = await applyToSchedule.mutateAsync({
+          data: { ...template, pledgeOrOpportunityId },
+        });
+        toast({
+          title: `${result.createdCount} allocation${result.createdCount === 1 ? "" : "s"} added`,
+          description: "One per scheduled payment; grant years set from payment dates.",
+        });
       } else {
         await create.mutateAsync({
           data: { ...(body as CreatePledgeAllocationBody), pledgeOrOpportunityId },
@@ -1191,6 +1244,7 @@ export function PledgeAllocationsEditor({
       <PledgeAllocationDialog
         open={dialog !== null}
         mode={dialog?.mode ?? "add"}
+        scheduleCount={scheduleCount}
         initial={dialog?.mode === "edit" ? dialog.alloc : null}
         onClose={() => setDialog(null)}
         onSubmit={submit}

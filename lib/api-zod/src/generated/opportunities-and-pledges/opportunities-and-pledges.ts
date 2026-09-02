@@ -8,6 +8,13 @@
 import * as zod from 'zod';
 
 
+/**
+ * Download the Opportunities or Pledges list as CSV. Accepts the same filter query params as `listOpportunitiesAndPledges` (including `pledgeView`) plus optional comma-separated `fields`.
+ */
+export const ExportOpportunitiesAndPledgesCsvQueryParams = zod.object({
+  "fields": zod.coerce.string().optional()
+})
+
 export const listOpportunitiesAndPledgesQueryLimitDefault = 50;
 export const listOpportunitiesAndPledgesQueryLimitMax = 10000;
 

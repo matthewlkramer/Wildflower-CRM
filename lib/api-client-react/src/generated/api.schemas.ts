@@ -2484,6 +2484,40 @@ export interface CreatePledgeAllocationBody {
   restrictionDescription?: string;
 }
 
+/**
+ * Allocation template cross-applied to every scheduled expected payment
+of the pledge. Same fields as CreatePledgeAllocationBody EXCEPT
+grantYear, which is derived per row from each payment's expectedDate.
+
+ */
+export interface ApplyPledgeAllocationToScheduleBody {
+  pledgeOrOpportunityId: string;
+  subAmount?: string;
+  entityId?: string;
+  intendedUsage?: IntendedUsage;
+  fundableProjectId?: string;
+  directToSchool?: boolean;
+  schoolRecipientId?: string;
+  regionalRestrictionType?: RestrictionAxis;
+  otherRestrictionType?: RestrictionAxis;
+  timeRestrictionType?: RestrictionAxis;
+  reimbursementType?: ReimbursementType;
+  conditional?: OpportunityConditionalWritable;
+  conditionsMet?: OpportunityConditionsMet;
+  status?: PledgeAllocationStatus;
+  contingent?: boolean;
+  conditions?: string;
+  notes?: string;
+  regionIds?: string[];
+  purposeVerbatim?: string;
+  restrictionDescription?: string;
+}
+
+export interface ApplyPledgeAllocationToScheduleResult {
+  createdCount: number;
+  data: PledgeAllocation[];
+}
+
 export interface UpdatePledgeAllocationBody {
   pledgeOrOpportunityId?: string | null;
   subAmount?: string | null;
@@ -2518,6 +2552,18 @@ export interface CreatePledgeExpectedPaymentBody {
   expectedDate: string;
   amount?: string;
   notes?: string;
+  /**
+   * Optional schedule generation: TOTAL number of installments to create including this first one. Requires repeatIntervalMonths. All rows share this amount and notes; dates advance by the interval (month-end clamped). Created atomically; the first row is returned.
+   * @minimum 2
+   * @maximum 100
+   */
+  repeatCount?: number;
+  /**
+   * Months between installments (1 = monthly, 3 = quarterly, 12 = annual). Requires repeatCount.
+   * @minimum 1
+   * @maximum 60
+   */
+  repeatIntervalMonths?: number;
 }
 
 export interface UpdatePledgeExpectedPaymentBody {
@@ -8289,6 +8335,7 @@ export interface ApplyActionResult {
 export interface EmailProposal {
   id: string;
   mailboxUserId: string;
+  mailboxUserName?: string | null;
   kind: EmailProposalKind;
   status: EmailProposalStatus;
   sourceMessageId?: string | null;
@@ -8569,6 +8616,8 @@ export interface EmailIntelFeedbackList {
 export interface UnrecognizedCorrespondent {
   emailAddress: string;
   displayName?: string | null;
+  mailboxUserId?: string | null;
+  mailboxUserName?: string | null;
   domain?: string | null;
   threadCount: number;
   firstSeenAt: string;
@@ -8582,6 +8631,7 @@ export interface UnrecognizedCorrespondentList {
 
 export interface CreateCorrespondentIgnoreBody {
   emailAddress: string;
+  mailboxUserId?: string | null;
 }
 
 export interface Note {
@@ -9000,6 +9050,60 @@ export type TrackedEmailWithViews = TrackedEmail & {
 
 export interface TrackedEmailList {
   data: TrackedEmail[];
+}
+
+export interface EmailTrackingOutboundQueueRow {
+  id: string;
+  subject: string;
+  recipient: string;
+  sender: string;
+  sentAt: string;
+  totalViews: number;
+  lastView?: string | null;
+  laterReply: boolean;
+  gmailThreadId?: string | null;
+  mailboxUserId: string;
+  mailboxUserName?: string | null;
+}
+
+export interface EmailTrackingOutboundQueue {
+  data: EmailTrackingOutboundQueueRow[];
+}
+
+export interface EmailTrackingInboundQueueRow {
+  id: string;
+  subject: string | null;
+  snippet?: string | null;
+  fromEmail: string | null;
+  receivedAt: string;
+  gmailThreadId?: string | null;
+  mailboxUserId: string;
+  mailboxUserName?: string | null;
+  isPrivate?: boolean;
+  matchedPersonIds?: string[] | null;
+  matchedOrganizationIds?: string[] | null;
+  matchedHouseholdIds?: string[] | null;
+}
+
+export interface EmailTrackingInboundQueue {
+  data: EmailTrackingInboundQueueRow[];
+}
+
+export type EmailTrackingResolutionQueueType = typeof EmailTrackingResolutionQueueType[keyof typeof EmailTrackingResolutionQueueType];
+
+
+export const EmailTrackingResolutionQueueType = {
+  outbound: 'outbound',
+  inbound: 'inbound',
+} as const;
+
+export interface EmailTrackingResolution {
+  id: string;
+  queueType: EmailTrackingResolutionQueueType;
+  sourceId: string;
+  mailboxUserId: string;
+  resolvedByUserId: string;
+  resolvedAt: string;
 }
 
 export interface TrackedEmailStatus {
@@ -9766,6 +9870,10 @@ kind?: EmailProposalKind;
 status?: EmailProposalStatus;
 mailboxUserId?: string;
 /**
+ * Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.
+ */
+allMailboxes?: boolean;
+/**
  * Filter to proposals targeting this person.
  */
 personId?: string;
@@ -9828,6 +9936,10 @@ export const AdminListEmailIntelFeedbackReviewerSource = {
 
 export type ListUnrecognizedCorrespondentsParams = {
 mailboxUserId?: string;
+/**
+ * Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.
+ */
+allMailboxes?: boolean;
 /**
  * @minimum 1
  * @maximum 365
@@ -10050,6 +10162,22 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
+export type ExportPeopleCsvParams = {
+fields?: string;
+};
+
+export type ExportOrganizationsCsvParams = {
+fields?: string;
+};
+
+export type ExportOpportunitiesAndPledgesCsvParams = {
+fields?: string;
+};
+
+export type ExportGiftsAndPaymentsCsvParams = {
+fields?: string;
+};
+
 export type ListPeopleParams = {
 /**
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
@@ -10208,6 +10336,10 @@ householdId?: string;
 };
 
 export type ListEmailsParams = {
+/**
+ * Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.
+ */
+email?: string;
 personId?: string;
 organizationId?: string;
 paymentIntermediaryId?: string;
@@ -10863,6 +10995,14 @@ export type ListTrackedEmailsParams = {
  * @maximum 1000
  */
 limit?: number;
+};
+
+export type ListTrackedOutboundQueueParams = {
+allMailboxes?: boolean;
+};
+
+export type ListTrackedInboundQueueParams = {
+allMailboxes?: boolean;
 };
 
 export type SearchTrackedEmailParams = {

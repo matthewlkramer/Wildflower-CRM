@@ -11,6 +11,9 @@ import {
 } from "@workspace/db/schema";
 import { and, eq, ilike, sql } from "drizzle-orm";
 import { newId } from "./helpers";
+import {
+  organizationNamesEquivalent,
+} from "./organizationNameMatching";
 import type { ProposedAction } from "./proposeActions";
 
 /**
@@ -143,6 +146,42 @@ export function validateAction(raw: unknown): { ok: true; action: ProposedAction
 // object so all methods are present.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Tx = any;
+
+/**
+ * Last-line duplicate guard for proposal acceptance. Suggestions are
+ * reconciled when generated, but an organization may be added or renamed
+ * before a reviewer accepts an older action. Reuse only one unambiguous,
+ * conservatively equivalent primary or prior name.
+ */
+async function findExistingOrganizationByEquivalentName(
+  tx: Tx,
+  name: string,
+): Promise<
+  | { kind: "none" }
+  | { kind: "one"; id: string }
+  | { kind: "ambiguous"; count: number }
+> {
+  const candidates = await tx
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      historicalNames: organizations.historicalNames,
+    })
+    .from(organizations);
+  const matches = candidates.filter(
+    (candidate: {
+      name: string | null;
+      historicalNames: string[] | null;
+    }) =>
+      organizationNamesEquivalent(name, candidate.name) ||
+      (candidate.historicalNames ?? []).some((historicalName) =>
+        organizationNamesEquivalent(name, historicalName),
+      ),
+  );
+  if (matches.length === 0) return { kind: "none" };
+  if (matches.length === 1) return { kind: "one", id: matches[0].id };
+  return { kind: "ambiguous", count: matches.length };
+}
 
 export async function applyAction(
   tx: Tx,
@@ -428,15 +467,22 @@ async function applyCreateOrgWithPer(
     return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
   }
 
-  // Reuse any existing organization with the same name (case-insensitive)
-  // — it may have been added since the proposal was generated.
-  const [existingOrg] = await tx
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(sql`lower(${organizations.name}) = lower(${a.organizationName})`)
-    .limit(1);
+  // Reuse a conservatively equivalent existing organization — it may have
+  // been added since the proposal was generated.
+  const organizationMatch = await findExistingOrganizationByEquivalentName(
+    tx,
+    a.organizationName,
+  );
+  if (organizationMatch.kind === "ambiguous") {
+    return {
+      type: a.type,
+      status: "failed",
+      message: `Cannot create or link organization "${a.organizationName}": ${organizationMatch.count} existing organizations have an equivalent name. Resolve the duplicate organizations first.`,
+    };
+  }
 
-  let organizationId: string = existingOrg?.id ?? "";
+  let organizationId: string =
+    organizationMatch.kind === "one" ? organizationMatch.id : "";
   let createdOrg = false;
   if (!organizationId) {
     organizationId = newId();
@@ -508,16 +554,23 @@ async function applyCreateFunderWithPer(
     return { type: a.type, status: "failed", message: `Person ${a.personId} not found.` };
   }
 
-  // Reuse any existing organization with the same name (case-insensitive).
   // All entities are now in the `organizations` table; grantmakers have
   // `issues_grants = true`, other orgs have `issues_grants = false`.
-  const [existingOrg] = await tx
-    .select({ id: organizations.id })
-    .from(organizations)
-    .where(sql`lower(${organizations.name}) = lower(${a.funderName})`)
-    .limit(1);
+  // Recheck conservative equivalence at acceptance to avoid late duplicates.
+  const organizationMatch = await findExistingOrganizationByEquivalentName(
+    tx,
+    a.funderName,
+  );
+  if (organizationMatch.kind === "ambiguous") {
+    return {
+      type: a.type,
+      status: "failed",
+      message: `Cannot create or link grantmaker "${a.funderName}": ${organizationMatch.count} existing organizations have an equivalent name. Resolve the duplicate organizations first.`,
+    };
+  }
 
-  let organizationId: string = existingOrg?.id ?? "";
+  let organizationId: string =
+    organizationMatch.kind === "one" ? organizationMatch.id : "";
   let createdOrg = false;
   if (!organizationId) {
     organizationId = newId();

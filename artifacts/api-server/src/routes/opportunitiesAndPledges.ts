@@ -1,6 +1,19 @@
-import { Router, type IRouter, type Response } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+} from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
+import { csvFilename, csvLine } from "../lib/csvExport";
+import {
+  EXPORT_BATCH_SIZE,
+  loadExportContext,
+  OPPORTUNITY_EXPORT_FIELDS,
+  parseFieldsParam,
+  selectExportFields,
+} from "../lib/csvExportFields";
 import {
   opportunitiesAndPledges,
   pledgeAllocations,
@@ -243,9 +256,19 @@ function respondInvariantFailure(
   });
 }
 
-router.get(
-  "/opportunities-and-pledges",
-  asyncHandler(async (req, res) => {
+// Build the WHERE clause + worklist ordering for the opportunities/pledges
+// list from the request's query params. Shared verbatim by the JSON list
+// endpoint and the CSV export endpoint so exports can never drift from the
+// on-screen filters/archive rules. Returns null after responding 400 when
+// the query params are invalid.
+async function buildOppListWhere(
+  req: Request,
+  res: Response,
+): Promise<{
+  q: ReturnType<typeof ListOpportunitiesAndPledgesQueryParams.parse>;
+  where: SQL | undefined;
+  worklistOrder: (SQL | ReturnType<typeof asc>)[] | null;
+} | null> {
     // Pre-normalize array params so the generated array<…> zod schemas
     // accept the orval comma-form (single string).
     const normalizedQuery = normalizeArrayQuery(
@@ -265,8 +288,7 @@ router.get(
       normalizedQuery,
       res,
     );
-    if (!q) return;
-    const { limit, page, offset } = parsePagination(q);
+    if (!q) return null;
     const filters: SQL[] = [];
     if (q.search) {
       // Search the record name plus the donor display name (org / household /
@@ -538,6 +560,16 @@ router.get(
               sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${opportunitiesAndPledges.projectedCloseDate}) ASC NULLS LAST`,
             ]
           : null;
+    return { q, where, worklistOrder };
+}
+
+router.get(
+  "/opportunities-and-pledges",
+  asyncHandler(async (req, res) => {
+    const built = await buildOppListWhere(req, res);
+    if (!built) return;
+    const { q, where, worklistOrder } = built;
+    const { limit, page, offset } = parsePagination(q);
     // Opt-in per-stage SUM(ask_amount) over the FULL filtered set (not just
     // this page) so the pipeline board's column totals stay correct when the
     // row set exceeds the page limit. Reuses the same joins as the count
@@ -630,6 +662,75 @@ router.get(
       pagination: { page, limit, total: Number(total) },
       ...(wantStageTotals ? { stageAskTotals } : {}),
     });
+  }),
+);
+
+// CSV export — same filters/masking as the JSON list, but batches through
+// EVERY matching row (no page limit). `?fields=` narrows to the requested
+// column keys; omitted = all permitted fields. `pledgeView` decides the
+// user-facing filename (pledges vs opportunities).
+router.get(
+  "/opportunities-and-pledges/export.csv",
+  asyncHandler(async (req, res) => {
+    const built = await buildOppListWhere(req, res);
+    if (!built) return;
+    const { q, where, worklistOrder } = built;
+    const viewer = getViewer(req);
+    const fields = selectExportFields(
+      OPPORTUNITY_EXPORT_FIELDS,
+      parseFieldsParam(req.query.fields),
+    );
+    const ctx = await loadExportContext();
+    const slug = q.pledgeView === "pledges" ? "pledges" : "opportunities";
+    res
+      .status(200)
+      .type("text/csv; charset=utf-8")
+      .setHeader(
+        "Content-Disposition",
+        `attachment; filename="${csvFilename(slug)}"`,
+      );
+    // Stream batch-by-batch so memory stays bounded regardless of row count.
+    res.write(`\uFEFF${csvLine(fields.map((f) => f.label))}`);
+    for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
+      const batch = await db
+        .select(donorJoinSelect)
+        .from(opportunitiesAndPledges)
+        .leftJoin(
+          organizations,
+          eq(organizations.id, opportunitiesAndPledges.organizationId),
+        )
+        .leftJoin(
+          households,
+          eq(households.id, opportunitiesAndPledges.householdId),
+        )
+        .leftJoin(
+          people,
+          eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+        )
+        .leftJoin(
+          primaryContact,
+          eq(
+            primaryContact.id,
+            opportunitiesAndPledges.primaryContactPersonId,
+          ),
+        )
+        .where(where)
+        .orderBy(
+          ...(worklistOrder ?? [
+            desc(opportunitiesAndPledges.projectedCloseDate),
+          ]),
+          // Stable tiebreak so batch pagination never skips/dupes rows.
+          asc(opportunitiesAndPledges.id),
+        )
+        .limit(EXPORT_BATCH_SIZE)
+        .offset(offset);
+      for (const raw of batch) {
+        const row = maskOppDonorRow(raw, viewer) as Record<string, unknown>;
+        res.write(csvLine(fields.map((f) => f.value(row, ctx))));
+      }
+      if (batch.length < EXPORT_BATCH_SIZE) break;
+    }
+    res.end();
   }),
 );
 

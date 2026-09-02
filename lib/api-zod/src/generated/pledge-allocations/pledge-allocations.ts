@@ -84,6 +84,40 @@ export const CreatePledgeAllocationBody = zod.object({
   "restrictionDescription": zod.string().optional()
 })
 
+/**
+ * Cross-applies a single allocation template across the pledge's entire
+installment schedule (pledge_expected_payments): one pledge_allocations
+row is created per scheduled payment, copying every template field.
+Each row's grantYear is derived SERVER-SIDE from that payment's
+expectedDate (Wildflower fiscal year, Jul–Jun) — the caller cannot set
+it. All-or-nothing: rows are inserted in one transaction. 400 when the
+pledge has no scheduled payments.
+
+ * @summary Create one allocation per scheduled expected payment on a pledge.
+ */
+export const ApplyPledgeAllocationToScheduleBody = zod.object({
+  "pledgeOrOpportunityId": zod.string(),
+  "subAmount": zod.string().optional(),
+  "entityId": zod.string().optional(),
+  "intendedUsage": zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project']).optional(),
+  "fundableProjectId": zod.string().optional(),
+  "directToSchool": zod.boolean().optional(),
+  "schoolRecipientId": zod.string().optional(),
+  "regionalRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "otherRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "timeRestrictionType": zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).optional().describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.'),
+  "reimbursementType": zod.enum(['direct', 'indirect']).optional().describe('Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)'),
+  "conditional": zod.enum(['unconditional', 'conditional_unspecified', 'conditional_on_funder_determination', 'conditional_on_target']).optional(),
+  "conditionsMet": zod.enum(['no', 'partial', 'yes']).optional().describe('Tri-state record of whether a grant\'s conditions have been met:\n\'no\' (none met), \'partial\' (some met), or \'yes\' (fully met).\nReplaces the prior boolean flag (false→\'no\', true→\'yes\').\n'),
+  "status": zod.enum(['working', 'committed', 'committed_with_conditions', 'abandoned']).optional(),
+  "contingent": zod.boolean().optional(),
+  "conditions": zod.string().optional(),
+  "notes": zod.string().optional(),
+  "regionIds": zod.array(zod.string()).optional(),
+  "purposeVerbatim": zod.string().optional(),
+  "restrictionDescription": zod.string().optional()
+}).describe('Allocation template cross-applied to every scheduled expected payment\nof the pledge. Same fields as CreatePledgeAllocationBody EXCEPT\ngrantYear, which is derived per row from each payment\'s expectedDate.\n')
+
 export const UpdatePledgeAllocationParams = zod.object({
   "id": zod.coerce.string()
 })

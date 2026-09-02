@@ -29,6 +29,7 @@ import type {
   CreateGiftOrPaymentBody,
   DetachGiftFromPledgeResult,
   ErrorResponse,
+  ExportGiftsAndPaymentsCsvParams,
   ForbiddenResponse,
   GiftAuditReconciliation,
   GiftOrPayment,
@@ -58,6 +59,84 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
+
+/**
+ * Download the Gifts list as CSV. Accepts the same filter query params as `listGiftsAndPayments` plus optional comma-separated `fields`.
+ */
+export const getExportGiftsAndPaymentsCsvUrl = (params?: ExportGiftsAndPaymentsCsvParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/gifts-and-payments/export.csv?${stringifiedParams}` : `/api/gifts-and-payments/export.csv`
+}
+
+export const exportGiftsAndPaymentsCsv = async (params?: ExportGiftsAndPaymentsCsvParams, options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getExportGiftsAndPaymentsCsvUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportGiftsAndPaymentsCsvQueryKey = (params?: ExportGiftsAndPaymentsCsvParams,) => {
+    return [
+    `/api/gifts-and-payments/export.csv`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportGiftsAndPaymentsCsvQueryOptions = <TData = Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>, TError = ErrorType<unknown>>(params?: ExportGiftsAndPaymentsCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportGiftsAndPaymentsCsvQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>> = ({ signal }) => exportGiftsAndPaymentsCsv(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportGiftsAndPaymentsCsvQueryResult = NonNullable<Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>>
+export type ExportGiftsAndPaymentsCsvQueryError = ErrorType<unknown>
+
+
+
+export function useExportGiftsAndPaymentsCsv<TData = Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>, TError = ErrorType<unknown>>(
+ params?: ExportGiftsAndPaymentsCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportGiftsAndPaymentsCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportGiftsAndPaymentsCsvQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 
 
 

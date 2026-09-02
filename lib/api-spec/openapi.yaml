@@ -1034,6 +1034,15 @@ paths:
           }
         - { name: mailboxUserId, in: query, schema: { type: string } }
         - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean },
+            description:
+              "Admin-only: when true, list proposals across ALL synced
+              mailboxes (each row carries mailboxUserName). Ignored for
+              non-admins — they only ever see their own mailbox.",
+          }
+        - {
             name: personId,
             in: query,
             schema: { type: string },
@@ -1585,6 +1594,15 @@ paths:
       tags: [correspondents]
       parameters:
         - { name: mailboxUserId, in: query, schema: { type: string } }
+        - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean },
+            description:
+              "Admin-only: when true, aggregate unrecognized correspondents
+              across ALL synced mailboxes (each row carries mailboxUserId +
+              mailboxUserName). Ignored for non-admins.",
+          }
         - {
             name: days,
             in: query,
@@ -2825,6 +2843,75 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── People ────────────────────────────────────────────────────────────────
+  # ---- CSV list exports -------------------------------------------------
+  # Each export endpoint accepts the SAME filter query params as its JSON
+  # list counterpart (they share the server-side filter builder verbatim)
+  # plus an optional `fields` param. `limit`/`page` are ignored — exports
+  # always cover every authorized matching row.
+  /people/export.csv:
+    get:
+      operationId: exportPeopleCsv
+      tags: [people]
+      description: >-
+        Download the Individuals list as CSV. Accepts the same filter query
+        params as `listPeople`; `fields` is an optional comma-separated list
+        of column keys (omit for all permitted fields). Masking and archive
+        rules match the JSON list exactly.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /organizations/export.csv:
+    get:
+      operationId: exportOrganizationsCsv
+      tags: [organizations]
+      description: >-
+        Download the Organizations list as CSV. Accepts the same filter query
+        params as `listOrganizations` plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /opportunities-and-pledges/export.csv:
+    get:
+      operationId: exportOpportunitiesAndPledgesCsv
+      tags: [opportunities-and-pledges]
+      description: >-
+        Download the Opportunities or Pledges list as CSV. Accepts the same
+        filter query params as `listOpportunitiesAndPledges` (including
+        `pledgeView`) plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+  /gifts-and-payments/export.csv:
+    get:
+      operationId: exportGiftsAndPaymentsCsv
+      tags: [gifts-and-payments]
+      description: >-
+        Download the Gifts list as CSV. Accepts the same filter query params
+        as `listGiftsAndPayments` plus optional comma-separated `fields`.
+      parameters:
+        - { name: fields, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: CSV document
+          content:
+            text/csv:
+              schema: { type: string }
+
   /people:
     get:
       operationId: listPeople
@@ -3198,6 +3285,12 @@ paths:
       operationId: listEmails
       tags: [emails]
       parameters:
+        - {
+            name: email,
+            in: query,
+            schema: { type: string },
+            description: "Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.",
+          }
         - { name: personId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: paymentIntermediaryId, in: query, schema: { type: string } }
@@ -3863,6 +3956,50 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /pledge-allocations/apply-to-schedule:
+    post:
+      operationId: applyPledgeAllocationToSchedule
+      tags: [pledge-allocations]
+      summary: Create one allocation per scheduled expected payment on a pledge.
+      description: |
+        Cross-applies a single allocation template across the pledge's entire
+        installment schedule (pledge_expected_payments): one pledge_allocations
+        row is created per scheduled payment, copying every template field.
+        Each row's grantYear is derived SERVER-SIDE from that payment's
+        expectedDate (Wildflower fiscal year, Jul–Jun) — the caller cannot set
+        it. All-or-nothing: rows are inserted in one transaction. 400 when the
+        pledge has no scheduled payments.
+      requestBody:
+        {
+          required: true,
+          content:
+            {
+              application/json:
+                {
+                  schema:
+                    {
+                      $ref: "#/components/schemas/ApplyPledgeAllocationToScheduleBody",
+                    },
+                },
+            },
+        }
+      responses:
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/ApplyPledgeAllocationToScheduleResult",
+                      },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /pledge-allocations/{id}:
     patch:
       operationId: updatePledgeAllocation
@@ -5465,6 +5602,83 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /email-tracking/outbound:
+    get:
+      operationId: listTrackedOutboundQueue
+      tags: [email-tracking]
+      summary: Recent unresolved tracked emails sent to CRM contacts.
+      description: >-
+        Returns tracked outbound messages from the last 14 days. Staff see only
+        their own mailbox. Admins may pass allMailboxes=true to review every
+        mailbox; private email-message access rules are unchanged.
+      parameters:
+        - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean, default: false },
+          }
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/EmailTrackingOutboundQueue" } },
+              },
+          }
+        "401": { description: Unauthorized }
+  /email-tracking/inbound:
+    get:
+      operationId: listTrackedInboundQueue
+      tags: [email-tracking]
+      summary: Incoming CRM emails waiting for a reply.
+      description: >-
+        Returns incoming CRM-associated Gmail messages at least 24 hours old
+        with no later sent reply in the same Gmail thread. Staff see only their
+        own mailbox. Admins may pass allMailboxes=true.
+      parameters:
+        - {
+            name: allMailboxes,
+            in: query,
+            schema: { type: boolean, default: false },
+          }
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/EmailTrackingInboundQueue" } },
+              },
+          }
+        "401": { description: Unauthorized }
+  /email-tracking/queue/{queueType}/{id}/resolve:
+    post:
+      operationId: resolveEmailTrackingQueueItem
+      tags: [email-tracking]
+      summary: Resolve an outbound or inbound tracking queue item.
+      parameters:
+        - {
+            name: queueType,
+            in: path,
+            required: true,
+            schema: { type: string, enum: [outbound, inbound] },
+          }
+        - { $ref: "#/components/parameters/IdPath" }
+      responses:
+        "200":
+          {
+            description: Resolved (idempotent),
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/EmailTrackingResolution" } },
+              },
+          }
+        "401": { description: Unauthorized }
+        "404": { $ref: "#/components/responses/NotFound" }
   /email-tracking/send:
     post:
       operationId: sendTrackedEmail
@@ -14972,6 +15186,46 @@ components:
         regionIds: { type: array, items: { type: string } }
         purposeVerbatim: { type: string }
         restrictionDescription: { type: string }
+    ApplyPledgeAllocationToScheduleBody:
+      type: object
+      description: |
+        Allocation template cross-applied to every scheduled expected payment
+        of the pledge. Same fields as CreatePledgeAllocationBody EXCEPT
+        grantYear, which is derived per row from each payment's expectedDate.
+      required: [pledgeOrOpportunityId]
+      properties:
+        pledgeOrOpportunityId: { type: string }
+        subAmount: { type: string }
+        entityId: { type: string }
+        intendedUsage: { $ref: "#/components/schemas/IntendedUsage" }
+        fundableProjectId: { type: string }
+        directToSchool: { type: boolean }
+        schoolRecipientId: { type: string }
+        regionalRestrictionType:
+          { $ref: "#/components/schemas/RestrictionAxis" }
+        otherRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        timeRestrictionType: { $ref: "#/components/schemas/RestrictionAxis" }
+        reimbursementType: { $ref: "#/components/schemas/ReimbursementType" }
+        conditional:
+          { $ref: "#/components/schemas/OpportunityConditionalWritable" }
+        conditionsMet: { $ref: "#/components/schemas/OpportunityConditionsMet" }
+        status: { $ref: "#/components/schemas/PledgeAllocationStatus" }
+        contingent: { type: boolean }
+        conditions: { type: string }
+        notes: { type: string }
+        regionIds: { type: array, items: { type: string } }
+        purposeVerbatim: { type: string }
+        restrictionDescription: { type: string }
+    ApplyPledgeAllocationToScheduleResult:
+      type: object
+      required: [createdCount, data]
+      properties:
+        createdCount: { type: integer }
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/PledgeAllocation" },
+          }
     UpdatePledgeAllocationBody:
       type: object
       properties:
@@ -15059,6 +15313,20 @@ components:
         expectedDate: { type: string, format: date }
         amount: { type: string }
         notes: { type: string }
+        repeatCount:
+          {
+            type: integer,
+            minimum: 2,
+            maximum: 100,
+            description: "Optional schedule generation: TOTAL number of installments to create including this first one. Requires repeatIntervalMonths. All rows share this amount and notes; dates advance by the interval (month-end clamped). Created atomically; the first row is returned.",
+          }
+        repeatIntervalMonths:
+          {
+            type: integer,
+            minimum: 1,
+            maximum: 60,
+            description: "Months between installments (1 = monthly, 3 = quarterly, 12 = annual). Requires repeatCount.",
+          }
     UpdatePledgeExpectedPaymentBody:
       type: object
       properties:
@@ -23228,6 +23496,10 @@ components:
       properties:
         id: { type: string }
         mailboxUserId: { type: string }
+        # Display name of the mailbox owner. Populated only in the
+        # admin all-mailboxes review mode so reviewers can see whose
+        # inbox produced each suggestion; null/omitted otherwise.
+        mailboxUserName: { type: string, nullable: true }
         kind: { $ref: "#/components/schemas/EmailProposalKind" }
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         sourceMessageId: { type: string, nullable: true }
@@ -23597,6 +23869,11 @@ components:
       properties:
         emailAddress: { type: string }
         displayName: { type: string, nullable: true }
+        # Mailbox attribution — populated only in the admin
+        # all-mailboxes mode so each row identifies whose sent mail
+        # produced it; null/omitted in the normal own-mailbox mode.
+        mailboxUserId: { type: string, nullable: true }
+        mailboxUserName: { type: string, nullable: true }
         domain: { type: string, nullable: true }
         threadCount: { type: integer }
         firstSeenAt: { type: string, format: date-time }
@@ -23616,6 +23893,10 @@ components:
       required: [emailAddress]
       properties:
         emailAddress: { type: string }
+        # Admin-only: ignore on behalf of this mailbox owner (used by the
+        # all-mailboxes review mode so the item leaves THAT user's queue).
+        # Non-admins get a 403 if they pass someone else's id.
+        mailboxUserId: { type: string, nullable: true }
 
     # ─── Notes ───────────────────────────────────────────────────────────────
     Note:
@@ -24225,6 +24506,78 @@ components:
       properties:
         data:
           { type: array, items: { $ref: "#/components/schemas/TrackedEmail" } }
+    EmailTrackingOutboundQueueRow:
+      type: object
+      required:
+        [
+          id,
+          subject,
+          recipient,
+          sender,
+          sentAt,
+          totalViews,
+          laterReply,
+          mailboxUserId,
+        ]
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        recipient: { type: string }
+        sender: { type: string }
+        sentAt: { type: string, format: date-time }
+        totalViews: { type: integer }
+        lastView: { type: string, format: date-time, nullable: true }
+        laterReply: { type: boolean }
+        gmailThreadId: { type: string, nullable: true }
+        mailboxUserId: { type: string }
+        mailboxUserName: { type: string, nullable: true }
+    EmailTrackingOutboundQueue:
+      type: object
+      required: [data]
+      properties:
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/EmailTrackingOutboundQueueRow" },
+          }
+    EmailTrackingInboundQueueRow:
+      type: object
+      required: [id, subject, fromEmail, receivedAt, mailboxUserId]
+      properties:
+        id: { type: string }
+        subject: { type: string, nullable: true }
+        snippet: { type: string, nullable: true }
+        fromEmail: { type: string, nullable: true }
+        receivedAt: { type: string, format: date-time }
+        gmailThreadId: { type: string, nullable: true }
+        mailboxUserId: { type: string }
+        mailboxUserName: { type: string, nullable: true }
+        isPrivate: { type: boolean }
+        matchedPersonIds:
+          { type: array, items: { type: string }, nullable: true }
+        matchedOrganizationIds:
+          { type: array, items: { type: string }, nullable: true }
+        matchedHouseholdIds:
+          { type: array, items: { type: string }, nullable: true }
+    EmailTrackingInboundQueue:
+      type: object
+      required: [data]
+      properties:
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/EmailTrackingInboundQueueRow" },
+          }
+    EmailTrackingResolution:
+      type: object
+      required: [id, queueType, sourceId, mailboxUserId, resolvedByUserId, resolvedAt]
+      properties:
+        id: { type: string }
+        queueType: { type: string, enum: [outbound, inbound] }
+        sourceId: { type: string }
+        mailboxUserId: { type: string }
+        resolvedByUserId: { type: string }
+        resolvedAt: { type: string, format: date-time }
     TrackedEmailStatus:
       type: object
       required: [subject, viewCount]

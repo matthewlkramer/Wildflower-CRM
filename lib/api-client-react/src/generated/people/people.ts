@@ -25,6 +25,7 @@ import type {
   BulkUpdatePeopleBody,
   BulkUpdateResult,
   CreatePersonBody,
+  ExportPeopleCsvParams,
   ForbiddenResponse,
   ListPeopleParams,
   MergePeopleBody,
@@ -46,6 +47,84 @@ type AwaitedInput<T> = PromiseLike<T> | T;
 
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
+
+/**
+ * Download the Individuals list as CSV. Accepts the same filter query params as `listPeople`; `fields` is an optional comma-separated list of column keys (omit for all permitted fields). Masking and archive rules match the JSON list exactly.
+ */
+export const getExportPeopleCsvUrl = (params?: ExportPeopleCsvParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/people/export.csv?${stringifiedParams}` : `/api/people/export.csv`
+}
+
+export const exportPeopleCsv = async (params?: ExportPeopleCsvParams, options?: RequestInit): Promise<string> => {
+  
+  return customFetch<string>(getExportPeopleCsvUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getExportPeopleCsvQueryKey = (params?: ExportPeopleCsvParams,) => {
+    return [
+    `/api/people/export.csv`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getExportPeopleCsvQueryOptions = <TData = Awaited<ReturnType<typeof exportPeopleCsv>>, TError = ErrorType<unknown>>(params?: ExportPeopleCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportPeopleCsvQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportPeopleCsv>>> = ({ signal }) => exportPeopleCsv(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportPeopleCsvQueryResult = NonNullable<Awaited<ReturnType<typeof exportPeopleCsv>>>
+export type ExportPeopleCsvQueryError = ErrorType<unknown>
+
+
+
+export function useExportPeopleCsv<TData = Awaited<ReturnType<typeof exportPeopleCsv>>, TError = ErrorType<unknown>>(
+ params?: ExportPeopleCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportPeopleCsvQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
 
 
 

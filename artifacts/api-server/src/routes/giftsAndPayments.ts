@@ -1,6 +1,19 @@
-import { Router, type IRouter, type Response } from "express";
+import {
+  Router,
+  type IRouter,
+  type Request,
+  type Response,
+} from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
+import { csvFilename, csvLine } from "../lib/csvExport";
+import {
+  EXPORT_BATCH_SIZE,
+  GIFT_EXPORT_FIELDS,
+  loadExportContext,
+  parseFieldsParam,
+  selectExportFields,
+} from "../lib/csvExportFields";
 import {
   giftsAndPayments,
   giftAllocations,
@@ -308,9 +321,18 @@ function respondInvariantFailure(
   });
 }
 
-router.get(
-  "/gifts-and-payments",
-  asyncHandler(async (req, res) => {
+// Build the WHERE clause + sort order for the gifts list from the request's
+// query params. Shared verbatim by the JSON list endpoint and the CSV export
+// endpoint so exports can never drift from the on-screen filters/archive
+// rules. Returns null after responding 400 when the query params are invalid.
+async function buildGiftsListWhere(
+  req: Request,
+  res: Response,
+): Promise<{
+  q: ReturnType<typeof ListGiftsAndPaymentsQueryParams.parse>;
+  where: SQL | undefined;
+  orderBy: (SQL | ReturnType<typeof desc>)[];
+} | null> {
     const normalizedQuery = normalizeArrayQuery(
       req.query as Record<string, unknown>,
       GIFTS_ARRAY_PARAMS,
@@ -320,8 +342,7 @@ router.get(
       normalizedQuery,
       res,
     );
-    if (!q) return;
-    const { limit, page, offset } = parsePagination(q);
+    if (!q) return null;
     const filters: SQL[] = [];
     if (q.search) {
       // Search the record name plus the donor display name (org / household /
@@ -610,6 +631,16 @@ router.get(
           : q.sort === "date_asc"
             ? [asc(giftsAndPayments.dateReceived)]
             : [desc(giftsAndPayments.dateReceived)];
+    return { q, where, orderBy };
+}
+
+router.get(
+  "/gifts-and-payments",
+  asyncHandler(async (req, res) => {
+    const built = await buildGiftsListWhere(req, res);
+    if (!built) return;
+    const { q, where, orderBy } = built;
+    const { limit, page, offset } = parsePagination(q);
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select(donorJoinSelect)
@@ -652,6 +683,58 @@ router.get(
       };
     });
     res.json({ data, pagination: { page, limit, total: Number(total) } });
+  }),
+);
+
+// CSV export — same filters/masking as the JSON list, but batches through
+// EVERY matching row (no page limit). `?fields=` narrows to the requested
+// column keys; omitted = all permitted fields.
+router.get(
+  "/gifts-and-payments/export.csv",
+  asyncHandler(async (req, res) => {
+    const built = await buildGiftsListWhere(req, res);
+    if (!built) return;
+    const { where, orderBy } = built;
+    const viewer = getViewer(req);
+    const fields = selectExportFields(
+      GIFT_EXPORT_FIELDS,
+      parseFieldsParam(req.query.fields),
+    );
+    const ctx = await loadExportContext();
+    res
+      .status(200)
+      .type("text/csv; charset=utf-8")
+      .setHeader(
+        "Content-Disposition",
+        `attachment; filename="${csvFilename("gifts")}"`,
+      );
+    // Stream batch-by-batch so memory stays bounded regardless of row count.
+    res.write(`\uFEFF${csvLine(fields.map((f) => f.label))}`);
+    for (let offset = 0; ; offset += EXPORT_BATCH_SIZE) {
+      const batch = await db
+        .select(donorJoinSelect)
+        .from(giftsAndPayments)
+        .leftJoin(
+          organizations,
+          eq(organizations.id, giftsAndPayments.organizationId),
+        )
+        .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+        .leftJoin(
+          people,
+          eq(people.id, giftsAndPayments.individualGiverPersonId),
+        )
+        .where(where)
+        // Stable tiebreak so batch pagination never skips/dupes rows.
+        .orderBy(...orderBy, asc(giftsAndPayments.id))
+        .limit(EXPORT_BATCH_SIZE)
+        .offset(offset);
+      for (const raw of batch) {
+        const row = maskGiftDonorRow(raw, viewer) as Record<string, unknown>;
+        res.write(csvLine(fields.map((f) => f.value(row, ctx))));
+      }
+      if (batch.length < EXPORT_BATCH_SIZE) break;
+    }
+    res.end();
   }),
 );
 

@@ -46,6 +46,7 @@ import {
 } from "@/components/row-action-icons";
 import { ShowArchivedToggle } from "@/components/show-archived-toggle";
 import { ListPageHeader } from "@/components/list-page-header";
+import { ExportCsvDialog } from "@/components/export-csv-dialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useInlineRowEdit } from "@/hooks/use-inline-row-edit";
 import { useToast } from "@/hooks/use-toast";
@@ -1174,6 +1175,19 @@ export default function Individuals() {
         addAction={<CreatePersonDialog />}
         controls={
           <>
+            <ExportCsvDialog
+              entityPath="people"
+              filteredParams={params}
+              allRowsParams={{
+                ...(isAdmin && showArchived ? { includeArchived: true } : {}),
+                ...(showDeceased ? {} : { deceased: false }),
+                ...(showFoundationPartners
+                  ? {}
+                  : { showFoundationPartners: false }),
+              }}
+              visibleFieldKeys={visibleCols.map((c) => c.key)}
+              entityLabel="individuals"
+            />
             <ShowArchivedToggle
               value={showArchived}
               onChange={(v) => {
