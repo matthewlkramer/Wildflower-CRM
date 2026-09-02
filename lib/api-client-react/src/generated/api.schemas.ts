@@ -2824,7 +2824,10 @@ export interface UpdateGiftOrPaymentBody {
   householdId?: string | null;
   loanOrGrant?: LoanOrGrant;
   opportunityId?: string | null;
-  /** Explicit off-books exception: allows re-pointing this gift at a pledge/opportunity for money that never appears in QuickBooks. Finance/admin only. Request-level flag; never persisted. */
+  /**
+   * Deprecated compatibility field; ignored by PATCH. Use the explicit pledge-payment correction actions to attach, re-point, or detach a gift. Never persisted.
+   * @deprecated
+   */
   offBooksException?: boolean;
   advisorPersonId?: string | null;
   giftBeingMatchedId?: string | null;
@@ -7680,7 +7683,7 @@ export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
 });
 
 export type StripeChargeCreateGiftBody = MintGiftOverridesBody & ({
-  /** Record this charge's GROSS as the received gift produced by an opportunity or as a payment on a finalized pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. The record must be active (not archived/lost/dormant). It is classified as a pledge payment only when pledgeCommittedAt was already set. */
+  /** Record this charge's GROSS as a payment on a finalized pledge. The donor derives from the pledge, the gift links through gift.opportunityId, and allocations seed from its plan. The pledge must be live (not archived/lost/dormant) and finalized; convert an open opportunity to a pledge first. */
   opportunityId?: string | null;
 });
 
