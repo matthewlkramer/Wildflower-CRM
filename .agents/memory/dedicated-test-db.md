@@ -56,16 +56,17 @@ Isolation + 6-fork parallelism took the full suite 384s → ~100s with 0 flakes.
 - Browser e2e still goes through the dev server → dev DB; dev-DB hygiene rules
   (test-data-hygiene.md) still apply to e2e, not to vitest anymore.
 
-## Known concurrency flake: bank-spine FK KEY SHARE deadlock
+## Bank-spine stripe projection lock ordering
 
-`bank-spine-recompute.integration.test.ts` can fail with Postgres 40P01
-("deadlock detected ... FOR KEY SHARE ... stripe_staged_charges") when a
-parallel suite's recompute inserts `payment_units` rows referencing an
-overlapping set of charges in a different order (the INSERT..SELECT has no
-ORDER BY, so FK parent locks are taken in arbitrary order). It is
-pre-existing, unrelated to whatever diff is under test, and passes on rerun —
-re-run once before diagnosing. A deterministic fix would be ORDER BY sc.id in
-the recompute INSERT..SELECTs.
+The Stripe-to-`payment_units` projection must lock all eligible
+`stripe_staged_charges` in ascending ID order before its FK-owning insert.
+
+**Why:** parallel recomputes previously acquired parent-row locks in planner
+order, which could form a Postgres 40P01 cycle. The ordered materialized
+locking CTE serializes that parent set predictably; a rerun is not a fix.
+
+**How to apply:** retain the ordered `FOR UPDATE` CTE and ordered consuming
+`INSERT ... SELECT` whenever changing bank-spine Stripe projection SQL.
 
 ## No DDL in parallel test files
 

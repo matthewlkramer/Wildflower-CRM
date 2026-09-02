@@ -471,8 +471,27 @@ async function runBankSpineRecompute(): Promise<void> {
       updated_at = now()
   `);
 
-  // 2. One unit per non-excluded Stripe charge (0160)…
+  // 2. One unit per non-excluded Stripe charge (0160). Lock every eligible
+  // source row in one stable order before the FK-owning insert: separate
+  // recompute callers and source-pull writes cannot then acquire the same
+  // parent-row locks in opposing orders.
   await db.execute(sql`
+    WITH eligible_stripe_charges AS MATERIALIZED (
+      SELECT
+        sc.id,
+        sc.gross_amount,
+        sc.fee_amount,
+        sc.net_amount,
+        sc.currency,
+        sc.date_received,
+        sc.disputed,
+        sc.refunded,
+        sc.amount_refunded
+      FROM stripe_staged_charges sc
+      WHERE sc.exclusion_reason IS NULL
+      ORDER BY sc.id
+      FOR UPDATE OF sc
+    )
     INSERT INTO payment_units (
       id, kind, stripe_charge_id, gross_amount, fee_amount, net_amount,
       currency, received_date, lifecycle
@@ -487,8 +506,8 @@ async function runBankSpineRecompute(): Promise<void> {
         WHEN sc.amount_refunded IS NOT NULL AND sc.amount_refunded > 0 THEN 'partially_refunded'
         ELSE 'received'
       END::payment_unit_lifecycle
-    FROM stripe_staged_charges sc
-    WHERE sc.exclusion_reason IS NULL
+    FROM eligible_stripe_charges sc
+    ORDER BY sc.id
     ON CONFLICT (id) DO NOTHING
   `);
   // …and refresh lifecycle/amount facts on existing stripe units (read-only

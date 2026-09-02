@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
@@ -22,7 +23,7 @@ import {
 const RAW_DB_URL = process.env.DATABASE_URL;
 const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
 
-const RUN = `pudw_${Date.now()}`;
+const RUN = `pudw_${process.pid}_${Date.now()}_${randomUUID()}`;
 const REALM_ID = `${RUN}_realm`;
 const ACCOUNT_ID = `${RUN}_acct`;
 const ORG_ID = `${RUN}_org`;
