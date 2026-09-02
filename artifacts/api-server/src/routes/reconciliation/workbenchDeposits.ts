@@ -886,7 +886,7 @@ router.get(
       page: req.query.page ? Number(req.query.page) : undefined,
     });
     const universe = buildUniverse(q);
-    const [countsResult, pageResult] = await Promise.all([
+    const [countsResult, pageResult, freshnessResult] = await Promise.all([
       db.execute(sql`
         SELECT
           count(*) FILTER (WHERE ${sql.raw(LENS_PREDICATE.all_open)})::int AS all_open,
@@ -905,12 +905,34 @@ router.get(
         ORDER BY anchor_date DESC NULLS LAST, id DESC
         LIMIT ${limit} OFFSET ${offset}
       `),
+      db.execute(sql`
+        SELECT max(created_at) AS last_imported_at,
+               max(txn_date)::text AS latest_transaction_date,
+               count(DISTINCT source_file)::int AS source_file_count
+        FROM bank_transactions
+        WHERE source = 'bank_csv_export'
+      `),
     ]);
     const counts = (countsResult.rows[0] ?? {}) as Record<string, number>;
+    const freshness = (
+      freshnessResult.rows as Array<{
+        last_imported_at: Date | string | null;
+        latest_transaction_date: string | null;
+        source_file_count: number;
+      }>
+    )[0];
+    const bankImport = {
+      lastImportedAt: freshness?.last_imported_at
+        ? new Date(freshness.last_imported_at).toISOString()
+        : null,
+      latestTransactionDate: freshness?.latest_transaction_date ?? null,
+      sourceFileCount: freshness?.source_file_count ?? 0,
+    };
     const slim = pageResult.rows as unknown as SlimRow[];
     if (slim.length === 0) {
       return res.json({
         data: [],
+        bankImport,
         lensCounts: {
           all_open: counts.all_open ?? 0,
           unresolved_composition: counts.unresolved_composition ?? 0,
@@ -1439,6 +1461,7 @@ router.get(
     });
     return res.json({
       data,
+      bankImport,
       lensCounts: {
         all_open: counts.all_open ?? 0,
         unresolved_composition: counts.unresolved_composition ?? 0,

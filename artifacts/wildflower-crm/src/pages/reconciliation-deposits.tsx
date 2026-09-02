@@ -182,6 +182,35 @@ function formatWhen(iso: string): string {
   });
 }
 
+function formatBankImportWhen(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatBankDataThrough(isoDate: string): string {
+  const date = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return isoDate;
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function bankDataIsStale(isoDate: string | null): boolean {
+  if (!isoDate) return true;
+  const latest = new Date(`${isoDate}T12:00:00`);
+  if (Number.isNaN(latest.getTime())) return true;
+  return Date.now() - latest.getTime() > 7 * 24 * 60 * 60 * 1000;
+}
+
 export default function ReconciliationDepositsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1808,6 +1837,34 @@ export default function ReconciliationDepositsPage() {
           One row per bank deposit, with the known composition, CRM gifts, and
           accounting evidence kept together.
         </p>
+        {!isLoading && data ? (
+          <p
+            className={`mt-2 max-w-3xl rounded-md border px-3 py-2 text-xs ${
+              bankDataIsStale(data.bankImport.latestTransactionDate)
+                ? "border-amber-300 bg-amber-50 text-amber-950"
+                : "border-border bg-muted/40 text-muted-foreground"
+            }`}
+            data-testid="text-bank-import-freshness"
+          >
+            {data.bankImport.lastImportedAt ? (
+              <>
+                Bank spreadsheet last imported{" "}
+                {formatBankImportWhen(data.bankImport.lastImportedAt)}
+                {data.bankImport.latestTransactionDate
+                  ? `; transactions through ${formatBankDataThrough(data.bankImport.latestTransactionDate)}.`
+                  : "."}
+                {bankDataIsStale(data.bankImport.latestTransactionDate) ? (
+                  <strong> Bank data may be out of date.</strong>
+                ) : null}
+              </>
+            ) : (
+              <strong>
+                No bank spreadsheet import was found; this workbench may be
+                incomplete.
+              </strong>
+            )}
+          </p>
+        ) : null}
       </div>
       <div className="flex items-start gap-4">
         <main className="min-w-0 flex-1 space-y-3">
