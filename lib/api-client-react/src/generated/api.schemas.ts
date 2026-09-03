@@ -6541,7 +6541,7 @@ export interface WorkbenchDepositLensCounts {
 }
 
 /**
- * Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.
+ * Freshness of the QuickBooks Wells Fargo report data backing the workbench, whether uploaded manually or received by scheduled email.
  */
 export interface WorkbenchBankImportFreshness {
   /** When the newest currently stored bank spreadsheet row was imported; null when no spreadsheet rows exist. */
