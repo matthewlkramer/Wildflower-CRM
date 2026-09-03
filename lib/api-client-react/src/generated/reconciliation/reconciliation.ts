@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AbsorbBankDepositComponentRemainder200,
   AddBankDepositComponentBody,
   ApproveCompleteMatchBody,
   AttachDepositQboEvidenceBody,
@@ -1172,6 +1173,146 @@ export const useAddBankDepositComponent = <TError = ErrorType<BadRequestResponse
         TContext
       > => {
       return useMutation(getAddBankDepositComponentMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Clears the component payment unit's counted gift pointer while preserving both the CRM gift and the bank-deposit component. This makes an incorrect completed-row link correctable without deleting either record.
+ * @summary Disconnect a CRM gift from a direct bank-deposit payment component.
+ */
+export const getUnlinkBankDepositComponentGiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}/unlink-gift`
+}
+
+export const unlinkBankDepositComponentGift = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getUnlinkBankDepositComponentGiftUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getUnlinkBankDepositComponentGiftMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['unlinkBankDepositComponentGift'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unlinkBankDepositComponentGift(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnlinkBankDepositComponentGiftMutationResult = NonNullable<Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>>
+
+    export type UnlinkBankDepositComponentGiftMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Disconnect a CRM gift from a direct bank-deposit payment component.
+ */
+export const useUnlinkBankDepositComponentGift = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unlinkBankDepositComponentGift>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getUnlinkBankDepositComponentGiftMutationOptions(options));
+    }
+    /**
+ * Finance/admin review only. Expands the selected direct payment and component to the remaining deposit amount. A linked CRM gift must equal the resulting payment amount. Any component-level QBO pointer is preserved as deposit-level accounting evidence because QBO line splits do not define the real-world bank composition.
+ * @summary Correct a direct payment component so it consumes the deposit's unresolved remainder.
+ */
+export const getAbsorbBankDepositComponentRemainderUrl = (id: string,) => {
+
+
+
+
+  return `/api/reconciliation/deposit-components/${id}/absorb-remainder`
+}
+
+export const absorbBankDepositComponentRemainder = async (id: string, options?: RequestInit): Promise<AbsorbBankDepositComponentRemainder200> => {
+
+  return customFetch<AbsorbBankDepositComponentRemainder200>(getAbsorbBankDepositComponentRemainderUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getAbsorbBankDepositComponentRemainderMutationOptions = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['absorbBankDepositComponentRemainder'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  absorbBankDepositComponentRemainder(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AbsorbBankDepositComponentRemainderMutationResult = NonNullable<Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>>
+
+    export type AbsorbBankDepositComponentRemainderMutationError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Correct a direct payment component so it consumes the deposit's unresolved remainder.
+ */
+export const useAbsorbBankDepositComponentRemainder = <TError = ErrorType<FinanceForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof absorbBankDepositComponentRemainder>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getAbsorbBankDepositComponentRemainderMutationOptions(options));
     }
     /**
  * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow. With opportunityId, the mint books the unit as a payment on that pledge (donor derived from the pledge, allocations seeded from its plan) — no QuickBooks record is required.

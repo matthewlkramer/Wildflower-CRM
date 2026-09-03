@@ -4164,7 +4164,7 @@ export const ReconciliationCandidateDonorKind = {
 } as const;
 
 /**
- * Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count.
+ * Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.
  */
 export type ReconciliationCandidateConflictKind = typeof ReconciliationCandidateConflictKind[keyof typeof ReconciliationCandidateConflictKind] | null;
 
@@ -4173,6 +4173,8 @@ export const ReconciliationCandidateConflictKind = {
   excluded: 'excluded',
   settled_elsewhere: 'settled_elsewhere',
   tied_to_charge: 'tied_to_charge',
+  deposit_evidence: 'deposit_evidence',
+  component_evidence: 'component_evidence',
 } as const;
 
 export interface ReconciliationCandidate {
@@ -4196,7 +4198,7 @@ export interface ReconciliationCandidate {
   alreadyLinkedGiftId?: string | null;
   /** Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can't currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409. */
   conflictReason?: string | null;
-  /** Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count. */
+  /** Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship. */
   conflictKind?: ReconciliationCandidateConflictKind;
 }
 
@@ -4632,6 +4634,8 @@ export interface ConfirmChargeTiesBody {
   chargeId?: string;
   /** Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge's gross nor its net — the human asserts the row records this charge's money (e.g. the bookkeeper booked a partial/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch. */
   overrideAmountMismatch?: boolean;
+  /** Required when a manually selected QBO row currently serves as direct deposit/component evidence. Disconnects that prior direct-evidence relationship inside the same transaction before tying the row to the pinned charge. Does not override a payout settlement or another confirmed charge tie. */
+  reassignEvidence?: boolean;
 }
 
 export interface RejectChargeQbTieResult {
@@ -6454,6 +6458,8 @@ export type AddBankDepositComponentBody = {
   mode: 'attach';
   paymentUnitId: string;
   amount?: string | null;
+  /** Required when paymentUnitId is currently composed on another bank deposit. Moves the existing component to this deposit atomically after explicit user confirmation. */
+  reassignEvidence?: boolean;
 } | {
   mode: 'create';
   kind: 'check' | 'direct_ach' | 'wire' | 'other';
@@ -6466,10 +6472,19 @@ export type AddBankDepositComponentBody = {
   amount?: string | null;
   /** Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie. */
   paymentUnitId?: string | null;
+  /** Required when this CRM gift already belongs to another direct payment. Disconnects that prior counted relationship and moves the gift or its existing payment component here atomically after explicit user confirmation. */
+  reassignGift?: boolean;
+} | {
+  mode: 'pledge';
+  /** Written CRM pledge to receive the newly composed payment. */
+  opportunityId: string;
+  amount: string;
 };
 
 export interface AttachDepositQboEvidenceBody {
   stagedPaymentId: string;
+  /** Required when this QBO line is already attached as deposit- or component-level accounting evidence. Disconnects that prior direct-evidence relationship and attaches it here atomically. */
+  reassignEvidence?: boolean;
 }
 
 export interface AttachDepositQboEvidenceResult {
@@ -6510,11 +6525,15 @@ export interface BankDepositComponentMutation {
   amount: string;
   source: BankDepositComponentMutationSource;
   needsReview: boolean;
+  /** Newly minted CRM gift id when mode=pledge; omitted for the other component operations. */
+  giftId?: string | null;
 }
 
 export interface SetBankDepositComponentSourceStagedPaymentBody {
   /** QBO staged-payment id to attach, or null to clear the pointer. */
   stagedPaymentId: string | null;
+  /** Required when the QBO line already documents another deposit or direct-payment component. Clears that prior direct-evidence relationship and attaches it here atomically. */
+  reassignEvidence?: boolean;
 }
 
 export interface BankDepositComponentSourceStagedPaymentMutation {
@@ -11566,6 +11585,12 @@ filterDate?: string;
  * @maximum 100
  */
 limit?: number;
+};
+
+export type AbsorbBankDepositComponentRemainder200 = {
+  id: string;
+  paymentUnitId: string;
+  amount: string;
 };
 
 export type LinkPayoutDepositBody = {

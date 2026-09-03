@@ -178,7 +178,7 @@ export const GetReconciliationGraphResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 }))
 })),
   "evidence": zod.object({
@@ -350,7 +350,7 @@ export const SearchReconciliationNodeResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 }))
 })
 
@@ -452,7 +452,7 @@ export const SearchReconciliationQbStagedResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 }))
 })
 
@@ -590,7 +590,8 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
 }),zod.object({
   "mode": zod.enum(['attach']),
   "paymentUnitId": zod.string(),
-  "amount": zod.string().nullish()
+  "amount": zod.string().nullish(),
+  "reassignEvidence": zod.boolean().optional().describe('Required when paymentUnitId is currently composed on another bank deposit. Moves the existing component to this deposit atomically after explicit user confirmation.')
 }),zod.object({
   "mode": zod.enum(['create']),
   "kind": zod.enum(['check', 'direct_ach', 'wire', 'other']),
@@ -600,8 +601,35 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
   "mode": zod.enum(['gift']),
   "giftId": zod.string(),
   "amount": zod.string().nullish().describe('Component amount in major units; defaults to the gift\'s unclaimed unit amount or the deposit\'s unexplained remainder.'),
-  "paymentUnitId": zod.string().nullish().describe('Adopt exactly this deposit component\'s gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie.')
+  "paymentUnitId": zod.string().nullish().describe('Adopt exactly this deposit component\'s gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie.'),
+  "reassignGift": zod.boolean().optional().describe('Required when this CRM gift already belongs to another direct payment. Disconnects that prior counted relationship and moves the gift or its existing payment component here atomically after explicit user confirmation.')
+}),zod.object({
+  "mode": zod.enum(['pledge']),
+  "opportunityId": zod.string().describe('Written CRM pledge to receive the newly composed payment.'),
+  "amount": zod.string()
 })])
+
+/**
+ * Finance/admin review only. Clears the component payment unit's counted gift pointer while preserving both the CRM gift and the bank-deposit component. This makes an incorrect completed-row link correctable without deleting either record.
+ * @summary Disconnect a CRM gift from a direct bank-deposit payment component.
+ */
+export const UnlinkBankDepositComponentGiftParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+/**
+ * Finance/admin review only. Expands the selected direct payment and component to the remaining deposit amount. A linked CRM gift must equal the resulting payment amount. Any component-level QBO pointer is preserved as deposit-level accounting evidence because QBO line splits do not define the real-world bank composition.
+ * @summary Correct a direct payment component so it consumes the deposit's unresolved remainder.
+ */
+export const AbsorbBankDepositComponentRemainderParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const AbsorbBankDepositComponentRemainderResponse = zod.object({
+  "id": zod.string(),
+  "paymentUnitId": zod.string(),
+  "amount": zod.string()
+})
 
 /**
  * Finance/admin review only. Mints a gifts_and_payments row whose amount IS the unit's money and points the unit's gift tie at it (created_the_gift = true) — the unit-anchored twin of the staged-payment/Stripe-charge mints, for direct payments whose QBO row is unavailable (e.g. derived excluded by a confirmed charge tie) or absent. Only direct (non-Stripe) gift-less units composed on a bank deposit are eligible; Stripe-backed money mints through the charge flow. With opportunityId, the mint books the unit as a payment on that pledge (donor derived from the pledge, allocations seeded from its plan) — no QuickBooks record is required.
@@ -633,7 +661,8 @@ export const AttachDepositQboEvidenceParams = zod.object({
 })
 
 export const AttachDepositQboEvidenceBody = zod.object({
-  "stagedPaymentId": zod.string()
+  "stagedPaymentId": zod.string(),
+  "reassignEvidence": zod.boolean().optional().describe('Required when this QBO line is already attached as deposit- or component-level accounting evidence. Disconnects that prior direct-evidence relationship and attaches it here atomically.')
 })
 
 /**
@@ -671,7 +700,8 @@ export const SetBankDepositComponentSourceStagedPaymentParams = zod.object({
 })
 
 export const SetBankDepositComponentSourceStagedPaymentBody = zod.object({
-  "stagedPaymentId": zod.string().nullable().describe('QBO staged-payment id to attach, or null to clear the pointer.')
+  "stagedPaymentId": zod.string().nullable().describe('QBO staged-payment id to attach, or null to clear the pointer.'),
+  "reassignEvidence": zod.boolean().optional().describe('Required when the QBO line already documents another deposit or direct-payment component. Clears that prior direct-evidence relationship and attaches it here atomically.')
 })
 
 export const SetBankDepositComponentSourceStagedPaymentResponse = zod.object({
@@ -910,7 +940,8 @@ export const ConfirmPayoutChargeTiesBody = zod.object({
   "qbStagedPaymentIds": zod.array(zod.string()).optional().describe('QB staged_payments ids to tie to this payout\'s charges. Each must match a distinct untied charge by exact amount and must not already be tied\/settlement-linked elsewhere.'),
   "overrideExclusion": zod.boolean().optional().describe('Deliberate human override for manually selected QB rows that were excluded from review: re-includes them (clears the exclusion, pinning classification_source=\'manual\') in the same transaction before tying. Manual mode only — ignored when approving system-proposed ties. Default false: excluded rows are refused with a 409.'),
   "chargeId": zod.string().optional().describe('PIN the manual tie to this specific untied charge of the payout (requires exactly ONE qbStagedPaymentIds entry). Without it, manual rows are placed by exact amount onto whichever untied charge fits. Required for overrideAmountMismatch — an amount-agnostic tie is only meaningful against an explicit charge.'),
-  "overrideAmountMismatch": zod.boolean().optional().describe('Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge\'s gross nor its net — the human asserts the row records this charge\'s money (e.g. the bookkeeper booked a partial\/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch.')
+  "overrideAmountMismatch": zod.boolean().optional().describe('Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge\'s gross nor its net — the human asserts the row records this charge\'s money (e.g. the bookkeeper booked a partial\/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch.'),
+  "reassignEvidence": zod.boolean().optional().describe('Required when a manually selected QBO row currently serves as direct deposit\/component evidence. Disconnects that prior direct-evidence relationship inside the same transaction before tying the row to the pinned charge. Does not override a payout settlement or another confirmed charge tie.')
 }).describe('Optional manual-tie payload. Omit (or send no body) to approve the\nsystem-proposed per-charge ties. Provide qbStagedPaymentIds to manually\ntie the selected QB staged rows to this payout\'s untied charges\n(the Settlement report\'s \"Tie selected\" gesture).\n')
 
 export const ConfirmPayoutChargeTiesResponse = zod.object({
@@ -1821,7 +1852,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
   "gift": zod.object({
@@ -1853,7 +1884,7 @@ export const AssembleReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
   "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),
@@ -1951,7 +1982,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
   "gift": zod.object({
@@ -1983,7 +2014,7 @@ export const GetReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
   "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),
@@ -2110,7 +2141,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative donors for the picker.')
 }).describe('The proposed donor for a bundle row. existing: link an existing record. new: mint one on confirm. unresolved: no confident proposal (needs a human).'),
   "gift": zod.object({
@@ -2142,7 +2173,7 @@ export const DeriveReconciliationBundleResponse = zod.object({
   "alreadyLinkedStagedPaymentId": zod.string().nullish().describe('For gift candidates: set when the gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (via the QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to avoid double-counting.'),
   "alreadyLinkedGiftId": zod.string().nullish().describe('For QB staged-payment candidates (the reverse picker — choosing a QuickBooks payment to link to a gift): set when this payment is already matched to, created, or multi-matched onto a gift. The UI grays the row and offers Unlink to free it before re-linking, to avoid double-counting.'),
   "conflictReason": zod.string().nullish().describe('Why this candidate is blocked: a conflict with a locked node (card search), or — in the un-anchored qb-search pick list — why the row can\'t currently be picked (excluded from review, already settled against another payout, or already claimed by a charge-grain tie to another Stripe charge). Blocked rows are labeled, never hidden, so users can spot mis-derived statuses; the action endpoints still enforce the block with a specific 409.'),
-  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row\'s money is already claimed and overriding would double-count.')
+  "conflictKind": zod.enum(['excluded', 'settled_elsewhere', 'tied_to_charge', 'deposit_evidence', 'component_evidence']).nullish().describe('Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.')
 })).describe('Scored alternative gifts for the picker (already-linked gifts flagged via alreadyLinkedStagedPaymentId).')
 }).describe('What to do with this row\'s money on the CRM-gift side.\nmatch: link an existing gift (giftId). mint: create a new gift from the evidence (mintDraft). research: park for later (no gift). exclude: file as a non-gift (exclusionReason).\n'),
   "provenance": zod.enum(['auto', 'override', 'sync']).describe('How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.'),

@@ -5620,7 +5620,12 @@ paths:
             content:
               {
                 application/json:
-                  { schema: { $ref: "#/components/schemas/EmailTrackingOutboundQueue" } },
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/EmailTrackingOutboundQueue",
+                      },
+                  },
               },
           }
         "401": { description: Unauthorized }
@@ -5646,7 +5651,12 @@ paths:
             content:
               {
                 application/json:
-                  { schema: { $ref: "#/components/schemas/EmailTrackingInboundQueue" } },
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/EmailTrackingInboundQueue",
+                      },
+                  },
               },
           }
         "401": { description: Unauthorized }
@@ -5670,7 +5680,10 @@ paths:
             content:
               {
                 application/json:
-                  { schema: { $ref: "#/components/schemas/EmailTrackingResolution" } },
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EmailTrackingResolution" },
+                  },
               },
           }
         "401": { description: Unauthorized }
@@ -10588,6 +10601,48 @@ paths:
         "409":
           {
             description: "The amount exceeds the current unexplained remainder, the selected payment unit is unavailable, or the selected gift's payment units are ambiguous.",
+          }
+  /reconciliation/deposit-components/{id}/unlink-gift:
+    post:
+      operationId: unlinkBankDepositComponentGift
+      tags: [reconciliation]
+      summary: Disconnect a CRM gift from a direct bank-deposit payment component.
+      description: Finance/admin review only. Clears the component payment unit's counted gift pointer while preserving both the CRM gift and the bank-deposit component. This makes an incorrect completed-row link correctable without deleting either record.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: CRM gift disconnected from the payment component }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          {
+            description: "The component is not a direct payment or no CRM gift is linked.",
+          }
+  /reconciliation/deposit-components/{id}/absorb-remainder:
+    post:
+      operationId: absorbBankDepositComponentRemainder
+      tags: [reconciliation]
+      summary: Correct a direct payment component so it consumes the deposit's unresolved remainder.
+      description: Finance/admin review only. Expands the selected direct payment and component to the remaining deposit amount. A linked CRM gift must equal the resulting payment amount. Any component-level QBO pointer is preserved as deposit-level accounting evidence because QBO line splits do not define the real-world bank composition.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Payment expanded to the full remaining deposit amount
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, paymentUnitId, amount]
+                properties:
+                  id: { type: string }
+                  paymentUnitId: { type: string }
+                  amount: { type: string }
+        "403": { $ref: "#/components/responses/FinanceForbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          {
+            description: "There is no remainder to absorb, the payment is not eligible, or its linked gift amount does not equal the corrected payment amount.",
           }
   /reconciliation/payment-units/{id}/create-gift:
     post:
@@ -17852,9 +17907,16 @@ components:
         conflictKind:
           {
             type: string,
-            enum: [excluded, settled_elsewhere, tied_to_charge],
+            enum:
+              [
+                excluded,
+                settled_elsewhere,
+                tied_to_charge,
+                deposit_evidence,
+                component_evidence,
+              ],
             nullable: true,
-            description: "Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count.",
+            description: "Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. `excluded` uses the explicit exclusion override. `deposit_evidence` and `component_evidence` are movable after a reassignment confirmation. Settlement and charge-tie ownership remain hard accounting conflicts unless the target endpoint explicitly supports moving that relationship.",
           }
     ReconciliationNode:
       type: object
@@ -18564,6 +18626,11 @@ components:
           {
             type: boolean,
             description: "Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge's gross nor its net — the human asserts the row records this charge's money (e.g. the bookkeeper booked a partial/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch.",
+          }
+        reassignEvidence:
+          {
+            type: boolean,
+            description: "Required when a manually selected QBO row currently serves as direct deposit/component evidence. Disconnects that prior direct-evidence relationship inside the same transaction before tying the row to the pinned charge. Does not override a payout settlement or another confirmed charge tie.",
           }
     RejectChargeQbTieResult:
       type: object
@@ -20430,13 +20497,7 @@ components:
       properties:
         kind:
           type: string
-          enum:
-            [
-              stripe_payout,
-              stripe_unlinked,
-              components,
-              unresolved,
-            ]
+          enum: [stripe_payout, stripe_unlinked, components, unresolved]
         payoutId: { type: string, nullable: true }
         payoutDate:
           {
@@ -20835,6 +20896,11 @@ components:
             mode: { type: string, enum: [attach] }
             paymentUnitId: { type: string }
             amount: { type: string, nullable: true }
+            reassignEvidence:
+              {
+                type: boolean,
+                description: "Required when paymentUnitId is currently composed on another bank deposit. Moves the existing component to this deposit atomically after explicit user confirmation.",
+              }
         - type: object
           required: [mode, kind, amount]
           properties:
@@ -20859,11 +20925,31 @@ components:
                 nullable: true,
                 description: "Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie.",
               }
+            reassignGift:
+              {
+                type: boolean,
+                description: "Required when this CRM gift already belongs to another direct payment. Disconnects that prior counted relationship and moves the gift or its existing payment component here atomically after explicit user confirmation.",
+              }
+        - type: object
+          required: [mode, opportunityId, amount]
+          properties:
+            mode: { type: string, enum: [pledge] }
+            opportunityId:
+              {
+                type: string,
+                description: "Written CRM pledge to receive the newly composed payment.",
+              }
+            amount: { type: string }
     AttachDepositQboEvidenceBody:
       type: object
       required: [stagedPaymentId]
       properties:
         stagedPaymentId: { type: string }
+        reassignEvidence:
+          {
+            type: boolean,
+            description: "Required when this QBO line is already attached as deposit- or component-level accounting evidence. Disconnects that prior direct-evidence relationship and attaches it here atomically.",
+          }
     AttachDepositQboEvidenceResult:
       type: object
       required: [sourceLinkId, stagedPaymentId, bankDepositId]
@@ -20893,6 +20979,12 @@ components:
         amount: { type: string }
         source: { type: string, enum: [manual] }
         needsReview: { type: boolean }
+        giftId:
+          {
+            type: string,
+            nullable: true,
+            description: "Newly minted CRM gift id when mode=pledge; omitted for the other component operations.",
+          }
     SetBankDepositComponentSourceStagedPaymentBody:
       type: object
       required: [stagedPaymentId]
@@ -20902,6 +20994,11 @@ components:
             type: string,
             nullable: true,
             description: "QBO staged-payment id to attach, or null to clear the pointer.",
+          }
+        reassignEvidence:
+          {
+            type: boolean,
+            description: "Required when the QBO line already documents another deposit or direct-payment component. Clears that prior direct-evidence relationship and attaches it here atomically.",
           }
     BankDepositComponentSourceStagedPaymentMutation:
       type: object
@@ -21952,7 +22049,8 @@ components:
                 opportunity,
                 pledge,
                 organization,
-                person, household,
+                person,
+                household,
                 gift,
                 staged_payment,
                 stripe_payout,
@@ -24585,7 +24683,8 @@ components:
         data:
           {
             type: array,
-            items: { $ref: "#/components/schemas/EmailTrackingOutboundQueueRow" },
+            items:
+              { $ref: "#/components/schemas/EmailTrackingOutboundQueueRow" },
           }
     EmailTrackingInboundQueueRow:
       type: object
@@ -24613,11 +24712,13 @@ components:
         data:
           {
             type: array,
-            items: { $ref: "#/components/schemas/EmailTrackingInboundQueueRow" },
+            items:
+              { $ref: "#/components/schemas/EmailTrackingInboundQueueRow" },
           }
     EmailTrackingResolution:
       type: object
-      required: [id, queueType, sourceId, mailboxUserId, resolvedByUserId, resolvedAt]
+      required:
+        [id, queueType, sourceId, mailboxUserId, resolvedByUserId, resolvedAt]
       properties:
         id: { type: string }
         queueType: { type: string, enum: [outbound, inbound] }

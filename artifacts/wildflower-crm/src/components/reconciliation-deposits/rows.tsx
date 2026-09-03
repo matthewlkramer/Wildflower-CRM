@@ -44,6 +44,8 @@ export type DepositActions = Omit<
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
   openExcludeRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
+  unlinkComponentGift?: (componentId: string, label: string) => void;
+  absorbComponentRemainder?: (componentId: string, label: string) => void;
   openChargeQbSearch?: (charge: WorkbenchDepositCharge) => void;
   openComponentQbSearch?: (
     component: WorkbenchDepositCompositionComponentsItem,
@@ -54,6 +56,7 @@ export type DepositActions = Omit<
     amount: string,
     mode: "code" | "search" | "browse_unlinked",
   ) => void;
+  openRemainderPledgeSearch?: (bankDepositId: string, amount: string) => void;
   /** Unified gift/opportunity/pledge search for a specific payment anchor. */
   openLinkEvidence?: (anchor: AnchorRef, mode: "all" | "pledges") => void;
   /** Column-level gift search must choose among every open payment on the row. */
@@ -241,10 +244,13 @@ const NOOP_ACTIONS: DepositActions = {
   openFlagRemainder: () => undefined,
   openExcludeRemainder: () => undefined,
   removeManualComponent: () => undefined,
+  unlinkComponentGift: () => undefined,
+  absorbComponentRemainder: () => undefined,
   openChargeQbSearch: () => undefined,
   openComponentQbSearch: () => undefined,
   clearComponentQbSource: () => undefined,
   openRemainderGiftSearch: () => undefined,
+  openRemainderPledgeSearch: () => undefined,
   openDepositQbEvidenceSearch: () => undefined,
   openFlagAccountingError: () => undefined,
   applyBankDepositExclusion: () => undefined,
@@ -258,7 +264,7 @@ export function DepositGridHeader() {
     >
       <span />
       <span className="flex items-center gap-1">
-        <Landmark className="h-3 w-3" /> Bank
+        <Landmark className="h-3 w-3" /> Wells Business Checking
       </span>
       <span>Composition</span>
       <span>Gifts</span>
@@ -322,6 +328,14 @@ function Composition({
                   deposit.anchorId,
                   composition.unexplainedAmount,
                   "search",
+                ),
+            },
+            {
+              label: "Search CRM pledges to link…",
+              onSelect: () =>
+                actions.openRemainderPledgeSearch?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
                 ),
             },
             {
@@ -630,6 +644,35 @@ function Composition({
                             label: "Search QuickBooks…",
                             onSelect: () =>
                               actions.openComponentQbSearch?.(component),
+                          },
+                        ]
+                      : []),
+                    ...(!component.unconfirmed &&
+                    composition.components.length === 1 &&
+                    remainder > 0.005 &&
+                    component.kind !== "stripe_charge" &&
+                    !component.exclusionReason
+                      ? [
+                          {
+                            label: "Make this payment the full deposit…",
+                            onSelect: () =>
+                              actions.absorbComponentRemainder?.(
+                                component.componentId,
+                                componentTitle(component),
+                              ),
+                          },
+                        ]
+                      : []),
+                    ...(!component.unconfirmed &&
+                    (component.countedGiftIds?.length ?? 0) > 0
+                      ? [
+                          {
+                            label: "Unlink CRM gift…",
+                            onSelect: () =>
+                              actions.unlinkComponentGift?.(
+                                component.componentId,
+                                componentTitle(component),
+                              ),
                           },
                         ]
                       : []),
@@ -1328,6 +1371,19 @@ export function DepositRow({
                     : undefined,
                 },
                 {
+                  label: "Search CRM pledges to link…",
+                  onSelect: () => {
+                    if (giftColumnAnchor && !giftColumnUnitless)
+                      actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
+                  },
+                  disabled: !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : giftColumnUnitless
+                      ? COMPONENT_NO_UNIT_REASON
+                      : undefined,
+                },
+                {
                   label: "Search Donorbox records…",
                   onSelect: () => {
                     if (giftColumnAnchor && !giftColumnUnitless)
@@ -1392,19 +1448,6 @@ export function DepositRow({
                         bankPreview,
                         giftColumnTarget.prefill,
                       );
-                  },
-                  disabled: !giftColumnAnchor || giftColumnUnitless,
-                  disabledReason: !giftColumnAnchor
-                    ? NO_GIFT_ANCHOR_REASON
-                    : giftColumnUnitless
-                      ? COMPONENT_NO_UNIT_REASON
-                      : undefined,
-                },
-                {
-                  label: "Record as payment on pledge…",
-                  onSelect: () => {
-                    if (giftColumnAnchor && !giftColumnUnitless)
-                      actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
                   },
                   disabled: !giftColumnAnchor || giftColumnUnitless,
                   disabledReason: !giftColumnAnchor
