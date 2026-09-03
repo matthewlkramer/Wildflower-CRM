@@ -5,7 +5,9 @@ import {
   index,
   uniqueIndex,
   jsonb,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { cleanupQueueStatusEnum } from "./_enums";
 
 export type CleanupProposalKind = "gift_donor" | "default_intermediary";
@@ -94,6 +96,15 @@ export const cleanupQueue = pgTable(
       t.status,
       t.proposalConfidence,
       t.proposalKind,
+    ),
+    index("cleanup_queue_flagged_by_user_idx").on(t.flaggedByUserId),
+    check(
+      "cleanup_queue_proposal_kind_ck",
+      sql`${t.proposalKind} IS NULL OR ${t.proposalKind} IN ('gift_donor', 'default_intermediary')`,
+    ),
+    check(
+      "cleanup_queue_proposal_confidence_ck",
+      sql`${t.proposalConfidence} IS NULL OR ${t.proposalConfidence} IN ('high', 'medium', 'low')`,
     ),
   ],
 );
