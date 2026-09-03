@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { ManualBankReportImportBody } from "@workspace/api-zod";
+import { ImportManualBankReportBody } from "@workspace/api-zod";
 import { requireFinance } from "../../lib/financeGuard";
 import { asyncHandler, parseOrBadRequest } from "../../lib/helpers";
 import { processManualBankReportFile } from "../../lib/scheduledBankReport";
@@ -23,7 +23,7 @@ router.post(
   "/reconciliation/bank-report-imports",
   asyncHandler(async (req, res) => {
     if (!requireFinance(req, res)) return;
-    const body = parseOrBadRequest(ManualBankReportImportBody, req.body, res);
+    const body = parseOrBadRequest(ImportManualBankReportBody, req.body, res);
     if (!body) return;
 
     const bytes = decodeBase64(body.contentBase64);
