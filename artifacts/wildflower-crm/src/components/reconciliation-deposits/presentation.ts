@@ -89,23 +89,6 @@ export function accountingCorrectionPresentation(
   };
 }
 
-export type NeedsGiftPlaceholderPresentation = {
-  title: "Needs CRM gift";
-  subtitle: string;
-};
-
-/** Keep an unlinked payment from looking like an actual CRM gift card. */
-export function needsGiftPlaceholderPresentation(
-  payerName: string | null | undefined,
-  fallback: string,
-): NeedsGiftPlaceholderPresentation {
-  const payer = payerName?.trim() || fallback;
-  return {
-    title: "Needs CRM gift",
-    subtitle: `Payment from ${payer}`,
-  };
-}
-
 export type SingleAllocationPresentation = {
   collapse: boolean;
   summary: string | null;

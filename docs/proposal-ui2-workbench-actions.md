@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-07-23
+last_verified: 2026-09-03
 ---
 
 # UI #2 — Deposit Workbench Actions
@@ -59,25 +59,34 @@ component; they are not independent deposit-level lists.
 
 ### Composition
 
+- Unresolved composition is an empty state, not an evidence card. Its actions
+  live in a three-dot menu beside `Unresolved`: code the whole deposit (or
+  remainder) as one payment, search or browse unlinked CRM gifts to book the
+  payment against, attach an existing payment-unit record, flag the remainder
+  for research, or exclude the remainder. **LIVE.**
 - Exclude/re-include a charge or direct component while leaving the component
   visible and badged. Charge exclusion/re-inclusion is **LIVE**; direct
   component exclusion/re-inclusion is **GAP**.
 - Confirm or dismiss provisional `deposit_qbo_components`. **LIVE.**
 - Confirm or dismiss processed refund propagation. **LIVE.**
 - Resolve an unresolved remainder in either of two ways:
-  1. Add a placeholder component flagged `needs_research`. **GAP.**
+  1. Add a placeholder component flagged `needs_research`. **LIVE.**
   2. Add a known payment component. Search existing unclaimed check
      `payment_units` first (D4), create a fresh unit only if none matches, and
-     optionally tie it to a QBO record or annotate why QBO is missing. **GAP.**
+     optionally tie it to a QBO record or annotate why QBO is missing. **LIVE.**
 
 ### Gifts
 
+- A missing gift is an empty state (`No CRM gifts linked`), never a synthetic
+  “Needs CRM gift” card. The column menu exposes CRM gift search, unlinked-gift
+  browse, Donorbox search, coding-form search, and new-gift creation; actions
+  remain disabled with an explanation when no component/payment unit exists.
+  **LIVE.**
 - On a component with no gift: search and link an existing gift, create a gift
   from evidence, or identify the donor without creating a gift. **LIVE** for
   existing staged-payment/Stripe flows.
 - Donorbox donation search/link/create and donor coding-form lookup are
-  available backend capabilities but are not surfaced in the live deposit
-  page. **WIRE.**
+  surfaced in the live deposit page. **LIVE.**
 - On a component with one gift: unlink/revert the component→gift booking.
   **LIVE** for the existing staged-payment/Stripe flows.
 - Merge apparent duplicate gifts into allocation rows on one gift. **LIVE**
@@ -92,6 +101,10 @@ component; they are not independent deposit-level lists.
 ### Accounting / QBO
 
 - QBO is downstream documentation, not the money or gift authority.
+- Column-wide actions are limited to finding accounting evidence and flagging
+  an accounting problem. QuickBooks detail and relationship/disposition actions
+  live on each accounting evidence card so the affected record is explicit.
+  **LIVE.**
 - Keep typed evidence tables:
   - `source_links.charge_qb_tie` for gross charge ties;
   - `source_links.charge_fee_row` for processor-fee rows;

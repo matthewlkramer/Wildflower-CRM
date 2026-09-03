@@ -114,7 +114,6 @@ import {
 } from "@/components/reconciliation-deposits/gift-column-dialogs";
 import {
   buildGiftPlacementPlan,
-  extractPlacementTargets,
   GiftPlacementDialog,
   type GiftPlacementPlan,
   type GiftPlacementTarget,
@@ -302,18 +301,14 @@ export default function ReconciliationDepositsPage() {
   const total = data?.pagination.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const [linkGiftFor, setLinkGiftFor] = useState<AnchorRef | null>(null);
-  const [columnGiftFor, setColumnGiftFor] = useState<WorkbenchDeposit | null>(
-    null,
-  );
+  const [columnGiftFor, setColumnGiftFor] = useState<{
+    deposit: WorkbenchDeposit;
+    mode: "search" | "browse_unlinked";
+  } | null>(null);
   const [giftPlacementFor, setGiftPlacementFor] = useState<{
     deposit: WorkbenchDeposit;
     gift: GiftOrPayment;
     plan: GiftPlacementPlan;
-  } | null>(null);
-  const [pledgePlacementFor, setPledgePlacementFor] = useState<{
-    deposit: WorkbenchDeposit;
-    opp: OpportunityOrPledge;
-    targets: GiftPlacementTarget[];
   } | null>(null);
   const [donorboxFor, setDonorboxFor] = useState<{
     anchor: AnchorRef;
@@ -423,6 +418,7 @@ export default function ReconciliationDepositsPage() {
   const [singlePaymentFor, setSinglePaymentFor] = useState<{
     depositId: string;
     amount: string;
+    mode: "code" | "search" | "browse_unlinked";
   } | null>(null);
   const [qbEvidenceFor, setQbEvidenceFor] = useState<WorkbenchDeposit | null>(
     null,
@@ -1178,7 +1174,7 @@ export default function ReconciliationDepositsPage() {
     return true;
   };
   const handleColumnGiftPick = async (gift: GiftOrPayment) => {
-    const deposit = columnGiftFor;
+    const deposit = columnGiftFor?.deposit;
     if (!deposit) return;
     const plan = buildGiftPlacementPlan(deposit, gift);
     if (plan.targets.length === 0) {
@@ -1262,35 +1258,6 @@ export default function ReconciliationDepositsPage() {
       if (is409(err)) invalidate();
       return false;
     }
-  };
-
-  const handleColumnPledgePick = async (opp: OpportunityOrPledge) => {
-    const deposit = columnGiftFor;
-    if (!deposit) return;
-    const targets = extractPlacementTargets(deposit);
-    if (targets.length === 0) {
-      toast({
-        title: "No available payment",
-        description:
-          "Every payment on this row is already linked or unavailable.",
-      });
-      setColumnGiftFor(null);
-      return;
-    }
-    if (targets.length === 1) {
-      const done = await mintPledgePaymentAt(targets[0]!.anchor, opp);
-      if (done) setColumnGiftFor(null);
-      return;
-    }
-    setColumnGiftFor(null);
-    setPledgePlacementFor({ deposit, opp, targets });
-  };
-
-  const handlePlacePledgePayment = async (target: GiftPlacementTarget) => {
-    const placement = pledgePlacementFor;
-    if (!placement) return;
-    const done = await mintPledgePaymentAt(target.anchor, placement.opp);
-    if (done) setPledgePlacementFor(null);
   };
 
   const handlePlaceGift = async (target: GiftPlacementTarget) => {
@@ -1643,7 +1610,8 @@ export default function ReconciliationDepositsPage() {
     openCreateGift: (anchor, preview, prefill) =>
       setCreateFor({ anchor, preview, prefill: prefill ?? null }),
     openLinkEvidence: (anchor, mode) => setLinkEvidenceFor({ anchor, mode }),
-    openColumnGiftSearch: setColumnGiftFor,
+    openColumnGiftSearch: (deposit, mode) =>
+      setColumnGiftFor({ deposit, mode }),
     openIdentify: (anchor, preview) =>
       setIdentifyFor({
         anchor,
@@ -1795,8 +1763,8 @@ export default function ReconciliationDepositsPage() {
       setAccountingDispositionFor({ checkId, disposition });
       setAccountingDispositionNote("");
     },
-    openSinglePaymentDeposit: (depositId, amount) =>
-      setSinglePaymentFor({ depositId, amount }),
+    openRemainderGiftSearch: (depositId, amount, mode) =>
+      setSinglePaymentFor({ depositId, amount, mode }),
     openDepositQbEvidenceSearch: (deposit) => setQbEvidenceFor(deposit),
     openFlagAccountingError: (deposit) => {
       setFlagErrorFor(deposit);
@@ -2110,7 +2078,7 @@ export default function ReconciliationDepositsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Add known payment</AlertDialogTitle>
+            <AlertDialogTitle>Attach existing payment record</AlertDialogTitle>
             <AlertDialogDescription>
               Resolve{" "}
               {knownPaymentFor
@@ -2358,16 +2326,24 @@ export default function ReconciliationDepositsPage() {
             : undefined
         }
       />
-      <LinkEvidenceSearchDialog
+      <GiftSearchDialog
         open={columnGiftFor != null}
         onOpenChange={(open) => {
           if (!open && !busy) setColumnGiftFor(null);
         }}
-        mode="all"
-        anchorKind="deposit"
         busy={busy}
-        onPickGift={(gift) => void handleColumnGiftPick(gift)}
-        onPickOpp={(opp) => void handleColumnPledgePick(opp)}
+        onPick={(gift) => void handleColumnGiftPick(gift)}
+        awaitingEvidence={columnGiftFor?.mode === "browse_unlinked"}
+        title={
+          columnGiftFor?.mode === "browse_unlinked"
+            ? "Browse unlinked CRM gifts"
+            : "Search CRM gifts"
+        }
+        description={
+          columnGiftFor?.mode === "browse_unlinked"
+            ? "Choose a CRM gift that does not yet have payment evidence, then choose which payment on this deposit it belongs to."
+            : "Find the CRM gift this deposit payment belongs to, then choose the payment to link."
+        }
       />
       <GiftPlacementDialog
         open={giftPlacementFor != null}
@@ -2380,31 +2356,6 @@ export default function ReconciliationDepositsPage() {
         onLink={(target) => void handlePlaceGift(target)}
         onSplit={() => void handleSplitGiftAcrossCharges()}
       />
-      <GiftPlacementDialog
-        open={pledgePlacementFor != null}
-        onOpenChange={(open) => {
-          if (!open && !busy) setPledgePlacementFor(null);
-        }}
-        gift={null}
-        pledgeName={
-          pledgePlacementFor
-            ? (pledgePlacementFor.opp.name ?? pledgePlacementFor.opp.id)
-            : null
-        }
-        plan={
-          pledgePlacementFor
-            ? {
-                targets: pledgePlacementFor.targets,
-                uniqueExactMatchKey: null,
-                directTarget: null,
-                split: null,
-              }
-            : null
-        }
-        busy={busy}
-        onLink={(target) => void handlePlacePledgePayment(target)}
-        onSplit={() => undefined}
-      />
       <GiftSearchDialog
         open={singlePaymentFor != null}
         onOpenChange={(open) => {
@@ -2412,19 +2363,30 @@ export default function ReconciliationDepositsPage() {
         }}
         onPick={(gift) => void handleSinglePaymentPick(gift)}
         busy={busy}
-        title="Single payment deposit"
+        awaitingEvidence={singlePaymentFor?.mode === "browse_unlinked"}
+        title={
+          singlePaymentFor?.mode === "browse_unlinked"
+            ? "Browse unlinked CRM gifts"
+            : singlePaymentFor?.mode === "search"
+              ? "Search CRM gifts"
+              : "Code as a single payment"
+        }
         description={
           singlePaymentFor
-            ? `Record this ${formatCurrency(singlePaymentFor.amount)} deposit as a single payment for an existing CRM gift.`
+            ? singlePaymentFor.mode === "code"
+              ? `Code this ${formatCurrency(singlePaymentFor.amount)} deposit amount as one payment, with or without a CRM gift.`
+              : `Link this ${formatCurrency(singlePaymentFor.amount)} unresolved deposit amount to an existing CRM gift.`
             : undefined
         }
-        extraAction={{
-          label: "Record without a gift",
-          description: singlePaymentFor
-            ? `One ${formatCurrency(singlePaymentFor.amount)} payment covering the whole deposit — no CRM gift linked yet.`
-            : undefined,
-          onSelect: () => void handleSinglePaymentNoGift(),
-        }}
+        extraAction={
+          singlePaymentFor?.mode === "code"
+            ? {
+                label: "Code without linking a gift",
+                description: `Create one ${formatCurrency(singlePaymentFor.amount)} payment record; the CRM gift can be linked later.`,
+                onSelect: () => void handleSinglePaymentNoGift(),
+              }
+            : undefined
+        }
       />
       {qbEvidenceFor ? (
         <TieChargeQbDialog

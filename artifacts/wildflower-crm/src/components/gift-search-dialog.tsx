@@ -45,6 +45,7 @@ export function GiftSearchDialog({
   title = "Search for a gift",
   description = "Find any existing gift by donor, amount, or date.",
   busy = false,
+  awaitingEvidence = false,
   footnote,
   extraAction,
 }: {
@@ -57,6 +58,8 @@ export function GiftSearchDialog({
   description?: string;
   /** Disable picking while a mutation from a prior pick is in flight. */
   busy?: boolean;
+  /** Limit results to CRM gifts that do not yet have funding evidence. */
+  awaitingEvidence?: boolean;
   /** Optional helper line under the results (e.g. an action reminder). */
   footnote?: ReactNode;
   /** Optional alternative to picking a gift (e.g. "record without a gift"). */
@@ -97,10 +100,11 @@ export function GiftSearchDialog({
       ...(debouncedAmount.trim() ? { amount: debouncedAmount.trim() } : {}),
       ...(dateAfter ? { dateAfter } : {}),
       ...(dateBefore ? { dateBefore } : {}),
+      ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
       sort: "date_desc",
       limit: 25,
     }),
-    [debouncedText, debouncedAmount, dateAfter, dateBefore],
+    [awaitingEvidence, debouncedText, debouncedAmount, dateAfter, dateBefore],
   );
 
   const { data, isFetching } = useListGiftsAndPayments(params, {
@@ -217,7 +221,9 @@ export function GiftSearchDialog({
               <span className="min-w-0">
                 <span className="block font-medium">{extraAction.label}</span>
                 {extraAction.description && (
-                  <span className="block text-xs text-muted-foreground">{extraAction.description}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {extraAction.description}
+                  </span>
                 )}
               </span>
             </button>

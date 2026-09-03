@@ -29,11 +29,11 @@ Each workbench row represents a set of potentially related evidence across three
 
 A row has:
 
-* A **link status**, describing whether the evidence is connected
-* An **information status**, describing whether the records contain the required information
-* Optional **row-level flags**
-* Separate **column and card statuses**
-* Actions determined by state, source, and user permissions
+- A **link status**, describing whether the evidence is connected
+- An **information status**, describing whether the records contain the required information
+- Optional **row-level flags**
+- Separate **column and card statuses**
+- Actions determined by state, source, and user permissions
 
 A single physical record may satisfy more than one semantic role. For example, a QuickBooks ACH or check may serve as both transaction evidence and accounting evidence.
 
@@ -69,6 +69,14 @@ Excluded components remain visible in Composition with an **Excluded** badge.
 They leave active counting but remain in the gross→net→bank reconciliation.
 The detailed UI #2 target and LIVE/WIRE/GAP action status are in
 [`proposal-ui2-workbench-actions.md`](proposal-ui2-workbench-actions.md).
+
+Cards represent evidence records, not missing-state placeholders. An unresolved
+composition remainder and an empty Gifts column render as concise text
+(`Unresolved` / `No CRM gifts linked`) with their available actions in the
+column's three-dot menu. Record-specific actions stay on the evidence card they
+affect; for example, QuickBooks detail, exclude, unlink, and correction
+dispositions belong on the individual accounting card rather than acting on the
+first record through a column-level menu.
 
 QBO is downstream documentation. Typed `source_links` claims and
 `deposit_qbo_components` remain the authorities for QBO ties; gift/allocation
@@ -136,10 +144,10 @@ This means only that the CRM evidence has not been connected to transaction or a
 
 It does **not** establish why that evidence is absent. Possible explanations include:
 
-* A payment exists but has not yet been found
-* A payment exists but has not yet been linked
-* The expected payment has not yet occurred
-* No payment will occur
+- A payment exists but has not yet been found
+- A payment exists but has not yet been linked
+- The expected payment has not yet occurred
+- No payment will occur
 
 Those are hypotheses or workflow possibilities, not row states.
 
@@ -149,11 +157,11 @@ Refunds do not create a row-level refund status.
 
 When an individual transaction is refunded:
 
-* That transaction no longer counts as live payment evidence.
-* Any other non-refunded transactions in the row continue to count normally.
-* If no live transaction remains and the CRM gift remains active, the row has `missing` or `partial` link coverage depending on what other evidence remains.
-* The system does not infer from the refund alone whether a replacement payment exists, will arrive later, or will never arrive.
-* The CRM record remains active until a replacement transaction is linked or the gift or opportunity is marked lost or dormant.
+- That transaction no longer counts as live payment evidence.
+- Any other non-refunded transactions in the row continue to count normally.
+- If no live transaction remains and the CRM gift remains active, the row has `missing` or `partial` link coverage depending on what other evidence remains.
+- The system does not infer from the refund alone whether a replacement payment exists, will arrive later, or will never arrive.
+- The CRM record remains active until a replacement transaction is linked or the gift or opportunity is marked lost or dormant.
 
 ---
 
@@ -188,10 +196,10 @@ The CRM card may be fully complete even though no transaction or accounting evid
 
 The required fields are conditional on the transaction and gift type. For example:
 
-* Stripe payments may require processor, routing, payout, and fee information.
-* Direct checks and ACH payments do not require Stripe routing or fee information.
-* Restricted grants may require restrictions, documentation, and reporting obligations.
-* Ordinary unrestricted gifts may require a smaller information set.
+- Stripe payments may require processor, routing, payout, and fee information.
+- Direct checks and ACH payments do not require Stripe routing or fee information.
+- Restricted grants may require restrictions, documentation, and reporting obligations.
+- Ordinary unrestricted gifts may require a smaller information set.
 
 The system should derive applicable requirements from the source, payment method, gift type, and restrictions rather than use one universal checklist.
 
@@ -213,11 +221,11 @@ The gift has a valid linked Donorbox record containing the required donor and pu
 
 The gift has:
 
-* A linked coding form
-* The coding form is complete
-* All fields required by the coding form have been completed
-* A grant letter is attached when such a letter exists
-* A grant letter is required when known donor restrictions make supporting documentation necessary
+- A linked coding form
+- The coding form is complete
+- All fields required by the coding form have been completed
+- A grant letter is attached when such a letter exists
+- A grant letter is required when known donor restrictions make supporting documentation necessary
 
 The mere existence of a coding-form record, or the presence of one populated coding-form field, does not make the gift complete.
 
@@ -227,22 +235,22 @@ A partially completed coding form does not satisfy this path.
 
 The gift has:
 
-* A linked donor
-* At least one allocation row
-* Every relevant allocation row has all applicable restriction information completed
-* A grant letter is attached when such a letter exists
-* A grant letter is required whenever donor restrictions are present
+- A linked donor
+- At least one allocation row
+- Every relevant allocation row has all applicable restriction information completed
+- A grant letter is attached when such a letter exists
+- A grant letter is required whenever donor restrictions are present
 
 Applicable allocation information may include:
 
-* Recipient entity, project, or school
-* Time restriction type
-* Spending start and end dates when time-restricted
-* Other restriction type (restrictions beyond region, time, school, and project)
-* Purpose or restriction description when other-restricted
-* Regional restriction type
-* Regions when regionally restricted
-* Reporting obligations or other required terms
+- Recipient entity, project, or school
+- Time restriction type
+- Spending start and end dates when time-restricted
+- Other restriction type (restrictions beyond region, time, school, and project)
+- Purpose or restriction description when other-restricted
+- Regional restriction type
+- Regions when regionally restricted
+- Reporting obligations or other required terms
 
 A gift with a donor but no allocation rows is not complete.
 
@@ -262,10 +270,10 @@ satisfiedBy:
 
 This may be displayed as:
 
-* Complete · Donorbox
-* Complete · completed coding form
-* Complete · donor and allocations
-* Complete · donor, allocations, and grant letter
+- Complete · Donorbox
+- Complete · completed coding form
+- Complete · donor and allocations
+- Complete · donor, allocations, and grant letter
 
 The display should reflect whether supporting documentation was actually required and present.
 
@@ -287,19 +295,19 @@ Refund is not a row-level flag. It belongs to an individual transaction card.
 
 A conflict exists when authoritative evidence cannot simultaneously be correct, such as:
 
-* Different donor identities for the same gift
-* Incompatible CRM and transaction amounts
-* Incompatible restrictions
-* Contradictory recipient entities
-* Different dates where the sources purport to represent the same date concept
+- Different donor identities for the same gift
+- Incompatible CRM and transaction amounts
+- Incompatible restrictions
+- Contradictory recipient entities
+- Different dates where the sources purport to represent the same date concept
 
 Expected date differences are not conflicts. For example:
 
-* Stripe charge date
-* Stripe payout date
-* Bank deposit date
-* QuickBooks posting date
-* CRM gift date
+- Stripe charge date
+- Stripe payout date
+- Bank deposit date
+- QuickBooks posting date
+- CRM gift date
 
 may legitimately differ.
 
@@ -319,15 +327,15 @@ Donorbox is not transaction evidence. Donorbox supplies donor and purpose inform
 
 Transaction state combines the card’s relationship state with any transaction-specific disposition.
 
-| State                | Meaning                                                                                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `unmatched`          | A live transaction exists but is not linked to CRM or accounting evidence                                   |
-| `partial`            | Some of the transaction amount or transaction units are linked, but coverage is incomplete                  |
-| `amount_mismatch`    | Links exist, but applied amounts do not reconcile within tolerance                                          |
-| `info_conflict`      | Amounts reconcile, but transaction and linked metadata materially conflict                                  |
-| `matched`            | Required links are present, amounts reconcile, and no material conflict exists                              |
-| `refunded`           | The transaction has been reversed and no longer counts as live payment evidence                             |
-| `excluded`           | The transaction is intentionally excluded from active reconciliation                                        |
+| State             | Meaning                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `unmatched`       | A live transaction exists but is not linked to CRM or accounting evidence                  |
+| `partial`         | Some of the transaction amount or transaction units are linked, but coverage is incomplete |
+| `amount_mismatch` | Links exist, but applied amounts do not reconcile within tolerance                         |
+| `info_conflict`   | Amounts reconcile, but transaction and linked metadata materially conflict                 |
+| `matched`         | Required links are present, amounts reconcile, and no material conflict exists             |
+| `refunded`        | The transaction has been reversed and no longer counts as live payment evidence            |
+| `excluded`        | The transaction is intentionally excluded from active reconciliation                       |
 
 `refunded` applies only to the individual transaction. There is no anticipatory refund state: records stay exactly as they are until a refund is actually processed.
 
@@ -335,18 +343,18 @@ If a row contains one refunded transaction and one live matched transaction, the
 
 ## 5.2 Transaction actions
 
-| Action                           | Availability                                                       |
-| -------------------------------- | ------------------------------------------------------------------ |
-| Match to existing CRM gift       | Unmatched, partial, or amount-mismatch states                      |
-| Match to QuickBooks evidence     | Unmatched, partial, or amount-mismatch states                      |
-| Create new CRM gift              | Unmatched transaction                                              |
-| Record as payment on pledge      | Unmatched transaction — any live payment evidence (see below)      |
-| Confirm proposed match           | System has proposed a match                                        |
-| Unmatch from CRM gift            | Any transaction with a CRM relationship                            |
-| Unmatch from QuickBooks evidence | Any transaction with an accounting relationship                    |
-| Exclude transaction              | Any non-excluded transaction                                       |
-| Un-exclude transaction           | Excluded transaction                                               |
-| View processor record            | Any transaction with an external source record                     |
+| Action                           | Availability                                                  |
+| -------------------------------- | ------------------------------------------------------------- |
+| Match to existing CRM gift       | Unmatched, partial, or amount-mismatch states                 |
+| Match to QuickBooks evidence     | Unmatched, partial, or amount-mismatch states                 |
+| Create new CRM gift              | Unmatched transaction                                         |
+| Record as payment on pledge      | Unmatched transaction — any live payment evidence (see below) |
+| Confirm proposed match           | System has proposed a match                                   |
+| Unmatch from CRM gift            | Any transaction with a CRM relationship                       |
+| Unmatch from QuickBooks evidence | Any transaction with an accounting relationship               |
+| Exclude transaction              | Any non-excluded transaction                                  |
+| Un-exclude transaction           | Excluded transaction                                          |
+| View processor record            | Any transaction with an external source record                |
 
 On the deposit-first surface, these actions apply to the individual
 component/payment unit. An excluded component stays in the Composition column
@@ -361,12 +369,12 @@ from QuickBooks evidence) is retired: the QuickBooks entry is the **last** step
 of booking, transcribed by a human after the CRM gift exists, never a
 precondition for recording the payment.
 
-* Picking a pledge mints the CRM gift/payment under it: the donor comes from
+- Picking a pledge mints the CRM gift/payment under it: the donor comes from
   the pledge, and allocations are copied from the pledge's remaining plan.
-* Only a live written pledge qualifies. An open opportunity must be converted
+- Only a live written pledge qualifies. An open opportunity must be converted
   to a pledge first (the staged approve flow offers convert-and-book);
   lost, dormant, and archived records never take money.
-* The gift-column row search covers gifts **and** open pledges; blocked picker
+- The gift-column row search covers gifts **and** open pledges; blocked picker
   rows stay visible with the blocking reason (label-not-hide).
 
 ---
@@ -382,10 +390,10 @@ It is distinct from the state of the QuickBooks record itself.
 
 ## 6.1 Pairing states
 
-| State | Meaning |
-| --- | --- |
-| `unlinked` | No `stripe_payouts.bank_deposit_id` pairing exists — the payout has not (yet) been matched to a bank deposit |
-| `paired` | A deterministic payout↔bank-deposit pairing exists (the common resolved state) |
+| State       | Meaning                                                                                                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `unlinked`  | No `stripe_payouts.bank_deposit_id` pairing exists — the payout has not (yet) been matched to a bank deposit                                                       |
+| `paired`    | A deterministic payout↔bank-deposit pairing exists (the common resolved state)                                                                                     |
 | `ambiguous` | Equivalent candidate deposits existed at match time; `ambiguous_bank_match` is set and a deterministic pairing is chosen, awaiting a human confirmation to lock it |
 
 The pairing is **deterministic and recomputed** — the matcher pairs each payout
@@ -403,13 +411,13 @@ A bundle-level QuickBooks deposit connected to multiple individual Stripe charge
 retired and dropped. The deposit-first workbench replaces those actions with a
 deterministic pairing plus finance overrides. The mapping from the old model:
 
-| Retired settlement-link action | Current action | Availability |
-| --- | --- | --- |
-| Propose settlement (search QB) | *(none — the matcher auto-pairs)* | — |
-| Confirm settlement | **Confirm match** — locks the deterministic pick | Finance/admin, only when `ambiguous_bank_match` is set |
-| Remove proposal | *(none — there is no proposal state)* | — |
-| Unmatch confirmed settlement | **Unlink deposit** | Finance/admin, when a pairing exists |
-| Replace settlement relationship | **Link to a different deposit…** | Finance/admin |
+| Retired settlement-link action        | Current action                                                                                                                                                                                                                            | Availability                                            |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Propose settlement (search QB)        | _(none — the matcher auto-pairs)_                                                                                                                                                                                                         | —                                                       |
+| Confirm settlement                    | **Confirm match** — locks the deterministic pick                                                                                                                                                                                          | Finance/admin, only when `ambiguous_bank_match` is set  |
+| Remove proposal                       | _(none — there is no proposal state)_                                                                                                                                                                                                     | —                                                       |
+| Unmatch confirmed settlement          | **Unlink deposit**                                                                                                                                                                                                                        | Finance/admin, when a pairing exists                    |
+| Replace settlement relationship       | **Link to a different deposit…**                                                                                                                                                                                                          | Finance/admin                                           |
 | Resolve as Stripe withdrawal (exempt) | **Resolve payout settlement** — a rare manual escape hatch for a genuinely ambiguous remainder; “no expected bank deposit” for balance withdrawals, net ≤ 0, and failed payouts is derived from payout facts, not a routine bundle action | Finance/admin, only for a genuinely ambiguous remainder |
 
 Not-fundraising is a **separate component disposition**, not a pairing action:
@@ -435,7 +443,7 @@ The QuickBooks column represents accounting records and their relationship and i
 | ---------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | `raw`                              | Imported QuickBooks or bank-feed record with only basic source information such as date and amount           |
 | `enriched`                         | Additional accounting information has been entered, but the record remains unmatched or not fully reconciled |
-| `match_proposed`                   | A match to a CRM gift or transaction has been proposed but not yet confirmed                                  |
+| `match_proposed`                   | A match to a CRM gift or transaction has been proposed but not yet confirmed                                 |
 | `matched_complete`                 | All in-scope amount and evidence units are covered by valid relationships                                    |
 | `matched_partial_qb_surplus`       | The QuickBooks record contains more money than linked transaction or CRM evidence accounts for               |
 | `matched_partial_external_surplus` | Linked transaction or CRM evidence exceeds the QuickBooks amount or scope                                    |
@@ -446,19 +454,19 @@ A single large QuickBooks record linked to several smaller transactions is not a
 
 ## 7.2 QuickBooks actions
 
-| Action                                               | Availability                                                           |
-| ---------------------------------------------------- | ---------------------------------------------------------------------- |
-| Match to CRM gift                                    | Raw, enriched, or partially matched                                    |
-| Match to transaction                                 | Raw, enriched, or partially matched                                    |
-| Confirm proposed match                               | A match has been proposed                                              |
+| Action                                               | Availability                                                                                                                                                                                                                                                  |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Match to CRM gift                                    | Raw, enriched, or partially matched                                                                                                                                                                                                                           |
+| Match to transaction                                 | Raw, enriched, or partially matched                                                                                                                                                                                                                           |
+| Confirm proposed match                               | A match has been proposed                                                                                                                                                                                                                                     |
 | Match several records to one CRM gift                | Two or more open records belong to the same gift — each books its own counted payment application on that gift, atomically (replaces the retired "Group QuickBooks records" pre-match grouping; see [`adr-linear-money-model.md`](adr-linear-money-model.md)) |
-| Split QuickBooks record into reconciliation units    | One accounting record needs to be represented as several subcomponents |
-| Unmatch from CRM gift                                | Any QuickBooks record with a CRM relationship                          |
-| Unmatch from transaction                             | Any QuickBooks record with a transaction relationship                  |
-| Exclude                                              | Any non-excluded state                                                 |
-| Un-exclude                                           | Excluded                                                               |
-| Fill out QuickBooks from CRM or transaction evidence | Displayed grayed out with the reason — the system cannot write to QuickBooks (see 7.4) |
-| View QuickBooks record                               | Any QuickBooks record                                                  |
+| Split QuickBooks record into reconciliation units    | One accounting record needs to be represented as several subcomponents                                                                                                                                                                                        |
+| Unmatch from CRM gift                                | Any QuickBooks record with a CRM relationship                                                                                                                                                                                                                 |
+| Unmatch from transaction                             | Any QuickBooks record with a transaction relationship                                                                                                                                                                                                         |
+| Exclude                                              | Any non-excluded state                                                                                                                                                                                                                                        |
+| Un-exclude                                           | Excluded                                                                                                                                                                                                                                                      |
+| Fill out QuickBooks from CRM or transaction evidence | Displayed grayed out with the reason — the system cannot write to QuickBooks (see 7.4)                                                                                                                                                                        |
+| View QuickBooks record                               | Any QuickBooks record                                                                                                                                                                                                                                         |
 
 ## 7.3 QuickBooks permissions (background)
 
@@ -466,18 +474,18 @@ The system never writes to QuickBooks; all QuickBooks access is pull-only. Quick
 
 Within the CRM, only a user with a finance-team role may change accounting relationships:
 
-* Grouping or splitting QuickBooks reconciliation records
-* Confirming accounting relationships
-* Removing or replacing confirmed accounting relationships
-* Excluding or un-excluding QuickBooks records
+- Grouping or splitting QuickBooks reconciliation records
+- Confirming accounting relationships
+- Removing or replacing confirmed accounting relationships
+- Excluding or un-excluding QuickBooks records
 
 Non-finance users may:
 
-* View QuickBooks evidence
-* View proposed mappings
-* Supply or correct CRM information
-* Request finance review
-* Propose a match, where the workflow supports proposals
+- View QuickBooks evidence
+- View proposed mappings
+- Supply or correct CRM information
+- Request finance review
+- Propose a match, where the workflow supports proposals
 
 They may not apply accounting changes.
 
@@ -487,15 +495,15 @@ The system cannot write to QuickBooks, so `Fill out QuickBooks from CRM` is not 
 
 Potentially relevant information for manual transcription includes:
 
-* Donor or customer identity
-* Recipient entity, project, or school
-* Restrictions
-* Memo or description
-* Funding source
-* Processor or intermediary
-* Fees
-* Reporting obligations
-* Other accounting classification fields
+- Donor or customer identity
+- Recipient entity, project, or school
+- Restrictions
+- Memo or description
+- Funding source
+- Processor or intermediary
+- Fees
+- Reporting obligations
+- Other accounting classification fields
 
 ---
 
@@ -543,11 +551,11 @@ Row information status: accounting_pending
 
 It does not establish whether:
 
-* The payment has not occurred
-* The payment exists but has not been found
-* The payment exists but has not been linked
-* The payment will occur later
-* The remaining gift amount will never be paid
+- The payment has not occurred
+- The payment exists but has not been found
+- The payment exists but has not been linked
+- The payment will occur later
+- The remaining gift amount will never be paid
 
 These are possible explanations, not CRM states.
 
@@ -597,16 +605,16 @@ They should be modeled once at the relationship level, even though they may be i
 
 For example, these UI actions all operate on the same underlying relationship:
 
-* “Match transaction to CRM gift”
-* “Match CRM gift to transaction”
-* “Link this gift”
-* “Attach this charge”
+- “Match transaction to CRM gift”
+- “Match CRM gift to transaction”
+- “Link this gift”
+- “Attach this charge”
 
 Likewise:
 
-* “Unmatch transaction from CRM gift”
-* “Unmatch CRM gift from transaction”
-* “Remove this gift from the row”
+- “Unmatch transaction from CRM gift”
+- “Unmatch CRM gift from transaction”
+- “Remove this gift from the row”
 
 may all remove or alter the same underlying link, depending on context.
 
@@ -614,13 +622,13 @@ may all remove or alter the same underlying link, depending on context.
 
 Relationship actions create, confirm, change, or remove links between evidence records.
 
-* Match
-* Confirm proposed match
-* Unmatch
-* Replace match
-* Move a card to another row
-* Remove a card from a row
-* Repair a broken pledge relationship
+- Match
+- Confirm proposed match
+- Unmatch
+- Replace match
+- Move a card to another row
+- Remove a card from a row
+- Repair a broken pledge relationship
 
 The API should expose relationship-centric commands, such as:
 
@@ -638,29 +646,29 @@ The UI label may be written from the perspective of the card where the user init
 
 Enrichment actions add or improve information without changing which cards are related.
 
-* Complete CRM gift
-* Complete coding form
-* Attach grant letter
-* Fill out QuickBooks from CRM (not built — display only; manual transcription in QuickBooks, see 7.4)
-* Add missing restriction information
-* Add accounting coding
+- Complete CRM gift
+- Complete coding form
+- Attach grant letter
+- Fill out QuickBooks from CRM (not built — display only; manual transcription in QuickBooks, see 7.4)
+- Add missing restriction information
+- Add accounting coding
 
 ## 9.3 Disposition actions
 
 Disposition actions change whether evidence or opportunities remain active.
 
-* Exclude or un-exclude evidence
-* Mark gift lost
-* Mark gift dormant
+- Exclude or un-exclude evidence
+- Mark gift lost
+- Mark gift dormant
 
 ## 9.4 Exception actions
 
 Exception actions resolve inconsistencies or special conditions.
 
-* Resolve amount mismatch
-* Resolve donor or restriction conflict
-* Replace an incorrect relationship
-* Repair a broken pledge allocation link
+- Resolve amount mismatch
+- Resolve donor or restriction conflict
+- Replace an incorrect relationship
+- Repair a broken pledge allocation link
 
 ---
 
@@ -671,12 +679,7 @@ The row status should summarize independently derived component states rather th
 ```ts
 type WorkbenchRowState = {
   linkage: {
-    state:
-      | "complete"
-      | "partial"
-      | "mixed"
-      | "partial_mixed"
-      | "missing";
+    state: "complete" | "partial" | "mixed" | "partial_mixed" | "missing";
 
     accountingToTransaction: CoverageState;
     transactionToCrm: CoverageState;
@@ -684,10 +687,7 @@ type WorkbenchRowState = {
   };
 
   information: {
-    state:
-      | "audit_ready"
-      | "accounting_pending"
-      | "incomplete";
+    state: "audit_ready" | "accounting_pending" | "incomplete";
 
     crmComplete: boolean;
     qbComplete: boolean;
@@ -710,9 +710,7 @@ type WorkbenchRowState = {
     transactionId: string;
     state: TransactionState;
     livePayment: boolean;
-    refundStatus:
-      | "none"
-      | "refunded";
+    refundStatus: "none" | "refunded";
   }>;
 
   crmCards: Array<{
@@ -743,33 +741,33 @@ CRM information completeness and CRM relationship completeness are separate. A C
 
 A row is link-complete only when:
 
-* All required live evidence is connected
-* Amounts reconcile within tolerance
-* No required evidence units are uncovered
-* No overlapping unit- and bundle-grain representations exist
-* No unresolved relationship conflict exists
+- All required live evidence is connected
+- Amounts reconcile within tolerance
+- No required evidence units are uncovered
+- No overlapping unit- and bundle-grain representations exist
+- No unresolved relationship conflict exists
 
 A row is `audit_ready` only when:
 
-* Every CRM card on the row is complete
-* Required accounting information has been documented
-* Any required source documentation is present
-* The accounting and CRM records are mutually consistent
+- Every CRM card on the row is complete
+- Required accounting information has been documented
+- Any required source documentation is present
+- The accounting and CRM records are mutually consistent
 
 A CRM-only row:
 
-* Has row link status `missing`
-* May have complete or incomplete CRM information
-* Does not establish whether payment occurred
-* Remains active until supporting evidence is found and linked, or the gift is otherwise resolved
+- Has row link status `missing`
+- May have complete or incomplete CRM information
+- Does not establish whether payment occurred
+- Remains active until supporting evidence is found and linked, or the gift is otherwise resolved
 
 A refunded transaction:
 
-* Does not count as live payment evidence
-* Does not itself cause the CRM gift to disappear
-* May leave the row with `missing` or `partial` link coverage
-* Does not prove that the gift is unpaid
-* Does not prove that no replacement payment exists
-* Leaves the CRM opportunity active until another transaction is linked or the gift is marked lost or dormant
+- Does not count as live payment evidence
+- Does not itself cause the CRM gift to disappear
+- May leave the row with `missing` or `partial` link coverage
+- Does not prove that the gift is unpaid
+- Does not prove that no replacement payment exists
+- Leaves the CRM opportunity active until another transaction is linked or the gift is marked lost or dormant
 
 A row may enter Completed only when its canonical row state is complete. Lens membership, counts, displayed status, and available actions must all derive from the same state.
