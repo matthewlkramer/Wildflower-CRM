@@ -1694,7 +1694,7 @@ async function searchQbStagedRows(
         SELECT c.bank_deposit_id
         FROM payment_units evidence_unit
         JOIN bank_deposit_components c ON c.payment_unit_id = evidence_unit.id
-        WHERE evidence_unit.source_staged_payment_id = ${stagedPayments.id}
+        WHERE evidence_unit.source_staged_payment_id = staged_payments.id
         ORDER BY c.id
         LIMIT 1
       )`,
@@ -1702,7 +1702,7 @@ async function searchQbStagedRows(
         SELECT direct_evidence.bank_deposit_id
         FROM source_links direct_evidence
         WHERE direct_evidence.link_type = 'qbo_line_deposit'
-          AND direct_evidence.qb_staged_payment_id = ${stagedPayments.id}
+          AND direct_evidence.qb_staged_payment_id = staged_payments.id
         ORDER BY direct_evidence.id
         LIMIT 1
       )`,
