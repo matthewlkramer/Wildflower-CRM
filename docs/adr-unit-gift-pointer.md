@@ -1,8 +1,8 @@
 # ADR: unit→gift pointer (retire payment_applications)
 
-**Status:** ratified 2026-07 (owner decision). Successor of the
-`payment_applications` ledger; schema landed in 0193–0194, physical
-retirement gated in 0195.
+**Status:** implemented (owner decision ratified 2026-07; physical retirement
+verified 2026-09-02). Successor schema landed in 0193–0194 and migration 0195
+removed `payment_applications`.
 
 ## Decision
 
@@ -37,22 +37,14 @@ Why a pointer, and why on the unit side:
 1. **0193/0194 (additive):** enum value; `payment_units.gift_id`
    (FK RESTRICT) + `source_links.gift_id`; backfill pointer from counted
    rows and corroborating rows into `source_links`.
-2. **Dual-derivation:** `payment_applications` stays the write authority;
-   the bank-spine recompute (step 6) keeps the pointer converged with the
-   counted ledger after every sync.
-   **Status (2026-07-29):** superseded in practice — no production code path
-   inserts, updates, or deletes `payment_applications` rows anymore (verified
-   by grep across the api-server; only test utilities touch the table, for
-   legacy-row cleanup). The pointer is already the de-facto write authority;
-   the ledger persists read-only pending the step-4 parity check and drop.
-3. **Read cutover:** flip every ledger reader (gift totals, tie status,
-   book-once guards) onto the pointer + corroboration links.
-   **Progress (2026-07-29):** the integration-test fixture layer is cutover —
-   test seeds mint `payment_units` and set the pointer (no raw counted-ledger
-   inserts), and test readers assert against the pointer, so the suite no
-   longer depends on `payment_applications` rows existing at 0195.
-4. **0195 (gated):** drop `payment_applications` — only after cutover +
-   parity verification, by explicit human decision.
+2. **Dual-derivation (complete):** production writers moved to the pointer and
+   the old ledger became read-only during verification.
+3. **Read cutover (complete):** gift totals, tie status, book-once guards, and
+   test fixtures moved to the pointer + corroboration links.
+4. **0195 (complete):** after parity verification and the explicit owner
+   decision, `payment_applications` was physically dropped. Production was
+   verified without the table and the 2026-07-28 reconciliation audit records
+   it as already absent.
 
 ## Invariants
 

@@ -2,26 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   clearPaymentApplicationsForGiftIds,
   clearPaymentApplicationsForStagedIds,
-  unitIdForAnchor,
 } from "./paymentApplicationsTestUtil";
 
 /**
- * DB-backed coverage for the counted-uniqueness invariant
- * (docs/adr-linear-money-model.md §7 step 5): ONE counted cash-application
- * ledger row per evidence anchor. Enforced twice:
- *
- *   - domain guard: applyPaymentApplication throws AnchorAlreadyCountedError
- *     when the anchor already carries a counted row for a DIFFERENT gift —
- *     regardless of amounts (the fee-band split era, where several counted
- *     rows could share one anchor, is retired);
- *   - DB backstop: partial unique indexes
- *     `payment_applications_<anchor>_counted_uq` reject a raw second counted
- *     row (SQLSTATE 23505) even if a code path skips the guard.
- *
- * Also pins the two flows that must KEEP working:
- *   - idempotent same-gift re-apply (upsert replaces the amount, no dup),
- *   - re-point inside one transaction (delete old counted row, then apply
- *     the new gift) — the guard reads post-delete state and passes.
+ * DB-backed coverage for the structural counted-uniqueness invariant: ONE
+ * nullable `payment_units.gift_id` per canonical payment unit. The shared
+ * booking service rejects attempts to point an already-tied unit at a second
+ * gift, while same-gift refresh and explicit clear-then-repoint remain valid.
  *
  * Skips automatically when no real DATABASE_URL is configured.
  */
@@ -43,7 +30,6 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   donorboxDonations: Db["donorboxDonations"];
-  paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
@@ -149,13 +135,6 @@ async function readRows(anchor: AnchorArgs) {
   return rows.filter((r) => r.giftId !== null);
 }
 
-/** node-postgres surfaces SQLSTATE on `code`; newer drizzle wraps the driver
- * error, so also look under `cause`. */
-function sqlState(e: unknown): string | undefined {
-  const err = e as { code?: string; cause?: { code?: string } };
-  return err?.code ?? err?.cause?.code;
-}
-
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -167,7 +146,6 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     donorboxDonations: dbMod.donorboxDonations,
-    paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
@@ -298,57 +276,4 @@ describe.skipIf(!HAS_DB)("counted-uniqueness invariant (DB)", () => {
     expect(rows).toEqual([{ giftId: giftB }]);
   });
 
-  it("DB backstop: raw second counted row is rejected (23505) on every anchor", async () => {
-    const giftA = await seedGift();
-    const giftB = await seedGift();
-    const sp = await seedQbStagedPayment();
-    const ch = await seedCharge();
-    const dn = await seedDonation();
-
-    const anchors: {
-      anchorId: string;
-      source: "quickbooks" | "stripe" | "donorbox";
-    }[] = [
-      { anchorId: sp, source: "quickbooks" },
-      { anchorId: ch, source: "stripe" },
-      { anchorId: dn, source: "donorbox" },
-    ];
-
-    for (const a of anchors) {
-      const paymentUnitId = await unitIdForAnchor(a.source, a.anchorId);
-      await db.insert(schema.paymentApplications).values({
-        id: nextId("pa"),
-        giftId: giftA,
-        amountApplied: "40.00",
-        evidenceSource: a.source,
-        linkRole: "counted",
-        paymentUnitId,
-      });
-      const err = await db
-        .insert(schema.paymentApplications)
-        .values({
-          id: nextId("pa"),
-          giftId: giftB,
-          amountApplied: "40.00",
-          evidenceSource: a.source,
-          linkRole: "counted",
-          paymentUnitId,
-        })
-        .then(
-          () => null,
-          (e: unknown) => e,
-        );
-      expect(err, `anchor ${a.source} must reject a 2nd counted row`).not.toBeNull();
-      expect(sqlState(err)).toBe("23505");
-      // A corroborating row for the same anchor is still fine (partial index).
-      await db.insert(schema.paymentApplications).values({
-        id: nextId("pa"),
-        giftId: giftB,
-        amountApplied: "40.00",
-        evidenceSource: a.source,
-        linkRole: "corroborating",
-        paymentUnitId,
-      });
-    }
-  });
 });

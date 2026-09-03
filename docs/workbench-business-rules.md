@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-07-31
+last_verified: 2026-09-02
 ---
 
 # Reconciliation Workbench Business Rules
@@ -10,8 +10,8 @@ last_verified: 2026-07-31
 > Accounting**) over the bank-deposit spine. Composition, Gifts, and Accounting
 > carry the three semantic roles described below. Payout↔deposit pairing is
 > deterministic via `stripe_payouts.bank_deposit_id`; the component/payment unit
-> is the true action and display grain; payment applications are anchored by
-> `payment_unit_id`.
+> is the true action and display grain; the counted unit→gift relationship is
+> the direct `payment_units.gift_id` pointer.
 
 This document is the **ratified product specification** for the reconciliation
 workbench. It is normative even where current code disagrees; implementation
@@ -53,7 +53,7 @@ Bank deposit
 
 Composition, Gifts, and Accounting render per component rather than as
 independent deposit-level lists. A deposit→gift relationship is not tracked.
-`payment_applications` permits one counted gift per payment unit; apparent
+`payment_units.gift_id` permits one counted gift per payment unit; apparent
 multiple gifts on one component are repaired by merging meaning into
 allocation rows on one gift, not by retaining parallel counted links.
 

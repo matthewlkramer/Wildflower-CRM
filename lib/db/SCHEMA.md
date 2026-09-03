@@ -39,7 +39,7 @@ Sync ownership and operational resync commands:
 | Fundraising pipeline | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments` | Planned asks, commitments, restrictions, collection plans |
 | Received money | `gifts_and_payments`, `gift_allocations` | Actual donor credit and received-money scope |
 | Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions` | Imported evidence that money moved |
-| Reconciliation relationships | `payment_applications`, `source_links` | Authoritative links among evidence and CRM records |
+| Reconciliation relationships | `payment_units.gift_id`, `stripe_payouts.bank_deposit_id`, `source_links` | Authoritative links among evidence and CRM records |
 | Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
 | Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, tracking/sync-state tables | Synced and manual touches |
 | AI / workflow | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue` | Proposals, tasks, review queues |
@@ -98,11 +98,10 @@ mutation.
 
 ### Evidence relationships (one authority each)
 
-- `payment_applications` is the **sole** unit↔gift cash-application ledger
-  (evidence unit → CRM gift). RETIRING (docs/adr-unit-gift-pointer.md):
-  counted rows become the `payment_units.gift_id` pointer, corroborating rows
-  become `source_links` `unit_gift_corroboration` claims; drop gated in 0195
-  after the read cutover. The true relationship grain is the
+- `payment_units.gift_id` plus the unit's tie-fact columns are the **sole**
+  counted unit↔gift authority (evidence unit → CRM gift). Corroborating claims
+  live in `source_links` as `unit_gift_corroboration`; the predecessor
+  `payment_applications` ledger was physically retired by migration 0195. The true relationship grain is the
   component/payment unit: each unit has zero or one counted gift application.
   Header grain (`gift_id`, never an allocation; `gift_allocation_id` is a
   narrowing annotation only) remains the stored link, while apparent multiple
@@ -230,7 +229,7 @@ analytics and pledge paid-amount derivation.
   stored directly and is the sole loan authority. The human-entered `amount`
   is the authoritative donor credit; settled amounts, QB-tie status, and
   off-books-ness are all **derived at read time** (`giftPaymentSummary.ts` /
-  `derivedStatus.ts`) from the counted `payment_applications` ledger and the
+  `derivedStatus.ts`) from counted `payment_units.gift_id` ties and the
   allocation entities — a gift is off-books when every allocation sits on a
   no-payment entity. **Never reintroduce gift-pointer or stored-status
   columns here.** Other facts: `date_received` (canonical "money arrived"
@@ -349,15 +348,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (unresolved/partial/complete/overallocated) is DERIVED, never stored.
 - `payment_units` — the canonical **donor-level payment unit** (one row = one
   real payment event; `kind` = stripe_charge | check | direct_ach | wire |
-  other). The sole `payment_applications` anchor is `payment_unit_id`.
-  Carries NO donor identity/coding
+  other). Carries NO donor identity/coding
   (those stay on the gift) and NO parent pointer (a charge's parent is its
   payout; a check's is a `bank_deposit_components` row). Pointers, each at most
   one authority: `stripe_charge_id` (1:1, UNIQUE, required iff kind=stripe_charge),
   `donorbox_donation_id` (UNIQUE — the single canonical Donorbox authority,
-  Phase 6), `gift_id` (the gift this unit's money funds — successor of the
-  counted `payment_applications` row, docs/adr-unit-gift-pointer.md; derived
-  from the counted ledger until the read cutover), `source_staged_payment_id`
+  Phase 6), `gift_id` (the sole counted gift this unit's money funds,
+  docs/adr-unit-gift-pointer.md), `source_staged_payment_id`
   (provisional QBO provenance for check
   units, Phase 3; never an authority). Seeded 1:1 from non-excluded
   `stripe_staged_charges` (`pu_<charge id>`); check units come in Phase 3.
@@ -402,18 +399,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   Accounting REVIEW, never a money ledger; the CRM never writes to QBO —
   `correction_needed` is a worklist for fixing QBO in QBO. A write endpoint for
   accounting-check dispositions is not yet implemented.
-- `payment_applications` — the component/payment-unit↔gift
-  cash-application ledger. Each row is anchored solely by the non-null
-  `payment_unit_id`; a unit may have zero or one `counted` gift application.
-  The legacy
-  `payment_id`/`stripe_charge_id`/`donorbox_donation_id` columns, FKs, checks,
-  and per-anchor indexes were dropped in migrations 0179–0183. `link_role`
-  (`counted` / `corroborating`) — money reads SUM only `counted` rows;
-  `amount_applied` must be > 0 on counted rows. Book-once is enforced by
-  `UNIQUE(payment_unit_id) WHERE link_role='counted'` plus the partial
-  `UNIQUE(payment_unit_id, gift_id) WHERE link_role='corroborating'`; both the
-  unit and gift FKs are RESTRICT.
-  `created_the_gift` preserves the mint-ownership signal.
+- `payment_applications` — physically retired by migration 0195 after its
+  counted authority moved to `payment_units.gift_id` and its corroborating
+  claims moved to `source_links`. It is not part of the current schema.
 - `source_links` — unit↔unit evidence claims (`charge_qb_tie`,
   `charge_fee_row`, `donorbox_qb`, `donorbox_charge`) with deterministic ids
   and lifecycle. Sole authority for evidence↔evidence ties; a claim blocks
@@ -427,7 +415,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   cutover). Also `unit_gift_corroboration` (unit + gift anchors;
   docs/adr-unit-gift-pointer.md) — successor of the ledger's
   `link_role='corroborating'` rows.
-- `reconciliation_bundle_drafts`, `unit_groups` — workbench working state. (`unit_groups` is deprecated: new group creation is retired — multi-match writes N counted `payment_applications` rows instead — and the table is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3; it persists only for legacy groups.)
+- `reconciliation_bundle_drafts`, `unit_groups` — workbench working state. (`unit_groups` is deprecated: new group creation is retired — multi-match writes N `payment_units.gift_id` ties instead — and the table is slated for retirement per `docs/adr-linear-money-model.md` §7 step 3; it persists only for legacy groups.)
 
 ## Communications & workflow
 

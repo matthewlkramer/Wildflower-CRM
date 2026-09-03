@@ -126,7 +126,6 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stagedPayments: Db["stagedPayments"];
-  paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
   sourceLinks: Db["sourceLinks"];
   stripeStagedCharges: Db["stripeStagedCharges"];
@@ -202,7 +201,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stagedPayments: dbMod.stagedPayments,
-    paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
     sourceLinks: dbMod.sourceLinks,
     stripeStagedCharges: dbMod.stripeStagedCharges,

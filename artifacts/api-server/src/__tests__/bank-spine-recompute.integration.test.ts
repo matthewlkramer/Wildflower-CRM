@@ -29,7 +29,6 @@ let schema: {
   qboAccountingChecks: Db["qboAccountingChecks"];
   sourceLinks: Db["sourceLinks"];
   giftsAndPayments: Db["giftsAndPayments"];
-  paymentApplications: Db["paymentApplications"];
   organizations: Db["organizations"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -43,7 +42,6 @@ const paymentUnitIds: string[] = [];
 const componentIds: string[] = [];
 const bankTransactionIds: string[] = [];
 const giftIds: string[] = [];
-const applicationIds: string[] = [];
 const orgIds: string[] = [];
 let seq = 0;
 const nextId = (p: string) => `${RUN}_${p}_${String(++seq).padStart(3, "0")}`;
@@ -139,7 +137,6 @@ beforeAll(async () => {
     qboAccountingChecks: dbMod.qboAccountingChecks,
     sourceLinks: dbMod.sourceLinks,
     giftsAndPayments: dbMod.giftsAndPayments,
-    paymentApplications: dbMod.paymentApplications,
     organizations: dbMod.organizations,
   };
   eqFn = drizzle.eq;
@@ -149,11 +146,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  if (applicationIds.length) {
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.id, applicationIds));
-  }
   if (giftIds.length) {
     // Clear the pointer first (gift_id is RESTRICT).
     await db

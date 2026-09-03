@@ -397,11 +397,6 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       .select({ id: schema.paymentUnits.id })
       .from(schema.paymentUnits)
       .where(likeFn(schema.paymentUnits.id, `%${RUN}%`));
-    const beforeApplications = await db
-      .select({ id: schema.paymentApplications.id })
-      .from(schema.paymentApplications)
-      .where(likeFn(schema.paymentApplications.id, `%${RUN}%`));
-
     const first = await fetch(
       `${baseUrl}/api/reconciliation/deposits/${deposit}/exclusion`,
       {
@@ -491,12 +486,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       .select({ id: schema.paymentUnits.id })
       .from(schema.paymentUnits)
       .where(likeFn(schema.paymentUnits.id, `%${RUN}%`));
-    const afterApplications = await db
-      .select({ id: schema.paymentApplications.id })
-      .from(schema.paymentApplications)
-      .where(likeFn(schema.paymentApplications.id, `%${RUN}%`));
     expect(afterUnits).toEqual(beforeUnits);
-    expect(afterApplications).toEqual(beforeApplications);
   });
 
   it("keeps a paired payout open when a live charge still needs a gift", async () => {

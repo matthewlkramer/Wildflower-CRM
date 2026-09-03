@@ -1,10 +1,12 @@
 ---
 status: current-status
-last_verified: 2026-07-29
+last_verified: 2026-09-02
 verification_basis: >
   Bank-spine landing and relationship-authority claims verified against code
   on 2026-07-23; unit→gift pointer cutover status re-verified against code on
-  2026-07-29. Drift items are labeled individually: "ratified drift" items
+  2026-07-29; physical retirement of payment_applications and the remaining
+  runtime/schema references were re-verified on 2026-09-02. Drift items are
+  labeled individually: "ratified drift" items
   were confirmed against code and ratified by the owner; "flagged" items came
   from an external documentation review and must be re-verified against code
   before any repair work.
@@ -22,7 +24,7 @@ canonical boundary first (see `replit.md`).
 
 | Relationship | Authority today |
 |---|---|
-| Payment/evidence unit → CRM gift | The **direct pointer `payment_units.gift_id`** plus the tie-fact columns on the unit (match method, confirmed-by/at, note, `created_the_gift`) — see [`adr-unit-gift-pointer.md`](adr-unit-gift-pointer.md). The counted `payment_applications` ledger is retired from every production write path (verified 2026-07-29; the table persists read-only pending the ADR step-4 parity check and gated 0195 drop — never write it). Corroborating claims live in `source_links` (`unit_gift_corroboration`). Each unit funds zero or one gift; `payment_units` are minted eagerly at booking; apparent multiple gifts on one unit are repaired by merging into allocation rows on one gift; there is no deposit→gift link. Per-unit undo: finance-gated `POST /gifts-and-payments/:id/payment-units/:unitId/untie` clears all seven tie facts and consumes any `supersede_demotion` crumb for the pair (so a later tie-revert cannot promote the deliberately removed tie back); the unit returns to the unmatched pool and the gift is never auto-archived. Stripe-charge-sourced units are refused (`stripe_unit_untie_unsupported`) and excluded from the gift-page counted listing — their ties revert only through the Stripe-specific flows, and their evidence renders on the Stripe chain card. |
+| Payment/evidence unit → CRM gift | The **direct pointer `payment_units.gift_id`** plus the tie-fact columns on the unit (match method, confirmed-by/at, note, `created_the_gift`) — see [`adr-unit-gift-pointer.md`](adr-unit-gift-pointer.md). The counted `payment_applications` ledger was physically retired by migration 0195 and is absent from production, the Drizzle schema, and runtime code (verified 2026-09-02; never query, write, or revive it). Corroborating claims live in `source_links` (`unit_gift_corroboration`). Each unit funds zero or one gift; `payment_units` are minted eagerly at booking; apparent multiple gifts on one unit are repaired by merging into allocation rows on one gift; there is no deposit→gift link. Per-unit undo: finance-gated `POST /gifts-and-payments/:id/payment-units/:unitId/untie` clears all seven tie facts and consumes any `supersede_demotion` crumb for the pair (so a later tie-revert cannot promote the deliberately removed tie back); the unit returns to the unmatched pool and the gift is never auto-archived. Stripe-charge-sourced units are refused (`stripe_unit_untie_unsupported`) and excluded from the gift-page counted listing — their ties revert only through the Stripe-specific flows, and their evidence renders on the Stripe chain card. |
 | Stripe payout → bank deposit | `stripe_payouts.bank_deposit_id`, a recomputed deterministic pairing with `ambiguous_bank_match` and `bank_matched_at`; there is no lifecycle or confirmation workflow. `settlement_links` is retired and dropped (0169); the historical QBO pairing fact lives on `staged_payments.settled_stripe_payout_id`. |
 | Evidence ↔ evidence (cross-source) | `source_links` — implemented and sole authority ([`adr-source-link-ledger.md`](adr-source-link-ledger.md), phases 1–6 complete; the old source-specific pointer columns were physically dropped in migration 0149). Never add a sibling pointer column |
 | Gift ↔ QB tie signal | Live-derived at read time (`deriveGiftQbTieLiveExpr` in `giftQbTie.ts`); the stored `quickbooks_tie_status` column and its applier were retired — there is no recompute call site |
@@ -35,9 +37,9 @@ canonical boundary first (see `replit.md`).
 
 The bank-spine cutover landed across PRs **#34–#42**. `bank_deposits` are the
 money spine; `payment_units` are canonical donor-level payment identities;
-`payment_applications` was re-anchored solely by `payment_unit_id` at landing
-(and has since been superseded by the direct `payment_units.gift_id` pointer —
-see the relationship-authority table above); the legacy
+`payment_applications` was re-anchored solely by `payment_unit_id` at landing,
+then superseded and physically retired after the direct `payment_units.gift_id`
+pointer cutover (see the relationship-authority table above); the legacy
 source-anchor columns are dropped; `settlement_links` is retired; and the
 finance-gated UI #1 deposit-exclusion action writes only
 `bank_deposit_exclusions`. The deposit-first four-column workbench is the

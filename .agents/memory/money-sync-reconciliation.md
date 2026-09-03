@@ -1,16 +1,17 @@
 ---
 name: Money sync & reconciliation
-description: Current-state index of money-sync and reconciliation rules. QB/Stripe/Donorbox ingest, staged-payment approval, the three link tables, workbench UI, and imports. Pointer-era entries (matched/created/group_reconciled_gift_id QB cols — DROPPED migration 0126) are in legacy-reconciliation/index.md.
+description: Current-state index of money-sync and reconciliation rules. QB/Stripe/Donorbox ingest, payment-unit gift ties, bank pairing, source links, the workbench UI, and imports. Retired ledger/pointer-era entries are historical only.
 ---
 
 ## Implementation guard
 
 Before writing any reconciliation code, confirm:
 
-- **Use the authoritative link table for the relationship involved.**
-  `payment_applications` for money unit→gift; `settlement_links` for payout↔deposit;
-  `source_links` for evidence↔evidence. Never route a relationship
-  through the wrong table or add a sibling pointer column.
+- **Use the authoritative representation for the relationship involved.**
+  `payment_units.gift_id` for counted money unit→gift;
+  `stripe_payouts.bank_deposit_id` for payout→bank deposit; `source_links` for
+  evidence↔evidence and unit→gift corroboration. Never route a relationship
+  through a retired table or add a sibling pointer column.
 - **Do not add new pointer columns, stored queue status columns, copied status CASE
   expressions, or route-specific money-link logic.** All queue status derives at read
   time via `derivedStatus.ts` builders — never hand-roll a CASE twin.
@@ -32,29 +33,22 @@ Before writing any reconciliation code, confirm:
 
 ---
 
-## Current link-table model
+## Current relationship model
 
-Three authoritative link tables — never conflate:
+Three authoritative relationship homes — never conflate:
 
-**Ledger 1: `payment_applications`** — Money unit → CRM gift (current authority). QB
-reads fully flipped to the ledger; Stripe reads also fully flipped (migration 0130
-backfill + read-cutover complete as of 2026-07); Donorbox pointer column still
-dual-writes. `gifts_and_payments.final_amount_stripe_charge_id` is @deprecated
-(never written, never returned by API, backfill SQL 0130, physical column retained
-until reviewed DROP migration ships). `link_role='counted'` = money trail
-(amount NOT NULL); `link_role='corroborating'` = audit annotation (see topic file
-for the two distinct sub-cases). `gift_id` ON DELETE RESTRICT.
+**`payment_units.gift_id`** — counted money unit → CRM gift, with tie facts on
+the same unit. The predecessor `payment_applications` ledger was physically
+retired by migration 0195; never query, write, or revive it.
 
-**Ledger 2: `settlement_links`** — Stripe payout ↔ QB deposit (Plane 1 batch↔batch,
-current authority). Lifecycle: `proposed | confirmed | exempt`. Status derived on read.
-Separate from `source_links` by design (different link types, different cardinality
-rules); the two tables are siblings, not one absorbing the other.
+**`stripe_payouts.bank_deposit_id`** — deterministic Stripe payout → bank-deposit
+pairing. The predecessor `settlement_links` table was retired and dropped.
 
-**Ledger 3: `source_links`** — Evidence↔evidence claims: charge↔QB tie,
+**`source_links`** — Evidence↔evidence claims: charge↔QB tie,
 charge↔fee-row, Donorbox↔QB, Donorbox↔charge. **SHIPPED and sole authority**
 (ADR in `docs/adr-source-link-ledger.md`, phases 1–6 complete). The five legacy
-pointer columns it replaced were dropped in migration 0149; never add sibling
-pointer columns.
+pointer columns it replaced were dropped in migration 0149. It also stores
+`unit_gift_corroboration`; never add sibling pointer columns.
 
 **No stored lifecycle status** on `staged_payments` or `stripe_staged_charges`.
 All reconciliation queue status is derived at read time via `derivedStatus.ts` alias-
@@ -63,9 +57,9 @@ vocabulary at the API edge only. QB deposits carry a stored `status` column (a
 distinct QB-payment fact, not the queue-lifecycle enum).
 
 **QB gift-pointer columns are DROPPED (migration 0126).** `staged_payments.matched/
-created/group_reconciled_gift_id` no longer exist. Current QB linkage reads:
-mint ownership = `payment_applications.created_the_gift`; match/multi-match =
-PA counted rows. Unit groups are fully retired (ADR linear-money-model §7
+created/group_reconciled_gift_id` no longer exist. Current QB linkage and mint
+ownership are the `payment_units.gift_id` / `created_the_gift` facts; multi-match
+sets those facts on each unit. Unit groups are fully retired (ADR linear-money-model §7
 step 3): nothing reads or writes `unit_groups`/`unit_group_members`; the
 tables sit inert until step 4 drops them.
 
@@ -87,9 +81,8 @@ tables sit inert until step 4 drops them.
 
 ## Staged-payment approval & gift linkage
 
-QB gift linkage via `payment_applications` (counted rows). Stripe/Donorbox gift
-linkage via row-level pointer columns on their charge/donation tables. Pointer-era
-entries for QB are archived in `legacy-reconciliation/index.md`.
+QB, Stripe, and Donorbox gift linkage converges on the canonical payment unit's
+`gift_id` plus its tie facts. Pointer- and ledger-era entries are historical.
 
 - [QB matching gifts vs duplicates](quickbooks-matching-gifts.md) — never dedupe by donor+amount+date (matching gifts are identical); only QB LinkedTxn/same entity_id proves same money; second matching gift must be MINTED not linked.
 - [QB fee-band auto-reconcile](quickbooks-feeband-reconcile.md) — single near-amount gift w/ no exact match = net of processor fee → reconcile not mint; backfill mirrors donorWhere+null-date+one-gift-per-row; when Stripe NET known return [net,gross] window directly, don't fall through to legacy gross*1.1+1 ([net-aware](reconciliation-net-aware-feeband.md)).
@@ -143,15 +136,15 @@ stored lifecycle (`status` column); map to shared derived vocab via
 
 - [Reconciliation single-source-of-truth (D4)](reconciliation-single-source-of-truth.md) — CRM gifts are the only gifts; Stripe/QB rows are permanent evidence; Stripe GROSS wins; confirm stamps facts not archives; processor_payout/confirmed_excluded kept only for revert.
 - [Two-lane reconciliation model](reconciliation-two-lane-model.md) — every unit of money derives two independent lanes (funding + crmRecord), never stored; gift link ≠ donor confirmed; emit on ALL evidence endpoints.
-- [Reconciliation target-state design](reconciliation-target-design.md) — ratified three-link-table model (payment_applications + settlement_links + source_links) in docs/reconciliation-design.md; two planes, all statuses derived; phases 2-5 shipped; "one-ledger" in older doc sections refers to payment_applications as the sole unit→gift ledger (pre-source_links vocabulary).
+- [Reconciliation target-state design](reconciliation-target-design.md) — historical phased model; current authorities are `payment_units.gift_id`, `stripe_payouts.bank_deposit_id`, and `source_links`.
 - [Reconciliation status is derived](reconciliation-derived-status.md) — staged/charge status derived from facts via ONE set of alias-parameterized builders in derivedStatus.ts; never hand-roll a CASE twin (parity tests pin it); Donorbox maps stored→vocab at the API edge.
 - **Evidence↔evidence claim pointers are DROPPED (migration 0149, 2026-07)** — `source_links` is the sole authority; never add sibling pointer columns. ADR in docs/adr-source-link-ledger.md.
 - [Reconciliation phase status source](reconciliation-phase-status-source.md) — trust migration ledger + schema header comments for phase status; all link-table phases shipped; cluster view (reconciliation-clusters.tsx) is the current UI design, superseding the six-queue workbench.
-- [payment_applications ledger](payment-applications-ledger.md) — unit→gift ledger (polymorphic evidence_source: quickbooks|stripe|donorbox); QB reads flipped; Stripe/Donorbox dual-write only; book-once in service layer; gift_id RESTRICT; provenance promotion on confirm (system→system_confirmed).
+- [payment_applications ledger](payment-applications-ledger.md) — historical migration context only; the table was physically retired by migration 0195.
 - [Ledger read-cutover prod gate](ledger-read-cutover-prod-gate.md) — additive dual-write→backfill→flip-reads is only safe once parity runs on PROD (dev parity ≠ prod); after a flip, fixtures seeding legacy-only links must dual-write the ledger row.
-- [settlement_links model](settlement-links-model.md) — sole payout↔deposit store (Plane 1); lifecycle proposed|confirmed|exempt; conflict_approved = proposed+conflict_gift_id; deposit hard-delete errors on required-deposit CHECK. Sibling of source_links, not absorbed by it.
-- [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — every money/settled/tie read MUST filter link_role='counted'; two distinct corroborating sub-cases: (A) amount NULL = corrections audit annotation; (B) amount NON-NULL = demoted supersede row (kept for reversible promotion — still excluded from every money total).
-- [Counted-uniqueness per anchor](counted-uniqueness-invariant.md) — ONE counted PA row per evidence anchor (guard in applier + partial unique indexes); test seeds with 2 counted rows on one anchor now fail at insert; corroborating rows exempt; gift-side split is a 410 tombstone.
+- [settlement_links model](settlement-links-model.md) — historical migration context only; payout pairing now lives on `stripe_payouts.bank_deposit_id`.
+- [PA counted vs corroborating link_role](reconciliation-corroborating-link-role.md) — historical migration context; counted ties are now unit facts and corroboration is in `source_links`.
+- [Counted-uniqueness per anchor](counted-uniqueness-invariant.md) — historical ledger context; the structural invariant is one nullable `payment_units.gift_id` per unit.
 - [Reconciliation conflict_approved = awaiting](reconciliation-conflict-approved-per-track.md) — Stripe payout conflict_approved is NOT a discrepancy; show recon status per-track (QB vs Stripe), never one sweeping badge.
 - [Conflict-keep double-book gate](reconciliation-conflict-keep-gate.md) — a conflict_approved "keep" is safe only if kept gift == deposit's gift link; enforce at BOTH the pure derive blocker and the tx write boundary.
 - [Settlement needs_review derivation](reconciliation-needs-review-derivation.md) — needs_review gates on having an OPEN charge, not on derived queue status alone; fully-settled unmatched payouts must drop out.

@@ -84,7 +84,6 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   stagedPayments: Db["stagedPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
-  paymentApplications: Db["paymentApplications"];
   bulkOperations: Db["bulkOperations"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -128,7 +127,6 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     stagedPayments: dbMod.stagedPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
-    paymentApplications: dbMod.paymentApplications,
     bulkOperations: dbMod.bulkOperations,
   };
   eqFn = drizzle.eq;
