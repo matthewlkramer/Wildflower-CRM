@@ -10,8 +10,8 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  * scan orders, so they can deadlock each other on index/FK waits (observed
  * under overlapping sync tails and parallel test workers). A session-level
  * advisory lock held on a dedicated connection makes later callers queue —
- * the recompute is idempotent fill-only DML, so running back-to-back is
- * always safe and never loses work.
+ * the recompute is idempotent source-refresh/fill DML, so running back-to-back
+ * is always safe and never loses review work.
  */
 const BANK_SPINE_ADVISORY_LOCK_KEY = 728411001;
 
@@ -23,6 +23,212 @@ type QboDepositLineMergeCandidate = {
   target_unit_id: string;
   auto_unit_id: string;
 };
+
+/**
+ * Refresh the source-owned money facts of QBO-derived direct-payment units and
+ * components. `staged_payments` is the QBO mirror; once a Deposit line is
+ * edited, its deterministic payment unit must not retain the first-seen
+ * amount. The component is refreshed only when QBO is still its declared
+ * source — manual/bank-native components remain human-owned.
+ */
+async function refreshQboDerivedDirectPaymentFacts(): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      UPDATE payment_units pu
+      SET kind = CASE
+            WHEN sp.funding_source = 'check' THEN 'check'
+            WHEN sp.funding_source = 'wire_ach'
+              AND sp.qb_payment_method ILIKE '%wire%' THEN 'wire'
+            WHEN sp.funding_source = 'wire_ach' THEN 'direct_ach'
+            WHEN sp.qb_check_number IS NOT NULL
+              OR sp.qb_payment_method ILIKE '%check%' THEN 'check'
+            ELSE 'other'
+          END::payment_unit_kind,
+          gross_amount = sp.amount,
+          net_amount = sp.amount,
+          currency = upper(COALESCE(sp.qb_currency, 'USD')),
+          received_date = sp.date_received,
+          updated_at = now()
+      FROM staged_payments sp
+      WHERE pu.source_staged_payment_id = sp.id
+        AND pu.stripe_charge_id IS NULL
+        AND sp.qb_deposit_id IS NOT NULL
+        AND sp.qb_entity_type <> 'deposit_header'
+        AND sp.exclusion_reason IS NULL
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
+        AND sp.amount IS NOT NULL
+        AND sp.amount > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM staged_payments child
+          WHERE child.split_parent_id = sp.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM source_links tie
+          WHERE tie.qb_staged_payment_id = sp.id
+            AND tie.link_type IN ('charge_qb_tie', 'charge_fee_row')
+        )
+        AND (
+          pu.kind IS DISTINCT FROM CASE
+            WHEN sp.funding_source = 'check' THEN 'check'
+            WHEN sp.funding_source = 'wire_ach'
+              AND sp.qb_payment_method ILIKE '%wire%' THEN 'wire'
+            WHEN sp.funding_source = 'wire_ach' THEN 'direct_ach'
+            WHEN sp.qb_check_number IS NOT NULL
+              OR sp.qb_payment_method ILIKE '%check%' THEN 'check'
+            ELSE 'other'
+          END::payment_unit_kind
+          OR pu.gross_amount IS DISTINCT FROM sp.amount
+          OR pu.net_amount IS DISTINCT FROM sp.amount
+          OR pu.currency IS DISTINCT FROM upper(COALESCE(sp.qb_currency, 'USD'))
+          OR pu.received_date IS DISTINCT FROM sp.date_received
+        )
+    `);
+
+    await tx.execute(sql`
+      UPDATE bank_deposit_components component
+      SET amount = sp.amount,
+          updated_at = now()
+      FROM staged_payments sp
+      WHERE component.source = 'qbo_inferred'
+        AND component.source_staged_payment_id = sp.id
+        AND sp.exclusion_reason IS NULL
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
+        AND sp.amount IS NOT NULL
+        AND sp.amount > 0
+        AND component.amount IS DISTINCT FROM sp.amount
+    `);
+  });
+}
+
+/**
+ * Carry an existing unit→gift tie across the one unambiguous QBO re-split
+ * shape. QuickBooks often changes one already-reconciled Deposit line into
+ * several same-payer lines solely to document allocation-level accounting.
+ * Those rows are several payment units funding ONE multi-allocation gift, not
+ * a request to create an additional gift.
+ *
+ * The inference is intentionally narrow: every component must be a live,
+ * reviewed, non-ambiguous QBO component from one QBO Deposit; every current
+ * source line must be represented; the same non-empty payer must appear on all
+ * lines; component total, bank deposit, and the sole already-linked gift must
+ * agree to the cent. Anything less certain remains visible for human review.
+ */
+async function carryGiftAcrossUnambiguousQboDepositSplit(): Promise<string[]> {
+  const result = await db.execute(sql`
+    WITH component_rows AS MATERIALIZED (
+      SELECT
+        component.bank_deposit_id,
+        component.payment_unit_id,
+        component.amount,
+        unit.gift_id,
+        sp.realm_id,
+        sp.qb_deposit_id,
+        NULLIF(
+          lower(regexp_replace(trim(sp.payer_name), '\\s+', ' ', 'g')),
+          ''
+        ) AS payer_key
+      FROM bank_deposit_components component
+      JOIN payment_units unit ON unit.id = component.payment_unit_id
+      JOIN staged_payments sp ON sp.id = component.source_staged_payment_id
+      WHERE component.source = 'qbo_inferred'
+        AND component.source_staged_payment_id IS NOT NULL
+        AND component.exclusion_reason IS NULL
+        AND NOT component.needs_review
+        AND NOT component.ambiguous_deposit_match
+        AND sp.qb_deposit_id IS NOT NULL
+        AND sp.qb_entity_type <> 'deposit_header'
+        AND sp.exclusion_reason IS NULL
+        AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
+        AND sp.amount IS NOT NULL
+        AND sp.amount > 0
+        AND component.amount = sp.amount
+        AND unit.gross_amount = component.amount
+        AND unit.net_amount = component.amount
+    ),
+    grouped AS (
+      SELECT
+        rows.bank_deposit_id,
+        rows.realm_id,
+        rows.qb_deposit_id,
+        min(rows.gift_id) FILTER (WHERE rows.gift_id IS NOT NULL) AS gift_id,
+        count(*)::int AS component_count,
+        count(*) FILTER (WHERE rows.gift_id IS NOT NULL)::int AS linked_count,
+        count(*) FILTER (WHERE rows.gift_id IS NULL)::int AS unlinked_count,
+        count(DISTINCT rows.gift_id)
+          FILTER (WHERE rows.gift_id IS NOT NULL)::int AS gift_count,
+        count(*) FILTER (WHERE rows.payer_key IS NULL)::int AS missing_payer_count,
+        count(DISTINCT rows.payer_key)::int AS payer_count,
+        sum(rows.amount) AS component_total
+      FROM component_rows rows
+      GROUP BY rows.bank_deposit_id, rows.realm_id, rows.qb_deposit_id
+    ),
+    eligible AS (
+      SELECT grouped.bank_deposit_id, grouped.realm_id,
+             grouped.qb_deposit_id, grouped.gift_id
+      FROM grouped
+      JOIN bank_deposits deposit ON deposit.id = grouped.bank_deposit_id
+      JOIN gifts_and_payments gift ON gift.id = grouped.gift_id
+      WHERE grouped.component_count >= 2
+        AND grouped.linked_count >= 1
+        AND grouped.unlinked_count >= 1
+        AND grouped.gift_count = 1
+        AND grouped.missing_payer_count = 0
+        AND grouped.payer_count = 1
+        AND abs(grouped.component_total - deposit.amount) <= 0.005
+        AND abs(gift.amount - deposit.amount) <= 0.005
+        AND gift.archived_at IS NULL
+        AND grouped.component_count = (
+          SELECT count(*)::int
+          FROM bank_deposit_components all_component
+          WHERE all_component.bank_deposit_id = grouped.bank_deposit_id
+        )
+        AND grouped.component_count = (
+          SELECT count(*)::int
+          FROM staged_payments current_line
+          WHERE current_line.realm_id = grouped.realm_id
+            AND current_line.qb_deposit_id = grouped.qb_deposit_id
+            AND current_line.qb_entity_type <> 'deposit_header'
+            AND current_line.exclusion_reason IS NULL
+            AND (current_line.funding_source IS NULL
+                 OR current_line.funding_source <> 'stripe')
+            AND current_line.amount IS NOT NULL
+            AND current_line.amount > 0
+            AND NOT EXISTS (
+              SELECT 1 FROM staged_payments child
+              WHERE child.split_parent_id = current_line.id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM source_links tie
+              WHERE tie.qb_staged_payment_id = current_line.id
+                AND tie.link_type IN ('charge_qb_tie', 'charge_fee_row')
+            )
+        )
+    ),
+    updated AS (
+      UPDATE payment_units unit
+      SET gift_id = eligible.gift_id,
+          gift_match_method = 'system_confirmed',
+          gift_confirmed_by_user_id = NULL,
+          gift_confirmed_at = now(),
+          gift_note = COALESCE(
+            unit.gift_note,
+            'Carried from an exact same-payer QBO Deposit split'
+          ),
+          created_the_gift = false,
+          updated_at = now()
+      FROM component_rows rows
+      JOIN eligible
+        ON eligible.bank_deposit_id = rows.bank_deposit_id
+       AND eligible.realm_id = rows.realm_id
+       AND eligible.qb_deposit_id = rows.qb_deposit_id
+      WHERE unit.id = rows.payment_unit_id
+        AND unit.gift_id IS NULL
+      RETURNING unit.gift_id
+    )
+    SELECT DISTINCT gift_id FROM updated WHERE gift_id IS NOT NULL
+  `);
+  return (result.rows as Array<{ gift_id: string }>).map((row) => row.gift_id);
+}
 
 /**
  * Collapse the one safe duplicate shape produced when a direct deposit was
@@ -321,7 +527,8 @@ export async function mergeUnambiguousQboDepositLines(
           );
         }
       }
-      const effectiveGiftId = locked.target_gift_id ?? autoUnit?.gift_id ?? null;
+      const effectiveGiftId =
+        locked.target_gift_id ?? autoUnit?.gift_id ?? null;
       const opportunityResult = effectiveGiftId
         ? await tx.execute(sql`
             SELECT opportunity_id
@@ -724,6 +931,12 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  // QBO is a sync-owned mirror. Reconcile its current direct-line facts onto
+  // already-minted QBO units/components before calculating remaining deposit
+  // capacity; otherwise an edited $80k line can stay $80k while the current
+  // composition correctly says $65k + $15k.
+  await refreshQboDerivedDirectPaymentFacts();
+
   // 4d. Deposit components where the QBO Deposit pairs to a register deposit
   //     (0162 pairing: exact TotalAmt+TxnDate, rank-paired, ambiguous flagged,
   //     payout-claimed deposits excluded).
@@ -800,6 +1013,25 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  const splitGiftIds = await carryGiftAcrossUnambiguousQboDepositSplit();
+  if (splitGiftIds.length) {
+    const opportunities = await db.execute(sql`
+      SELECT DISTINCT opportunity_id
+      FROM gifts_and_payments
+      WHERE id IN (${sql.join(
+        splitGiftIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+        AND opportunity_id IS NOT NULL
+    `);
+    const opportunityIds = (
+      opportunities.rows as Array<{ opportunity_id: string }>
+    ).map((row) => row.opportunity_id);
+    if (opportunityIds.length) {
+      await applyDerivedOppFieldsMany(...opportunityIds);
+    }
+  }
+
   // 4e. Once a newly minted QBO unit becomes a real bank component, its
   //     deposit-line sidecar is redundant. QBO provenance now lives on the
   //     unit/component and renders in Accounting from there.
@@ -813,7 +1045,8 @@ async function runBankSpineRecompute(): Promise<void> {
 
   // 4f. QBO-grain source_links (docs/adr-qbo-evidence-grain.md) — THE tie
   //     mechanism for all QBO evidence (the legacy tables are retired).
-  //     Everything here is fill-only with deterministic ids. The
+  //     Everything here uses deterministic ids. Source-owned QBO facts refresh
+  //     in place; review-owned facts remain fill-only. The
   //     payout_qb_settlement pairing is written where it is decided
   //     (qboAccountingRecompute + the reconciliation commit flows).
 

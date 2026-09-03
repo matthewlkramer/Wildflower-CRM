@@ -39,17 +39,24 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
 
   const lower = compiled.toLowerCase();
 
-  it("only refreshes coding while a row is still pending/excluded (derived)", () => {
-    expect(lower).toContain("where");
-    // The guard is the DERIVED pending/excluded predicate (no stored status
-    // column, and the legacy gift-link columns are @deprecated — never read):
-    // pending = no counted unit→gift tie + no settled payout pairing;
-    // excluded = exclusion_reason set.
-    expect(lower).toContain("payout_qb_settlement");
-    expect(lower).toContain("payment_units");
-    expect(lower).toContain("gift_id");
-    expect(lower).not.toContain("matched_gift_id\" is null");
-    expect(lower).toContain('"staged_payments"."exclusion_reason" is not null');
+  it("refreshes source facts on resolved rows without a derived-status guard", () => {
+    expect(lower).not.toContain("payout_qb_settlement");
+    expect(lower).not.toContain(
+      '"staged_payments"."exclusion_reason" is not null',
+    );
+  });
+
+  it("refreshes the core QBO amount/date/payer facts on conflict", () => {
+    const setClause = lower.slice(lower.indexOf("do update set"));
+    for (const col of [
+      "amount",
+      "date_received",
+      "payer_name",
+      "payer_email",
+      "raw_reference",
+    ]) {
+      expect(setClause).toContain(`\"${col}\" = excluded.${col}`);
+    }
   });
 
   for (const col of ["line_item_names", "line_account_names", "line_classes"]) {
@@ -79,13 +86,17 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
     // Guard against over-preservation: when the new pull DOES carry coding it
     // must win (the THEN branch references the incoming `excluded` value), so a
     // legitimately re-coded payment isn't frozen to its first-seen detail.
-    for (const col of ["line_item_names", "line_account_names", "line_classes"]) {
-      expect(lower).toMatch(
-        new RegExp(`> 0 then excluded\\.${col}`),
-      );
+    for (const col of [
+      "line_item_names",
+      "line_account_names",
+      "line_classes",
+    ]) {
+      expect(lower).toMatch(new RegExp(`> 0 then excluded\\.${col}`));
     }
     // Memo: a non-empty incoming memo (nullif keeps it) wins over the stored one.
-    expect(compiled).toContain("coalesce(nullif(excluded.line_description, '')");
+    expect(compiled).toContain(
+      "coalesce(nullif(excluded.line_description, '')",
+    );
   });
 
   // The extended QB capture columns are read-only mirrors of the QB record;
@@ -118,9 +129,9 @@ describe("buildStagedLineUpsert — preserve-on-conflict coding", () => {
 });
 
 /**
- * The full re-pull (enrichAllStatuses) must drop the status `setWhere` guard so
- * approved / rejected rows also receive the new read-only capture fields, while
- * the `set` clause still only touches QB facts — never review columns.
+ * Incremental and full pulls share the same source-fact refresh. The legacy
+ * `enrichAllStatuses` option remains call-compatible while callers migrate,
+ * but neither mode may gate resolved rows or touch review columns.
  */
 describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
   const base = {
@@ -136,7 +147,7 @@ describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
     lineDescription: null,
   };
 
-  it("drops the pending/excluded guard when enriching all statuses", () => {
+  it("has no pending/excluded guard when enriching all statuses", () => {
     const sql = buildStagedLineUpsert(base, { enrichAllStatuses: true })
       .toSQL()
       .sql.toLowerCase();
@@ -144,13 +155,17 @@ describe("buildStagedLineUpsert — enrichAllStatuses (full re-pull)", () => {
     expect(sql).not.toContain("payout_qb_settlement");
     expect(sql).not.toContain("payment_units");
     // …nor the excluded arm.
-    expect(sql).not.toContain('"staged_payments"."exclusion_reason" is not null');
+    expect(sql).not.toContain(
+      '"staged_payments"."exclusion_reason" is not null',
+    );
   });
 
-  it("keeps the guard for a normal (incremental) sync", () => {
+  it("also has no guard for a normal incremental sync", () => {
     const sql = buildStagedLineUpsert(base).toSQL().sql.toLowerCase();
-    expect(sql).toContain("payout_qb_settlement");
-    expect(sql).toContain('"staged_payments"."exclusion_reason" is not null');
+    expect(sql).not.toContain("payout_qb_settlement");
+    expect(sql).not.toContain(
+      '"staged_payments"."exclusion_reason" is not null',
+    );
   });
 
   it("never writes review columns on conflict (only QB facts + updatedAt)", () => {

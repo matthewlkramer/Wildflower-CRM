@@ -861,7 +861,6 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(row.lenses).toContain("accounting_corrections");
   });
 
-
   it("completes a deposit when its matched gift plus an excluded payment explain the full amount", async () => {
     const deposit = await seedDeposit(
       "Matched gift plus excluded payment",
@@ -891,9 +890,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     const excludedComponent = await db
       .select({ id: schema.bankDepositComponents.id })
       .from(schema.bankDepositComponents)
-      .where(
-        eqFn(schema.bankDepositComponents.paymentUnitId, excludedUnit),
-      )
+      .where(eqFn(schema.bankDepositComponents.paymentUnitId, excludedUnit))
       .then((rows) => rows[0]);
     await db
       .update(schema.bankDepositComponents)
@@ -924,7 +921,9 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       "all_open",
       "Matched gift plus excluded payment",
     );
-    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(false);
+    expect(open.data.some((item: any) => item.anchorId === deposit)).toBe(
+      false,
+    );
   });
 
   it("keeps QBO deposit lines as accounting evidence, not composition", async () => {
@@ -1294,6 +1293,40 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(components).toHaveLength(1);
   });
 
+  it("refuses to remove a deposit component while its unit still funds a gift", async () => {
+    const deposit = await seedDeposit("Gift-linked component removal", "90.00");
+    const unitId = await seedUnit(deposit, "90.00");
+    const giftId = nextId("gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      amount: "90.00",
+      organizationId: ORG_ID,
+      details: "Gift-linked component guard test.",
+    });
+    giftIds.push(giftId);
+    await db
+      .update(schema.paymentUnits)
+      .set({ giftId, giftMatchMethod: "human" })
+      .where(eqFn(schema.paymentUnits.id, unitId));
+    const [component] = await db
+      .select({ id: schema.bankDepositComponents.id })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.paymentUnitId, unitId));
+
+    const removed = await requestJson(
+      "DELETE",
+      `/api/reconciliation/deposit-components/${component.id}`,
+    );
+    expect(removed.status).toBe(409);
+    expect(removed.json.error).toBe("component_has_gift");
+
+    const remaining = await db
+      .select({ id: schema.bankDepositComponents.id })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.id, component.id));
+    expect(remaining).toEqual([{ id: component.id }]);
+  });
+
   it("mints a gift from a composed direct payment unit and books the tie in one transaction", async () => {
     const deposit = await seedDeposit("Unit mint deposit", "150.00");
     const unitId = await seedUnit(deposit, "150.00");
@@ -1413,7 +1446,10 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
 
   it("refuses unit mints for Stripe-backed and excluded units", async () => {
     // Stripe money mints through the charge flow, never the unit route.
-    const stripeDeposit = await seedDeposit("Unit mint stripe deposit", "30.00");
+    const stripeDeposit = await seedDeposit(
+      "Unit mint stripe deposit",
+      "30.00",
+    );
     const payoutId = await seedPayout("30.00", stripeDeposit);
     const chargeId = await seedCharge(payoutId, { grossAmount: "30.00" });
     const stripeUnitId = nextId("unit");

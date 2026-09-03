@@ -21,7 +21,9 @@ afterEach(() => {
   container.remove();
 });
 
-function makeDeposit(overrides: Partial<WorkbenchDeposit> = {}): WorkbenchDeposit {
+function makeDeposit(
+  overrides: Partial<WorkbenchDeposit> = {},
+): WorkbenchDeposit {
   return {
     id: "bank_deposit:test",
     kind: "bank_deposit",
@@ -59,51 +61,68 @@ function makeDeposit(overrides: Partial<WorkbenchDeposit> = {}): WorkbenchDeposi
 }
 
 function render(deposit: WorkbenchDeposit, actions?: Partial<ClusterActions>) {
-  act(() => root.render(<DepositRow deposit={deposit} expanded onToggle={() => undefined} actions={actions as ClusterActions | undefined} />));
+  act(() =>
+    root.render(
+      <DepositRow
+        deposit={deposit}
+        expanded
+        onToggle={() => undefined}
+        actions={actions as ClusterActions | undefined}
+      />,
+    ),
+  );
 }
 
 describe("deposit workbench rows", () => {
   it("renders payout, component, and unresolved compositions", () => {
-    render(makeDeposit({
-      composition: {
-        kind: "stripe_payout",
-        payoutId: "po_1",
-        explainedAmount: "100.00",
-        unexplainedAmount: "0.00",
-        components: [],
-      },
-      charges: [{
-        chargeId: "ch_1",
-        amount: "100.00",
-        feeAmount: "0.00",
-        netAmount: "100.00",
-        payerName: "Payer",
-        chargeDate: "2024-01-02",
-        linkedGiftId: null,
-        attributedDonor: null,
-      }],
-    }));
+    render(
+      makeDeposit({
+        composition: {
+          kind: "stripe_payout",
+          payoutId: "po_1",
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [],
+        },
+        charges: [
+          {
+            chargeId: "ch_1",
+            amount: "100.00",
+            feeAmount: "0.00",
+            netAmount: "100.00",
+            payerName: "Payer",
+            chargeDate: "2024-01-02",
+            linkedGiftId: null,
+            attributedDonor: null,
+          },
+        ],
+      }),
+    );
     expect(container.textContent).toContain("Stripe payout");
     expect(container.textContent).toContain("Payer");
 
-    render(makeDeposit({
-      composition: {
-        kind: "components",
-        payoutId: null,
-        explainedAmount: "100.00",
-        unexplainedAmount: "0.00",
-        components: [{
-          componentId: "component_1",
-          paymentUnitId: "unit_1",
-          amount: "100.00",
-          kind: "check",
-          needsReview: false,
-          ambiguousDepositMatch: false,
-          countedGiftIds: [],
-        }],
-        units: [],
-      },
-    }));
+    render(
+      makeDeposit({
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [
+            {
+              componentId: "component_1",
+              paymentUnitId: "unit_1",
+              amount: "100.00",
+              kind: "check",
+              needsReview: false,
+              ambiguousDepositMatch: false,
+              countedGiftIds: [],
+            },
+          ],
+          units: [],
+        },
+      }),
+    );
     expect(container.textContent).toContain("check");
 
     render(makeDeposit());
@@ -116,38 +135,57 @@ describe("deposit workbench rows", () => {
     render(makeDeposit({ lenses: ["not_fundraising"] }));
     expect(container.textContent).toContain("Not fundraising");
     expect(DEPOSIT_LENSES).toHaveLength(8);
-    expect(DEPOSIT_LENSES.map((lens) => lens.id)).toContain("accounting_corrections");
+    expect(DEPOSIT_LENSES.map((lens) => lens.id)).toContain(
+      "accounting_corrections",
+    );
   });
 
   it("shows the finance-only exclusion reason list for an unexcluded deposit", () => {
     render(makeDeposit(), { isFinanceOrAdmin: true });
-    const trigger = container.querySelector('button[aria-label="Card actions"]');
+    const trigger = container.querySelector(
+      'button[aria-label="Card actions"]',
+    );
     expect(trigger).not.toBeNull();
-    act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    act(() =>
+      trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
+    );
     expect(document.body.textContent).toContain("Mark as non-WF money");
     expect(document.body.textContent).toContain("Mark as membership fee");
     expect(document.body.textContent).toContain("Mark as excluded — other…");
   });
 
   it("shows return-to-open-queue for a direct bank exclusion", () => {
-    render(makeDeposit({
-      bankExclusion: { reason: "membership", note: "reviewed" },
-    }), { isFinanceOrAdmin: true });
-    const trigger = container.querySelector('button[aria-label="Card actions"]');
+    render(
+      makeDeposit({
+        bankExclusion: { reason: "membership", note: "reviewed" },
+      }),
+      { isFinanceOrAdmin: true },
+    );
+    const trigger = container.querySelector(
+      'button[aria-label="Card actions"]',
+    );
     expect(trigger).not.toBeNull();
-    act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    act(() =>
+      trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
+    );
     expect(document.body.textContent).toContain("Return to open queue");
   });
 
   /** Open the card-actions menu whose content contains `text`; return the open menu content element. */
   function openMenuContaining(text: string): HTMLElement | null {
-    const triggers = container.querySelectorAll('button[aria-label="Card actions"]');
+    const triggers = container.querySelectorAll(
+      'button[aria-label="Card actions"]',
+    );
     for (const trigger of triggers) {
-      act(() => trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+      act(() =>
+        trigger.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
+      );
       const menu = document.querySelector<HTMLElement>('[role="menu"]');
       if (menu?.textContent?.includes(text)) return menu;
       act(() => {
-        document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        document.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+        );
       });
     }
     return null;
@@ -192,16 +230,18 @@ describe("deposit workbench rows", () => {
           unexplainedAmount: "0.00",
           components: [],
         },
-        charges: [{
-          chargeId: "ch_1",
-          amount: "100.00",
-          feeAmount: "0.00",
-          netAmount: "100.00",
-          payerName: "Payer",
-          chargeDate: "2024-01-02",
-          linkedGiftId: null,
-          attributedDonor: null,
-        }],
+        charges: [
+          {
+            chargeId: "ch_1",
+            amount: "100.00",
+            feeAmount: "0.00",
+            netAmount: "100.00",
+            payerName: "Payer",
+            chargeDate: "2024-01-02",
+            linkedGiftId: null,
+            attributedDonor: null,
+          },
+        ],
       }),
       { isFinanceOrAdmin: true },
     );
@@ -232,18 +272,20 @@ describe("deposit workbench rows", () => {
           payoutId: null,
           explainedAmount: "100.00",
           unexplainedAmount: "0.00",
-          components: [{
-            componentId: "component_manual",
-            paymentUnitId: "unit_manual",
-            amount: "100.00",
-            kind: "other",
-            needsReview: false,
-            ambiguousDepositMatch: false,
-            countedGiftIds: [],
-            source: "bank_spine",
-            stagedPaymentId: null,
-            label: null,
-          }],
+          components: [
+            {
+              componentId: "component_manual",
+              paymentUnitId: "unit_manual",
+              amount: "100.00",
+              kind: "other",
+              needsReview: false,
+              ambiguousDepositMatch: false,
+              countedGiftIds: [],
+              source: "bank_spine",
+              stagedPaymentId: null,
+              label: null,
+            },
+          ],
           units: [],
         },
       }),
@@ -267,6 +309,40 @@ describe("deposit workbench rows", () => {
     );
   });
 
+  it("labels gift-linked payment unlinking as blocked", () => {
+    render(
+      makeDeposit({
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: [
+            {
+              componentId: "component_linked",
+              paymentUnitId: "unit_linked",
+              amount: "100.00",
+              kind: "other",
+              needsReview: false,
+              ambiguousDepositMatch: false,
+              countedGiftIds: ["gift_1"],
+              source: "bank_spine",
+            },
+          ],
+          units: [],
+        },
+      }),
+      { isFinanceOrAdmin: true },
+    );
+    const menu = openMenuContaining("Unlink payment");
+    const item = menuItem(menu as HTMLElement, "Unlink payment");
+    expect(item).not.toBeNull();
+    expect(item?.getAttribute("data-disabled")).not.toBeNull();
+    expect(menu?.textContent).toContain(
+      "Unlink the CRM gift from this payment first.",
+    );
+  });
+
   it("falls back to the unit-backed component anchor when the staged QB row is no longer actionable", () => {
     // A component can carry a staged QB source that has since become
     // unavailable (booked elsewhere, excluded, or derived-excluded by a
@@ -280,19 +356,21 @@ describe("deposit workbench rows", () => {
           payoutId: null,
           explainedAmount: "100.00",
           unexplainedAmount: "0.00",
-          components: [{
-            componentId: "component_qb",
-            paymentUnitId: "unit_qb",
-            amount: "100.00",
-            kind: "check",
-            needsReview: false,
-            ambiguousDepositMatch: false,
-            countedGiftIds: [],
-            source: "bank_spine",
-            stagedPaymentId: "staged_1",
-            stagedActionable,
-            label: "Chia Rodeski",
-          }],
+          components: [
+            {
+              componentId: "component_qb",
+              paymentUnitId: "unit_qb",
+              amount: "100.00",
+              kind: "check",
+              needsReview: false,
+              ambiguousDepositMatch: false,
+              countedGiftIds: [],
+              source: "bank_spine",
+              stagedPaymentId: "staged_1",
+              stagedActionable,
+              label: "Chia Rodeski",
+            },
+          ],
           units: [],
         },
       });
@@ -303,13 +381,20 @@ describe("deposit workbench rows", () => {
     let menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
     expect(
-      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute("data-disabled"),
+      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute(
+        "data-disabled",
+      ),
     ).toBeNull();
     expect(
-      menuItem(menu as HTMLElement, "Record as payment on pledge…")?.getAttribute("data-disabled"),
+      menuItem(
+        menu as HTMLElement,
+        "Record as payment on pledge…",
+      )?.getAttribute("data-disabled"),
     ).toBeNull();
     act(() => {
-      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
     });
 
     // Actionable → staged anchor: pledge path available again.
@@ -317,7 +402,10 @@ describe("deposit workbench rows", () => {
     menu = openMenuContaining("Create standalone gift…");
     expect(menu).not.toBeNull();
     expect(
-      menuItem(menu as HTMLElement, "Record as payment on pledge…")?.getAttribute("data-disabled"),
+      menuItem(
+        menu as HTMLElement,
+        "Record as payment on pledge…",
+      )?.getAttribute("data-disabled"),
     ).toBeNull();
   });
 });

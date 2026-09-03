@@ -2805,6 +2805,9 @@ router.delete(
       if (!["manual", "qbo_inferred"].includes(component.source)) {
         return { kind: "not_removable" as const };
       }
+      if (component.has_counted_application) {
+        return { kind: "has_gift" as const };
+      }
       await tx.execute(sql`
         DELETE FROM bank_deposit_components WHERE id = ${params.id}
       `);
@@ -2842,6 +2845,14 @@ router.delete(
         error: "component_not_removable",
         message:
           "Only manual or QBO-inferred deposit components can be unlinked.",
+      });
+      return;
+    }
+    if (result.kind === "has_gift") {
+      res.status(409).json({
+        error: "component_has_gift",
+        message:
+          "Unlink the CRM gift from this payment before removing it from the deposit.",
       });
       return;
     }
