@@ -1662,7 +1662,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "lastImportedAt": zod.string().datetime({}).nullable().describe('When the newest currently stored bank spreadsheet row was imported; null when no spreadsheet rows exist.'),
   "latestTransactionDate": zod.string().date().nullable().describe('Latest bank transaction date present in the imported spreadsheet data.'),
   "sourceFileCount": zod.number().describe('Number of distinct spreadsheet files represented by the stored bank transaction rows.')
-}).describe('Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.'),
+}).describe('Freshness of the QuickBooks Wells Fargo report data backing the workbench, whether uploaded manually or received by scheduled email.'),
   "lensCounts": zod.object({
   "all_open": zod.number(),
   "unresolved_composition": zod.number(),
