@@ -9,9 +9,9 @@ It does not create, archive, or delete records. The SQL aborts unless it sees th
 reviewed same-payer two-component shape, and its postflight proves component and
 gift-linked unit totals both equal the bank deposit. It is idempotent.
 
-Apply to development first from the repository root. The historical row is
-normally absent there, so a successful `target ... absent; no-op` notice is the
-expected result:
+Apply to development first from the repository root. Development has no QBO
+components for this historical target, so a successful `target has no QBO
+components ...; no-op` notice is the expected result:
 
 ```bash
 psql "$DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0229_repair_fidelity_80k_qbo_resplit.sql

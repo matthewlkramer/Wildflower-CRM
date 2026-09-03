@@ -103,6 +103,14 @@ BEGIN
     ON staged.id = component.source_staged_payment_id
   WHERE component.bank_deposit_id = 'bdep_fdaf5e42f6f5ac0556ce564b';
 
+  -- Development carries the historical bank/gift record but not its QBO
+  -- composition. That fully absent source shape is an intentional no-op; a
+  -- partially present or otherwise changed shape still fails closed below.
+  IF v_component_count = 0 THEN
+    RAISE NOTICE '0229: target has no QBO components in this database; no-op';
+    RETURN;
+  END IF;
+
   IF v_component_count <> 2
      OR v_component_total <> 80000.00
      OR v_amount_shape_count <> 2
