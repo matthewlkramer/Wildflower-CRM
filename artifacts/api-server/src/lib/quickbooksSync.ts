@@ -59,10 +59,13 @@ function isUniqueViolation(e: unknown): boolean {
  * Idempotent upsert of one staged incoming-money UNIT (SalesReceipt / Payment /
  * single Deposit line), keyed on (realmId, qbEntityType, qbEntityId, qbLineId).
  *
- * On conflict (a re-sync of a unit we've already staged) it refreshes ONLY the
- * captured line detail + updatedAt, and only while the row is still
- * pending/excluded — status, classification, donor match and scores are left
- * untouched so a manual override is never clobbered.
+ * On conflict (a re-sync of a unit we've already staged) it refreshes the
+ * source-owned QuickBooks facts on every row, including resolved rows. Review
+ * state (classification, donor match, scores, approval, and the unit→gift
+ * pointer) is deliberately absent from the SET clause, so a source refresh
+ * cannot clobber a human decision. In particular, amount/date must keep moving:
+ * a QBO Deposit line can be edited after it was reconciled, and freezing the
+ * old amount creates a stale payment unit beside the current composition.
  *
  * Crucially, the line-detail refresh is preserve-on-conflict: deposit-derived
  * coding (account / class / memo) is folded onto a Payment/SalesReceipt from the
@@ -79,9 +82,17 @@ function isUniqueViolation(e: unknown): boolean {
  */
 export function buildStagedLineUpsert(
   values: typeof stagedPayments.$inferInsert,
-  opts: { enrichAllStatuses?: boolean } = {},
+  _opts: { enrichAllStatuses?: boolean } = {},
 ) {
   const set = {
+    // Core source facts are the QBO mirror, not review state. Assign them from
+    // EXCLUDED even when the row is already resolved so an edited Deposit line
+    // reaches the bank-spine recompute on the same incremental pull.
+    amount: sql`excluded.amount`,
+    dateReceived: sql`excluded.date_received`,
+    payerName: sql`excluded.payer_name`,
+    payerEmail: sql`excluded.payer_email`,
+    rawReference: sql`excluded.raw_reference`,
     lineItemNames: sql`CASE WHEN coalesce(cardinality(excluded.line_item_names), 0) > 0 THEN excluded.line_item_names ELSE ${stagedPayments.lineItemNames} END`,
     lineAccountNames: sql`CASE WHEN coalesce(cardinality(excluded.line_account_names), 0) > 0 THEN excluded.line_account_names ELSE ${stagedPayments.lineAccountNames} END`,
     lineClasses: sql`CASE WHEN coalesce(cardinality(excluded.line_classes), 0) > 0 THEN excluded.line_classes ELSE ${stagedPayments.lineClasses} END`,
@@ -137,14 +148,6 @@ export function buildStagedLineUpsert(
         stagedPayments.qbLineId,
       ],
       set,
-      // Normal sync only refreshes still-open rows (derived status pending /
-      // excluded) so a manual resolution is never clobbered. The full re-pull
-      // (enrichAllStatuses) drops that guard so resolved rows also get the new
-      // capture fields — the `set` above only touches read-only QB facts,
-      // never review columns, so no match / exclusion / grouping is affected.
-      ...(opts.enrichAllStatuses
-        ? {}
-        : { setWhere: stagedStatusIn(["pending", "excluded"]) }),
     });
 }
 
@@ -165,21 +168,19 @@ export function buildSuperfluousHeaderDelete(
   realmId: string,
   qbDepositIds: string[],
 ) {
-  return db
-    .delete(stagedPayments)
-    .where(
-      and(
-        eq(stagedPayments.realmId, realmId),
-        eq(stagedPayments.qbEntityType, "deposit_header"),
-        inArray(stagedPayments.qbEntityId, qbDepositIds),
-        sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
-        sql`NOT EXISTS (
+  return db.delete(stagedPayments).where(
+    and(
+      eq(stagedPayments.realmId, realmId),
+      eq(stagedPayments.qbEntityType, "deposit_header"),
+      inArray(stagedPayments.qbEntityId, qbDepositIds),
+      sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
+      sql`NOT EXISTS (
           SELECT 1 FROM ${paymentUnits}
           WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
             AND ${paymentUnits.giftId} IS NOT NULL
         )`,
-      ),
-    );
+    ),
+  );
 }
 
 /**
@@ -207,22 +208,20 @@ export function buildSuperfluousLineDelete(
   realmId: string,
   qbDepositIds: string[],
 ) {
-  return db
-    .delete(stagedPayments)
-    .where(
-      and(
-        eq(stagedPayments.realmId, realmId),
-        eq(stagedPayments.qbEntityType, "deposit"),
-        inArray(stagedPayments.qbEntityId, qbDepositIds),
-        stagedStatusIn(["pending", "excluded"]),
-        sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
-        sql`NOT EXISTS (
+  return db.delete(stagedPayments).where(
+    and(
+      eq(stagedPayments.realmId, realmId),
+      eq(stagedPayments.qbEntityType, "deposit"),
+      inArray(stagedPayments.qbEntityId, qbDepositIds),
+      stagedStatusIn(["pending", "excluded"]),
+      sql`NOT EXISTS (SELECT 1 FROM ${sourceLinks} WHERE ${sourceLinks.qbStagedPaymentId} = ${stagedPayments.id})`,
+      sql`NOT EXISTS (
           SELECT 1 FROM ${paymentUnits}
           WHERE ${paymentUnits.sourceStagedPaymentId} = ${stagedPayments.id}
             AND ${paymentUnits.giftId} IS NOT NULL
         )`,
-      ),
-    );
+    ),
+  );
 }
 
 /**
@@ -328,7 +327,8 @@ export function startFullResync(): FullResyncState {
         startedAt,
         finishedAt: new Date().toISOString(),
         summary: null,
-        error: e instanceof Error ? e.message : "QuickBooks full re-pull failed",
+        error:
+          e instanceof Error ? e.message : "QuickBooks full re-pull failed",
       };
       logger.error({ err: e }, "QuickBooks full re-pull (background) failed");
     }
@@ -456,8 +456,8 @@ async function applyAutoCreateRule(
       id: newId(),
       giftId,
       subAmount: locked.amount,
-      intendedUsage: rule.targetIntendedUsage as
-        (typeof giftAllocations.$inferInsert)["intendedUsage"],
+      intendedUsage:
+        rule.targetIntendedUsage as (typeof giftAllocations.$inferInsert)["intendedUsage"],
       fundableProjectId:
         rule.targetIntendedUsage === "project"
           ? rule.targetFundableProjectId
@@ -558,9 +558,7 @@ export async function applyRuleToPendingPayments(
           matchedRuleId: result.ruleId,
           updatedAt: new Date(),
         })
-        .where(
-          and(eq(stagedPayments.id, row.id), stagedStatusWhere.pending),
-        );
+        .where(and(eq(stagedPayments.id, row.id), stagedStatusWhere.pending));
       if ((updated.rowCount ?? 0) > 0) excluded += 1;
     } else if (result.action === "auto_create_approve") {
       const did = await applyAutoCreateRuleToRow(row.id, row, result);
@@ -595,7 +593,10 @@ async function applyAutoCreateRuleToRow(
   if (rule.targetIntendedUsage === "project") {
     if (!rule.targetFundableProjectId) return false;
     const proj = await db
-      .select({ id: fundableProjects.id, archivedAt: fundableProjects.archivedAt })
+      .select({
+        id: fundableProjects.id,
+        archivedAt: fundableProjects.archivedAt,
+      })
       .from(fundableProjects)
       .where(eq(fundableProjects.id, rule.targetFundableProjectId))
       .then((r) => r[0]);
@@ -654,8 +655,8 @@ async function applyAutoCreateRuleToRow(
       id: newId(),
       giftId,
       subAmount: locked.amount,
-      intendedUsage: rule.targetIntendedUsage as
-        (typeof giftAllocations.$inferInsert)["intendedUsage"],
+      intendedUsage:
+        rule.targetIntendedUsage as (typeof giftAllocations.$inferInsert)["intendedUsage"],
       fundableProjectId:
         rule.targetIntendedUsage === "project"
           ? rule.targetFundableProjectId
@@ -717,7 +718,11 @@ export async function syncQuickbooks(
 
     let pulled: Awaited<ReturnType<typeof pullIncomingPayments>>;
     try {
-      pulled = await pullIncomingPayments(conn.accessToken, conn.realmId, since);
+      pulled = await pullIncomingPayments(
+        conn.accessToken,
+        conn.realmId,
+        since,
+      );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await db
@@ -761,7 +766,8 @@ export async function syncQuickbooks(
         }
       }
       if (p.qbEntityType === "deposit") directLineDepositIds.add(p.qbEntityId);
-      if (p.qbEntityType === "deposit_header") headerDepositIds.add(p.qbEntityId);
+      if (p.qbEntityType === "deposit_header")
+        headerDepositIds.add(p.qbEntityId);
 
       // A whole-deposit header is NEVER donation-review work (derived status
       // `excluded` by entity type): its money is already counted on the
@@ -771,15 +777,17 @@ export async function syncQuickbooks(
 
       // Classify first via the admin-editable rules. `exclude` → noise (skips the
       // costlier scorer); `auto_create_approve` → mint+approve after staging.
-      const ruleHit = isDepositHeader ? null : evaluateRules(handlingRules, {
-        amount: p.amount,
-        payerName: p.payerName,
-        lineItemNames: p.lineItemNames,
-        lineAccountNames: p.lineAccountNames,
-        rawReference: p.rawReference,
-        lineDescription: p.lineDescription,
-        lineClasses: p.lineClasses,
-      });
+      const ruleHit = isDepositHeader
+        ? null
+        : evaluateRules(handlingRules, {
+            amount: p.amount,
+            payerName: p.payerName,
+            lineItemNames: p.lineItemNames,
+            lineAccountNames: p.lineAccountNames,
+            rawReference: p.rawReference,
+            lineDescription: p.lineDescription,
+            lineClasses: p.lineClasses,
+          });
       const excluded = ruleHit?.action === "exclude";
       const exclusionReason = excluded ? ruleHit.reason : null;
 
@@ -807,16 +815,17 @@ export async function syncQuickbooks(
         qbDepositToAccountName: p.qbDepositToAccountName,
       });
 
-      const scored: ScoredMatch | null = excluded || isDepositHeader
-        ? null
-        : await scoreStagedPayment({
-            payerName: p.payerName,
-            payerEmail: p.payerEmail,
-            rawReference: p.rawReference,
-            lineDescription: p.lineDescription,
-            amount: p.amount,
-            dateReceived: p.dateReceived,
-          });
+      const scored: ScoredMatch | null =
+        excluded || isDepositHeader
+          ? null
+          : await scoreStagedPayment({
+              payerName: p.payerName,
+              payerEmail: p.payerEmail,
+              rawReference: p.rawReference,
+              lineDescription: p.lineDescription,
+              amount: p.amount,
+              dateReceived: p.dateReceived,
+            });
 
       const matchStatus = excluded
         ? "unmatched"
@@ -830,52 +839,59 @@ export async function syncQuickbooks(
       const donor =
         scored && scored.tier !== "none"
           ? scored.donor
-          : { organizationId: null, individualGiverPersonId: null, householdId: null };
+          : {
+              organizationId: null,
+              individualGiverPersonId: null,
+              householdId: null,
+            };
 
-      const inserted = await buildStagedLineUpsert({
-        id: newId(),
-        realmId: conn.realmId,
-        qbEntityType: p.qbEntityType,
-        qbEntityId: p.qbEntityId,
-        qbLineId: p.qbLineId,
-        qbDepositId: p.qbDepositId,
-        amount: p.amount,
-        dateReceived: p.dateReceived,
-        payerName: p.payerName,
-        payerEmail: p.payerEmail,
-        rawReference: p.rawReference,
-        lineDescription: p.lineDescription,
-        exclusionReason,
-        classificationSource: "auto",
-        matchedRuleId: ruleHit?.ruleId ?? null,
-        entityId,
-        fundingSource,
-        matchStatus,
-        matchScore: scored && scored.method ? scored.score : null,
-        matchMethod: scored ? scored.method : null,
-        organizationId: donor.organizationId,
-        individualGiverPersonId: donor.individualGiverPersonId,
-        householdId: donor.householdId,
-        matchedPaymentIntermediaryId: scored ? scored.intermediaryId : null,
-        lineItemNames: p.lineItemNames,
-        lineAccountNames: p.lineAccountNames,
-        lineClasses: p.lineClasses,
-        qbPayerType: p.qbPayerType,
-        qbPayerId: p.qbPayerId,
-        qbPaymentMethod: p.qbPaymentMethod,
-        qbCheckNumber: p.qbCheckNumber,
-        qbDepositToAccountName: p.qbDepositToAccountName,
-        qbDocNumber: p.qbDocNumber,
-        qbBillingAddress: p.qbBillingAddress,
-        qbTransactionMemo: p.qbTransactionMemo,
-        qbLocation: p.qbLocation,
-        qbCurrency: p.qbCurrency,
-        qbExchangeRate: p.qbExchangeRate,
-        qbCreateTime: p.qbCreateTime ? new Date(p.qbCreateTime) : null,
-        qbLinkedTxn: p.qbLinkedTxn,
-        qbRaw: p.qbRaw,
-        qbRawLine: p.qbRawLine,
-      }, { enrichAllStatuses: fullResync }).returning({
+      const inserted = await buildStagedLineUpsert(
+        {
+          id: newId(),
+          realmId: conn.realmId,
+          qbEntityType: p.qbEntityType,
+          qbEntityId: p.qbEntityId,
+          qbLineId: p.qbLineId,
+          qbDepositId: p.qbDepositId,
+          amount: p.amount,
+          dateReceived: p.dateReceived,
+          payerName: p.payerName,
+          payerEmail: p.payerEmail,
+          rawReference: p.rawReference,
+          lineDescription: p.lineDescription,
+          exclusionReason,
+          classificationSource: "auto",
+          matchedRuleId: ruleHit?.ruleId ?? null,
+          entityId,
+          fundingSource,
+          matchStatus,
+          matchScore: scored && scored.method ? scored.score : null,
+          matchMethod: scored ? scored.method : null,
+          organizationId: donor.organizationId,
+          individualGiverPersonId: donor.individualGiverPersonId,
+          householdId: donor.householdId,
+          matchedPaymentIntermediaryId: scored ? scored.intermediaryId : null,
+          lineItemNames: p.lineItemNames,
+          lineAccountNames: p.lineAccountNames,
+          lineClasses: p.lineClasses,
+          qbPayerType: p.qbPayerType,
+          qbPayerId: p.qbPayerId,
+          qbPaymentMethod: p.qbPaymentMethod,
+          qbCheckNumber: p.qbCheckNumber,
+          qbDepositToAccountName: p.qbDepositToAccountName,
+          qbDocNumber: p.qbDocNumber,
+          qbBillingAddress: p.qbBillingAddress,
+          qbTransactionMemo: p.qbTransactionMemo,
+          qbLocation: p.qbLocation,
+          qbCurrency: p.qbCurrency,
+          qbExchangeRate: p.qbExchangeRate,
+          qbCreateTime: p.qbCreateTime ? new Date(p.qbCreateTime) : null,
+          qbLinkedTxn: p.qbLinkedTxn,
+          qbRaw: p.qbRaw,
+          qbRawLine: p.qbRawLine,
+        },
+        { enrichAllStatuses: fullResync },
+      ).returning({
         id: stagedPayments.id,
         isInsert: sql<boolean>`(xmax = 0)`,
       });
@@ -934,7 +950,7 @@ export async function syncQuickbooks(
     }
 
     const newWatermark =
-      maxUpdated !== null ? new Date(maxUpdated) : since ?? new Date();
+      maxUpdated !== null ? new Date(maxUpdated) : (since ?? new Date());
     await db
       .update(quickbooksConnections)
       .set({
@@ -1172,120 +1188,127 @@ export interface QuickbooksReclassifySummary {
  * override. Advisory-locked under the shared QuickBooks key.
  */
 export async function reclassifyStagedPayments(): Promise<QuickbooksReclassifySummary> {
-  const outcome = await withSyncLock(QB_LOCK_KEY, "quickbooks", async () => {
-    const candidates = await db
-      .select({
-        id: stagedPayments.id,
-        // Excluded-ness IS the exclusion_reason fact (status is derived).
-        exclusionReason: stagedPayments.exclusionReason,
-        entitySource: stagedPayments.entitySource,
-        fundingSourceProvenance: stagedPayments.fundingSourceProvenance,
-        amount: stagedPayments.amount,
-        payerName: stagedPayments.payerName,
-        rawReference: stagedPayments.rawReference,
-        lineDescription: stagedPayments.lineDescription,
-        lineItemNames: stagedPayments.lineItemNames,
-        lineAccountNames: stagedPayments.lineAccountNames,
-        lineClasses: stagedPayments.lineClasses,
-        qbPaymentMethod: stagedPayments.qbPaymentMethod,
-        qbTransactionMemo: stagedPayments.qbTransactionMemo,
-        qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
-      })
-      .from(stagedPayments)
-      .where(
+  const outcome = await withSyncLock(
+    QB_LOCK_KEY,
+    "quickbooks",
+    async () => {
+      const candidates = await db
+        .select({
+          id: stagedPayments.id,
+          // Excluded-ness IS the exclusion_reason fact (status is derived).
+          exclusionReason: stagedPayments.exclusionReason,
+          entitySource: stagedPayments.entitySource,
+          fundingSourceProvenance: stagedPayments.fundingSourceProvenance,
+          amount: stagedPayments.amount,
+          payerName: stagedPayments.payerName,
+          rawReference: stagedPayments.rawReference,
+          lineDescription: stagedPayments.lineDescription,
+          lineItemNames: stagedPayments.lineItemNames,
+          lineAccountNames: stagedPayments.lineAccountNames,
+          lineClasses: stagedPayments.lineClasses,
+          qbPaymentMethod: stagedPayments.qbPaymentMethod,
+          qbTransactionMemo: stagedPayments.qbTransactionMemo,
+          qbDepositToAccountName: stagedPayments.qbDepositToAccountName,
+        })
+        .from(stagedPayments)
+        .where(
+          and(
+            eq(stagedPayments.classificationSource, "auto"),
+            stagedStatusIn(["pending", "excluded"]),
+          ),
+        );
+
+      const guard = (id: string) =>
         and(
+          eq(stagedPayments.id, id),
           eq(stagedPayments.classificationSource, "auto"),
           stagedStatusIn(["pending", "excluded"]),
-        ),
-      );
+        );
 
-    const guard = (id: string) =>
-      and(
-        eq(stagedPayments.id, id),
-        eq(stagedPayments.classificationSource, "auto"),
-        stagedStatusIn(["pending", "excluded"]),
-      );
-
-    let excluded = 0;
-    let included = 0;
-    for (const row of candidates) {
-      const input = {
-        amount: row.amount,
-        payerName: row.payerName,
-        lineItemNames: row.lineItemNames,
-        lineAccountNames: row.lineAccountNames,
-        rawReference: row.rawReference,
-        lineDescription: row.lineDescription,
-        lineClasses: row.lineClasses,
-      };
-      const cls = classifyStagedPayment(input);
-      // Entity attribution is refreshed on every reclassified row, independent of
-      // the exclusion status transition below, so marker changes re-file rows —
-      // EXCEPT on rows a human pinned (entity_source = 'manual'), whose
-      // attribution is review state and must never be clobbered by detectEntity.
-      const entitySet =
-        row.entitySource === "manual" ? {} : { entityId: detectEntity(input) };
-      // Funding source is refreshed on every auto row alongside entity, and is
-      // never touched on a human-pinned (provenance 'manual') row.
-      const fundingSet =
-        row.fundingSourceProvenance === "manual"
-          ? {}
-          : {
-              fundingSource: detectFundingSource({
-                payerName: row.payerName,
-                qbPaymentMethod: row.qbPaymentMethod,
-                rawReference: row.rawReference,
-                lineDescription: row.lineDescription,
-                qbTransactionMemo: row.qbTransactionMemo,
-                qbDepositToAccountName: row.qbDepositToAccountName,
-              }),
-            };
-      if (cls.excluded && row.exclusionReason == null) {
-        const upd = await db
-          .update(stagedPayments)
-          .set({
-            exclusionReason: cls.reason,
-            ...entitySet,
-            ...fundingSet,
-            updatedAt: new Date(),
-          })
-          .where(guard(row.id))
-          .returning({ id: stagedPayments.id });
-        if (upd.length) excluded += 1;
-      } else if (cls.excluded && row.exclusionReason != null) {
-        // Already excluded — keep status, just refresh the reason if it drifted.
-        await db
-          .update(stagedPayments)
-          .set({
-            exclusionReason: cls.reason,
-            ...entitySet,
-            ...fundingSet,
-            updatedAt: new Date(),
-          })
-          .where(guard(row.id));
-      } else if (!cls.excluded && row.exclusionReason != null) {
-        const upd = await db
-          .update(stagedPayments)
-          .set({
-            exclusionReason: null,
-            ...entitySet,
-            ...fundingSet,
-            updatedAt: new Date(),
-          })
-          .where(guard(row.id))
-          .returning({ id: stagedPayments.id });
-        if (upd.length) included += 1;
-      } else {
-        // Pending and staying pending — still refresh entity + funding.
-        await db
-          .update(stagedPayments)
-          .set({ ...entitySet, ...fundingSet, updatedAt: new Date() })
-          .where(guard(row.id));
+      let excluded = 0;
+      let included = 0;
+      for (const row of candidates) {
+        const input = {
+          amount: row.amount,
+          payerName: row.payerName,
+          lineItemNames: row.lineItemNames,
+          lineAccountNames: row.lineAccountNames,
+          rawReference: row.rawReference,
+          lineDescription: row.lineDescription,
+          lineClasses: row.lineClasses,
+        };
+        const cls = classifyStagedPayment(input);
+        // Entity attribution is refreshed on every reclassified row, independent of
+        // the exclusion status transition below, so marker changes re-file rows —
+        // EXCEPT on rows a human pinned (entity_source = 'manual'), whose
+        // attribution is review state and must never be clobbered by detectEntity.
+        const entitySet =
+          row.entitySource === "manual"
+            ? {}
+            : { entityId: detectEntity(input) };
+        // Funding source is refreshed on every auto row alongside entity, and is
+        // never touched on a human-pinned (provenance 'manual') row.
+        const fundingSet =
+          row.fundingSourceProvenance === "manual"
+            ? {}
+            : {
+                fundingSource: detectFundingSource({
+                  payerName: row.payerName,
+                  qbPaymentMethod: row.qbPaymentMethod,
+                  rawReference: row.rawReference,
+                  lineDescription: row.lineDescription,
+                  qbTransactionMemo: row.qbTransactionMemo,
+                  qbDepositToAccountName: row.qbDepositToAccountName,
+                }),
+              };
+        if (cls.excluded && row.exclusionReason == null) {
+          const upd = await db
+            .update(stagedPayments)
+            .set({
+              exclusionReason: cls.reason,
+              ...entitySet,
+              ...fundingSet,
+              updatedAt: new Date(),
+            })
+            .where(guard(row.id))
+            .returning({ id: stagedPayments.id });
+          if (upd.length) excluded += 1;
+        } else if (cls.excluded && row.exclusionReason != null) {
+          // Already excluded — keep status, just refresh the reason if it drifted.
+          await db
+            .update(stagedPayments)
+            .set({
+              exclusionReason: cls.reason,
+              ...entitySet,
+              ...fundingSet,
+              updatedAt: new Date(),
+            })
+            .where(guard(row.id));
+        } else if (!cls.excluded && row.exclusionReason != null) {
+          const upd = await db
+            .update(stagedPayments)
+            .set({
+              exclusionReason: null,
+              ...entitySet,
+              ...fundingSet,
+              updatedAt: new Date(),
+            })
+            .where(guard(row.id))
+            .returning({ id: stagedPayments.id });
+          if (upd.length) included += 1;
+        } else {
+          // Pending and staying pending — still refresh entity + funding.
+          await db
+            .update(stagedPayments)
+            .set({ ...entitySet, ...fundingSet, updatedAt: new Date() })
+            .where(guard(row.id));
+        }
       }
-    }
 
-    return { scanned: candidates.length, excluded, included };
-  }, { wait: true });
+      return { scanned: candidates.length, excluded, included };
+    },
+    { wait: true },
+  );
 
   if (!outcome.ran) {
     return { ran: false, scanned: 0, excluded: 0, included: 0 };

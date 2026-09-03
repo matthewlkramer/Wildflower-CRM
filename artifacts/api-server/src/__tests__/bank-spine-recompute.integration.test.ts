@@ -11,7 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
  */
 
 const RAW_DB_URL = process.env.DATABASE_URL;
-const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
+const HAS_DB =
+  !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
 
 const RUN = `bsr_${Date.now()}`;
 const REALM_ID = `${RUN}_realm`;
@@ -63,7 +64,10 @@ async function seedLump(amount: string, date: string): Promise<string> {
   return id;
 }
 
-async function seedPayout(amount: string, arrivalDate: string): Promise<string> {
+async function seedPayout(
+  amount: string,
+  arrivalDate: string,
+): Promise<string> {
   const id = nextId("po");
   await db.insert(schema.stripePayouts).values({
     id,
@@ -76,7 +80,10 @@ async function seedPayout(amount: string, arrivalDate: string): Promise<string> 
   return id;
 }
 
-async function seedDeposit(amount: string, depositDate: string): Promise<string> {
+async function seedDeposit(
+  amount: string,
+  depositDate: string,
+): Promise<string> {
   const id = nextId("bd");
   await db.insert(schema.bankDeposits).values({
     id,
@@ -182,7 +189,9 @@ afterAll(async () => {
   if (bankTransactionIds.length) {
     await db
       .delete(schema.sourceLinks)
-      .where(inArrayFn(schema.sourceLinks.bankTransactionId, bankTransactionIds));
+      .where(
+        inArrayFn(schema.sourceLinks.bankTransactionId, bankTransactionIds),
+      );
   }
   if (bankTransactionIds.length) {
     await db
@@ -248,10 +257,7 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       })
       .from(schema.bankDeposits)
       .where(
-        eqFn(
-          schema.bankDeposits.sourceBankTransactionId,
-          bankTransactionId,
-        ),
+        eqFn(schema.bankDeposits.sourceBankTransactionId, bankTransactionId),
       );
     expect(rows).toEqual([
       {
@@ -360,10 +366,20 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       })
       .from(schema.stripePayouts)
       .where(inArrayFn(schema.stripePayouts.id, [firstPayout, secondPayout]));
-    expect(rows).toEqual(expect.arrayContaining([
-      { id: firstPayout, bankDepositId: firstDeposit, ambiguousBankMatch: false },
-      { id: secondPayout, bankDepositId: secondDeposit, ambiguousBankMatch: false },
-    ]));
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        {
+          id: firstPayout,
+          bankDepositId: firstDeposit,
+          ambiguousBankMatch: false,
+        },
+        {
+          id: secondPayout,
+          bankDepositId: secondDeposit,
+          ambiguousBankMatch: false,
+        },
+      ]),
+    );
   });
 
   it("flags a genuine nearest-date tie as ambiguous", async () => {
@@ -373,14 +389,19 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
 
     await recompute.recomputeBankSpine();
 
-    const row = (await db
-      .select({
-        bankDepositId: schema.stripePayouts.bankDepositId,
-        ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
-      })
-      .from(schema.stripePayouts)
-      .where(eqFn(schema.stripePayouts.id, payout)))[0];
-    expect(row).toEqual({ bankDepositId: firstDeposit, ambiguousBankMatch: true });
+    const row = (
+      await db
+        .select({
+          bankDepositId: schema.stripePayouts.bankDepositId,
+          ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
+        })
+        .from(schema.stripePayouts)
+        .where(eqFn(schema.stripePayouts.id, payout))
+    )[0];
+    expect(row).toEqual({
+      bankDepositId: firstDeposit,
+      ambiguousBankMatch: true,
+    });
   });
 
   it("preserves a pre-existing human payout tie", async () => {
@@ -400,14 +421,19 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
 
     await recompute.recomputeBankSpine();
 
-    const row = (await db
-      .select({
-        bankDepositId: schema.stripePayouts.bankDepositId,
-        ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
-      })
-      .from(schema.stripePayouts)
-      .where(eqFn(schema.stripePayouts.id, payout)))[0];
-    expect(row).toEqual({ bankDepositId: humanDeposit, ambiguousBankMatch: true });
+    const row = (
+      await db
+        .select({
+          bankDepositId: schema.stripePayouts.bankDepositId,
+          ambiguousBankMatch: schema.stripePayouts.ambiguousBankMatch,
+        })
+        .from(schema.stripePayouts)
+        .where(eqFn(schema.stripePayouts.id, payout))
+    )[0];
+    expect(row).toEqual({
+      bankDepositId: humanDeposit,
+      ambiguousBankMatch: true,
+    });
   });
 
   it("preserves an existing differently keyed deposit component", async () => {
@@ -536,6 +562,144 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(duplicateLinks).toEqual([]);
   });
 
+  it("carries one gift across an exact same-payer QBO Deposit re-split", async () => {
+    const orgId = nextId("resplit_org");
+    await db.insert(schema.organizations).values({
+      id: orgId,
+      name: `Fidelity resplit org ${RUN}`,
+    });
+    orgIds.push(orgId);
+
+    const giftId = nextId("resplit_gift");
+    await db.insert(schema.giftsAndPayments).values({
+      id: giftId,
+      name: "Fidelity $80k school startup",
+      organizationId: orgId,
+      amount: "80000.00",
+    });
+    giftIds.push(giftId);
+
+    const depositId = await seedDeposit("80000.00", "2026-12-30");
+    const qbDepositId = nextId("resplit_qbd");
+    const firstStagedId = nextId("resplit_sp");
+    await db.insert(schema.stagedPayments).values({
+      id: firstStagedId,
+      realmId: REALM_ID,
+      qbEntityType: "deposit",
+      qbEntityId: qbDepositId,
+      qbLineId: "line-school-grant",
+      qbDepositId,
+      amount: "80000.00",
+      dateReceived: "2026-12-30",
+      payerName: "Fidelity Charitable",
+      qbRaw: { TotalAmt: "80000.00", TxnDate: "2026-12-30" },
+    });
+    stagedIds.push(firstStagedId);
+
+    const firstUnitId = `pu_${firstStagedId}`;
+    await db.insert(schema.paymentUnits).values({
+      id: firstUnitId,
+      kind: "other",
+      sourceStagedPaymentId: firstStagedId,
+      grossAmount: "80000.00",
+      netAmount: "80000.00",
+      receivedDate: "2026-12-30",
+      giftId,
+      giftMatchMethod: "human",
+    });
+    paymentUnitIds.push(firstUnitId);
+
+    const firstComponentId = `bdc_${firstStagedId}`;
+    await db.insert(schema.bankDepositComponents).values({
+      id: firstComponentId,
+      bankDepositId: depositId,
+      paymentUnitId: firstUnitId,
+      amount: "80000.00",
+      source: "qbo_inferred",
+      sourceStagedPaymentId: firstStagedId,
+    });
+    componentIds.push(firstComponentId);
+
+    // QBO later edits the original line to $65k and adds a $15k accounting
+    // line. Simulate the historical permissive unlink too: recompute must
+    // restore the current composition without leaving an $80k stale unit or a
+    // gift-less sibling.
+    await db
+      .update(schema.stagedPayments)
+      .set({ amount: "65000.00" })
+      .where(eqFn(schema.stagedPayments.id, firstStagedId));
+    await db
+      .delete(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.id, firstComponentId));
+
+    const secondStagedId = nextId("resplit_sp");
+    const secondUnitId = `pu_${secondStagedId}`;
+    const secondComponentId = `bdc_${secondStagedId}`;
+    await db.insert(schema.stagedPayments).values({
+      id: secondStagedId,
+      realmId: REALM_ID,
+      qbEntityType: "deposit",
+      qbEntityId: qbDepositId,
+      qbLineId: "line-operations-guide",
+      qbDepositId,
+      amount: "15000.00",
+      dateReceived: "2026-12-30",
+      payerName: "A different payer",
+      qbRaw: { TotalAmt: "80000.00", TxnDate: "2026-12-30" },
+    });
+    stagedIds.push(secondStagedId);
+    paymentUnitIds.push(secondUnitId);
+    componentIds.push(secondComponentId);
+
+    // A coincidentally equal deposit is not enough: the new unit stays
+    // gift-less until the current QBO lines identify the same payer.
+    await recompute.recomputeBankSpine();
+    const beforePayerMatch = await db
+      .select({ giftId: schema.paymentUnits.giftId })
+      .from(schema.paymentUnits)
+      .where(eqFn(schema.paymentUnits.id, secondUnitId));
+    expect(beforePayerMatch).toEqual([{ giftId: null }]);
+
+    await db
+      .update(schema.stagedPayments)
+      .set({ payerName: "Fidelity Charitable" })
+      .where(eqFn(schema.stagedPayments.id, secondStagedId));
+
+    await recompute.recomputeBankSpine();
+    await recompute.recomputeBankSpine();
+
+    const components = await db
+      .select({
+        paymentUnitId: schema.bankDepositComponents.paymentUnitId,
+        amount: schema.bankDepositComponents.amount,
+      })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.bankDepositId, depositId));
+    expect(components).toEqual(
+      expect.arrayContaining([
+        { paymentUnitId: firstUnitId, amount: "65000.00" },
+        { paymentUnitId: secondUnitId, amount: "15000.00" },
+      ]),
+    );
+    expect(components).toHaveLength(2);
+
+    const units = await db
+      .select({
+        id: schema.paymentUnits.id,
+        grossAmount: schema.paymentUnits.grossAmount,
+        giftId: schema.paymentUnits.giftId,
+      })
+      .from(schema.paymentUnits)
+      .where(inArrayFn(schema.paymentUnits.id, [firstUnitId, secondUnitId]));
+    expect(units).toEqual(
+      expect.arrayContaining([
+        { id: firstUnitId, grossAmount: "65000.00", giftId },
+        { id: secondUnitId, grossAmount: "15000.00", giftId },
+      ]),
+    );
+    expect(units).toHaveLength(2);
+  });
+
   it("links a unique exact-amount register row within the +/- 3-day window and is idempotent", async () => {
     const depositId = await seedDeposit("701.00", "2026-07-10");
     const registerId = await seedQboRegister("701.00", "2026-07-12");
@@ -549,11 +713,13 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
       })
       .from(schema.sourceLinks)
       .where(eqFn(schema.sourceLinks.bankDepositId, depositId));
-    expect(first).toEqual([{
-      bankDepositId: depositId,
-      bankTransactionId: registerId,
-      matchBasis: "two_day_unique_amount",
-    }]);
+    expect(first).toEqual([
+      {
+        bankDepositId: depositId,
+        bankTransactionId: registerId,
+        matchBasis: "two_day_unique_amount",
+      },
+    ]);
 
     await recompute.recomputeBankSpine();
     const second = await db
@@ -617,8 +783,16 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
 
   it("links same-day/same-payee register rows whose sum equals a deposit", async () => {
     const depositId = await seedDeposit("750.00", "2026-09-10");
-    const firstRow = await seedQboRegister("500.00", "2026-09-10", "Wend  Ventures");
-    const secondRow = await seedQboRegister("250.00", "2026-09-10", "Wend Ventures");
+    const firstRow = await seedQboRegister(
+      "500.00",
+      "2026-09-10",
+      "Wend  Ventures",
+    );
+    const secondRow = await seedQboRegister(
+      "250.00",
+      "2026-09-10",
+      "Wend Ventures",
+    );
 
     await recompute.recomputeBankSpine();
 

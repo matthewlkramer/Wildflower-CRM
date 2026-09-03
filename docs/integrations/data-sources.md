@@ -10,16 +10,16 @@ per-table schema map is [`../../lib/db/SCHEMA.md`](../../lib/db/SCHEMA.md).
 
 ## Provenance summary
 
-| Source | Kind | Sync status |
-|---|---|---|
-| Copper (via manually cleaned Airtable "CRM Files") | Historical CRM records | **One-time import, CLOSED — never resync** |
-| Schools Airtable base | School directory | Ongoing one-way mirror (Airtable → CRM) |
-| QuickBooks Online | Accounting evidence | Ongoing pull-only sync |
-| Stripe | Payment-processor evidence | Ongoing pull-only sync |
-| Donorbox | Donor/purpose evidence | Ongoing pull-only sync |
-| Gmail / Google Calendar | Communications | Ongoing per-user sync |
-| Flodesk | Newsletter audience | Ongoing push of eligible people |
-| GDELT | Media mentions | Ongoing pull |
+| Source                                             | Kind                       | Sync status                                |
+| -------------------------------------------------- | -------------------------- | ------------------------------------------ |
+| Copper (via manually cleaned Airtable "CRM Files") | Historical CRM records     | **One-time import, CLOSED — never resync** |
+| Schools Airtable base                              | School directory           | Ongoing one-way mirror (Airtable → CRM)    |
+| QuickBooks Online                                  | Accounting evidence        | Ongoing pull-only sync                     |
+| Stripe                                             | Payment-processor evidence | Ongoing pull-only sync                     |
+| Donorbox                                           | Donor/purpose evidence     | Ongoing pull-only sync                     |
+| Gmail / Google Calendar                            | Communications             | Ongoing per-user sync                      |
+| Flodesk                                            | Newsletter audience        | Ongoing push of eligible people            |
+| GDELT                                              | Media mentions             | Ongoing pull                               |
 
 ## Closed source: Copper / Airtable CRM Files
 
@@ -51,7 +51,9 @@ AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs
 
 - **QuickBooks** — per-realm OAuth connections (`quickbooks_connections`) pull
   incoming-money records into the `staged_payments` review queue. The CRM never
-  writes to QuickBooks.
+  writes to QuickBooks. Source-owned amount/date/payer and capture facts refresh
+  on incremental pulls even after a row is reconciled; donor, classification,
+  approval, and unit→gift review facts remain CRM-owned and are not overwritten.
 - **Stripe** — payouts and per-charge gross records
   (`stripe_payouts` / `stripe_staged_charges`), watermarked in
   `stripe_sync_state`.

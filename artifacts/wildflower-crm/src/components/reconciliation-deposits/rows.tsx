@@ -621,6 +621,12 @@ function Composition({
                       ? [
                           {
                             label: "Unlink payment",
+                            disabled:
+                              (component.countedGiftIds?.length ?? 0) > 0,
+                            disabledReason:
+                              (component.countedGiftIds?.length ?? 0) > 0
+                                ? "Unlink the CRM gift from this payment first."
+                                : undefined,
                             onSelect: () =>
                               actions.removeManualComponent?.(
                                 component.componentId,

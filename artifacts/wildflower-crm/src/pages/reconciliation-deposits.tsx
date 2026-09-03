@@ -217,7 +217,9 @@ async function fileAsBase64(file: File): Promise<string> {
   const chunkSize = 0x8000;
   let binary = "";
   for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+    binary += String.fromCharCode(
+      ...bytes.subarray(offset, offset + chunkSize),
+    );
   }
   return window.btoa(binary);
 }
@@ -588,7 +590,8 @@ export default function ReconciliationDepositsPage() {
       if (result.status === "rejected") {
         toast({
           title: "Report was not imported",
-          description: result.error ?? "The file did not pass report validation.",
+          description:
+            result.error ?? "The file did not pass report validation.",
           variant: "destructive",
         });
         return;
@@ -1057,7 +1060,9 @@ export default function ReconciliationDepositsPage() {
       toast({
         title: "Couldn't create gift",
         description: is409(err)
-          ? extractGateIssues(err)[0] ?? apiErrorMessage(err) ?? errMessage(err)
+          ? (extractGateIssues(err)[0] ??
+            apiErrorMessage(err) ??
+            errMessage(err))
           : errMessage(err),
         variant: "destructive",
       });
@@ -1165,9 +1170,7 @@ export default function ReconciliationDepositsPage() {
         data: {
           ...derived.body,
           ...(switchStripeSource ? { switchStripeSource: true } : {}),
-          ...(displaceLinkedPayment
-            ? { displaceLinkedPayment: true }
-            : {}),
+          ...(displaceLinkedPayment ? { displaceLinkedPayment: true } : {}),
           ...(moveOwnApplication ? { moveOwnApplication: true } : {}),
         },
       });
@@ -2323,7 +2326,8 @@ export default function ReconciliationDepositsPage() {
             <AlertDialogTitle>Remove component?</AlertDialogTitle>
             <AlertDialogDescription>
               Unlink {manualComponentFor?.label ?? "this payment"} from this
-              deposit. The payment unit and any linked gift remain intact.
+              deposit. This is available only after its CRM gift has been
+              unlinked.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
