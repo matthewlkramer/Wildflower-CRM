@@ -21064,7 +21064,7 @@ components:
     WorkbenchBankImportFreshness:
       type: object
       required: [lastImportedAt, latestTransactionDate, sourceFileCount]
-      description: Freshness of the manually imported Wells Fargo spreadsheet data backing the workbench.
+      description: Freshness of the QuickBooks Wells Fargo report data backing the workbench, whether uploaded manually or received by scheduled email.
       properties:
         lastImportedAt:
           type: string

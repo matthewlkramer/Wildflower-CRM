@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -40,6 +40,7 @@ import {
   useResolveStagedPayment,
   useResolveStripeStagedCharge,
   useListWorkbenchDeposits,
+  useImportManualBankReport,
   useListWorkbenchRecentChanges,
   useListCodingFormRows,
   useListDonorboxReview,
@@ -211,6 +212,16 @@ function bankDataIsStale(isoDate: string | null): boolean {
   return Date.now() - latest.getTime() > 7 * 24 * 60 * 60 * 1000;
 }
 
+async function fileAsBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return window.btoa(binary);
+}
+
 export default function ReconciliationDepositsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -218,6 +229,7 @@ export default function ReconciliationDepositsPage() {
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
+  const bankReportInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -234,6 +246,7 @@ export default function ReconciliationDepositsPage() {
   const { data, isLoading, isError } = useListWorkbenchDeposits(params);
   const { data: recentData, isLoading: recentLoading } =
     useListWorkbenchRecentChanges();
+  const manualBankImport = useImportManualBankReport();
   useEffect(() => {
     const refreshRecent = () => {
       void queryClient.invalidateQueries({
@@ -554,6 +567,48 @@ export default function ReconciliationDepositsPage() {
     void queryClient.invalidateQueries({
       queryKey: getListWorkbenchRecentChangesQueryKey(),
     });
+  };
+
+  const handleManualBankReport = async (file: File) => {
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "Report is too large",
+        description: "The bank report must be 5 MiB or smaller.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const result = await manualBankImport.mutateAsync({
+        data: {
+          filename: file.name,
+          contentBase64: await fileAsBase64(file),
+        },
+      });
+      if (result.status === "rejected") {
+        toast({
+          title: "Report was not imported",
+          description: result.error ?? "The file did not pass report validation.",
+          variant: "destructive",
+        });
+        return;
+      }
+      invalidate();
+      toast({
+        title: result.alreadyProcessed
+          ? "Report was already imported"
+          : "Bank report imported",
+        description: result.alreadyProcessed
+          ? `${result.rowsSeen.toLocaleString()} rows were already on file; the reconciliation pipeline was refreshed.`
+          : `${result.rowsInserted.toLocaleString()} new of ${result.rowsSeen.toLocaleString()} report rows were added and processed.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't import bank report",
+        description: errMessage(error),
+        variant: "destructive",
+      });
+    }
   };
 
   const handleConfirmProposedMatch = async (
@@ -1838,32 +1893,62 @@ export default function ReconciliationDepositsPage() {
           accounting evidence kept together.
         </p>
         {!isLoading && data ? (
-          <p
-            className={`mt-2 max-w-3xl rounded-md border px-3 py-2 text-xs ${
-              bankDataIsStale(data.bankImport.latestTransactionDate)
-                ? "border-amber-300 bg-amber-50 text-amber-950"
-                : "border-border bg-muted/40 text-muted-foreground"
-            }`}
-            data-testid="text-bank-import-freshness"
-          >
-            {data.bankImport.lastImportedAt ? (
+          <div className="mt-2 flex max-w-3xl items-center gap-2">
+            <p
+              className={`min-w-0 flex-1 rounded-md border px-3 py-2 text-xs ${
+                bankDataIsStale(data.bankImport.latestTransactionDate)
+                  ? "border-amber-300 bg-amber-50 text-amber-950"
+                  : "border-border bg-muted/40 text-muted-foreground"
+              }`}
+              data-testid="text-bank-import-freshness"
+            >
+              {data.bankImport.lastImportedAt ? (
+                <>
+                  Bank spreadsheet last imported{" "}
+                  {formatBankImportWhen(data.bankImport.lastImportedAt)}
+                  {data.bankImport.latestTransactionDate
+                    ? `; transactions through ${formatBankDataThrough(data.bankImport.latestTransactionDate)}.`
+                    : "."}
+                  {bankDataIsStale(data.bankImport.latestTransactionDate) ? (
+                    <strong> Bank data may be out of date.</strong>
+                  ) : null}
+                </>
+              ) : (
+                <strong>
+                  No bank spreadsheet import was found; this workbench may be
+                  incomplete.
+                </strong>
+              )}
+            </p>
+            {canManageAccounting ? (
               <>
-                Bank spreadsheet last imported{" "}
-                {formatBankImportWhen(data.bankImport.lastImportedAt)}
-                {data.bankImport.latestTransactionDate
-                  ? `; transactions through ${formatBankDataThrough(data.bankImport.latestTransactionDate)}.`
-                  : "."}
-                {bankDataIsStale(data.bankImport.latestTransactionDate) ? (
-                  <strong> Bank data may be out of date.</strong>
-                ) : null}
+                <input
+                  ref={bankReportInputRef}
+                  type="file"
+                  accept=".csv,.xls,.xlsx"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) void handleManualBankReport(file);
+                  }}
+                  data-testid="input-bank-report"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={manualBankImport.isPending}
+                  onClick={() => bankReportInputRef.current?.click()}
+                  data-testid="button-import-bank-report"
+                >
+                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                  {manualBankImport.isPending ? "Importing…" : "Import report"}
+                </Button>
               </>
-            ) : (
-              <strong>
-                No bank spreadsheet import was found; this workbench may be
-                incomplete.
-              </strong>
-            )}
-          </p>
+            ) : null}
+          </div>
         ) : null}
       </div>
       <div className="flex items-start gap-4">
