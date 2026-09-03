@@ -2362,7 +2362,7 @@ router.post(
       res.status(409).json({
         error: "gift_units_ambiguous",
         message:
-          "That gift has several unclaimed payment units — use Add known payment to pick the exact one.",
+          "That gift has several unclaimed payment units — use Attach an existing payment record to pick the exact one.",
       });
       return;
     }

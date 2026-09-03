@@ -2,8 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkbenchDeposit } from "@workspace/api-client-react";
-import type { ClusterActions } from "@/components/reconciliation-clusters/actions";
-import { DEPOSIT_LENSES, DepositRow } from "./rows";
+import { DEPOSIT_LENSES, DepositRow, type DepositActions } from "./rows";
 
 (globalThis as Record<string, unknown>)["IS_REACT_ACT_ENVIRONMENT"] = true;
 
@@ -60,14 +59,14 @@ function makeDeposit(
   };
 }
 
-function render(deposit: WorkbenchDeposit, actions?: Partial<ClusterActions>) {
+function render(deposit: WorkbenchDeposit, actions?: Partial<DepositActions>) {
   act(() =>
     root.render(
       <DepositRow
         deposit={deposit}
         expanded
         onToggle={() => undefined}
-        actions={actions as ClusterActions | undefined}
+        actions={actions as DepositActions | undefined}
       />,
     ),
   );
@@ -126,7 +125,12 @@ describe("deposit workbench rows", () => {
     expect(container.textContent).toContain("check");
 
     render(makeDeposit());
-    expect(container.textContent).toContain("Unresolved composition");
+    expect(container.textContent).toContain("Unresolved");
+    const unresolved = container.querySelector(
+      '[data-testid="composition-unresolved"]',
+    );
+    expect(unresolved?.className).not.toContain("border");
+    expect(unresolved?.className).not.toContain("bg-");
     expect(container.textContent).toContain("Example Payee · REF-123");
     expect(container.textContent).not.toContain("QBO:");
   });
@@ -142,9 +146,7 @@ describe("deposit workbench rows", () => {
 
   it("shows the finance-only exclusion reason list for an unexcluded deposit", () => {
     render(makeDeposit(), { isFinanceOrAdmin: true });
-    const trigger = container.querySelector(
-      'button[aria-label="Card actions"]',
-    );
+    const trigger = container.querySelector('button[aria-label$="actions"]');
     expect(trigger).not.toBeNull();
     act(() =>
       trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
@@ -174,7 +176,7 @@ describe("deposit workbench rows", () => {
   /** Open the card-actions menu whose content contains `text`; return the open menu content element. */
   function openMenuContaining(text: string): HTMLElement | null {
     const triggers = container.querySelectorAll(
-      'button[aria-label="Card actions"]',
+      'button[aria-label$="actions"]',
     );
     for (const trigger of triggers) {
       act(() =>
@@ -199,13 +201,29 @@ describe("deposit workbench rows", () => {
     );
   }
 
-  it("labels (never hides) blocked gifts-column actions when no evidence anchor exists", () => {
+  it("puts unresolved-composition work in a three-dot menu with distinct evidence and CRM actions", () => {
     render(makeDeposit(), { isFinanceOrAdmin: true });
-    const menu = openMenuContaining("Create standalone gift…");
+    const menu = openMenuContaining("Code entire deposit as a single payment…");
     expect(menu).not.toBeNull();
     for (const label of [
-      "Search and link gift or pledge…",
-      "Create standalone gift…",
+      "Search CRM gifts to link…",
+      "Browse unlinked CRM gifts…",
+      "Attach an existing payment record…",
+      "Flag remainder for research",
+      "Exclude remainder…",
+    ]) {
+      expect(menuItem(menu as HTMLElement, label), label).not.toBeNull();
+    }
+  });
+
+  it("labels (never hides) blocked gifts-column actions when no evidence anchor exists", () => {
+    render(makeDeposit(), { isFinanceOrAdmin: true });
+    const menu = openMenuContaining("Create new gift…");
+    expect(menu).not.toBeNull();
+    for (const label of [
+      "Search CRM gifts…",
+      "Browse unlinked CRM gifts…",
+      "Create new gift…",
       "Record as payment on pledge…",
     ]) {
       const item = menuItem(menu as HTMLElement, label);
@@ -248,8 +266,9 @@ describe("deposit workbench rows", () => {
     const menu = openMenuContaining("Record as payment on pledge…");
     expect(menu).not.toBeNull();
     for (const label of [
-      "Search and link gift or pledge…",
-      "Create standalone gift…",
+      "Search CRM gifts…",
+      "Browse unlinked CRM gifts…",
+      "Create new gift…",
       "Record as payment on pledge…",
     ]) {
       expect(
@@ -257,6 +276,39 @@ describe("deposit workbench rows", () => {
         label,
       ).toBeNull();
     }
+    expect(container.textContent).toContain("No CRM gifts linked");
+    expect(container.textContent).not.toContain("Needs CRM gift");
+  });
+
+  it("keeps record-specific QuickBooks actions on the accounting card", () => {
+    render(
+      makeDeposit({
+        qbRecords: [
+          {
+            stagedPaymentId: "qb_1",
+            role: "deposit",
+            amount: "100.00",
+            dateReceived: "2024-01-02",
+            payerName: "Example payer",
+            linkedChargeId: null,
+          } as WorkbenchDeposit["qbRecords"][number],
+        ],
+      }),
+      { isFinanceOrAdmin: true },
+    );
+
+    const columnMenu = openMenuContaining("Search for accounting evidence…");
+    expect(columnMenu).not.toBeNull();
+    expect(columnMenu?.textContent).not.toContain("QB detail");
+    act(() => {
+      document.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+      );
+    });
+
+    const cardMenu = openMenuContaining("QB detail");
+    expect(cardMenu).not.toBeNull();
+    expect(cardMenu?.textContent).not.toContain("Exclude");
   });
 
   it("enables all unit-backed gift actions for a manual gift-less payment", () => {
@@ -291,11 +343,12 @@ describe("deposit workbench rows", () => {
       }),
       { isFinanceOrAdmin: true },
     );
-    const menu = openMenuContaining("Create standalone gift…");
+    const menu = openMenuContaining("Create new gift…");
     expect(menu).not.toBeNull();
     for (const label of [
-      "Search and link gift or pledge…",
-      "Create standalone gift…",
+      "Search CRM gifts…",
+      "Browse unlinked CRM gifts…",
+      "Create new gift…",
       "Identify donor…",
       "Record as payment on pledge…",
     ]) {
@@ -378,10 +431,10 @@ describe("deposit workbench rows", () => {
     // Not actionable → component/unit anchor: mint and pledge path enabled
     // (the pledge payment mints from the unit, not the dead staged row).
     render(stagedBackedComponent(false), { isFinanceOrAdmin: true });
-    let menu = openMenuContaining("Create standalone gift…");
+    let menu = openMenuContaining("Create new gift…");
     expect(menu).not.toBeNull();
     expect(
-      menuItem(menu as HTMLElement, "Create standalone gift…")?.getAttribute(
+      menuItem(menu as HTMLElement, "Create new gift…")?.getAttribute(
         "data-disabled",
       ),
     ).toBeNull();
@@ -399,7 +452,7 @@ describe("deposit workbench rows", () => {
 
     // Actionable → staged anchor: pledge path available again.
     render(stagedBackedComponent(true), { isFinanceOrAdmin: true });
-    menu = openMenuContaining("Create standalone gift…");
+    menu = openMenuContaining("Create new gift…");
     expect(menu).not.toBeNull();
     expect(
       menuItem(

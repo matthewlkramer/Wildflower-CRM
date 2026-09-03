@@ -27,12 +27,10 @@ import {
   accountingCorrectionPresentation,
   accountingRecordIdentity,
   dedupeAccountingGroups,
-  needsGiftPlaceholderPresentation,
   preferStagedAccountingRecords,
   singleAllocationPresentation,
   type DepositAccountingRecord,
 } from "./presentation";
-import { componentAnchor } from "./gift-placement";
 
 export type DepositActions = Omit<
   ClusterActions,
@@ -51,11 +49,18 @@ export type DepositActions = Omit<
     component: WorkbenchDepositCompositionComponentsItem,
   ) => void;
   clearComponentQbSource?: (componentId: string) => void;
-  openSinglePaymentDeposit?: (bankDepositId: string, amount: string) => void;
+  openRemainderGiftSearch?: (
+    bankDepositId: string,
+    amount: string,
+    mode: "code" | "search" | "browse_unlinked",
+  ) => void;
   /** Unified gift/opportunity/pledge search for a specific payment anchor. */
   openLinkEvidence?: (anchor: AnchorRef, mode: "all" | "pledges") => void;
   /** Column-level gift search must choose among every open payment on the row. */
-  openColumnGiftSearch?: (deposit: WorkbenchDeposit) => void;
+  openColumnGiftSearch?: (
+    deposit: WorkbenchDeposit,
+    mode: "search" | "browse_unlinked",
+  ) => void;
   openDepositQbEvidenceSearch?: (deposit: WorkbenchDeposit) => void;
   unlinkAccountingRecord?: (
     bankDepositId: string,
@@ -133,16 +138,20 @@ function checkTone(
       : "outline";
 }
 
+type CardActionMenuItem = {
+  label: string;
+  onSelect: () => void;
+  disabled?: boolean;
+  /** Shown as a muted second line when the item is disabled (label-not-hide). */
+  disabledReason?: string;
+};
+
 function CardActionsMenu({
   items,
+  ariaLabel = "Card actions",
 }: {
-  items: Array<{
-    label: string;
-    onSelect: () => void;
-    disabled?: boolean;
-    /** Shown as a muted second line when the item is disabled (label-not-hide). */
-    disabledReason?: string;
-  }>;
+  items: CardActionMenuItem[];
+  ariaLabel?: string;
 }) {
   if (!items.length) return null;
   return (
@@ -150,7 +159,7 @@ function CardActionsMenu({
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Card actions"
+          aria-label={ariaLabel}
           className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={(event) => event.stopPropagation()}
         >
@@ -235,7 +244,7 @@ const NOOP_ACTIONS: DepositActions = {
   openChargeQbSearch: () => undefined,
   openComponentQbSearch: () => undefined,
   clearComponentQbSource: () => undefined,
-  openSinglePaymentDeposit: () => undefined,
+  openRemainderGiftSearch: () => undefined,
   openDepositQbEvidenceSearch: () => undefined,
   openFlagAccountingError: () => undefined,
   applyBankDepositExclusion: () => undefined,
@@ -271,73 +280,91 @@ function Composition({
 }) {
   const composition = deposit.composition;
   const remainder = Number(composition.unexplainedAmount ?? 0);
-  const showRemainderActions =
-    actions.isFinanceOrAdmin &&
-    (composition.kind === "unresolved" ||
-      (composition.kind === "components" && remainder > 0.005));
-  const remainderLinks = showRemainderActions ? (
-    <div className="mt-1.5 flex flex-wrap gap-2">
-      <button
-        type="button"
-        className="text-[10px] font-medium text-primary hover:underline"
-        onClick={() =>
-          actions.openSinglePaymentDeposit?.(
-            deposit.anchorId,
-            composition.unexplainedAmount,
-          )
-        }
-      >
-        Single payment deposit…
-      </button>
-      <button
-        type="button"
-        className="text-[10px] font-medium text-primary hover:underline"
-        onClick={() =>
-          actions.openAddKnownPayment?.(
-            deposit.anchorId,
-            composition.unexplainedAmount,
-          )
-        }
-      >
-        Add known payment…
-      </button>
-      <button
-        type="button"
-        className="text-[10px] font-medium text-amber-800 hover:underline dark:text-amber-200"
-        onClick={() =>
-          actions.openFlagRemainder?.(
-            deposit.anchorId,
-            composition.unexplainedAmount,
-          )
-        }
-      >
-        Flag remainder for research
-      </button>
-      <button
-        type="button"
-        className="text-[10px] font-medium text-destructive hover:underline"
-        onClick={() =>
-          actions.openExcludeRemainder?.(
-            deposit.anchorId,
-            composition.unexplainedAmount,
-          )
-        }
-      >
-        Mark remainder as excluded…
-      </button>
-    </div>
-  ) : null;
-  const remainderActions = showRemainderActions ? (
-    <div className="rounded-md border border-dashed border-amber-300 bg-amber-50/50 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/20">
-      <span className="text-[11px] text-amber-900 dark:text-amber-200">
-        {money(composition.unexplainedAmount)} unresolved remainder
+  const showRemainder =
+    composition.kind === "unresolved" ||
+    (composition.kind === "components" && remainder > 0.005);
+  const isEntireDeposit =
+    amountNumber(composition.explainedAmount) <= 0.005 &&
+    Math.abs(remainder - amountNumber(deposit.bank.amount)) <= 0.005;
+  const remainderStatus = showRemainder ? (
+    <div
+      className="flex min-w-0 items-start justify-between gap-2 py-1"
+      data-testid="composition-unresolved"
+    >
+      <span className="min-w-0">
+        <span className="block text-xs font-medium text-amber-800 dark:text-amber-200">
+          Unresolved
+        </span>
+        <span className="block text-[10px] text-muted-foreground">
+          {money(composition.unexplainedAmount)} of the deposit has no known
+          source.
+        </span>
       </span>
-      {remainderLinks}
+      {actions.isFinanceOrAdmin ? (
+        <CardActionsMenu
+          ariaLabel="Composition actions"
+          items={[
+            {
+              label: isEntireDeposit
+                ? "Code entire deposit as a single payment…"
+                : "Code remainder as a single payment…",
+              onSelect: () =>
+                actions.openRemainderGiftSearch?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                  "code",
+                ),
+            },
+            {
+              label: "Search CRM gifts to link…",
+              onSelect: () =>
+                actions.openRemainderGiftSearch?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                  "search",
+                ),
+            },
+            {
+              label: "Browse unlinked CRM gifts…",
+              onSelect: () =>
+                actions.openRemainderGiftSearch?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                  "browse_unlinked",
+                ),
+            },
+            {
+              label: "Attach an existing payment record…",
+              onSelect: () =>
+                actions.openAddKnownPayment?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                ),
+            },
+            {
+              label: "Flag remainder for research",
+              onSelect: () =>
+                actions.openFlagRemainder?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                ),
+            },
+            {
+              label: "Exclude remainder…",
+              onSelect: () =>
+                actions.openExcludeRemainder?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
+                ),
+            },
+          ]}
+        />
+      ) : null}
     </div>
   ) : null;
   if (composition.kind === "stripe_unlinked") {
     return (
-      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
+      <div className="py-1">
         <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
           Stripe payout — not yet paired
         </p>
@@ -349,18 +376,7 @@ function Composition({
     );
   }
   if (composition.kind === "unresolved") {
-    return (
-      <div className="rounded-md border border-amber-300 bg-amber-50/60 px-2.5 py-2 dark:border-amber-800 dark:bg-amber-950/30">
-        <p className="text-xs font-semibold text-amber-800 dark:text-amber-300">
-          Unresolved composition
-        </p>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          {money(composition.unexplainedAmount)} of the deposit has no known
-          source.
-        </p>
-        {remainderLinks}
-      </div>
-    );
+    return remainderStatus;
   }
   if (composition.kind === "stripe_payout") {
     const refundTotal = Number(composition.refundTotal ?? 0);
@@ -671,7 +687,7 @@ function Composition({
       {!composition.components.length ? (
         <span className="text-xs text-muted-foreground">No components</span>
       ) : null}
-      {remainderActions}
+      {remainderStatus}
     </div>
   );
 }
@@ -705,11 +721,7 @@ function NodeQbCard({
 }: {
   record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord;
   check?: WorkbenchDepositAccountingCheck;
-  menuItems?: Array<{
-    label: string;
-    onSelect: () => void;
-    disabled?: boolean;
-  }>;
+  menuItems?: CardActionMenuItem[];
 }) {
   const registerRecord =
     "bankTransactionId" in record && record.bankTransactionId ? record : null;
@@ -838,14 +850,10 @@ function Accounting({
     ({ record }) =>
       !record || !nodeRecordIds.has(accountingRecordIdentity(record)),
   );
-  const firstRecord = visibleRecords[0];
-  const firstDisplay = firstRecord ?? checks[0];
-  const firstCorrection = checks.find(
-    (check) => check.disposition === "correction_needed",
-  );
   const columnMenu = actions.isFinanceOrAdmin ? (
     <div className="absolute right-0 top-0 z-10">
       <CardActionsMenu
+        ariaLabel="Accounting column actions"
         items={[
           {
             label: "Search for accounting evidence…",
@@ -856,106 +864,97 @@ function Accounting({
             onSelect: () => actions.openFlagAccountingError?.(deposit),
             disabled: !visibleRecords.length && !checks.length,
           },
-          {
-            label: "QB detail",
-            onSelect: () => {
-              if (firstRecord)
-                actions.openQbDetail(
-                  asQbDetailRecord(firstRecord),
-                  checksByPayment.get(firstRecord.stagedPaymentId)
-                    ? "matched"
-                    : "missing",
-                );
-            },
-            disabled: !firstRecord,
-          },
-          {
-            label: "Exclude",
-            onSelect: () => {
-              if (firstDisplay)
-                actions.openExclude({
-                  kind: "staged",
-                  id: firstDisplay.stagedPaymentId,
-                  label: accountingLabel(firstDisplay),
-                });
-            },
-            disabled: !firstDisplay,
-          },
-          {
-            label: "Mark corrected",
-            onSelect: () => {
-              if (firstCorrection)
-                actions.openAccountingDisposition?.(
-                  firstCorrection.id,
-                  "corrected",
-                );
-            },
-            disabled: !firstCorrection,
-          },
-          {
-            label: "Accept historical…",
-            onSelect: () => {
-              if (firstCorrection)
-                actions.openAccountingDisposition?.(
-                  firstCorrection.id,
-                  "accepted_historical",
-                );
-            },
-            disabled: !firstCorrection,
-          },
         ]}
       />
     </div>
   ) : null;
   const nodeMenuItems = (
     record: WorkbenchDepositNodeQbRecord | WorkbenchDepositQbRecord,
-  ): Array<{ label: string; onSelect: () => void }> => {
-    if (!actions.isFinanceOrAdmin) return [];
-    if (record.role === "component" && record.componentId) {
+    check?: WorkbenchDepositAccountingCheck,
+  ): CardActionMenuItem[] => {
+    const items: CardActionMenuItem[] = [
+      {
+        label: "QB detail",
+        onSelect: () =>
+          actions.openQbDetail(
+            asQbDetailRecord(record),
+            check ? "matched" : "missing",
+          ),
+      },
+    ];
+    if (!actions.isFinanceOrAdmin) return items;
+
+    const provisionalLinkId =
+      "depositQboComponentId" in record
+        ? (record.depositQboComponentId ?? null)
+        : null;
+    const provisionalUnconfirmed =
+      "unconfirmed" in record ? Boolean(record.unconfirmed) : false;
+    if (provisionalLinkId) {
+      if (provisionalUnconfirmed) {
+        items.push({
+          label: "Confirm match",
+          onSelect: () => onConfirmProvisional?.(provisionalLinkId),
+        });
+      }
+      items.push({
+        label: "Dismiss match",
+        onSelect: () => onDismissProvisional?.(provisionalLinkId),
+      });
+    } else if (record.role === "component" && record.componentId) {
       const componentId = record.componentId;
-      return [
-        {
-          label: "Unlink",
-          onSelect: () => actions.clearComponentQbSource?.(componentId),
-        },
-      ];
-    }
-    if (record.role === "provisional" && record.componentId) {
+      items.push({
+        label: "Unlink",
+        onSelect: () => actions.clearComponentQbSource?.(componentId),
+      });
+    } else if (record.role === "provisional" && record.componentId) {
       const componentId = record.componentId;
-      return [
-        {
-          label: "Unlink (dismiss proposed)",
-          onSelect: () => onDismissProvisional?.(componentId),
-        },
-      ];
-    }
-    if (record.role === "charge_tie" && record.linkedChargeId) {
+      items.push({
+        label: "Unlink (dismiss proposed)",
+        onSelect: () => onDismissProvisional?.(componentId),
+      });
+    } else if (record.role === "charge_tie" && record.linkedChargeId) {
       const chargeId = record.linkedChargeId;
       const tieLifecycle =
         "tieLifecycle" in record ? (record.tieLifecycle ?? null) : null;
       if (tieLifecycle === "confirmed") {
         const label = `${record.payerName ?? record.reference ?? "QB record"} ${money(record.amount)}`;
-        return [
-          {
-            label: "Unlink (remove confirmed tie)",
-            onSelect: () => actions.openRevertChargeQbTie?.(chargeId, label),
-          },
-        ];
-      }
-      return [
-        {
+        items.push({
+          label: "Unlink (remove confirmed tie)",
+          onSelect: () => actions.openRevertChargeQbTie?.(chargeId, label),
+        });
+      } else {
+        items.push({
           label: "Unlink (dismiss proposed)",
           onSelect: () => actions.rejectChargeQbTie(chargeId),
-        },
-      ];
-    }
-    return [
-      {
+        });
+      }
+    } else {
+      items.push({
         label: "Unlink",
         onSelect: () =>
           actions.unlinkAccountingRecord?.(deposit.anchorId, record),
-      },
-    ];
+      });
+    }
+
+    if (check?.disposition === "correction_needed") {
+      items.push(
+        {
+          label: "Mark corrected",
+          onSelect: () =>
+            actions.openAccountingDisposition?.(check.id, "corrected"),
+        },
+        {
+          label: "Accept historical…",
+          onSelect: () =>
+            actions.openAccountingDisposition?.(
+              check.id,
+              "accepted_historical",
+            ),
+        },
+      );
+    }
+    return items;
   };
   if (!nodeGroups.length && !unalignedItems.length) {
     return (
@@ -983,7 +982,10 @@ function Accounting({
               key={`${record.role}-${record.stagedPaymentId}-${record.linkedChargeId ?? ""}`}
               record={record}
               check={checksByPayment.get(record.stagedPaymentId)}
-              menuItems={nodeMenuItems(record)}
+              menuItems={nodeMenuItems(
+                record,
+                checksByPayment.get(record.stagedPaymentId),
+              )}
             />
           ))}
         </div>
@@ -991,19 +993,30 @@ function Accounting({
       {unalignedItems.map(({ record, check }) => {
         const display = record ?? check;
         if (!display) return null;
-        const provisionalLinkId =
-          record && "depositQboComponentId" in record
-            ? (record.depositQboComponentId ?? null)
-            : null;
-        const provisionalUnconfirmed =
-          record && "unconfirmed" in record
-            ? Boolean(record.unconfirmed)
-            : false;
-        const anchor: AnchorRef = {
-          kind: "staged",
-          id: display.stagedPaymentId,
-          label: accountingLabel(display),
-        };
+        const menuItems: CardActionMenuItem[] = record
+          ? nodeMenuItems(record, check)
+          : actions.isFinanceOrAdmin
+            ? check?.disposition === "correction_needed"
+              ? [
+                  {
+                    label: "Mark corrected",
+                    onSelect: () =>
+                      actions.openAccountingDisposition?.(
+                        check.id,
+                        "corrected",
+                      ),
+                  },
+                  {
+                    label: "Accept historical…",
+                    onSelect: () =>
+                      actions.openAccountingDisposition?.(
+                        check.id,
+                        "accepted_historical",
+                      ),
+                  },
+                ]
+              : []
+            : [];
         return (
           <div
             key={display.stagedPaymentId}
@@ -1045,93 +1058,13 @@ function Accounting({
                   {check.disposition.replace("_", " ")}
                 </Badge>
               ) : null}
-              {actions.isFinanceOrAdmin ? (
-                <CardActionsMenu
-                  items={[
-                    {
-                      label: "QB detail",
-                      onSelect: () =>
-                        actions.openQbDetail(
-                          record
-                            ? asQbDetailRecord(record)
-                            : (display as WorkbenchDepositQbRecord),
-                          check ? "matched" : "missing",
-                        ),
-                    },
-                    ...(provisionalLinkId
-                      ? [
-                          ...(provisionalUnconfirmed
-                            ? [
-                                {
-                                  label: "Confirm match",
-                                  onSelect: () =>
-                                    onConfirmProvisional?.(provisionalLinkId),
-                                },
-                              ]
-                            : []),
-                          {
-                            label: "Dismiss match",
-                            onSelect: () =>
-                              onDismissProvisional?.(provisionalLinkId),
-                          },
-                        ]
-                      : record
-                        ? [
-                            {
-                              label: "Unlink",
-                              onSelect: () =>
-                                actions.unlinkAccountingRecord?.(
-                                  deposit.anchorId,
-                                  record,
-                                ),
-                            },
-                          ]
-                        : []),
-                    {
-                      label: "Exclude",
-                      onSelect: () => actions.openExclude(anchor),
-                    },
-                    ...(check && check.disposition === "correction_needed"
-                      ? [
-                          {
-                            label: "Mark corrected",
-                            onSelect: () =>
-                              actions.openAccountingDisposition?.(
-                                check.id,
-                                "corrected",
-                              ),
-                          },
-                          {
-                            label: "Accept historical…",
-                            onSelect: () =>
-                              actions.openAccountingDisposition?.(
-                                check.id,
-                                "accepted_historical",
-                              ),
-                          },
-                        ]
-                      : []),
-                  ]}
-                />
-              ) : null}
+              {menuItems.length ? <CardActionsMenu items={menuItems} /> : null}
             </span>
           </div>
         );
       })}
     </div>
   );
-}
-
-function chargePreview(
-  charge: WorkbenchDeposit["charges"][number],
-): EvidencePreview {
-  return {
-    amount: money(charge.amount),
-    date: charge.chargeDate ?? "—",
-    method: charge.cardBrand ? `Card · ${charge.cardBrand}` : "Stripe charge",
-    source: `Stripe charge ${charge.chargeId}`,
-    memo: charge.description ?? charge.statementDescriptor ?? null,
-  };
 }
 
 export function DepositRow({
@@ -1238,10 +1171,8 @@ export function DepositRow({
                 component.stagedActionable === true)),
         )
       : [];
-  const hasGiftColumnCards =
-    deposit.gifts.length > 0 ||
-    unlinkedCharges.length > 0 ||
-    unlinkedComponents.length > 0;
+  const unlinkedGiftEvidenceCount =
+    unlinkedCharges.length + unlinkedComponents.length;
   const alignGiftsToStripeCharges =
     deposit.composition.kind === "stripe_payout";
   const giftAnchor = (
@@ -1381,121 +1312,134 @@ export function DepositRow({
           onClick={(event) => event.stopPropagation()}
           className={`relative min-w-0 space-y-1.5 pr-7 ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
         >
-          {actions.isFinanceOrAdmin ? (
-            <div className="absolute right-0 top-0 z-10">
-              <CardActionsMenu
-                items={[
-                  {
-                    label: "Search and link gift or pledge…",
-                    onSelect: () => {
-                      if (giftColumnAnchor)
-                        actions.openColumnGiftSearch?.(deposit);
-                    },
-                    disabled: !giftColumnAnchor,
-                    disabledReason: !giftColumnAnchor
+          <div className="absolute right-0 top-0 z-10">
+            <CardActionsMenu
+              ariaLabel="Gift column actions"
+              items={[
+                {
+                  label: "Search CRM gifts…",
+                  onSelect: () => {
+                    if (giftColumnAnchor)
+                      actions.openColumnGiftSearch?.(deposit, "search");
+                  },
+                  disabled: !giftColumnAnchor,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : undefined,
+                },
+                {
+                  label: "Search Donorbox records…",
+                  onSelect: () => {
+                    if (giftColumnAnchor && !giftColumnUnitless)
+                      actions.openDonorboxSearch?.(
+                        giftColumnAnchor,
+                        bankPreview,
+                      );
+                  },
+                  disabled:
+                    !actions.isFinanceOrAdmin ||
+                    !giftColumnAnchor ||
+                    giftColumnUnitless,
+                  disabledReason: !actions.isFinanceOrAdmin
+                    ? "Finance permission is required for Donorbox matching."
+                    : !giftColumnAnchor
                       ? NO_GIFT_ANCHOR_REASON
+                      : giftColumnUnitless
+                        ? COMPONENT_NO_UNIT_REASON
+                        : undefined,
+                },
+                {
+                  label: "Search coding forms…",
+                  onSelect: () => {
+                    if (giftColumnAnchor && !giftColumnUnitless)
+                      actions.openCodingFormLookup?.(
+                        giftColumnAnchor,
+                        bankPreview,
+                      );
+                  },
+                  disabled:
+                    !actions.canUseCodingForm ||
+                    !giftColumnAnchor ||
+                    giftColumnUnitless,
+                  disabledReason: !actions.canUseCodingForm
+                    ? "Admin permission is required for coding-form matching."
+                    : !giftColumnAnchor
+                      ? NO_GIFT_ANCHOR_REASON
+                      : giftColumnUnitless
+                        ? COMPONENT_NO_UNIT_REASON
+                        : undefined,
+                },
+                {
+                  label: "Browse unlinked CRM gifts…",
+                  onSelect: () => {
+                    if (giftColumnAnchor)
+                      actions.openColumnGiftSearch?.(
+                        deposit,
+                        "browse_unlinked",
+                      );
+                  },
+                  disabled: !giftColumnAnchor,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : undefined,
+                },
+                {
+                  label: "Create new gift…",
+                  onSelect: () => {
+                    if (giftColumnTarget && !giftColumnUnitless)
+                      actions.openCreateGift(
+                        giftColumnTarget.anchor,
+                        bankPreview,
+                        giftColumnTarget.prefill,
+                      );
+                  },
+                  disabled: !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : giftColumnUnitless
+                      ? COMPONENT_NO_UNIT_REASON
                       : undefined,
+                },
+                {
+                  label: "Record as payment on pledge…",
+                  onSelect: () => {
+                    if (giftColumnAnchor && !giftColumnUnitless)
+                      actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
                   },
-                  {
-                    label: "Create standalone gift…",
-                    onSelect: () => {
-                      if (giftColumnTarget && !giftColumnUnitless)
-                        actions.openCreateGift(
-                          giftColumnTarget.anchor,
-                          bankPreview,
-                          giftColumnTarget.prefill,
-                        );
-                    },
-                    disabled: !giftColumnAnchor || giftColumnUnitless,
-                    disabledReason: !giftColumnAnchor
-                      ? NO_GIFT_ANCHOR_REASON
-                      : giftColumnUnitless
-                        ? COMPONENT_NO_UNIT_REASON
-                        : undefined,
+                  disabled: !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : giftColumnUnitless
+                      ? COMPONENT_NO_UNIT_REASON
+                      : undefined,
+                },
+                {
+                  label: "Identify donor…",
+                  onSelect: () => {
+                    if (giftColumnAnchor && !giftColumnUnitless)
+                      actions.openIdentify(giftColumnAnchor, bankPreview);
                   },
-                  {
-                    label: "Record as payment on pledge…",
-                    onSelect: () => {
-                      if (giftColumnAnchor && !giftColumnUnitless)
-                        actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
-                    },
-                    disabled: !giftColumnAnchor || giftColumnUnitless,
-                    disabledReason: !giftColumnAnchor
-                      ? NO_GIFT_ANCHOR_REASON
-                      : giftColumnUnitless
-                        ? COMPONENT_NO_UNIT_REASON
-                        : undefined,
-                  },
-                  ...(giftColumnAnchor
-                    ? [
-                        {
-                          label: "Identify donor…",
-                          onSelect: () => {
-                            if (!giftColumnUnitless)
-                              actions.openIdentify(
-                                giftColumnAnchor,
-                                bankPreview,
-                              );
-                          },
-                          disabled: giftColumnUnitless,
-                          disabledReason: giftColumnUnitless
-                            ? COMPONENT_NO_UNIT_REASON
-                            : undefined,
-                        },
-                        ...(actions.openDonorboxSearch
-                          ? [
-                              {
-                                label: "Donorbox lookup…",
-                                onSelect: () => {
-                                  if (!giftColumnUnitless)
-                                    actions.openDonorboxSearch?.(
-                                      giftColumnAnchor,
-                                      bankPreview,
-                                    );
-                                },
-                                disabled: giftColumnUnitless,
-                                disabledReason: giftColumnUnitless
-                                  ? COMPONENT_NO_UNIT_REASON
-                                  : undefined,
-                              },
-                            ]
-                          : []),
-                        ...(actions.canUseCodingForm &&
-                        actions.openCodingFormLookup
-                          ? [
-                              {
-                                label: "Coding form…",
-                                onSelect: () => {
-                                  if (!giftColumnUnitless)
-                                    actions.openCodingFormLookup?.(
-                                      giftColumnAnchor,
-                                      bankPreview,
-                                    );
-                                },
-                                disabled: giftColumnUnitless,
-                                disabledReason: giftColumnUnitless
-                                  ? COMPONENT_NO_UNIT_REASON
-                                  : undefined,
-                              },
-                            ]
-                          : []),
-                      ]
-                    : []),
-                  ...(deposit.gifts.length > 1
-                    ? [
-                        {
-                          label: "Merge gifts…",
-                          onSelect: () =>
-                            actions.openMergeGifts(
-                              deposit.gifts.map((item) => item.giftId),
-                            ),
-                        },
-                      ]
-                    : []),
-                ]}
-              />
-            </div>
-          ) : null}
+                  disabled: !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: !giftColumnAnchor
+                    ? NO_GIFT_ANCHOR_REASON
+                    : giftColumnUnitless
+                      ? COMPONENT_NO_UNIT_REASON
+                      : undefined,
+                },
+                ...(actions.isFinanceOrAdmin && deposit.gifts.length > 1
+                  ? [
+                      {
+                        label: "Merge gifts…",
+                        onSelect: () =>
+                          actions.openMergeGifts(
+                            deposit.gifts.map((item) => item.giftId),
+                          ),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          </div>
           {deposit.gifts.map((gift) => {
             const anchor = giftAnchor(gift);
             const allocations = gift.allocations ?? [];
@@ -1657,223 +1601,15 @@ export function DepositRow({
               </div>
             );
           })}
-          {unlinkedCharges.map((charge) => {
-            const placeholder = needsGiftPlaceholderPresentation(
-              charge.payerName,
-              charge.chargeId,
-            );
-            const anchor: AnchorRef = {
-              kind: "charge",
-              id: charge.chargeId,
-              label: charge.payerName ?? charge.chargeId,
-            };
-            return (
-              <div
-                key={`unlinked-charge-${charge.chargeId}`}
-                className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2.5 py-1.5 dark:border-amber-800 dark:bg-amber-950/30"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-200">
-                      {placeholder.title}
-                    </p>
-                    <p className="truncate text-[10px] text-muted-foreground">
-                      {placeholder.subtitle}
-                    </p>
-                  </div>
-                  <CardActionsMenu
-                    items={[
-                      {
-                        label: "Search and link gift or pledge…",
-                        onSelect: () =>
-                          actions.openLinkEvidence?.(anchor, "all"),
-                      },
-                      {
-                        label: "Create standalone gift…",
-                        onSelect: () =>
-                          actions.openCreateGift(
-                            anchor,
-                            chargePreview(charge),
-                            {
-                              name: charge.payerName ?? null,
-                              dateReceived:
-                                charge.chargeDate?.slice(0, 10) ?? null,
-                            },
-                          ),
-                      },
-                      {
-                        label: "Identify donor…",
-                        onSelect: () =>
-                          actions.openIdentify(anchor, chargePreview(charge)),
-                      },
-                      ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
-                        ? [
-                            {
-                              label: "Find Donorbox match…",
-                              onSelect: () =>
-                                actions.openDonorboxSearch?.(
-                                  anchor,
-                                  chargePreview(charge),
-                                ),
-                            },
-                          ]
-                        : []),
-                      ...(actions.canUseCodingForm &&
-                      actions.openCodingFormLookup
-                        ? [
-                            {
-                              label: "Find coding form match…",
-                              onSelect: () =>
-                                actions.openCodingFormLookup?.(
-                                  anchor,
-                                  chargePreview(charge),
-                                ),
-                            },
-                          ]
-                        : []),
-                      ...(actions.isFinanceOrAdmin &&
-                      deposit.composition.payoutId &&
-                      actions.openChargeQbSearch
-                        ? [
-                            {
-                              label: "Search QuickBooks…",
-                              onSelect: () =>
-                                actions.openChargeQbSearch?.(charge),
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                </div>
-                <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
-                  {charge.chargeDate
-                    ? formatDateShort(charge.chargeDate)
-                    : "Undated"}{" "}
-                  · {money(charge.amount)}
-                </p>
-              </div>
-            );
-          })}
-          {unlinkedComponents.map((component) => {
-            const placeholder = needsGiftPlaceholderPresentation(
-              component.label,
-              componentTitle(component),
-            );
-            // Use the same canonical resolver as column-level placement: an
-            // existing payment unit wins over its actionable QuickBooks source.
-            const anchor: AnchorRef = componentAnchor(deposit, component) ?? {
-              kind: "component",
-              id: component.componentId,
-              label: componentTitle(component),
-              bankDepositId: deposit.anchorId,
-              amount: component.amount,
-              paymentUnitId: component.paymentUnitId ?? undefined,
-            };
-            const manualNoQb =
-              anchor.kind === "component" && !anchor.paymentUnitId;
-            const preview: EvidencePreview = {
-              amount: money(component.amount),
-              date: deposit.date ? formatDateShort(deposit.date) : "—",
-              method: componentKindLabel(component.kind),
-              source: componentTitle(component),
-              memo: null,
-            };
-            return (
-              <div
-                key={`unlinked-component-${component.componentId}`}
-                className="rounded-md border border-dashed border-amber-300 bg-amber-50/60 px-2.5 py-1.5 dark:border-amber-800 dark:bg-amber-950/30"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[11px] font-semibold text-amber-800 dark:text-amber-200">
-                      {placeholder.title}
-                    </p>
-                    <p className="truncate text-[10px] text-muted-foreground">
-                      {placeholder.subtitle}
-                    </p>
-                  </div>
-                  <CardActionsMenu
-                    items={[
-                      {
-                        label: "Search and link gift or pledge…",
-                        onSelect: () =>
-                          actions.openLinkEvidence?.(anchor, "all"),
-                      },
-                      {
-                        label: "Create standalone gift…",
-                        onSelect: () => {
-                          if (!manualNoQb)
-                            actions.openCreateGift(anchor, preview, {
-                              name: component.label ?? null,
-                              dateReceived:
-                                component.receivedDate?.slice(0, 10) ?? null,
-                            });
-                        },
-                        disabled: manualNoQb,
-                        disabledReason: manualNoQb
-                          ? COMPONENT_NO_UNIT_REASON
-                          : undefined,
-                      },
-                      {
-                        label: "Identify donor…",
-                        onSelect: () => {
-                          if (!manualNoQb)
-                            actions.openIdentify(anchor, preview);
-                        },
-                        disabled: manualNoQb,
-                        disabledReason: manualNoQb
-                          ? COMPONENT_NO_UNIT_REASON
-                          : undefined,
-                      },
-                      ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
-                        ? [
-                            {
-                              label: "Find Donorbox match…",
-                              onSelect: () => {
-                                if (!manualNoQb)
-                                  actions.openDonorboxSearch?.(anchor, preview);
-                              },
-                              disabled: manualNoQb,
-                              disabledReason: manualNoQb
-                                ? COMPONENT_NO_UNIT_REASON
-                                : undefined,
-                            },
-                          ]
-                        : []),
-                      ...(actions.canUseCodingForm &&
-                      actions.openCodingFormLookup
-                        ? [
-                            {
-                              label: "Find coding form match…",
-                              onSelect: () => {
-                                if (!manualNoQb)
-                                  actions.openCodingFormLookup?.(
-                                    anchor,
-                                    preview,
-                                  );
-                              },
-                              disabled: manualNoQb,
-                              disabledReason: manualNoQb
-                                ? COMPONENT_NO_UNIT_REASON
-                                : undefined,
-                            },
-                          ]
-                        : []),
-                    ]}
-                  />
-                </div>
-                <p className="text-[11px] tabular-nums text-muted-foreground">
-                  {component.receivedDate
-                    ? formatDateShort(component.receivedDate)
-                    : "Undated"}{" "}
-                  · {money(component.amount)}
-                </p>
-              </div>
-            );
-          })}
-          {!hasGiftColumnCards ? (
+          {deposit.gifts.length === 0 ? (
             <span className="text-xs text-muted-foreground">
               No CRM gifts linked
+            </span>
+          ) : unlinkedGiftEvidenceCount > 0 ? (
+            <span className="block text-[10px] text-muted-foreground">
+              {unlinkedGiftEvidenceCount} payment
+              {unlinkedGiftEvidenceCount === 1 ? " has" : "s have"} no CRM gift
+              linked
             </span>
           ) : null}
         </span>

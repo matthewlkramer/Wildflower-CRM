@@ -70,6 +70,15 @@ They leave active counting but remain in the gross→net→bank reconciliation.
 The detailed UI #2 target and LIVE/WIRE/GAP action status are in
 [`proposal-ui2-workbench-actions.md`](proposal-ui2-workbench-actions.md).
 
+Cards represent evidence records, not missing-state placeholders. An unresolved
+composition remainder and an empty Gifts column render as concise text
+(`Unresolved` / `No CRM gifts linked`) with their available actions in the
+column's three-dot menu. Record-specific actions stay on the evidence card they
+affect; for example, QuickBooks detail, unlink, and correction dispositions
+belong on the individual accounting card rather than acting on the first record
+through a column-level menu. Exclusion remains a component-level decision in
+Composition, not an accounting-card action.
+
 QBO is downstream documentation. Typed `source_links` claims and
 `deposit_qbo_components` remain the authorities for QBO ties; gift/allocation
 ↔ QBO is derived transitively through a component. No direct gift↔QBO link or

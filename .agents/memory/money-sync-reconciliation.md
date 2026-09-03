@@ -156,6 +156,12 @@ stored lifecycle (`status` column); map to shared derived vocab via
 
 ## Workbench UI & queues
 
+- Deposit-workbench cards represent evidence, not work prompts: unresolved
+  composition and missing gifts are plain empty states with column-level
+  three-dot actions. Keep record-specific QBO actions (detail, unlink,
+  correction disposition) on the individual accounting card; never have a
+  column menu silently target its first record. Exclusion stays at the
+  composition/component level.
 - [QB reconciler left-card UI model](quickbooks-reconciler-ui-model.md) — donor matching is right-pane only (no left donor picker); intercompany_transfer/other are manual-only exclusion reasons (no classifier/backfill).
 - [Reconciliation gate vs client blockers](reconciliation-gate-vs-blockers.md) — approve button mirrors only SOME server gate codes; surface ApiError.data.details.issues via extractGateIssues, don't duplicate the gate logic.
 - [Bundle queue axis mapping](reconciliation-bundle-queue.md) — settlement bundles are payout-anchored; qg/qd axes intentionally empty, qs/ds/all show all; confirm-ties is additive enrich-only (NULL-fill, mints nothing).
