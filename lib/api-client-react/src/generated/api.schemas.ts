@@ -6560,6 +6560,39 @@ export interface WorkbenchDepositListResponse {
   viewerCanManageAccounting: boolean;
 }
 
+export interface ManualBankReportImportBody {
+  /**
+   * Original QuickBooks report filename (.csv, .xls, or .xlsx).
+   * @minLength 1
+   * @maxLength 255
+   */
+  filename: string;
+  /**
+   * Base64-encoded report bytes (maximum decoded size 5 MiB).
+   * @minLength 1
+   * @maxLength 7000000
+   */
+  contentBase64: string;
+}
+
+export type BankReportImportResultStatus = typeof BankReportImportResultStatus[keyof typeof BankReportImportResultStatus];
+
+
+export const BankReportImportResultStatus = {
+  succeeded: 'succeeded',
+  rejected: 'rejected',
+} as const;
+
+export interface BankReportImportResult {
+  status: BankReportImportResultStatus;
+  /** @minimum 0 */
+  rowsSeen: number;
+  /** @minimum 0 */
+  rowsInserted: number;
+  alreadyProcessed: boolean;
+  error?: string | null;
+}
+
 export type WorkbenchRecentChangeUndoKind = typeof WorkbenchRecentChangeUndoKind[keyof typeof WorkbenchRecentChangeUndoKind];
 
 

@@ -29,6 +29,7 @@ import type {
   BankDepositComponentMutation,
   BankDepositComponentSourceStagedPaymentMutation,
   BankDepositExclusion,
+  BankReportImportResult,
   BundleAnchorInput,
   BundleAnchorListResponse,
   BundleConfirmInput,
@@ -58,6 +59,7 @@ import type {
   ListReconciliationBundleAnchorsParams,
   ListReconciliationCardsParams,
   ListWorkbenchDepositsParams,
+  ManualBankReportImportBody,
   NotFoundResponse,
   PaymentUnitGiftResponse,
   PayoutBankMatchConfirmation,
@@ -3134,6 +3136,81 @@ export function useListWorkbenchDeposits<TData = Awaited<ReturnType<typeof listW
 
 
 /**
+ * Finance-only manual fallback for the same YTD report accepted from the
+scheduled Intuit email. Uses the shared filename/content/account
+validation, stable bank-transaction deduplication, durable import receipt,
+and bank-spine recomputation. Re-uploading identical content is idempotent.
+
+ * @summary Import a QuickBooks Banking Transactions report into the bank-spine workbench.
+ */
+export const getImportManualBankReportUrl = () => {
+
+
+
+
+  return `/api/reconciliation/bank-report-imports`
+}
+
+export const importManualBankReport = async (manualBankReportImportBody: ManualBankReportImportBody, options?: RequestInit): Promise<BankReportImportResult> => {
+
+  return customFetch<BankReportImportResult>(getImportManualBankReportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      manualBankReportImportBody,)
+  }
+);}
+
+
+
+
+export const getImportManualBankReportMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importManualBankReport>>, TError,{data: BodyType<ManualBankReportImportBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importManualBankReport>>, TError,{data: BodyType<ManualBankReportImportBody>}, TContext> => {
+
+const mutationKey = ['importManualBankReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importManualBankReport>>, {data: BodyType<ManualBankReportImportBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importManualBankReport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportManualBankReportMutationResult = NonNullable<Awaited<ReturnType<typeof importManualBankReport>>>
+    export type ImportManualBankReportMutationBody = BodyType<ManualBankReportImportBody>
+    export type ImportManualBankReportMutationError = ErrorType<BadRequestResponse | ForbiddenResponse>
+
+    /**
+ * @summary Import a QuickBooks Banking Transactions report into the bank-spine workbench.
+ */
+export const useImportManualBankReport = <TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importManualBankReport>>, TError,{data: BodyType<ManualBankReportImportBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importManualBankReport>>,
+        TError,
+        {data: BodyType<ManualBankReportImportBody>},
+        TContext
+      > => {
+      return useMutation(getImportManualBankReportMutationOptions(options));
+    }
+    /**
  * The most recent human reconciliation queue actions (exclude / re-include /
 resolve / reconcile / mint / link / revert / refund decisions), newest
 first, hydrated from the audit log's reconciliation-domain entries. Each

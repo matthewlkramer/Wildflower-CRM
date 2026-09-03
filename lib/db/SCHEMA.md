@@ -334,7 +334,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   QuickBooks payee/category fields are refreshable annotations and never enter
   the bank-line identity. The table never mints gifts or carries CRM FKs; all
   cross-evidence ties live in `source_links`.
-- `bank_transaction_imports` — one receipt per scheduled Gmail report
+- `bank_transaction_imports` — one receipt per manually uploaded or scheduled Gmail bank report
   attachment, including report coverage, row/insert counts, content hash, and
   success/rejection state. This is the freshness authority: a successful daily
   YTD report advances it even when every row already exists.

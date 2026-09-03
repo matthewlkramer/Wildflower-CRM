@@ -1682,6 +1682,39 @@ export const ListWorkbenchDepositsResponse = zod.object({
 })
 
 /**
+ * Finance-only manual fallback for the same YTD report accepted from the
+scheduled Intuit email. Uses the shared filename/content/account
+validation, stable bank-transaction deduplication, durable import receipt,
+and bank-spine recomputation. Re-uploading identical content is idempotent.
+
+ * @summary Import a QuickBooks Banking Transactions report into the bank-spine workbench.
+ */
+export const importManualBankReportBodyFilenameMax = 255;
+
+export const importManualBankReportBodyContentBase64Max = 7000000;
+
+
+
+export const ImportManualBankReportBody = zod.object({
+  "filename": zod.string().min(1).max(importManualBankReportBodyFilenameMax).describe('Original QuickBooks report filename (.csv, .xls, or .xlsx).'),
+  "contentBase64": zod.string().min(1).max(importManualBankReportBodyContentBase64Max).describe('Base64-encoded report bytes (maximum decoded size 5 MiB).')
+})
+
+export const importManualBankReportResponseRowsSeenMin = 0;
+
+export const importManualBankReportResponseRowsInsertedMin = 0;
+
+
+
+export const ImportManualBankReportResponse = zod.object({
+  "status": zod.enum(['succeeded', 'rejected']),
+  "rowsSeen": zod.number().min(importManualBankReportResponseRowsSeenMin),
+  "rowsInserted": zod.number().min(importManualBankReportResponseRowsInsertedMin),
+  "alreadyProcessed": zod.boolean(),
+  "error": zod.string().nullish()
+})
+
+/**
  * The most recent human reconciliation queue actions (exclude / re-include /
 resolve / reconcile / mint / link / revert / refund decisions), newest
 first, hydrated from the audit log's reconciliation-domain entries. Each

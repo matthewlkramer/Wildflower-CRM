@@ -16,6 +16,8 @@ import { getAppUser } from "./appRequest";
 //     POST /reconciliation/charges/:chargeId/qb-tie/revert
 //   Accounting-check human disposition:
 //     POST /reconciliation/accounting-checks/:id/disposition
+//   Bank evidence ingestion:
+//     POST /reconciliation/bank-report-imports
 //   QuickBooks treatment on staged payments:
 //     POST /quickbooks/staged-payments/:id/exclude
 //     POST /quickbooks/staged-payments/:id/re-include

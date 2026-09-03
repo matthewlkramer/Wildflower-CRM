@@ -66,6 +66,11 @@ export interface ScheduledBankReportAttachmentInput {
   bytes: Buffer;
 }
 
+export interface ManualBankReportFileInput {
+  filename: string;
+  bytes: Buffer;
+}
+
 export interface ScheduledBankReportImportResult {
   status: "succeeded" | "rejected";
   rowsSeen: number;
@@ -79,7 +84,16 @@ export interface ScheduledBankReportMessageResult {
   attachmentBytes: number;
 }
 
-function importId(input: ScheduledBankReportAttachmentInput): string {
+interface BankReportImportInput {
+  id: string;
+  mailboxUserId: string | null;
+  gmailMessageId: string | null;
+  gmailAttachmentId: string | null;
+  filename: string;
+  bytes: Buffer;
+}
+
+function scheduledImportId(input: ScheduledBankReportAttachmentInput): string {
   return `bti_${createHash("sha256")
     .update(
       `${input.mailboxUserId}|${input.gmailMessageId}|${input.gmailAttachmentId}`,
@@ -92,8 +106,13 @@ function contentHash(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+/** Stable receipt identity for a manually uploaded file; never invent Gmail provenance. */
+export function manualBankReportImportId(bytes: Buffer): string {
+  return `bti_manual_${contentHash(bytes).slice(0, 24)}`;
+}
+
 async function recordRejected(
-  input: ScheduledBankReportAttachmentInput,
+  input: BankReportImportInput,
   sha256: string,
   error: string,
 ): Promise<ScheduledBankReportImportResult> {
@@ -112,7 +131,7 @@ async function recordRejected(
        error = EXCLUDED.error,
        processed_at = now()`,
     [
-      importId(input),
+      input.id,
       WELLS_FARGO_SOURCE,
       input.filename,
       input.mailboxUserId,
@@ -139,7 +158,16 @@ async function recordRejected(
 export async function importScheduledBankReportAttachment(
   input: ScheduledBankReportAttachmentInput,
 ): Promise<ScheduledBankReportImportResult> {
-  const id = importId(input);
+  return importBankReportFile({
+    ...input,
+    id: scheduledImportId(input),
+  });
+}
+
+async function importBankReportFile(
+  input: BankReportImportInput,
+): Promise<ScheduledBankReportImportResult> {
+  const id = input.id;
   const sha256 = contentHash(input.bytes);
   if (!isScheduledBankReportAttachment(input.filename)) {
     return recordRejected(input, sha256, "Unexpected attachment filename");
@@ -303,6 +331,35 @@ export async function importScheduledBankReportAttachment(
   }
 }
 
+async function processBankReportFile(
+  input: BankReportImportInput,
+): Promise<ScheduledBankReportImportResult> {
+  const imported = await importBankReportFile(input);
+  if (imported.status === "succeeded") {
+    await recomputeBankSpineBestEffort();
+  }
+  return imported;
+}
+
+/**
+ * Manual fallback for a finance user who has the same QuickBooks YTD report
+ * before the scheduled Gmail delivery arrives. The parser, idempotent evidence
+ * transaction, receipt, and bank-spine recomputation are identical to the
+ * scheduled path; only the optional Gmail provenance is absent.
+ */
+export async function processManualBankReportFile(
+  input: ManualBankReportFileInput,
+): Promise<ScheduledBankReportImportResult> {
+  return processBankReportFile({
+    id: manualBankReportImportId(input.bytes),
+    mailboxUserId: null,
+    gmailMessageId: null,
+    gmailAttachmentId: null,
+    filename: input.filename,
+    bytes: input.bytes,
+  });
+}
+
 /**
  * Fetch, validate, and import one metadata-gated Gmail message. Gmail/network
  * and database failures deliberately bubble so the mailbox cursor retries;
@@ -355,12 +412,16 @@ export async function processScheduledBankReportMessage(input: {
     input.gmailMessageId,
     attachment.attachmentId,
   );
-  const imported = await importScheduledBankReportAttachment({
+  const scheduledInput = {
     mailboxUserId: input.mailboxUserId,
     gmailMessageId: input.gmailMessageId,
     gmailAttachmentId: attachment.attachmentId,
     filename: attachment.filename,
     bytes,
+  };
+  const imported = await processBankReportFile({
+    ...scheduledInput,
+    id: scheduledImportId(scheduledInput),
   });
   if (imported.status === "succeeded") {
     logger.info(
@@ -374,7 +435,6 @@ export async function processScheduledBankReportMessage(input: {
       },
       "Scheduled bank report imported",
     );
-    await recomputeBankSpineBestEffort();
   } else {
     logger.error(
       {
