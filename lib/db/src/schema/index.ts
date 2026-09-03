@@ -75,7 +75,6 @@ export * from "./appFeedback";
 export * from "./duplicateDismissals";
 export * from "./cleanupQueue";
 export * from "./codingFormRows";
-export * from "./paymentApplications";
 export * from "./unitGroups";
 export * from "./sourceLinks";
 export * from "./wildflowerUpdates";

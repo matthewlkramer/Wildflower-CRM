@@ -235,43 +235,6 @@ export async function mergeUnambiguousQboDepositLines(
         ) {
           return null;
         }
-        const legacyConflict = await tx.execute(sql`
-          SELECT 1
-          FROM payment_applications auto_app
-          JOIN payment_applications target_app
-            ON target_app.payment_unit_id = ${candidate.target_unit_id}
-           AND target_app.link_role = 'counted'
-          WHERE auto_app.payment_unit_id = ${candidate.auto_unit_id}
-            AND auto_app.link_role = 'counted'
-            AND auto_app.gift_id <> target_app.gift_id
-          LIMIT 1
-        `);
-        if (legacyConflict.rows.length) return null;
-
-        // payment_applications is a retired read path, but its restrictive FK
-        // can still exist on historical rows. Consolidate equivalent legacy
-        // rows so the duplicate unit can be removed without resurrecting that
-        // table as an authority.
-        await tx.execute(sql`
-          DELETE FROM payment_applications auto_app
-          USING payment_applications target_app
-          WHERE auto_app.payment_unit_id = ${candidate.auto_unit_id}
-            AND target_app.payment_unit_id = ${candidate.target_unit_id}
-            AND (
-              (auto_app.link_role = 'counted' AND target_app.link_role = 'counted')
-              OR (
-                auto_app.link_role = 'corroborating'
-                AND target_app.link_role = 'corroborating'
-                AND auto_app.gift_id = target_app.gift_id
-              )
-            )
-        `);
-        await tx.execute(sql`
-          UPDATE payment_applications
-          SET payment_unit_id = ${candidate.target_unit_id}, updated_at = now()
-          WHERE payment_unit_id = ${candidate.auto_unit_id}
-        `);
-
         await tx.execute(sql`
           DELETE FROM source_links auto_link
           USING source_links target_link
@@ -345,10 +308,6 @@ export async function mergeUnambiguousQboDepositLines(
             AND NOT EXISTS (
               SELECT 1 FROM bank_deposit_components c
               WHERE c.payment_unit_id = auto_unit.id
-            )
-            AND NOT EXISTS (
-              SELECT 1 FROM payment_applications pa
-              WHERE pa.payment_unit_id = auto_unit.id
             )
             AND NOT EXISTS (
               SELECT 1 FROM source_links sl

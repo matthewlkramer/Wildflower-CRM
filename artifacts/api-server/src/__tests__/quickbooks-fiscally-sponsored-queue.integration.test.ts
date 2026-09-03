@@ -47,7 +47,6 @@ let db: Db["db"];
 let stagedPayments: Db["stagedPayments"];
 let organizations: Db["organizations"];
 let giftsAndPayments: Db["giftsAndPayments"];
-let paymentApplications: Db["paymentApplications"];
 let andFn: (typeof import("drizzle-orm"))["and"];
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let queueWhere: (typeof import("../routes/quickbooks/shared"))["queueWhere"];
@@ -128,7 +127,6 @@ beforeAll(async () => {
   stagedPayments = dbMod.stagedPayments;
   organizations = dbMod.organizations;
   giftsAndPayments = dbMod.giftsAndPayments;
-  paymentApplications = dbMod.paymentApplications;
   andFn = drizzle.and;
   eqFn = drizzle.eq;
   queueWhere = shared.queueWhere;

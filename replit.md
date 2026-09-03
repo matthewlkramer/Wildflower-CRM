@@ -82,8 +82,8 @@ current-status document.
    - the direct pointer `payment_units.gift_id` plus the unit's tie-fact
      columns for the component/payment-unit → CRM gift relationship (see
      [`docs/adr-unit-gift-pointer.md`](docs/adr-unit-gift-pointer.md); the
-     counted `payment_applications` ledger is retired from all write paths —
-     never write or revive it): each unit has 0 or 1 counted gift; apparent
+     counted `payment_applications` ledger was physically retired by migration
+     0195 — never query, write, or revive it): each unit has 0 or 1 counted gift; apparent
      multiple gifts are merged into allocation rows on one gift; the three
      legacy source-anchor columns (`payment_id` / `stripe_charge_id` /
      `donorbox_donation_id`) are dropped; never re-add one;

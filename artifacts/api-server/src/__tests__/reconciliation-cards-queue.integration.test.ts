@@ -64,7 +64,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   giftAllocations: Db["giftAllocations"];
-  paymentApplications: Db["paymentApplications"];
   sourceLinks: Db["sourceLinks"];
 };
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -299,7 +298,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     giftAllocations: dbMod.giftAllocations,
-    paymentApplications: dbMod.paymentApplications,
     sourceLinks: dbMod.sourceLinks,
   };
   inArrayFn = drizzle.inArray;

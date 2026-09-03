@@ -78,7 +78,6 @@ let schema: {
   stripePayouts: Db["stripePayouts"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   reconciliationBundleDrafts: Db["reconciliationBundleDrafts"];
-  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -187,7 +186,6 @@ beforeAll(async () => {
     stripePayouts: dbMod.stripePayouts,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     reconciliationBundleDrafts: dbMod.reconciliationBundleDrafts,
-    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;

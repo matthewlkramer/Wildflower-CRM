@@ -2,9 +2,8 @@
  * Test seed/read/teardown helpers for the unit→gift tie surface:
  * `payment_units.gift_id` + fact columns (the counted tie) and
  * `source_links` `unit_gift_corroboration` rows (corroboration + supersede
- * demotion crumbs). The retired `payment_applications` ledger is only touched
- * on teardown (rows a test seeded raw for the DB-backstop coverage must still
- * be cleared while the table exists).
+ * demotion crumbs). The retired `payment_applications` table is deliberately
+ * absent from both fixtures and teardown.
  *
  * Everything is loaded via dynamic `import()` so this module has no top-level
  * `@workspace/db` side effect — preserving the integration suites' "skip when
@@ -34,7 +33,7 @@ async function detachUnitGiftPointersForGiftIds(
     .where(inArray(paymentUnits.giftId, ids));
 }
 
-/** Clear ties + legacy ledger rows whose unit sources any staged payment in a realm. */
+/** Clear ties whose unit sources any staged payment in a realm. */
 export async function clearPaymentApplicationsForRealm(
   realmId: string,
 ): Promise<void> {
@@ -55,15 +54,10 @@ async function clearForUnits(
   units: { id: string; giftId: string | null }[],
 ): Promise<void> {
   if (!units.length) return;
-  const { db, paymentApplications, paymentUnits, sourceLinks } = await import(
-    "@workspace/db"
-  );
+  const { db, paymentUnits, sourceLinks } = await import("@workspace/db");
   const { inArray, and, eq } = await import("drizzle-orm");
   const { CLEARED_TIE_FACTS } = await import("../lib/paymentApplications");
   const ids = units.map((u) => u.id);
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.paymentUnitId, ids));
   await db
     .delete(sourceLinks)
     .where(
@@ -79,7 +73,7 @@ async function clearForUnits(
   await detachUnitGiftPointersForGiftIds(units.map((u) => u.giftId));
 }
 
-/** Clear ties + ledger rows whose unit sources an explicit set of staged-payment ids. */
+/** Clear ties whose unit sources an explicit set of staged-payment ids. */
 export async function clearPaymentApplicationsForStagedIds(
   stagedIds: string[],
 ): Promise<void> {
@@ -212,7 +206,7 @@ export async function qbPaymentIdForGift(
 }
 
 /**
- * Clear ties + ledger rows anchored to an explicit set of gift ids.
+ * Clear ties anchored to an explicit set of gift ids.
  *
  * Needed for Stripe-evidence ties, which `clearPaymentApplicationsForStagedIds`
  * never reaches (their unit sources a Stripe charge, not a staged payment).
@@ -221,11 +215,6 @@ export async function clearPaymentApplicationsForGiftIds(
   giftIds: string[],
 ): Promise<void> {
   if (!giftIds.length) return;
-  const { db, paymentApplications } = await import("@workspace/db");
-  const { inArray } = await import("drizzle-orm");
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.giftId, giftIds));
   await detachUnitGiftPointersForGiftIds(giftIds);
 }
 
@@ -412,7 +401,7 @@ export async function clearPaymentApplicationsForChargeIds(
 
 /**
  * Clear canonical payment units minted for a set of Stripe charges (with their
- * deposit components, tie source_links, and legacy ledger rows). The post-sync
+ * deposit components and tie source_links). The post-sync
  * bank-spine recompute in a concurrently running suite can mint units for ANY
  * pending charge in the shared test DB, so a teardown that deletes its charges
  * must clear these RESTRICT-parented rows first.
@@ -424,7 +413,6 @@ export async function clearPaymentUnitsForChargeIds(
   const {
     db,
     bankDepositComponents,
-    paymentApplications,
     paymentUnits,
     sourceLinks,
   } = await import("@workspace/db");
@@ -437,9 +425,6 @@ export async function clearPaymentUnitsForChargeIds(
     .delete(bankDepositComponents)
     .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
   await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.paymentUnitId, unitIds));
-  await db
     .delete(sourceLinks)
     .where(inArray(sourceLinks.paymentUnitId, unitIds));
   await db
@@ -449,7 +434,7 @@ export async function clearPaymentUnitsForChargeIds(
 
 /**
  * Delete canonical payment units minted for a set of QB staged payments
- * (with their deposit components, tie source_links, and legacy ledger rows).
+ * (with their deposit components and tie source_links).
  * The staged FK is SET NULL, so deleting the payment would otherwise strand
  * an orphan unit in the shared test DB; delete the unit outright instead.
  */
@@ -460,7 +445,6 @@ export async function clearPaymentUnitsForStagedIds(
   const {
     db,
     bankDepositComponents,
-    paymentApplications,
     paymentUnits,
     sourceLinks,
   } = await import("@workspace/db");
@@ -472,9 +456,6 @@ export async function clearPaymentUnitsForStagedIds(
   await db
     .delete(bankDepositComponents)
     .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.paymentUnitId, unitIds));
   await db
     .delete(sourceLinks)
     .where(inArray(sourceLinks.paymentUnitId, unitIds));
@@ -495,7 +476,6 @@ export async function clearPaymentUnitsForDonorboxIds(
   const {
     db,
     bankDepositComponents,
-    paymentApplications,
     paymentUnits,
     sourceLinks,
   } = await import("@workspace/db");
@@ -507,9 +487,6 @@ export async function clearPaymentUnitsForDonorboxIds(
   await db
     .delete(bankDepositComponents)
     .where(inArray(bankDepositComponents.paymentUnitId, unitIds));
-  await db
-    .delete(paymentApplications)
-    .where(inArray(paymentApplications.paymentUnitId, unitIds));
   await db
     .delete(sourceLinks)
     .where(inArray(sourceLinks.paymentUnitId, unitIds));

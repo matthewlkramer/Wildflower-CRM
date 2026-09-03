@@ -40,7 +40,6 @@ let schema: {
   organizations: Db["organizations"];
   giftsAndPayments: Db["giftsAndPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
-  paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
   sourceLinks: Db["sourceLinks"];
 };
@@ -182,7 +181,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     giftsAndPayments: dbMod.giftsAndPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
-    paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
     sourceLinks: dbMod.sourceLinks,
   };
@@ -207,10 +205,6 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!HAS_DB || !db) return;
   if (chargeIds.length) await clearPaymentApplicationsForChargeIds(chargeIds);
-  if (giftIds.length)
-    await db
-      .delete(schema.paymentApplications)
-      .where(inArrayFn(schema.paymentApplications.giftId, giftIds));
   if (chargeIds.length)
     await db
       .delete(schema.stripeStagedCharges)

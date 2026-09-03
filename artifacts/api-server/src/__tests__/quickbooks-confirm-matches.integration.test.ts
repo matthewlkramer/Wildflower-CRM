@@ -65,7 +65,6 @@ let schema: {
   organizations: Db["organizations"];
   stagedPayments: Db["stagedPayments"];
   giftsAndPayments: Db["giftsAndPayments"];
-  paymentApplications: Db["paymentApplications"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let server: Server;
@@ -179,7 +178,6 @@ beforeAll(async () => {
     organizations: dbMod.organizations,
     stagedPayments: dbMod.stagedPayments,
     giftsAndPayments: dbMod.giftsAndPayments,
-    paymentApplications: dbMod.paymentApplications,
   };
   eqFn = drizzle.eq;
 

@@ -1,6 +1,6 @@
 ---
 status: design-target
-last_verified: 2026-07-23
+last_verified: 2026-09-02
 ---
 
 # Reconciliation — Target-State Design (ratified)
@@ -11,8 +11,9 @@ last_verified: 2026-07-23
 > is superseded by [`adr-bank-spine-money-model.md`](adr-bank-spine-money-model.md),
 > which is now IMPLEMENTED. Bank deposits are the spine; payout↔deposit pairing
 > is `stripe_payouts.bank_deposit_id` with no `settlement_links`; and
-> `payment_applications` is anchored solely by `payment_unit_id`. The
-> two-plane conceptual framing and INV-A…INV-G remain useful history. Section
+> `payment_applications` was later superseded by `payment_units.gift_id` and
+> physically retired by migration 0195. The two-plane conceptual framing and
+> INV-A…INV-G remain useful history. Section
 > bodies are preserved as a point-in-time design record.
 
 **Status:** ratified design, now largely implemented. This document is the

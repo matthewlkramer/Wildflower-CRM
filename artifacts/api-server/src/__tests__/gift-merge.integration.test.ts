@@ -72,7 +72,6 @@ let schema: {
   pledgeAllocations: Db["pledgeAllocations"];
   pledgeExpectedPayments: Db["pledgeExpectedPayments"];
   stagedPayments: Db["stagedPayments"];
-  paymentApplications: Db["paymentApplications"];
   fiscalYears: Db["fiscalYears"];
   bulkOperations: Db["bulkOperations"];
 };
@@ -220,7 +219,6 @@ beforeAll(async () => {
     pledgeAllocations: dbMod.pledgeAllocations,
     pledgeExpectedPayments: dbMod.pledgeExpectedPayments,
     stagedPayments: dbMod.stagedPayments,
-    paymentApplications: dbMod.paymentApplications,
     fiscalYears: dbMod.fiscalYears,
     bulkOperations: dbMod.bulkOperations,
   };

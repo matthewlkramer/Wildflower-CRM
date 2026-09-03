@@ -36,7 +36,6 @@ let schema: {
   giftsAndPayments: Db["giftsAndPayments"];
   stripeStagedCharges: Db["stripeStagedCharges"];
   donorboxDonations: Db["donorboxDonations"];
-  paymentApplications: Db["paymentApplications"];
   paymentUnits: Db["paymentUnits"];
   organizations: Db["organizations"];
   users: Db["users"];
@@ -164,11 +163,6 @@ async function readUnitRows(unitId: string) {
   );
 }
 
-function sqlState(e: unknown): string | undefined {
-  const err = e as { code?: string; cause?: { code?: string } };
-  return err?.code ?? err?.cause?.code;
-}
-
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -179,7 +173,6 @@ beforeAll(async () => {
     giftsAndPayments: dbMod.giftsAndPayments,
     stripeStagedCharges: dbMod.stripeStagedCharges,
     donorboxDonations: dbMod.donorboxDonations,
-    paymentApplications: dbMod.paymentApplications,
     paymentUnits: dbMod.paymentUnits,
     organizations: dbMod.organizations,
     users: dbMod.users,
@@ -229,7 +222,7 @@ afterAll(async () => {
   await db.delete(schema.users).where(eqFn(schema.users.id, USER_ID));
 });
 
-describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
+describe.skipIf(!HAS_DB)("payment-unit gift ties (DB)", () => {
   it("sets the counted tie on the anchor's existing unit", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
@@ -295,40 +288,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     expect(rows).toEqual([{ giftId: giftA, paymentUnitId: unit }]);
   });
 
-  it("DB backstop (0167): raw second counted row for one unit is rejected", async () => {
-    const giftA = await seedGift();
-    const giftB = await seedGift();
-    const sp = await seedQbStagedPayment();
-    const dn = await seedDonation();
-    const unit = await seedCheckUnit(sp, dn);
-
-    await db.insert(schema.paymentApplications).values({
-      id: nextId("pa"),
-      giftId: giftA,
-      amountApplied: "40.00",
-      evidenceSource: "quickbooks",
-      paymentUnitId: await unitIdForAnchor("quickbooks", sp),
-      linkRole: "counted",
-    });
-    const err = await db
-      .insert(schema.paymentApplications)
-      .values({
-        id: nextId("pa"),
-        giftId: giftB,
-        amountApplied: "40.00",
-        evidenceSource: "donorbox",
-        paymentUnitId: await unitIdForAnchor("donorbox", dn),
-        linkRole: "counted",
-      })
-      .then(
-        () => null,
-        (e: unknown) => e,
-      );
-    expect(err).not.toBeNull();
-    expect(sqlState(err)).toBe("23505");
-  });
-
-  it("keeps payment_units.gift_id converged with the counted ledger at write time", async () => {
+  it("writes payment_units.gift_id as the counted authority", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
     const unit = await seedStripeUnit(ch);
@@ -350,7 +310,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
     expect(pu?.giftId).toBeNull();
   });
 
-  it("keeps the tie fact columns (0201) converged with the counted ledger", async () => {
+  it("writes and clears the tie facts with the counted pointer", async () => {
     const gift = await seedGift();
     const ch = await seedCharge();
     const unit = await seedStripeUnit(ch);
@@ -389,7 +349,7 @@ describe.skipIf(!HAS_DB)("payment-unit dual-write (DB)", () => {
       createdTheGift: true,
     });
 
-    // Removing the counted row clears the facts back to the untied shape.
+    // Removing the counted tie clears the facts back to the untied shape.
     await db.transaction(async (tx) => {
       await pa.removePaymentApplicationsForStripeCharge(tx, ch);
     });
