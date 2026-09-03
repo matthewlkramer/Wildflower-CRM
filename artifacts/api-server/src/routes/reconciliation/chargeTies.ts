@@ -5,6 +5,8 @@ import {
   stripePayouts,
   stripeStagedCharges,
   stagedPayments,
+  paymentUnits,
+  sourceLinks,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { asyncHandler, notFound, parseOrBadRequest } from "../../lib/helpers";
@@ -131,6 +133,14 @@ router.post(
         error: "bad_request",
         message:
           "overrideAmountMismatch requires chargeId — an amount override is only meaningful against an explicitly named charge.",
+      });
+      return;
+    }
+    if (body.reassignEvidence && manualIds === undefined) {
+      res.status(400).json({
+        error: "bad_request",
+        message:
+          "reassignEvidence requires an explicitly selected QuickBooks row.",
       });
       return;
     }
@@ -451,6 +461,20 @@ router.post(
             });
           }
         }
+        if (body.reassignEvidence) {
+          await tx
+            .update(paymentUnits)
+            .set({ sourceStagedPaymentId: null, updatedAt: new Date() })
+            .where(inArray(paymentUnits.sourceStagedPaymentId, qbIds));
+          await tx
+            .delete(sourceLinks)
+            .where(
+              and(
+                eq(sourceLinks.linkType, "qbo_line_deposit"),
+                inArray(sourceLinks.qbStagedPaymentId, qbIds),
+              ),
+            );
+        }
         const conflicts = await tx
           .select({
             qbId: stagedPayments.id,
@@ -465,6 +489,15 @@ router.post(
               SELECT 1 FROM source_links pqs
               WHERE pqs.link_type = 'payout_qb_settlement'
                 AND pqs.qb_staged_payment_id = "staged_payments"."id"
+            )`,
+            componentEvidence: sql<boolean>`EXISTS (
+              SELECT 1 FROM payment_units evidence_unit
+              WHERE evidence_unit.source_staged_payment_id = "staged_payments"."id"
+            )`,
+            depositEvidence: sql<boolean>`EXISTS (
+              SELECT 1 FROM source_links direct_evidence
+              WHERE direct_evidence.link_type = 'qbo_line_deposit'
+                AND direct_evidence.qb_staged_payment_id = "staged_payments"."id"
             )`,
           })
           .from(stagedPayments)
@@ -482,6 +515,12 @@ router.post(
               qbStagedPaymentId: c.qbId,
               reason:
                 "QuickBooks row is already a payout's settled deposit lump.",
+            });
+          } else if (c.componentEvidence || c.depositEvidence) {
+            conflictIssues.push({
+              qbStagedPaymentId: c.qbId,
+              reason:
+                "QuickBooks row already documents another deposit or payment. Confirm reassignment to move that evidence.",
             });
           }
         }
@@ -512,8 +551,7 @@ router.post(
           if (already.rows[0]?.exists) {
             throw new ReconcileAbort(409, {
               error: "charge_tie_drift",
-              message:
-                "A charge's tie changed mid-confirm. Reload and retry.",
+              message: "A charge's tie changed mid-confirm. Reload and retry.",
               details: { issues: [{ chargeId, reason: "already tied" }] },
             });
           }

@@ -1638,7 +1638,14 @@ router.patch(
             FROM source_links sl
             WHERE sl.qb_staged_payment_id = sp.id
               AND sl.lifecycle IN ('proposed', 'confirmed')
-          ) AS linked_in_source_links,
+              AND sl.link_type <> 'qbo_line_deposit'
+          ) AS linked_in_nonmovable_source_links,
+          EXISTS (
+            SELECT 1
+            FROM source_links sl
+            WHERE sl.qb_staged_payment_id = sp.id
+              AND sl.link_type = 'qbo_line_deposit'
+          ) AS linked_as_deposit_evidence,
           EXISTS (
             SELECT 1
             FROM payment_units booked_unit
@@ -1654,18 +1661,37 @@ router.patch(
           id: string;
           exclusion_reason: string | null;
           claimed_by_unit: boolean;
-          linked_in_source_links: boolean;
+          linked_in_nonmovable_source_links: boolean;
+          linked_as_deposit_evidence: boolean;
           counted_to_gift: boolean;
         }>
       )[0];
       if (
         !target ||
         target.exclusion_reason ||
-        target.claimed_by_unit ||
-        target.linked_in_source_links ||
-        target.counted_to_gift
+        target.linked_in_nonmovable_source_links
       ) {
         return { kind: "qbo_unavailable" as const };
+      }
+      const needsReassignment =
+        target.claimed_by_unit ||
+        target.linked_as_deposit_evidence ||
+        target.counted_to_gift;
+      if (needsReassignment && body.reassignEvidence !== true) {
+        return { kind: "reassignment_required" as const };
+      }
+      if (needsReassignment) {
+        await tx.execute(sql`
+          UPDATE payment_units
+          SET source_staged_payment_id = NULL, updated_at = now()
+          WHERE source_staged_payment_id = ${body.stagedPaymentId}
+            AND id <> ${component.payment_unit_id}
+        `);
+        await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'qbo_line_deposit'
+            AND qb_staged_payment_id = ${body.stagedPaymentId}
+        `);
       }
 
       const clearPlaceholderReview =
@@ -1708,6 +1734,14 @@ router.patch(
         error: "qbo_staged_payment_unavailable",
         message:
           "That QBO record is already claimed, linked as evidence, counted to a gift, or excluded.",
+      });
+      return;
+    }
+    if (result.kind === "reassignment_required") {
+      res.status(409).json({
+        error: "evidence_reassignment_required",
+        message:
+          "That QBO record already documents another deposit or payment. Confirm reassignment to disconnect it there and attach it here.",
       });
       return;
     }
@@ -1994,17 +2028,22 @@ router.post(
     const body = parseOrBadRequest(AddBankDepositComponentBody, req.body, res);
     if (!body) return;
     const user = getAppUser(req);
+    if (body.mode === "pledge" && !user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
 
-    const result = await db.transaction(async (tx) => {
-      // Serialize remaining-capacity decisions with the QBO-line identity
-      // merge in bankSpineRecompute.
-      await tx.execute(sql`
+    const result = await db
+      .transaction(async (tx) => {
+        // Serialize remaining-capacity decisions with the QBO-line identity
+        // merge in bankSpineRecompute.
+        await tx.execute(sql`
         SELECT id
         FROM bank_deposits
         WHERE id = ${params.bankDepositId}
         FOR UPDATE
       `);
-      const depositResult = await tx.execute(sql`
+        const depositResult = await tx.execute(sql`
         SELECT d.amount::text AS amount, d.currency, d.deposit_date::text AS deposit_date,
                p.amount::text AS payout_amount,
                COALESCE(SUM(c.amount), 0)::text AS component_total
@@ -2014,60 +2053,63 @@ router.post(
         WHERE d.id = ${params.bankDepositId}
         GROUP BY d.id, p.amount
       `);
-      const deposit = (
-        depositResult.rows as Array<{
-          amount: string;
-          currency: string;
-          deposit_date: string;
-          payout_amount: string | null;
-          component_total: string;
-        }>
-      )[0];
-      if (!deposit) return { kind: "not_found" as const };
+        const deposit = (
+          depositResult.rows as Array<{
+            amount: string;
+            currency: string;
+            deposit_date: string;
+            payout_amount: string | null;
+            component_total: string;
+          }>
+        )[0];
+        if (!deposit) return { kind: "not_found" as const };
 
-      const amount =
-        body.mode === "attach" || (body.mode === "gift" && body.amount == null)
-          ? null
-          : Number(body.amount);
-      if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
-        return { kind: "invalid_amount" as const };
-      }
-      const remainder = Math.max(
-        0,
-        Number(deposit.amount) -
-          Number(deposit.payout_amount ?? 0) -
-          Number(deposit.component_total),
-      );
+        const amount =
+          body.mode === "attach" ||
+          (body.mode === "gift" && body.amount == null)
+            ? null
+            : Number(body.amount);
+        if (amount !== null && (!Number.isFinite(amount) || amount <= 0)) {
+          return { kind: "invalid_amount" as const };
+        }
+        const remainder = Math.max(
+          0,
+          Number(deposit.amount) -
+            Number(deposit.payout_amount ?? 0) -
+            Number(deposit.component_total),
+        );
 
-      let paymentUnitId: string;
-      let componentAmount: number;
-      let needsReview = false;
-      let existingComponentId: string | null = null;
-      let movedFromDepositId: string | null = null;
-      if (body.mode === "attach") {
-        const unitResult = await tx.execute(sql`
+        let paymentUnitId: string;
+        let componentAmount: number;
+        let needsReview = false;
+        let existingComponentId: string | null = null;
+        let movedFromDepositId: string | null = null;
+        let createdGiftId: string | null = null;
+        let pledgeOpportunityId: string | null = null;
+        if (body.mode === "attach") {
+          const unitResult = await tx.execute(sql`
           SELECT id, kind, stripe_charge_id,
                  COALESCE(gross_amount, net_amount)::text AS amount
           FROM payment_units
           WHERE id = ${body.paymentUnitId}
           FOR UPDATE
         `);
-        const unit = (
-          unitResult.rows as Array<{
-            id: string;
-            kind: "check" | "direct_ach" | "wire" | "other";
-            stripe_charge_id: string | null;
-            amount: string | null;
-          }>
-        )[0];
-        if (
-          !unit ||
-          unit.stripe_charge_id ||
-          !["check", "direct_ach", "wire", "other"].includes(unit.kind)
-        ) {
-          return { kind: "unit_unavailable" as const };
-        }
-        const claimed = await tx.execute(sql`
+          const unit = (
+            unitResult.rows as Array<{
+              id: string;
+              kind: "check" | "direct_ach" | "wire" | "other";
+              stripe_charge_id: string | null;
+              amount: string | null;
+            }>
+          )[0];
+          if (
+            !unit ||
+            unit.stripe_charge_id ||
+            !["check", "direct_ach", "wire", "other"].includes(unit.kind)
+          ) {
+            return { kind: "unit_unavailable" as const };
+          }
+          const claimed = await tx.execute(sql`
           SELECT id, bank_deposit_id, amount::text AS amount
           FROM bank_deposit_components
           WHERE payment_unit_id = ${body.paymentUnitId}
@@ -2075,45 +2117,154 @@ router.post(
           LIMIT 1
           FOR UPDATE
         `);
-        const existingClaim = (
-          claimed.rows as Array<{
-            id: string;
-            bank_deposit_id: string;
-            amount: string;
-          }>
-        )[0];
-        if (existingClaim?.bank_deposit_id === params.bankDepositId) {
-          return {
-            kind: "ok" as const,
-            id: existingClaim.id,
-            paymentUnitId: unit.id,
-            amount: Number(unit.amount ?? 0).toFixed(2),
-            needsReview: false,
-            movedFromDepositId: null,
-          };
-        }
-        if (existingClaim) {
-          existingComponentId = existingClaim.id;
-          movedFromDepositId = existingClaim.bank_deposit_id;
-        }
-        paymentUnitId = unit.id;
-        componentAmount =
-          body.amount == null
-            ? Number(existingClaim?.amount ?? unit.amount ?? 0)
-            : Number(body.amount);
-        if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
-          return { kind: "invalid_amount" as const };
-        }
-      } else if (body.mode === "gift") {
-        const giftResult = await tx.execute(sql`
-          SELECT id FROM gifts_and_payments WHERE id = ${body.giftId}
+          const existingClaim = (
+            claimed.rows as Array<{
+              id: string;
+              bank_deposit_id: string;
+              amount: string;
+            }>
+          )[0];
+          if (existingClaim?.bank_deposit_id === params.bankDepositId) {
+            return {
+              kind: "ok" as const,
+              id: existingClaim.id,
+              paymentUnitId: unit.id,
+              amount: Number(unit.amount ?? 0).toFixed(2),
+              needsReview: false,
+              movedFromDepositId: null,
+              createdGiftId: null,
+              pledgeOpportunityId: null,
+            };
+          }
+          if (existingClaim) {
+            if (body.reassignEvidence !== true) {
+              return {
+                kind: "reassignment_required" as const,
+                priorDepositId: existingClaim.bank_deposit_id,
+              };
+            }
+            existingComponentId = existingClaim.id;
+            movedFromDepositId = existingClaim.bank_deposit_id;
+          }
+          paymentUnitId = unit.id;
+          componentAmount =
+            body.amount == null
+              ? Number(existingClaim?.amount ?? unit.amount ?? 0)
+              : Number(body.amount);
+          if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
+            return { kind: "invalid_amount" as const };
+          }
+        } else if (body.mode === "gift") {
+          const giftResult = await tx.execute(sql`
+          SELECT id, amount::text AS amount
+          FROM gifts_and_payments
+          WHERE id = ${body.giftId}
+          FOR UPDATE
         `);
-        if (!giftResult.rows.length) return { kind: "gift_not_found" as const };
+          const gift = (
+            giftResult.rows as Array<{ id: string; amount: string | null }>
+          )[0];
+          if (!gift) return { kind: "gift_not_found" as const };
+          const giftAmount = Number(gift.amount);
+          const targetAmount = amount ?? giftAmount;
+          if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+            return { kind: "invalid_amount" as const };
+          }
 
-        // Explicit unit pick (workbench component anchor): adopt exactly the
-        // named gift-less unit — no amount-based candidate matching.
-        if (body.paymentUnitId != null) {
-          const exactResult = await tx.execute(sql`
+          // A counted CRM gift belongs to one real payment. Legacy data can
+          // contain several unit pointers, so this remains an application
+          // guard rather than a DB unique constraint; the UI may explicitly
+          // move one direct-payment owner, but it may never silently add a
+          // second owner.
+          const ownerResult = await tx.execute(sql`
+          SELECT u.id, u.kind, u.stripe_charge_id,
+                 COALESCE(u.gross_amount, u.net_amount)::text AS unit_amount,
+                 c.id AS component_id, c.bank_deposit_id,
+                 c.amount::text AS component_amount,
+                 c.needs_review,
+                 d.deposit_date::text AS deposit_date,
+                 d.amount::text AS deposit_amount,
+                 d.memo AS deposit_memo
+          FROM payment_units u
+          LEFT JOIN bank_deposit_components c ON c.payment_unit_id = u.id
+          LEFT JOIN bank_deposits d ON d.id = c.bank_deposit_id
+          WHERE u.gift_id = ${body.giftId}
+          ORDER BY u.id
+          FOR UPDATE OF u
+        `);
+          const owners = ownerResult.rows as Array<{
+            id: string;
+            kind: string;
+            stripe_charge_id: string | null;
+            unit_amount: string | null;
+            component_id: string | null;
+            bank_deposit_id: string | null;
+            component_amount: string | null;
+            needs_review: boolean | null;
+            deposit_date: string | null;
+            deposit_amount: string | null;
+            deposit_memo: string | null;
+          }>;
+          const movableOwner = (owner: (typeof owners)[number]) =>
+            owner.stripe_charge_id == null &&
+            ["check", "direct_ach", "wire", "other"].includes(owner.kind);
+          const reassignmentRequired = (owner: (typeof owners)[number]) => ({
+            kind: "gift_reassignment_required" as const,
+            priorPaymentUnitId: owner.id,
+            priorDepositId: owner.bank_deposit_id,
+            priorDepositDate: owner.deposit_date,
+            priorDepositAmount: owner.deposit_amount,
+            priorDepositMemo: owner.deposit_memo,
+          });
+
+          // Explicit unit pick (workbench component anchor): adopt exactly the
+          // named unit. If this gift already pays a different direct unit, the
+          // old pointer is cleared only after explicit reassignment consent.
+          if (body.paymentUnitId != null) {
+            const alreadyHere = owners.find(
+              (owner) =>
+                owner.id === body.paymentUnitId &&
+                owner.bank_deposit_id === params.bankDepositId &&
+                owner.component_id != null,
+            );
+            if (alreadyHere) {
+              return {
+                kind: "ok" as const,
+                id: alreadyHere.component_id!,
+                paymentUnitId: alreadyHere.id,
+                amount: Number(
+                  alreadyHere.component_amount ?? alreadyHere.unit_amount ?? 0,
+                ).toFixed(2),
+                needsReview: alreadyHere.needs_review ?? false,
+                movedFromDepositId: null,
+                createdGiftId: null,
+                pledgeOpportunityId: null,
+              };
+            }
+            const otherOwners = owners.filter(
+              (owner) => owner.id !== body.paymentUnitId,
+            );
+            if (otherOwners.length > 0) {
+              if (otherOwners.length !== 1 || !movableOwner(otherOwners[0])) {
+                return { kind: "gift_owner_not_movable" as const };
+              }
+              if (body.reassignGift !== true) {
+                return reassignmentRequired(otherOwners[0]);
+              }
+              await tx.execute(sql`
+              UPDATE payment_units
+              SET gift_id = NULL,
+                  gift_allocation_id = NULL,
+                  gift_match_method = NULL,
+                  gift_confirmed_by_user_id = NULL,
+                  gift_confirmed_at = NULL,
+                  gift_note = NULL,
+                  created_the_gift = false,
+                  updated_at = now()
+              WHERE id = ${otherOwners[0].id}
+            `);
+            }
+            const exactResult = await tx.execute(sql`
             SELECT u.id, c.id AS component_id, c.amount::text AS component_amount,
                    c.needs_review
             FROM bank_deposit_components c
@@ -2125,149 +2276,261 @@ router.post(
               AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
             FOR UPDATE OF u
           `);
-          const exactUnit = (
-            exactResult.rows as Array<{
+            const exactUnit = (
+              exactResult.rows as Array<{
+                id: string;
+                component_id: string;
+                component_amount: string;
+                needs_review: boolean;
+              }>
+            )[0];
+            if (!exactUnit) return { kind: "unit_unavailable" as const };
+            await tx.execute(sql`
+            UPDATE payment_units
+            SET gift_id = ${body.giftId},
+                gift_match_method = 'human',
+                gift_confirmed_by_user_id = ${user?.id ?? null},
+                gift_confirmed_at = now(),
+                created_the_gift = false,
+                updated_at = now()
+            WHERE id = ${exactUnit.id}
+          `);
+            return {
+              kind: "ok" as const,
+              id: exactUnit.component_id,
+              paymentUnitId: exactUnit.id,
+              amount: Number(exactUnit.component_amount).toFixed(2),
+              needsReview: exactUnit.needs_review,
+              movedFromDepositId: null,
+              createdGiftId: null,
+              pledgeOpportunityId: null,
+            };
+          }
+
+          const composedOwners = owners.filter(
+            (owner) => owner.component_id != null,
+          );
+          const currentOwner = composedOwners.find(
+            (owner) => owner.bank_deposit_id === params.bankDepositId,
+          );
+          if (currentOwner && owners.length === 1) {
+            return {
+              kind: "ok" as const,
+              id: currentOwner.component_id!,
+              paymentUnitId: currentOwner.id,
+              amount: Number(
+                currentOwner.component_amount ?? currentOwner.unit_amount ?? 0,
+              ).toFixed(2),
+              needsReview: currentOwner.needs_review ?? false,
+              movedFromDepositId: null,
+              createdGiftId: null,
+              pledgeOpportunityId: null,
+            };
+          }
+          if (composedOwners.length > 0) {
+            if (owners.length !== 1 || !movableOwner(composedOwners[0])) {
+              return { kind: "gift_owner_not_movable" as const };
+            }
+            const owner = composedOwners[0];
+            if (body.reassignGift !== true) {
+              return reassignmentRequired(owner);
+            }
+            existingComponentId = owner.component_id;
+            movedFromDepositId = owner.bank_deposit_id;
+            paymentUnitId = owner.id;
+            componentAmount =
+              amount ?? Number(owner.component_amount ?? owner.unit_amount);
+          } else {
+            // A gift-less payment may be adopted only when its amount matches
+            // the requested payment. Browsing a $1,026 gift on a $14,864
+            // unresolved deposit must create a $1,026 component; it must not
+            // consume the deposit's entire remainder.
+            const adoptableResult = await tx.execute(sql`
+            SELECT u.id, c.id AS component_id, c.amount::text AS component_amount,
+                   c.needs_review
+            FROM bank_deposit_components c
+            JOIN payment_units u ON u.id = c.payment_unit_id
+            WHERE c.bank_deposit_id = ${params.bankDepositId}
+              AND u.gift_id IS NULL
+              AND u.stripe_charge_id IS NULL
+              AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
+            ORDER BY u.id
+            FOR UPDATE OF u
+          `);
+            const adoptable = adoptableResult.rows as Array<{
               id: string;
               component_id: string;
               component_amount: string;
               needs_review: boolean;
-            }>
-          )[0];
-          if (!exactUnit) return { kind: "unit_unavailable" as const };
-          await tx.execute(sql`
-            UPDATE payment_units
-            SET gift_id = ${body.giftId},
-                gift_match_method = 'human',
-                gift_confirmed_by_user_id = ${user?.id ?? null},
-                gift_confirmed_at = now()
-            WHERE id = ${exactUnit.id}
-          `);
-          return {
-            kind: "ok" as const,
-            id: exactUnit.component_id,
-            paymentUnitId: exactUnit.id,
-            amount: Number(exactUnit.component_amount).toFixed(2),
-            needsReview: exactUnit.needs_review,
-          };
-        }
+            }>;
+            const adoptMatches = adoptable.filter(
+              (candidate) =>
+                Math.abs(Number(candidate.component_amount) - targetAmount) <=
+                0.005,
+            );
+            if (adoptMatches.length === 1) {
+              const adopted = adoptMatches[0];
+              await tx.execute(sql`
+              UPDATE payment_units
+              SET gift_id = ${body.giftId},
+                  gift_match_method = 'human',
+                  gift_confirmed_by_user_id = ${user?.id ?? null},
+                  gift_confirmed_at = now(),
+                  created_the_gift = false,
+                  updated_at = now()
+              WHERE id = ${adopted.id}
+            `);
+              return {
+                kind: "ok" as const,
+                id: adopted.component_id,
+                paymentUnitId: adopted.id,
+                amount: Number(adopted.component_amount).toFixed(2),
+                needsReview: adopted.needs_review,
+                movedFromDepositId: null,
+                createdGiftId: null,
+                pledgeOpportunityId: null,
+              };
+            }
+            if (adoptMatches.length > 1) {
+              return { kind: "deposit_units_ambiguous" as const };
+            }
 
-        // A deposit recorded as a gift-less single payment ("Record without a
-        // gift") already carries the whole-amount unit+component — linking a
-        // gift then means pointing THAT unit at the gift, not composing a
-        // second component (the remainder is already zero).
-        const adoptableResult = await tx.execute(sql`
-          SELECT u.id, c.id AS component_id, c.amount::text AS component_amount,
-                 c.needs_review
-          FROM bank_deposit_components c
-          JOIN payment_units u ON u.id = c.payment_unit_id
-          WHERE c.bank_deposit_id = ${params.bankDepositId}
-            AND u.gift_id IS NULL
-            AND u.stripe_charge_id IS NULL
-            AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
-          ORDER BY u.id
-          FOR UPDATE OF u
-        `);
-        const adoptable = adoptableResult.rows as Array<{
-          id: string;
-          component_id: string;
-          component_amount: string;
-          needs_review: boolean;
-        }>;
-        const adoptMatches =
-          amount == null
-            ? adoptable
-            : adoptable.filter(
-                (a) => Math.abs(Number(a.component_amount) - amount) <= 0.005,
-              );
-        if (adoptMatches.length === 1) {
-          const adopted = adoptMatches[0];
-          await tx.execute(sql`
-            UPDATE payment_units
-            SET gift_id = ${body.giftId},
-                gift_match_method = 'human',
-                gift_confirmed_by_user_id = ${user?.id ?? null},
-                gift_confirmed_at = now()
-            WHERE id = ${adopted.id}
+            const candidatesResult = await tx.execute(sql`
+            SELECT u.id, COALESCE(u.gross_amount, u.net_amount)::text AS amount
+            FROM payment_units u
+            WHERE u.gift_id = ${body.giftId}
+              AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
+              AND u.stripe_charge_id IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM bank_deposit_components claimed
+                WHERE claimed.payment_unit_id = u.id
+              )
+            ORDER BY u.id
+            FOR UPDATE OF u
           `);
-          return {
-            kind: "ok" as const,
-            id: adopted.component_id,
-            paymentUnitId: adopted.id,
-            amount: Number(adopted.component_amount).toFixed(2),
-            needsReview: adopted.needs_review,
-          };
-        }
-        if (adoptMatches.length > 1) {
-          return { kind: "deposit_units_ambiguous" as const };
-        }
-
-        const candidatesResult = await tx.execute(sql`
-          SELECT u.id, COALESCE(u.gross_amount, u.net_amount)::text AS amount
-          FROM payment_units u
-          WHERE u.gift_id = ${body.giftId}
-            AND u.kind IN ('check', 'direct_ach', 'wire', 'other')
-            AND u.stripe_charge_id IS NULL
-            AND NOT EXISTS (
-              SELECT 1 FROM bank_deposit_components claimed
-              WHERE claimed.payment_unit_id = u.id
-            )
-          ORDER BY u.id
-          FOR UPDATE OF u
-        `);
-        const candidates = candidatesResult.rows as Array<{
-          id: string;
-          amount: string | null;
-        }>;
-        const target = amount ?? remainder;
-        const exact = candidates.filter(
-          (c) =>
-            c.amount != null && Math.abs(Number(c.amount) - target) <= 0.005,
-        );
-        const pool = exact.length === 1 ? exact : candidates;
-        if (pool.length > 1) return { kind: "gift_units_ambiguous" as const };
-        if (pool.length === 1) {
-          const unit = pool[0];
-          paymentUnitId = unit.id;
-          componentAmount =
-            amount ?? (unit.amount != null ? Number(unit.amount) : remainder);
-        } else {
-          paymentUnitId = `pu_manual_${newId()}`;
-          componentAmount = amount ?? remainder;
+            const candidates = candidatesResult.rows as Array<{
+              id: string;
+              amount: string | null;
+            }>;
+            const exact = candidates.filter(
+              (candidate) =>
+                candidate.amount != null &&
+                Math.abs(Number(candidate.amount) - targetAmount) <= 0.005,
+            );
+            const pool = exact.length === 1 ? exact : candidates;
+            if (pool.length > 1) {
+              return { kind: "gift_units_ambiguous" as const };
+            }
+            if (pool.length === 1) {
+              const unit = pool[0];
+              paymentUnitId = unit.id;
+              componentAmount =
+                amount ??
+                (unit.amount != null ? Number(unit.amount) : targetAmount);
+            } else {
+              paymentUnitId = `pu_manual_${newId()}`;
+              componentAmount = targetAmount;
+              await tx.execute(sql`
+              INSERT INTO payment_units
+                (id, kind, gross_amount, fee_amount, net_amount, currency,
+                 received_date, lifecycle, gift_id, gift_match_method,
+                 gift_confirmed_by_user_id, gift_confirmed_at)
+              VALUES (
+                ${paymentUnitId},
+                'other',
+                ${componentAmount}::numeric,
+                0,
+                ${componentAmount}::numeric,
+                ${deposit.currency},
+                ${deposit.deposit_date},
+                'received',
+                ${body.giftId},
+                'human',
+                ${user?.id ?? null},
+                now()
+              )
+            `);
+            }
+          }
           if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
             return { kind: "invalid_amount" as const };
           }
+        } else if (body.mode === "pledge") {
+          paymentUnitId = `pu_manual_${newId()}`;
+          componentAmount = Number(body.amount);
+          if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
+            return { kind: "invalid_amount" as const };
+          }
+          if (componentAmount > remainder + 0.005) {
+            return { kind: "amount_exceeds_remainder" as const };
+          }
+          const opp = await lockAndValidatePledgeForPayment(
+            tx,
+            body.opportunityId,
+          );
+          const donor = donorOf(opp);
+          createdGiftId = newId();
+          pledgeOpportunityId = opp.id;
           await tx.execute(sql`
-            INSERT INTO payment_units
-              (id, kind, gross_amount, fee_amount, net_amount, currency,
-               received_date, lifecycle, gift_id, gift_match_method,
-               gift_confirmed_by_user_id, gift_confirmed_at)
-            VALUES (
-              ${paymentUnitId},
-              'other',
-              ${componentAmount}::numeric,
-              0,
-              ${componentAmount}::numeric,
-              ${deposit.currency},
-              ${deposit.deposit_date},
-              'received',
-              ${body.giftId},
-              'human',
-              ${user?.id ?? null},
-              now()
-            )
-          `);
-        }
-        if (!Number.isFinite(componentAmount) || componentAmount <= 0) {
-          return { kind: "invalid_amount" as const };
-        }
-      } else {
-        paymentUnitId = `pu_manual_${newId()}`;
-        componentAmount = amount ?? 0;
-        needsReview = body.mode === "placeholder";
-        if (componentAmount > remainder + 0.005) {
-          return { kind: "amount_exceeds_remainder" as const };
-        }
-        await tx.execute(sql`
+          INSERT INTO payment_units
+            (id, kind, gross_amount, fee_amount, net_amount, currency,
+             received_date, lifecycle)
+          VALUES (
+            ${paymentUnitId}, 'other', ${componentAmount}::numeric, 0,
+            ${componentAmount}::numeric, ${deposit.currency},
+            ${deposit.deposit_date}, 'received'
+          )
+        `);
+          await tx.insert(giftsAndPayments).values({
+            id: createdGiftId,
+            name: opp.name ? `${opp.name} payment` : "Pledge payment",
+            amount: componentAmount.toFixed(2),
+            dateReceived: deposit.deposit_date,
+            organizationId: donor.organizationId,
+            individualGiverPersonId: donor.individualGiverPersonId,
+            householdId: donor.householdId,
+            opportunityId: opp.id,
+            details: "Created from an unresolved bank-deposit remainder.",
+            ownerUserId: user!.id,
+          });
+          await copyPledgeAllocationsToGift(
+            tx,
+            opp.id,
+            createdGiftId,
+            componentAmount.toFixed(2),
+          );
+          const allocationCount = await tx.execute(sql`
+          SELECT count(*)::int AS n
+          FROM gift_allocations
+          WHERE gift_id = ${createdGiftId}
+        `);
+          if (Number((allocationCount.rows[0] as { n: number }).n) === 0) {
+            await seedInitialGiftAllocation(tx, {
+              giftId: createdGiftId,
+              amount: componentAmount.toFixed(2),
+              dateReceived: deposit.deposit_date,
+              entityId: null,
+              countsTowardGoal: true,
+            });
+          }
+          await assertGiftHasAllocations(tx, createdGiftId);
+          await tx.execute(sql`
+          UPDATE payment_units
+          SET gift_id = ${createdGiftId},
+              gift_match_method = 'human',
+              gift_confirmed_by_user_id = ${user!.id},
+              gift_confirmed_at = now(),
+              created_the_gift = true
+          WHERE id = ${paymentUnitId}
+        `);
+        } else {
+          paymentUnitId = `pu_manual_${newId()}`;
+          componentAmount = amount ?? 0;
+          needsReview = body.mode === "placeholder";
+          if (componentAmount > remainder + 0.005) {
+            return { kind: "amount_exceeds_remainder" as const };
+          }
+          await tx.execute(sql`
           INSERT INTO payment_units
             (id, kind, gross_amount, fee_amount, net_amount, currency, received_date, lifecycle)
           VALUES (
@@ -2281,12 +2544,12 @@ router.post(
             'received'
           )
         `);
-      }
-      if (componentAmount > remainder + 0.005) {
-        return { kind: "amount_exceeds_remainder" as const };
-      }
-      if (existingComponentId) {
-        await tx.execute(sql`
+        }
+        if (componentAmount > remainder + 0.005) {
+          return { kind: "amount_exceeds_remainder" as const };
+        }
+        if (existingComponentId) {
+          await tx.execute(sql`
           UPDATE bank_deposit_components
           SET bank_deposit_id = ${params.bankDepositId},
               amount = ${componentAmount}::numeric,
@@ -2294,18 +2557,20 @@ router.post(
               needs_review = false
           WHERE id = ${existingComponentId}
         `);
-        return {
-          kind: "ok" as const,
-          id: existingComponentId,
-          paymentUnitId,
-          amount: componentAmount.toFixed(2),
-          needsReview: false,
-          movedFromDepositId,
-        };
-      }
+          return {
+            kind: "ok" as const,
+            id: existingComponentId,
+            paymentUnitId,
+            amount: componentAmount.toFixed(2),
+            needsReview: false,
+            movedFromDepositId,
+            createdGiftId,
+            pledgeOpportunityId,
+          };
+        }
 
-      const componentId = `bdc_${newId()}`;
-      await tx.execute(sql`
+        const componentId = `bdc_${newId()}`;
+        await tx.execute(sql`
         INSERT INTO bank_deposit_components
           (id, bank_deposit_id, payment_unit_id, amount, source, needs_review)
         VALUES (
@@ -2317,15 +2582,28 @@ router.post(
           ${needsReview}
         )
       `);
-      return {
-        kind: "ok" as const,
-        id: componentId,
-        paymentUnitId,
-        amount: componentAmount.toFixed(2),
-        needsReview,
-        movedFromDepositId: null,
-      };
-    });
+        return {
+          kind: "ok" as const,
+          id: componentId,
+          paymentUnitId,
+          amount: componentAmount.toFixed(2),
+          needsReview,
+          movedFromDepositId: null,
+          createdGiftId,
+          pledgeOpportunityId,
+        };
+      })
+      .catch((error: unknown) => {
+        if (error instanceof ReconcileAbort) {
+          return { kind: "abort" as const, abort: error };
+        }
+        throw error;
+      });
+
+    if (result.kind === "abort") {
+      res.status(result.abort.httpStatus).json(result.abort.payload);
+      return;
+    }
 
     if (result.kind === "not_found") {
       notFound(res, "bank deposit");
@@ -2346,8 +2624,39 @@ router.post(
       });
       return;
     }
+    if (result.kind === "reassignment_required") {
+      res.status(409).json({
+        error: "evidence_reassignment_required",
+        message: `That payment is already composed on deposit ${result.priorDepositId}. Confirm reassignment to move it here.`,
+        details: { priorDepositId: result.priorDepositId },
+      });
+      return;
+    }
     if (result.kind === "gift_not_found") {
       notFound(res, "gift");
+      return;
+    }
+    if (result.kind === "gift_reassignment_required") {
+      res.status(409).json({
+        error: "gift_reassignment_required",
+        message:
+          "That CRM gift already belongs to another payment. Confirm reassignment to disconnect that counted relationship before linking it here.",
+        details: {
+          priorPaymentUnitId: result.priorPaymentUnitId,
+          priorDepositId: result.priorDepositId,
+          priorDepositDate: result.priorDepositDate,
+          priorDepositAmount: result.priorDepositAmount,
+          priorDepositMemo: result.priorDepositMemo,
+        },
+      });
+      return;
+    }
+    if (result.kind === "gift_owner_not_movable") {
+      res.status(409).json({
+        error: "gift_owner_not_movable",
+        message:
+          "That CRM gift has several counted payments or a Stripe-backed owner. Correct those relationships from their own payment cards before linking the gift here.",
+      });
       return;
     }
     if (result.kind === "deposit_units_ambiguous") {
@@ -2374,18 +2683,25 @@ router.post(
       });
       return;
     }
+    if (result.pledgeOpportunityId) {
+      await applyDerivedOppFieldsMany(result.pledgeOpportunityId);
+    }
     await reconAudit(req, {
-      action: "update",
-      entityType: "staged_payment",
-      entityId: result.paymentUnitId,
-      summary: result.movedFromDepositId
-        ? `Moved payment ${result.paymentUnitId} to deposit ${params.bankDepositId} (${fmtMoney(result.amount)})`
-        : `Attached payment ${result.paymentUnitId} to deposit ${params.bankDepositId} (${fmtMoney(result.amount)})`,
+      action: result.createdGiftId ? "create" : "update",
+      entityType: result.createdGiftId ? "gift" : "staged_payment",
+      entityId: result.createdGiftId ?? result.paymentUnitId!,
+      summary: result.createdGiftId
+        ? `Created a ${fmtMoney(result.amount)} pledge payment from deposit ${params.bankDepositId}`
+        : result.movedFromDepositId
+          ? `Moved payment ${result.paymentUnitId} to deposit ${params.bankDepositId} (${fmtMoney(result.amount)})`
+          : `Attached payment ${result.paymentUnitId} to deposit ${params.bankDepositId} (${fmtMoney(result.amount)})`,
       undo: null,
       extra: {
         componentId: result.id,
         bankDepositId: params.bankDepositId,
         movedFromDepositId: result.movedFromDepositId,
+        createdGiftId: result.createdGiftId,
+        pledgeOpportunityId: result.pledgeOpportunityId,
       },
     });
 
@@ -2395,6 +2711,7 @@ router.post(
       amount: result.amount,
       source: "manual",
       needsReview: result.needsReview,
+      ...(result.createdGiftId ? { giftId: result.createdGiftId } : {}),
     });
   }),
 );
@@ -2683,21 +3000,64 @@ router.post(
     if (!body) return;
     const user = getAppUser(req);
 
-    const deposit = await db
-      .select({ id: bankDeposits.id })
-      .from(bankDeposits)
-      .where(eq(bankDeposits.id, params.bankDepositId))
-      .then((r) => r[0]);
-    if (!deposit) return notFound(res, "bank deposit");
-    const staged = await db.execute(sql`
-      SELECT id FROM staged_payments WHERE id = ${body.stagedPaymentId}
-    `);
-    if (!staged.rows.length) return notFound(res, "staged payment");
+    const result = await db.transaction(async (tx) => {
+      const deposit = await tx
+        .select({ id: bankDeposits.id })
+        .from(bankDeposits)
+        .where(eq(bankDeposits.id, params.bankDepositId))
+        .for("update")
+        .then((r) => r[0]);
+      if (!deposit) return { kind: "deposit_not_found" as const };
+      const staged = await tx.execute(sql`
+        SELECT id FROM staged_payments
+        WHERE id = ${body.stagedPaymentId}
+        FOR UPDATE
+      `);
+      if (!staged.rows.length) return { kind: "staged_not_found" as const };
 
-    const linkId = sourceLinkId("qbo_line_deposit", body.stagedPaymentId);
-    const inserted = await db
-      .insert(sourceLinks)
-      .values({
+      const owners = await tx.execute(sql`
+        SELECT
+          EXISTS (
+            SELECT 1 FROM payment_units u
+            WHERE u.source_staged_payment_id = ${body.stagedPaymentId}
+          ) AS component_evidence,
+          (
+            SELECT sl.bank_deposit_id FROM source_links sl
+            WHERE sl.link_type = 'qbo_line_deposit'
+              AND sl.qb_staged_payment_id = ${body.stagedPaymentId}
+            ORDER BY sl.id LIMIT 1
+          ) AS deposit_evidence_id
+      `);
+      const owner = owners.rows[0] as {
+        component_evidence: boolean;
+        deposit_evidence_id: string | null;
+      };
+      if (
+        owner.deposit_evidence_id === params.bankDepositId &&
+        !owner.component_evidence
+      ) {
+        return { kind: "ok" as const };
+      }
+      const needsReassignment =
+        owner.component_evidence || owner.deposit_evidence_id != null;
+      if (needsReassignment && body.reassignEvidence !== true) {
+        return { kind: "reassignment_required" as const };
+      }
+      if (needsReassignment) {
+        await tx.execute(sql`
+          UPDATE payment_units
+          SET source_staged_payment_id = NULL, updated_at = now()
+          WHERE source_staged_payment_id = ${body.stagedPaymentId}
+        `);
+        await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'qbo_line_deposit'
+            AND qb_staged_payment_id = ${body.stagedPaymentId}
+        `);
+      }
+
+      const linkId = sourceLinkId("qbo_line_deposit", body.stagedPaymentId);
+      await tx.insert(sourceLinks).values({
         id: linkId,
         linkType: "qbo_line_deposit",
         qbStagedPaymentId: body.stagedPaymentId,
@@ -2707,17 +3067,26 @@ router.post(
         provenance: "human",
         confirmedByUserId: user?.id ?? null,
         confirmedAt: new Date(),
-      })
-      .onConflictDoNothing()
-      .returning({ id: sourceLinks.id });
-    if (!inserted.length) {
+      });
+      return { kind: "ok" as const };
+    });
+    if (result.kind === "deposit_not_found") {
+      notFound(res, "bank deposit");
+      return;
+    }
+    if (result.kind === "staged_not_found") {
+      notFound(res, "staged payment");
+      return;
+    }
+    if (result.kind === "reassignment_required") {
       res.status(409).json({
-        error: "already_claimed",
+        error: "evidence_reassignment_required",
         message:
-          "That QuickBooks record is already claimed as deposit evidence.",
+          "That QBO record already documents another deposit or payment. Confirm reassignment to disconnect it there and attach it here.",
       });
       return;
     }
+    const linkId = sourceLinkId("qbo_line_deposit", body.stagedPaymentId);
     res.status(201).json({
       sourceLinkId: linkId,
       stagedPaymentId: body.stagedPaymentId,
@@ -2764,6 +3133,306 @@ router.post(
       id: checkId,
       stagedPaymentId: body.stagedPaymentId,
       disposition: "correction_needed",
+    });
+  }),
+);
+
+router.post(
+  "/reconciliation/deposit-components/:id/unlink-gift",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(
+      RemoveManualBankDepositComponentParams,
+      req.params,
+      res,
+    );
+    if (!params) return;
+    const result = await db.transaction(async (tx) => {
+      const componentResult = await tx.execute(sql`
+        SELECT c.id, c.bank_deposit_id, c.payment_unit_id,
+               u.kind, u.stripe_charge_id, u.gift_id
+        FROM bank_deposit_components c
+        JOIN payment_units u ON u.id = c.payment_unit_id
+        WHERE c.id = ${params.id}
+        FOR UPDATE OF c, u
+      `);
+      const component = (
+        componentResult.rows as Array<{
+          id: string;
+          bank_deposit_id: string;
+          payment_unit_id: string;
+          kind: string;
+          stripe_charge_id: string | null;
+          gift_id: string | null;
+        }>
+      )[0];
+      if (!component) return { kind: "not_found" as const };
+      if (
+        component.stripe_charge_id != null ||
+        !["check", "direct_ach", "wire", "other"].includes(component.kind)
+      ) {
+        return { kind: "not_eligible" as const };
+      }
+      if (!component.gift_id) return { kind: "no_gift" as const };
+      await tx.execute(sql`
+        UPDATE payment_units
+        SET gift_id = NULL,
+            gift_allocation_id = NULL,
+            gift_match_method = NULL,
+            gift_confirmed_by_user_id = NULL,
+            gift_confirmed_at = NULL,
+            gift_note = NULL,
+            created_the_gift = false,
+            updated_at = now()
+        WHERE id = ${component.payment_unit_id}
+      `);
+      return { kind: "ok" as const, component };
+    });
+    if (result.kind === "not_found") {
+      notFound(res, "bank deposit component");
+      return;
+    }
+    if (result.kind === "not_eligible") {
+      res.status(409).json({
+        error: "component_gift_not_unlinkable",
+        message:
+          "Only a direct bank-payment component can unlink its CRM gift here.",
+      });
+      return;
+    }
+    if (result.kind === "no_gift") {
+      res.status(409).json({
+        error: "component_has_no_gift",
+        message: "This payment component no longer has a CRM gift to unlink.",
+      });
+      return;
+    }
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: result.component.payment_unit_id,
+      summary: `Unlinked CRM gift ${result.component.gift_id} from bank-deposit payment ${result.component.payment_unit_id}`,
+      undo: null,
+      extra: {
+        componentId: result.component.id,
+        bankDepositId: result.component.bank_deposit_id,
+        giftId: result.component.gift_id,
+      },
+    });
+    res.status(204).send();
+  }),
+);
+
+router.post(
+  "/reconciliation/deposit-components/:id/absorb-remainder",
+  asyncHandler(async (req, res) => {
+    if (!requireFinance(req, res)) return;
+    const params = parseOrBadRequest(
+      RemoveManualBankDepositComponentParams,
+      req.params,
+      res,
+    );
+    if (!params) return;
+    const user = getAppUser(req);
+    const result = await db.transaction(async (tx) => {
+      const componentResult = await tx.execute(sql`
+        SELECT c.id, c.bank_deposit_id, c.payment_unit_id,
+               c.amount::text AS component_amount, c.source,
+               c.source_staged_payment_id AS component_staged_payment_id,
+               u.kind, u.stripe_charge_id, u.gift_id,
+               u.source_staged_payment_id AS unit_staged_payment_id,
+               d.amount::text AS deposit_amount,
+               COALESCE(p.amount, 0)::text AS payout_amount,
+               COALESCE((
+                 SELECT sum(other.amount)
+                 FROM bank_deposit_components other
+                 WHERE other.bank_deposit_id = c.bank_deposit_id
+                   AND other.id <> c.id
+               ), 0)::text AS other_component_total
+        FROM bank_deposit_components c
+        JOIN payment_units u ON u.id = c.payment_unit_id
+        JOIN bank_deposits d ON d.id = c.bank_deposit_id
+        LEFT JOIN stripe_payouts p ON p.bank_deposit_id = d.id
+        WHERE c.id = ${params.id}
+        FOR UPDATE OF c, u, d
+      `);
+      const component = (
+        componentResult.rows as Array<{
+          id: string;
+          bank_deposit_id: string;
+          payment_unit_id: string;
+          component_amount: string;
+          source: string;
+          component_staged_payment_id: string | null;
+          kind: string;
+          stripe_charge_id: string | null;
+          gift_id: string | null;
+          unit_staged_payment_id: string | null;
+          deposit_amount: string;
+          payout_amount: string;
+          other_component_total: string;
+        }>
+      )[0];
+      if (!component) return { kind: "not_found" as const };
+      if (
+        component.stripe_charge_id != null ||
+        !["manual", "qbo_inferred"].includes(component.source) ||
+        !["check", "direct_ach", "wire", "other"].includes(component.kind)
+      ) {
+        return { kind: "not_eligible" as const };
+      }
+      const targetAmount =
+        Number(component.deposit_amount) -
+        Number(component.payout_amount) -
+        Number(component.other_component_total);
+      if (
+        !Number.isFinite(targetAmount) ||
+        targetAmount <= Number(component.component_amount) + 0.005
+      ) {
+        return { kind: "no_remainder" as const };
+      }
+      if (component.gift_id) {
+        const giftResult = await tx.execute(sql`
+          SELECT amount::text AS amount
+          FROM gifts_and_payments
+          WHERE id = ${component.gift_id}
+          FOR UPDATE
+        `);
+        const giftAmount = Number(
+          (giftResult.rows[0] as { amount?: string } | undefined)?.amount,
+        );
+        if (
+          !Number.isFinite(giftAmount) ||
+          Math.abs(giftAmount - targetAmount) > 0.005
+        ) {
+          return {
+            kind: "gift_amount_mismatch" as const,
+            targetAmount: targetAmount.toFixed(2),
+            giftAmount: Number.isFinite(giftAmount)
+              ? giftAmount.toFixed(2)
+              : null,
+          };
+        }
+      }
+      const evidenceIds = [
+        component.unit_staged_payment_id,
+        component.component_staged_payment_id,
+      ].filter((id): id is string => Boolean(id));
+      const distinctEvidenceIds = [...new Set(evidenceIds)];
+      if (distinctEvidenceIds.length > 1) {
+        return { kind: "ambiguous_qbo_source" as const };
+      }
+      const stagedPaymentId = distinctEvidenceIds[0] ?? null;
+      if (stagedPaymentId) {
+        const otherClaims = await tx.execute(sql`
+          SELECT 1
+          FROM payment_units other
+          WHERE other.source_staged_payment_id = ${stagedPaymentId}
+            AND other.id <> ${component.payment_unit_id}
+          LIMIT 1
+        `);
+        if (otherClaims.rows.length) {
+          return { kind: "ambiguous_qbo_source" as const };
+        }
+        await tx.execute(sql`
+          DELETE FROM source_links
+          WHERE link_type = 'qbo_line_deposit'
+            AND qb_staged_payment_id = ${stagedPaymentId}
+        `);
+        await tx.execute(sql`
+          INSERT INTO source_links
+            (id, link_type, qb_staged_payment_id, bank_deposit_id,
+             match_basis, lifecycle, provenance,
+             confirmed_by_user_id, confirmed_at)
+          VALUES (
+            ${sourceLinkId("qbo_line_deposit", stagedPaymentId)},
+            'qbo_line_deposit', ${stagedPaymentId},
+            ${component.bank_deposit_id}, 'human', 'confirmed', 'human',
+            ${user?.id ?? null}, now()
+          )
+        `);
+      }
+      await tx.execute(sql`
+        UPDATE payment_units
+        SET gross_amount = ${targetAmount}::numeric,
+            net_amount = ${targetAmount}::numeric,
+            source_staged_payment_id = NULL,
+            updated_at = now()
+        WHERE id = ${component.payment_unit_id}
+      `);
+      await tx.execute(sql`
+        UPDATE bank_deposit_components
+        SET amount = ${targetAmount}::numeric,
+            source = 'manual',
+            source_staged_payment_id = NULL,
+            needs_review = false,
+            updated_at = now()
+        WHERE id = ${component.id}
+      `);
+      return {
+        kind: "ok" as const,
+        id: component.id,
+        paymentUnitId: component.payment_unit_id,
+        bankDepositId: component.bank_deposit_id,
+        amount: targetAmount.toFixed(2),
+        stagedPaymentId,
+      };
+    });
+    if (result.kind === "not_found") {
+      notFound(res, "bank deposit component");
+      return;
+    }
+    if (result.kind === "not_eligible") {
+      res.status(409).json({
+        error: "component_remainder_not_absorbable",
+        message:
+          "Only a direct manual or QBO-inferred payment can absorb the unresolved remainder.",
+      });
+      return;
+    }
+    if (result.kind === "no_remainder") {
+      res.status(409).json({
+        error: "deposit_has_no_remainder",
+        message:
+          "This deposit no longer has an unresolved remainder for this payment to absorb.",
+      });
+      return;
+    }
+    if (result.kind === "gift_amount_mismatch") {
+      res.status(409).json({
+        error: "gift_amount_mismatch",
+        message: `The linked CRM gift is ${result.giftAmount ?? "not amount-coded"}, but the corrected payment would be ${result.targetAmount}. Correct the gift or unlink it before changing the payment.`,
+        details: {
+          giftAmount: result.giftAmount,
+          targetAmount: result.targetAmount,
+        },
+      });
+      return;
+    }
+    if (result.kind === "ambiguous_qbo_source") {
+      res.status(409).json({
+        error: "ambiguous_qbo_source",
+        message:
+          "This component has conflicting QBO source ownership. Unlink the incorrect accounting evidence before expanding the payment.",
+      });
+      return;
+    }
+    await reconAudit(req, {
+      action: "update",
+      entityType: "staged_payment",
+      entityId: result.paymentUnitId,
+      summary: `Expanded bank-deposit payment ${result.paymentUnitId} to ${fmtMoney(result.amount)}`,
+      undo: null,
+      extra: {
+        componentId: result.id,
+        bankDepositId: result.bankDepositId,
+        qboEvidenceMovedToDeposit: result.stagedPaymentId,
+      },
+    });
+    res.json({
+      id: result.id,
+      paymentUnitId: result.paymentUnitId,
+      amount: result.amount,
     });
   }),
 );

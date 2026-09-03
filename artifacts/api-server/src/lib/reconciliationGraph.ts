@@ -140,7 +140,13 @@ export interface RecCandidate {
    *  `excluded` is human-overridable (the confirm endpoints accept
    *  overrideExclusion to re-include in the same tx); the other kinds mean the
    *  row's money is already claimed and overriding would double-count. */
-  conflictKind: "excluded" | "settled_elsewhere" | "tied_to_charge" | null;
+  conflictKind:
+    | "excluded"
+    | "settled_elsewhere"
+    | "tied_to_charge"
+    | "deposit_evidence"
+    | "component_evidence"
+    | null;
 }
 
 export interface RecNode {
@@ -304,12 +310,14 @@ async function loadDonorDisplays(
           })
           .from(organizations)
           .where(inArray(organizations.id, orgIds))
-      : Promise.resolve([] as Array<{
-          id: string;
-          name: string | null;
-          anonymous: boolean | null;
-          ownerUserId: string | null;
-        }>),
+      : Promise.resolve(
+          [] as Array<{
+            id: string;
+            name: string | null;
+            anonymous: boolean | null;
+            ownerUserId: string | null;
+          }>,
+        ),
     personIds.length
       ? db
           .select({
@@ -320,12 +328,14 @@ async function loadDonorDisplays(
           })
           .from(people)
           .where(inArray(people.id, personIds))
-      : Promise.resolve([] as Array<{
-          id: string;
-          name: string | null;
-          anonymous: boolean | null;
-          ownerUserId: string | null;
-        }>),
+      : Promise.resolve(
+          [] as Array<{
+            id: string;
+            name: string | null;
+            anonymous: boolean | null;
+            ownerUserId: string | null;
+          }>,
+        ),
     hhIds.length
       ? db
           .select({ id: households.id, name: households.name })
@@ -363,7 +373,8 @@ function maskDonorDisplay(
   viewer: Viewer,
 ): { name: string; hidden: boolean } {
   if (!d) return { name: ANON_LABEL, hidden: false };
-  if (d.kind === "household") return { name: d.name ?? "Household", hidden: false };
+  if (d.kind === "household")
+    return { name: d.name ?? "Household", hidden: false };
   const hidden = !canSeeIdentity(
     { anonymous: d.anonymous, ownerUserId: d.ownerUserId },
     viewer,
@@ -389,9 +400,7 @@ type GiftLinkAnchor =
 
 function recGiftSelect(link: GiftLinkAnchor) {
   return {
-    ...giftCandidateSelect(
-      link.kind === "staged" ? link.excludeStagedId : "",
-    ),
+    ...giftCandidateSelect(link.kind === "staged" ? link.excludeStagedId : ""),
     // For a Stripe-charge anchor, the QB-ledger disable is wrong (QB + Stripe
     // are parallel evidence for one gift). Override it with the charge-ownership
     // guard: only another charge already tied to the gift disqualifies it.
@@ -513,7 +522,10 @@ async function fetchGiftById(id: string, link: GiftLinkAnchor) {
 function giftDonorHidden(g: NonNullable<RecGiftRow>, viewer: Viewer): boolean {
   if (g.organizationName != null)
     return !canSeeIdentity(
-      { anonymous: g.organizationAnonymous, ownerUserId: g.organizationOwnerUserId },
+      {
+        anonymous: g.organizationAnonymous,
+        ownerUserId: g.organizationOwnerUserId,
+      },
       viewer,
     );
   if (g.individualGiverPersonName != null)
@@ -534,7 +546,10 @@ function giftDonorSublabel(
   if (g.organizationName != null)
     return maskName(
       g.organizationName,
-      { anonymous: g.organizationAnonymous, ownerUserId: g.organizationOwnerUserId },
+      {
+        anonymous: g.organizationAnonymous,
+        ownerUserId: g.organizationOwnerUserId,
+      },
       viewer,
     );
   if (g.individualGiverPersonName != null)
@@ -761,7 +776,8 @@ async function loadDonorOpps(
       const fits: number[] = [];
       if (remaining != null && remaining > 0)
         fits.push(amountConfidence(String(remaining), anchorAmount));
-      if (target != null) fits.push(amountConfidence(String(target), anchorAmount));
+      if (target != null)
+        fits.push(amountConfidence(String(target), anchorAmount));
       confidence = fits.length ? Math.max(...fits) : 70;
       const collectible = remaining ?? target ?? null;
       if (collectible != null && (A as number) <= collectible * 1.1 + 1)
@@ -772,7 +788,8 @@ async function loadDonorOpps(
 
   scored.sort((a, b) => {
     const wp =
-      Number(b.opp.writtenPledge ?? false) - Number(a.opp.writtenPledge ?? false);
+      Number(b.opp.writtenPledge ?? false) -
+      Number(a.opp.writtenPledge ?? false);
     if (wp !== 0) return wp;
     const ca = a.confidence ?? -1;
     const cb = b.confidence ?? -1;
@@ -861,7 +878,8 @@ export async function buildReconciliationGraph(
       chargeId: single?.id ?? null,
       grossAmount: single?.grossAmount ?? null,
       feeAmount: single?.feeAmount ?? stripePayout.feeTotal,
-      netAmount: single?.netAmount ?? stripePayout.netTotal ?? stripePayout.amount,
+      netAmount:
+        single?.netAmount ?? stripePayout.netTotal ?? stripePayout.amount,
       chargeCount: charges.length,
       // Settled by construction: the pairing fact ties this deposit row to
       // the payout (the proposed/conflict workflow states are retired).
@@ -1043,7 +1061,9 @@ export async function buildReconciliationGraph(
           (x): x is { kind: RecDonorKind; id: string } => x != null,
         ),
       );
-      oppCandidates = [oppToCandidate(opp, displays, viewer, "payment_on_pledge")];
+      oppCandidates = [
+        oppToCandidate(opp, displays, viewer, "payment_on_pledge"),
+      ];
       oppState = "determined";
       oppSelectedId = opp.id;
       oppLocked = true;
@@ -1418,7 +1438,10 @@ async function searchQb(p: RecSearchParams): Promise<RecCandidate[]> {
     })
     .from(stagedPayments)
     .where(
-      and(sql`${stagedPayments.id} <> ${p.stagedPaymentId}`, stagedSearchWhere(q)),
+      and(
+        sql`${stagedPayments.id} <> ${p.stagedPaymentId}`,
+        stagedSearchWhere(q),
+      ),
     )
     .orderBy(desc(stagedPayments.dateReceived))
     .limit(p.limit);
@@ -1533,7 +1556,9 @@ export async function searchPayouts(
   const rows = await db
     .select({
       id: stripePayouts.id,
-      amount: sql<string | null>`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`,
+      amount: sql<
+        string | null
+      >`COALESCE(${stripePayouts.netTotal}, ${stripePayouts.amount})`,
       arrivalDate: stripePayouts.arrivalDate,
       chargeCount: stripePayouts.chargeCount,
       // Per-charge breakdown (payer name + amount) so a reviewer can see who is
@@ -1665,6 +1690,22 @@ async function searchQbStagedRows(
       // RAW linkage on purpose: a tie claims the row (re-linking it elsewhere
       // would conflict) even while the charge's booking is still pending.
       tiedToCharge: sql<boolean>`${stagedChargeTieLinkExists}`,
+      componentEvidenceDeposit: sql<string | null>`(
+        SELECT c.bank_deposit_id
+        FROM payment_units evidence_unit
+        JOIN bank_deposit_components c ON c.payment_unit_id = evidence_unit.id
+        WHERE evidence_unit.source_staged_payment_id = ${stagedPayments.id}
+        ORDER BY c.id
+        LIMIT 1
+      )`,
+      depositEvidenceDeposit: sql<string | null>`(
+        SELECT direct_evidence.bank_deposit_id
+        FROM source_links direct_evidence
+        WHERE direct_evidence.link_type = 'qbo_line_deposit'
+          AND direct_evidence.qb_staged_payment_id = ${stagedPayments.id}
+        ORDER BY direct_evidence.id
+        LIMIT 1
+      )`,
     })
     .from(stagedPayments)
     .where(and(...conds))
@@ -1687,14 +1728,22 @@ async function searchQbStagedRows(
           ? "Already settled against another Stripe payout"
           : r.tiedToCharge
             ? "Already tied to another Stripe charge"
-            : null,
+            : r.componentEvidenceDeposit
+              ? `Already documents a payment component on deposit ${r.componentEvidenceDeposit}`
+              : r.depositEvidenceDeposit
+                ? `Already documents deposit ${r.depositEvidenceDeposit}`
+                : null,
       conflictKind: r.exclusionReason
         ? "excluded"
         : r.settledElsewhere
           ? "settled_elsewhere"
           : r.tiedToCharge
             ? "tied_to_charge"
-            : null,
+            : r.componentEvidenceDeposit
+              ? "component_evidence"
+              : r.depositEvidenceDeposit
+                ? "deposit_evidence"
+                : null,
     }),
   );
 }
@@ -1746,7 +1795,9 @@ async function searchStripeChargeRows(
 
   const orderBy: SQL[] = [];
   if (hasAmount) {
-    orderBy.push(sql`ABS((${stripeStagedCharges.grossAmount})::numeric - ${amt})`);
+    orderBy.push(
+      sql`ABS((${stripeStagedCharges.grossAmount})::numeric - ${amt})`,
+    );
   }
   if (p.date) {
     orderBy.push(
@@ -1773,8 +1824,7 @@ async function searchStripeChargeRows(
     .limit(p.limit);
 
   return rows.map((r) => {
-    const label =
-      r.payerName?.trim() || r.description?.trim() || "(no payer)";
+    const label = r.payerName?.trim() || r.description?.trim() || "(no payer)";
     const subParts = [
       r.payerEmail?.trim() || null,
       r.description?.trim() && r.description.trim() !== label
@@ -1829,12 +1879,9 @@ export async function searchQbStaged(
     const a = c.amount != null ? Number(c.amount) : NaN;
     const cMs = dateMs(c.date);
     return {
-      amountDelta:
-        hasAmount && Number.isFinite(a) ? Math.abs(a - amt) : null,
+      amountDelta: hasAmount && Number.isFinite(a) ? Math.abs(a - amt) : null,
       dateDelta:
-        anchorMs != null && cMs != null
-          ? Math.abs(cMs - anchorMs)
-          : null,
+        anchorMs != null && cMs != null ? Math.abs(cMs - anchorMs) : null,
       recency: cMs ?? Number.NEGATIVE_INFINITY,
     };
   };

@@ -23,294 +23,284 @@ export interface Pagination {
   total: number;
 }
 
-export type RegionType = typeof RegionType[keyof typeof RegionType];
-
+export type RegionType = (typeof RegionType)[keyof typeof RegionType];
 
 export const RegionType = {
-  state: 'state',
-  metro_area: 'metro_area',
-  city: 'city',
-  neighborhood: 'neighborhood',
-  region_within_state: 'region_within_state',
-  multi_state_region: 'multi_state_region',
-  country: 'country',
-  continent: 'continent',
-  custom_region: 'custom_region',
+  state: "state",
+  metro_area: "metro_area",
+  city: "city",
+  neighborhood: "neighborhood",
+  region_within_state: "region_within_state",
+  multi_state_region: "multi_state_region",
+  country: "country",
+  continent: "continent",
+  custom_region: "custom_region",
 } as const;
 
-export type EntityRoleType = typeof EntityRoleType[keyof typeof EntityRoleType];
-
+export type EntityRoleType =
+  (typeof EntityRoleType)[keyof typeof EntityRoleType];
 
 export const EntityRoleType = {
-  organization: 'organization',
-  payment_intermediary: 'payment_intermediary',
-  household: 'household',
+  organization: "organization",
+  payment_intermediary: "payment_intermediary",
+  household: "household",
 } as const;
 
-export type ContactValidity = typeof ContactValidity[keyof typeof ContactValidity];
-
+export type ContactValidity =
+  (typeof ContactValidity)[keyof typeof ContactValidity];
 
 export const ContactValidity = {
-  valid: 'valid',
-  invalid: 'invalid',
-  unknown: 'unknown',
+  valid: "valid",
+  invalid: "invalid",
+  unknown: "unknown",
 } as const;
 
-export type EmailType = typeof EmailType[keyof typeof EmailType];
-
+export type EmailType = (typeof EmailType)[keyof typeof EmailType];
 
 export const EmailType = {
-  work: 'work',
-  personal: 'personal',
-  other: 'other',
+  work: "work",
+  personal: "personal",
+  other: "other",
 } as const;
 
-export type PhoneType = typeof PhoneType[keyof typeof PhoneType];
-
+export type PhoneType = (typeof PhoneType)[keyof typeof PhoneType];
 
 export const PhoneType = {
-  work: 'work',
-  mobile: 'mobile',
-  home: 'home',
-  other: 'other',
+  work: "work",
+  mobile: "mobile",
+  home: "home",
+  other: "other",
 } as const;
 
-export type PeopleRoleCurrent = typeof PeopleRoleCurrent[keyof typeof PeopleRoleCurrent];
-
+export type PeopleRoleCurrent =
+  (typeof PeopleRoleCurrent)[keyof typeof PeopleRoleCurrent];
 
 export const PeopleRoleCurrent = {
-  current: 'current',
-  past: 'past',
+  current: "current",
+  past: "past",
 } as const;
 
-export type PeopleEntityRoleConnection = typeof PeopleEntityRoleConnection[keyof typeof PeopleEntityRoleConnection];
-
+export type PeopleEntityRoleConnection =
+  (typeof PeopleEntityRoleConnection)[keyof typeof PeopleEntityRoleConnection];
 
 export const PeopleEntityRoleConnection = {
-  employee: 'employee',
-  principal: 'principal',
-  board_member: 'board_member',
-  partner: 'partner',
-  professor: 'professor',
-  donor_advisor: 'donor_advisor',
-  elected_official: 'elected_official',
+  employee: "employee",
+  principal: "principal",
+  board_member: "board_member",
+  partner: "partner",
+  professor: "professor",
+  donor_advisor: "donor_advisor",
+  elected_official: "elected_official",
 } as const;
 
-export type PaymentIntermediaryType = typeof PaymentIntermediaryType[keyof typeof PaymentIntermediaryType];
-
+export type PaymentIntermediaryType =
+  (typeof PaymentIntermediaryType)[keyof typeof PaymentIntermediaryType];
 
 export const PaymentIntermediaryType = {
-  daf: 'daf',
-  giving_platform: 'giving_platform',
-  private_wealth_manager: 'private_wealth_manager',
+  daf: "daf",
+  giving_platform: "giving_platform",
+  private_wealth_manager: "private_wealth_manager",
 } as const;
 
-export type Pronouns = typeof Pronouns[keyof typeof Pronouns];
-
+export type Pronouns = (typeof Pronouns)[keyof typeof Pronouns];
 
 export const Pronouns = {
-  he_him_his: 'he_him_his',
-  she_her_hers: 'she_her_hers',
-  they_them_theirs: 'they_them_theirs',
-  other: 'other',
+  he_him_his: "he_him_his",
+  she_her_hers: "she_her_hers",
+  they_them_theirs: "they_them_theirs",
+  other: "other",
 } as const;
 
-export type SchoolStatus = typeof SchoolStatus[keyof typeof SchoolStatus];
-
+export type SchoolStatus = (typeof SchoolStatus)[keyof typeof SchoolStatus];
 
 export const SchoolStatus = {
-  emerging: 'emerging',
-  open: 'open',
-  paused: 'paused',
-  closing: 'closing',
-  permanently_closed: 'permanently_closed',
-  disaffiliating: 'disaffiliating',
-  disaffiliated: 'disaffiliated',
-  placeholder: 'placeholder',
-  abandoned: 'abandoned',
+  emerging: "emerging",
+  open: "open",
+  paused: "paused",
+  closing: "closing",
+  permanently_closed: "permanently_closed",
+  disaffiliating: "disaffiliating",
+  disaffiliated: "disaffiliated",
+  placeholder: "placeholder",
+  abandoned: "abandoned",
 } as const;
 
-export type GovernanceModel = typeof GovernanceModel[keyof typeof GovernanceModel];
-
+export type GovernanceModel =
+  (typeof GovernanceModel)[keyof typeof GovernanceModel];
 
 export const GovernanceModel = {
-  independent: 'independent',
-  district: 'district',
-  charter: 'charter',
-  exploring_charter: 'exploring_charter',
-  community_partnership: 'community_partnership',
+  independent: "independent",
+  district: "district",
+  charter: "charter",
+  exploring_charter: "exploring_charter",
+  community_partnership: "community_partnership",
 } as const;
 
-export type UserRole = typeof UserRole[keyof typeof UserRole];
-
+export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
-  admin: 'admin',
-  team_member: 'team_member',
-  finance: 'finance',
-  read_only: 'read_only',
+  admin: "admin",
+  team_member: "team_member",
+  finance: "finance",
+  read_only: "read_only",
 } as const;
 
-export type FundingEntitySubtype = typeof FundingEntitySubtype[keyof typeof FundingEntitySubtype];
-
+export type FundingEntitySubtype =
+  (typeof FundingEntitySubtype)[keyof typeof FundingEntitySubtype];
 
 export const FundingEntitySubtype = {
-  family_foundation: 'family_foundation',
-  institutional_foundation: 'institutional_foundation',
-  corporate_foundation: 'corporate_foundation',
-  community_foundation: 'community_foundation',
-  bank_foundation: 'bank_foundation',
-  family_office_trust: 'family_office_trust',
-  intermediary: 'intermediary',
-  government: 'government',
-  nonprofit: 'nonprofit',
-  corporation: 'corporation',
-  capital_provider: 'capital_provider',
-  philanthropic_advisor: 'philanthropic_advisor',
-  cdfi: 'cdfi',
-  education_forprofit: 'education_forprofit',
-  competition: 'competition',
-  public_private: 'public_private',
-  daf_platform: 'daf_platform',
-  platform: 'platform',
+  family_foundation: "family_foundation",
+  institutional_foundation: "institutional_foundation",
+  corporate_foundation: "corporate_foundation",
+  community_foundation: "community_foundation",
+  bank_foundation: "bank_foundation",
+  family_office_trust: "family_office_trust",
+  intermediary: "intermediary",
+  government: "government",
+  nonprofit: "nonprofit",
+  corporation: "corporation",
+  capital_provider: "capital_provider",
+  philanthropic_advisor: "philanthropic_advisor",
+  cdfi: "cdfi",
+  education_forprofit: "education_forprofit",
+  competition: "competition",
+  public_private: "public_private",
+  daf_platform: "daf_platform",
+  platform: "platform",
 } as const;
 
-export type EntityType = typeof EntityType[keyof typeof EntityType];
-
+export type EntityType = (typeof EntityType)[keyof typeof EntityType];
 
 export const EntityType = {
-  family_foundation: 'family_foundation',
-  institutional_foundation: 'institutional_foundation',
-  corporate_foundation: 'corporate_foundation',
-  community_foundation: 'community_foundation',
-  bank_foundation: 'bank_foundation',
-  family_office_trust: 'family_office_trust',
-  intermediary: 'intermediary',
-  government: 'government',
-  nonprofit: 'nonprofit',
-  corporation: 'corporation',
-  capital_provider: 'capital_provider',
-  philanthropic_advisor: 'philanthropic_advisor',
-  cdfi: 'cdfi',
-  education_forprofit: 'education_forprofit',
-  competition: 'competition',
-  public_private: 'public_private',
-  daf_platform: 'daf_platform',
-  platform: 'platform',
-  advocacy_membership_lobbyist: 'advocacy_membership_lobbyist',
-  authorizer: 'authorizer',
-  education_vendor: 'education_vendor',
-  elected_official: 'elected_official',
-  higher_ed: 'higher_ed',
-  investor: 'investor',
-  law_firm: 'law_firm',
-  media: 'media',
-  real_estate: 'real_estate',
-  school: 'school',
-  school_district: 'school_district',
-  school_network: 'school_network',
-  small_business_consulting: 'small_business_consulting',
-  tribal: 'tribal',
+  family_foundation: "family_foundation",
+  institutional_foundation: "institutional_foundation",
+  corporate_foundation: "corporate_foundation",
+  community_foundation: "community_foundation",
+  bank_foundation: "bank_foundation",
+  family_office_trust: "family_office_trust",
+  intermediary: "intermediary",
+  government: "government",
+  nonprofit: "nonprofit",
+  corporation: "corporation",
+  capital_provider: "capital_provider",
+  philanthropic_advisor: "philanthropic_advisor",
+  cdfi: "cdfi",
+  education_forprofit: "education_forprofit",
+  competition: "competition",
+  public_private: "public_private",
+  daf_platform: "daf_platform",
+  platform: "platform",
+  advocacy_membership_lobbyist: "advocacy_membership_lobbyist",
+  authorizer: "authorizer",
+  education_vendor: "education_vendor",
+  elected_official: "elected_official",
+  higher_ed: "higher_ed",
+  investor: "investor",
+  law_firm: "law_firm",
+  media: "media",
+  real_estate: "real_estate",
+  school: "school",
+  school_district: "school_district",
+  school_network: "school_network",
+  small_business_consulting: "small_business_consulting",
+  tribal: "tribal",
 } as const;
 
-export type NumberOfEmployees = typeof NumberOfEmployees[keyof typeof NumberOfEmployees];
-
+export type NumberOfEmployees =
+  (typeof NumberOfEmployees)[keyof typeof NumberOfEmployees];
 
 export const NumberOfEmployees = {
-  e_1: 'e_1',
-  e_2_10: 'e_2_10',
-  e_11_50: 'e_11_50',
-  e_51_250: 'e_51_250',
-  e_251_1000: 'e_251_1000',
-  e_1001_10000: 'e_1001_10000',
-  e_10000_plus: 'e_10000_plus',
+  e_1: "e_1",
+  e_2_10: "e_2_10",
+  e_11_50: "e_11_50",
+  e_51_250: "e_51_250",
+  e_251_1000: "e_251_1000",
+  e_1001_10000: "e_1001_10000",
+  e_10000_plus: "e_10000_plus",
 } as const;
 
-export type CapacityRating = typeof CapacityRating[keyof typeof CapacityRating];
-
+export type CapacityRating =
+  (typeof CapacityRating)[keyof typeof CapacityRating];
 
 export const CapacityRating = {
-  tier_1k_10k: 'tier_1k_10k',
-  tier_10k_50k: 'tier_10k_50k',
-  tier_50k_250k: 'tier_50k_250k',
-  tier_250k_1m: 'tier_250k_1m',
-  tier_1m_plus: 'tier_1m_plus',
+  tier_1k_10k: "tier_1k_10k",
+  tier_10k_50k: "tier_10k_50k",
+  tier_50k_250k: "tier_50k_250k",
+  tier_250k_1m: "tier_250k_1m",
+  tier_1m_plus: "tier_1m_plus",
 } as const;
 
-export type ConnectionStatus = typeof ConnectionStatus[keyof typeof ConnectionStatus];
-
+export type ConnectionStatus =
+  (typeof ConnectionStatus)[keyof typeof ConnectionStatus];
 
 export const ConnectionStatus = {
-  connected: 'connected',
-  have_a_connector: 'have_a_connector',
-  no_connection: 'no_connection',
+  connected: "connected",
+  have_a_connector: "have_a_connector",
+  no_connection: "no_connection",
 } as const;
 
-export type Enthusiasm = typeof Enthusiasm[keyof typeof Enthusiasm];
-
+export type Enthusiasm = (typeof Enthusiasm)[keyof typeof Enthusiasm];
 
 export const Enthusiasm = {
-  '7-advocate': '7-advocate',
-  '6-supportive': '6-supportive',
-  '5-warm': '5-warm',
-  '4-neutral': '4-neutral',
-  '3-cool': '3-cool',
-  '2-unsupportive': '2-unsupportive',
-  '1-hostile': '1-hostile',
+  "7-advocate": "7-advocate",
+  "6-supportive": "6-supportive",
+  "5-warm": "5-warm",
+  "4-neutral": "4-neutral",
+  "3-cool": "3-cool",
+  "2-unsupportive": "2-unsupportive",
+  "1-hostile": "1-hostile",
 } as const;
 
-export type Priority = typeof Priority[keyof typeof Priority];
-
+export type Priority = (typeof Priority)[keyof typeof Priority];
 
 export const Priority = {
-  top: 'top',
-  high: 'high',
-  medium: 'medium',
-  low: 'low',
+  top: "top",
+  high: "high",
+  medium: "medium",
+  low: "low",
 } as const;
 
-export type StrategicAlignment = typeof StrategicAlignment[keyof typeof StrategicAlignment];
-
+export type StrategicAlignment =
+  (typeof StrategicAlignment)[keyof typeof StrategicAlignment];
 
 export const StrategicAlignment = {
-  high: 'high',
-  medium: 'medium',
-  low: 'low',
+  high: "high",
+  medium: "medium",
+  low: "low",
 } as const;
 
-export type ActiveStatus = typeof ActiveStatus[keyof typeof ActiveStatus];
-
+export type ActiveStatus = (typeof ActiveStatus)[keyof typeof ActiveStatus];
 
 export const ActiveStatus = {
-  active: 'active',
-  defunct: 'defunct',
-  spenddown: 'spenddown',
+  active: "active",
+  defunct: "defunct",
+  spenddown: "spenddown",
 } as const;
 
-export type OrganizationType = typeof OrganizationType[keyof typeof OrganizationType];
-
+export type OrganizationType =
+  (typeof OrganizationType)[keyof typeof OrganizationType];
 
 export const OrganizationType = {
-  advocacy_membership_lobbyist: 'advocacy_membership_lobbyist',
-  authorizer: 'authorizer',
-  cmo: 'cmo',
-  capital_provider: 'capital_provider',
-  government: 'government',
-  corporation: 'corporation',
-  education_vendor: 'education_vendor',
-  elected_official: 'elected_official',
-  higher_ed: 'higher_ed',
-  investor: 'investor',
-  law_firm: 'law_firm',
-  media: 'media',
-  nonprofit: 'nonprofit',
-  philanthropic_advisor: 'philanthropic_advisor',
-  real_estate: 'real_estate',
-  school: 'school',
-  school_district: 'school_district',
-  school_network: 'school_network',
-  small_business_consulting: 'small_business_consulting',
-  tribal: 'tribal',
+  advocacy_membership_lobbyist: "advocacy_membership_lobbyist",
+  authorizer: "authorizer",
+  cmo: "cmo",
+  capital_provider: "capital_provider",
+  government: "government",
+  corporation: "corporation",
+  education_vendor: "education_vendor",
+  elected_official: "elected_official",
+  higher_ed: "higher_ed",
+  investor: "investor",
+  law_firm: "law_firm",
+  media: "media",
+  nonprofit: "nonprofit",
+  philanthropic_advisor: "philanthropic_advisor",
+  real_estate: "real_estate",
+  school: "school",
+  school_district: "school_district",
+  school_network: "school_network",
+  small_business_consulting: "small_business_consulting",
+  tribal: "tribal",
 } as const;
 
 /**
@@ -325,15 +315,15 @@ A pledge exists only when pledgeCommittedAt is populated. The deprecated
 writtenPledge field is a read-only compatibility mirror.
 
  */
-export type OpportunityStatus = typeof OpportunityStatus[keyof typeof OpportunityStatus];
-
+export type OpportunityStatus =
+  (typeof OpportunityStatus)[keyof typeof OpportunityStatus];
 
 export const OpportunityStatus = {
-  open: 'open',
-  pledge: 'pledge',
-  cash_in: 'cash_in',
-  dormant: 'dormant',
-  lost: 'lost',
+  open: "open",
+  pledge: "pledge",
+  cash_in: "cash_in",
+  dormant: "dormant",
+  lost: "lost",
 } as const;
 
 /**
@@ -347,21 +337,21 @@ otherwise. Rows that are already closed (incl. legacy no-date rows)
 stay freely editable — the rule fires only on the close transition.
 
  */
-export type OpportunityLossType = typeof OpportunityLossType[keyof typeof OpportunityLossType];
-
+export type OpportunityLossType =
+  (typeof OpportunityLossType)[keyof typeof OpportunityLossType];
 
 export const OpportunityLossType = {
-  dormant: 'dormant',
-  lost: 'lost',
+  dormant: "dormant",
+  lost: "lost",
 } as const;
 
-export type OpportunityType = typeof OpportunityType[keyof typeof OpportunityType];
-
+export type OpportunityType =
+  (typeof OpportunityType)[keyof typeof OpportunityType];
 
 export const OpportunityType = {
-  solicitation: 'solicitation',
-  renewal: 'renewal',
-  open_application: 'open_application',
+  solicitation: "solicitation",
+  renewal: "renewal",
+  open_application: "open_application",
 } as const;
 
 /**
@@ -372,41 +362,41 @@ written_commitment, cash_in, and complete remain only for historical API
 compatibility and are normalized to verbal_confirmation by migration 0224.
 
  */
-export type OpportunityStage = typeof OpportunityStage[keyof typeof OpportunityStage];
-
+export type OpportunityStage =
+  (typeof OpportunityStage)[keyof typeof OpportunityStage];
 
 export const OpportunityStage = {
-  cold_lead: 'cold_lead',
-  warm_lead: 'warm_lead',
-  in_conversation: 'in_conversation',
-  convince: 'convince',
-  conditional_commitment: 'conditional_commitment',
-  probable_renewal: 'probable_renewal',
-  verbal_confirmation: 'verbal_confirmation',
-  written_commitment: 'written_commitment',
-  cash_in: 'cash_in',
-  complete: 'complete',
+  cold_lead: "cold_lead",
+  warm_lead: "warm_lead",
+  in_conversation: "in_conversation",
+  convince: "convince",
+  conditional_commitment: "conditional_commitment",
+  probable_renewal: "probable_renewal",
+  verbal_confirmation: "verbal_confirmation",
+  written_commitment: "written_commitment",
+  cash_in: "cash_in",
+  complete: "complete",
 } as const;
 
-export type OpportunityConditional = typeof OpportunityConditional[keyof typeof OpportunityConditional];
-
+export type OpportunityConditional =
+  (typeof OpportunityConditional)[keyof typeof OpportunityConditional];
 
 export const OpportunityConditional = {
-  unconditional: 'unconditional',
-  conditional_unspecified: 'conditional_unspecified',
-  reimbursable: 'reimbursable',
-  conditional_on_funder_determination: 'conditional_on_funder_determination',
-  conditional_on_target: 'conditional_on_target',
+  unconditional: "unconditional",
+  conditional_unspecified: "conditional_unspecified",
+  reimbursable: "reimbursable",
+  conditional_on_funder_determination: "conditional_on_funder_determination",
+  conditional_on_target: "conditional_on_target",
 } as const;
 
-export type OpportunityConditionalWritable = typeof OpportunityConditionalWritable[keyof typeof OpportunityConditionalWritable];
-
+export type OpportunityConditionalWritable =
+  (typeof OpportunityConditionalWritable)[keyof typeof OpportunityConditionalWritable];
 
 export const OpportunityConditionalWritable = {
-  unconditional: 'unconditional',
-  conditional_unspecified: 'conditional_unspecified',
-  conditional_on_funder_determination: 'conditional_on_funder_determination',
-  conditional_on_target: 'conditional_on_target',
+  unconditional: "unconditional",
+  conditional_unspecified: "conditional_unspecified",
+  conditional_on_funder_determination: "conditional_on_funder_determination",
+  conditional_on_target: "conditional_on_target",
 } as const;
 
 /**
@@ -421,12 +411,12 @@ Close-award action (never by paid >= ceiling alone). Replaces the
 retired conditional='reimbursable' signal.
 
  */
-export type DisbursementModel = typeof DisbursementModel[keyof typeof DisbursementModel];
-
+export type DisbursementModel =
+  (typeof DisbursementModel)[keyof typeof DisbursementModel];
 
 export const DisbursementModel = {
-  fixed_commitment: 'fixed_commitment',
-  cost_reimbursement: 'cost_reimbursement',
+  fixed_commitment: "fixed_commitment",
+  cost_reimbursement: "cost_reimbursement",
 } as const;
 
 /**
@@ -435,14 +425,14 @@ finance-permitted Close-award action alongside the close date — the
 second user-set lifecycle input alongside lossType.
 
  */
-export type AwardCloseReason = typeof AwardCloseReason[keyof typeof AwardCloseReason];
-
+export type AwardCloseReason =
+  (typeof AwardCloseReason)[keyof typeof AwardCloseReason];
 
 export const AwardCloseReason = {
-  fully_collected: 'fully_collected',
-  award_period_ended: 'award_period_ended',
-  unused_balance: 'unused_balance',
-  terminated: 'terminated',
+  fully_collected: "fully_collected",
+  award_period_ended: "award_period_ended",
+  unused_balance: "unused_balance",
+  terminated: "terminated",
 } as const;
 
 /**
@@ -451,35 +441,34 @@ export const AwardCloseReason = {
 Replaces the prior boolean flag (false→'no', true→'yes').
 
  */
-export type OpportunityConditionsMet = typeof OpportunityConditionsMet[keyof typeof OpportunityConditionsMet];
-
+export type OpportunityConditionsMet =
+  (typeof OpportunityConditionsMet)[keyof typeof OpportunityConditionsMet];
 
 export const OpportunityConditionsMet = {
-  no: 'no',
-  partial: 'partial',
-  yes: 'yes',
+  no: "no",
+  partial: "partial",
+  yes: "yes",
 } as const;
 
-export type PledgeAllocationStatus = typeof PledgeAllocationStatus[keyof typeof PledgeAllocationStatus];
-
+export type PledgeAllocationStatus =
+  (typeof PledgeAllocationStatus)[keyof typeof PledgeAllocationStatus];
 
 export const PledgeAllocationStatus = {
-  working: 'working',
-  committed: 'committed',
-  committed_with_conditions: 'committed_with_conditions',
-  abandoned: 'abandoned',
+  working: "working",
+  committed: "committed",
+  committed_with_conditions: "committed_with_conditions",
+  abandoned: "abandoned",
 } as const;
 
-export type GiftType = typeof GiftType[keyof typeof GiftType];
-
+export type GiftType = (typeof GiftType)[keyof typeof GiftType];
 
 export const GiftType = {
-  standard_gift: 'standard_gift',
-  pledge_payment: 'pledge_payment',
-  directed_gift: 'directed_gift',
-  loan_fund_investment: 'loan_fund_investment',
-  matching_gift: 'matching_gift',
-  reimbursement: 'reimbursement',
+  standard_gift: "standard_gift",
+  pledge_payment: "pledge_payment",
+  directed_gift: "directed_gift",
+  loan_fund_investment: "loan_fund_investment",
+  matching_gift: "matching_gift",
+  reimbursement: "reimbursement",
 } as const;
 
 /**
@@ -491,12 +480,12 @@ columns of the same name are @deprecated and no longer written or
 returned.
 
  */
-export type FundraisingCategory = typeof FundraisingCategory[keyof typeof FundraisingCategory];
-
+export type FundraisingCategory =
+  (typeof FundraisingCategory)[keyof typeof FundraisingCategory];
 
 export const FundraisingCategory = {
-  revenue: 'revenue',
-  loan_capital: 'loan_capital',
+  revenue: "revenue",
+  loan_capital: "loan_capital",
 } as const;
 
 /**
@@ -506,12 +495,11 @@ the user input. NOTE: `grant` means ALL non-loan money (individual
 donations, foundation grants, earned revenue, …), not literally grants.
 
  */
-export type LoanOrGrant = typeof LoanOrGrant[keyof typeof LoanOrGrant];
-
+export type LoanOrGrant = (typeof LoanOrGrant)[keyof typeof LoanOrGrant];
 
 export const LoanOrGrant = {
-  loan: 'loan',
-  grant: 'grant',
+  loan: "loan",
+  grant: "grant",
 } as const;
 
 /**
@@ -520,54 +508,54 @@ transition it accepts BOTH the new authoritative loan/grant tokens AND
 the legacy revenue/loan_capital tokens (loan↔loan_capital, grant↔revenue).
 
  */
-export type GoalCategoryParam = typeof GoalCategoryParam[keyof typeof GoalCategoryParam];
-
+export type GoalCategoryParam =
+  (typeof GoalCategoryParam)[keyof typeof GoalCategoryParam];
 
 export const GoalCategoryParam = {
-  revenue: 'revenue',
-  loan_capital: 'loan_capital',
-  loan: 'loan',
-  grant: 'grant',
+  revenue: "revenue",
+  loan_capital: "loan_capital",
+  loan: "loan",
+  grant: "grant",
 } as const;
 
-export type GiftPaymentMethod = typeof GiftPaymentMethod[keyof typeof GiftPaymentMethod];
-
+export type GiftPaymentMethod =
+  (typeof GiftPaymentMethod)[keyof typeof GiftPaymentMethod];
 
 export const GiftPaymentMethod = {
-  ach: 'ach',
-  check: 'check',
-  wire: 'wire',
-  stock: 'stock',
-  donor_box: 'donor_box',
-  daf_ach: 'daf_ach',
-  daf_check: 'daf_check',
-  daf_bill_com: 'daf_bill_com',
+  ach: "ach",
+  check: "check",
+  wire: "wire",
+  stock: "stock",
+  donor_box: "donor_box",
+  daf_ach: "daf_ach",
+  daf_check: "daf_check",
+  daf_bill_com: "daf_bill_com",
 } as const;
 
 /**
  * Derived per-gift QuickBooks-tie signal. exempt: off-books (fiscal-sponsor era OR designated-to-school). tied: reconciles to a QuickBooks record within fee tolerance (or is Stripe-sourced). amount_mismatch: linked but outside the fee band. missing: on-books with no QuickBooks evidence.
  */
-export type GiftQuickbooksTie = typeof GiftQuickbooksTie[keyof typeof GiftQuickbooksTie];
-
+export type GiftQuickbooksTie =
+  (typeof GiftQuickbooksTie)[keyof typeof GiftQuickbooksTie];
 
 export const GiftQuickbooksTie = {
-  exempt: 'exempt',
-  tied: 'tied',
-  amount_mismatch: 'amount_mismatch',
-  missing: 'missing',
+  exempt: "exempt",
+  tied: "tied",
+  amount_mismatch: "amount_mismatch",
+  missing: "missing",
 } as const;
 
 /**
  * Progress of ONE reconciliation lane for a unit of money (INV-4). unlinked: no connection yet. proposed: a system/auto match exists but no human has confirmed it. confirmed: a human (or a real, already-booked gift link) anchors the connection. exempt: no connection is expected — an off-books gift, or evidence dispositioned as not-a-gift (excluded/rejected). The CRM-record lane never emits exempt.
  */
-export type ReconciliationLaneStatus = typeof ReconciliationLaneStatus[keyof typeof ReconciliationLaneStatus];
-
+export type ReconciliationLaneStatus =
+  (typeof ReconciliationLaneStatus)[keyof typeof ReconciliationLaneStatus];
 
 export const ReconciliationLaneStatus = {
-  unlinked: 'unlinked',
-  proposed: 'proposed',
-  confirmed: 'confirmed',
-  exempt: 'exempt',
+  unlinked: "unlinked",
+  proposed: "proposed",
+  confirmed: "confirmed",
+  exempt: "exempt",
 } as const;
 
 /**
@@ -578,58 +566,56 @@ export interface ReconciliationLanes {
   crmRecord: ReconciliationLaneStatus | null;
 }
 
-export type IntendedUsage = typeof IntendedUsage[keyof typeof IntendedUsage];
-
+export type IntendedUsage = (typeof IntendedUsage)[keyof typeof IntendedUsage];
 
 export const IntendedUsage = {
-  gen_ops: 'gen_ops',
-  growth: 'growth',
-  school_startup: 'school_startup',
-  teacher_training: 'teacher_training',
-  project: 'project',
+  gen_ops: "gen_ops",
+  growth: "growth",
+  school_startup: "school_startup",
+  teacher_training: "teacher_training",
+  project: "project",
 } as const;
 
 /**
  * Direct vs indirect share on a reimbursable grant allocation. DIRECT-tagged allocations are excluded from goal analytics (received, committed, open ask, weighted); untagged (null) and indirect both count. Never changes opportunity-status or pledge paid-amount derivation. (Renamed from ReimbursableShare in Task #449.)
  */
-export type ReimbursementType = typeof ReimbursementType[keyof typeof ReimbursementType];
-
+export type ReimbursementType =
+  (typeof ReimbursementType)[keyof typeof ReimbursementType];
 
 export const ReimbursementType = {
-  direct: 'direct',
-  indirect: 'indirect',
+  direct: "direct",
+  indirect: "indirect",
 } as const;
 
 /**
  * Per-axis restriction taxonomy applied independently to the regional / fund-use / time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.
  */
-export type RestrictionAxis = typeof RestrictionAxis[keyof typeof RestrictionAxis];
-
+export type RestrictionAxis =
+  (typeof RestrictionAxis)[keyof typeof RestrictionAxis];
 
 export const RestrictionAxis = {
-  donor_restricted: 'donor_restricted',
-  wf_restricted: 'wf_restricted',
-  unrestricted: 'unrestricted',
+  donor_restricted: "donor_restricted",
+  wf_restricted: "wf_restricted",
+  unrestricted: "unrestricted",
 } as const;
 
-export type DeferredRevenue = typeof DeferredRevenue[keyof typeof DeferredRevenue];
-
+export type DeferredRevenue =
+  (typeof DeferredRevenue)[keyof typeof DeferredRevenue];
 
 export const DeferredRevenue = {
-  yes: 'yes',
-  no: 'no',
-  na: 'na',
+  yes: "yes",
+  no: "no",
+  na: "na",
 } as const;
 
 /**
  * Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.
  */
-export type EmailSyncMode = typeof EmailSyncMode[keyof typeof EmailSyncMode];
-
+export type EmailSyncMode = (typeof EmailSyncMode)[keyof typeof EmailSyncMode];
 
 export const EmailSyncMode = {
-  full: 'full',
-  summary_only: 'summary_only',
+  full: "full",
+  summary_only: "summary_only",
 } as const;
 
 export interface User {
@@ -1218,13 +1204,13 @@ contributes to: `received` (cash-in gift allocations), `committed`
 open opportunity pipeline).
 
  */
-export type FiscalYearReportBucket = typeof FiscalYearReportBucket[keyof typeof FiscalYearReportBucket];
-
+export type FiscalYearReportBucket =
+  (typeof FiscalYearReportBucket)[keyof typeof FiscalYearReportBucket];
 
 export const FiscalYearReportBucket = {
-  received: 'received',
-  committed: 'committed',
-  open: 'open',
+  received: "received",
+  committed: "committed",
+  open: "open",
 } as const;
 
 /**
@@ -1527,23 +1513,23 @@ export interface UpdateOrganizationBody {
   anonymous?: boolean;
 }
 
-export type GivingRelationshipAttributionKind = typeof GivingRelationshipAttributionKind[keyof typeof GivingRelationshipAttributionKind];
-
+export type GivingRelationshipAttributionKind =
+  (typeof GivingRelationshipAttributionKind)[keyof typeof GivingRelationshipAttributionKind];
 
 export const GivingRelationshipAttributionKind = {
-  direct: 'direct',
-  household: 'household',
-  household_member: 'household_member',
-  principal_organization: 'principal_organization',
+  direct: "direct",
+  household: "household",
+  household_member: "household_member",
+  principal_organization: "principal_organization",
 } as const;
 
-export type DonorRecordKind = typeof DonorRecordKind[keyof typeof DonorRecordKind];
-
+export type DonorRecordKind =
+  (typeof DonorRecordKind)[keyof typeof DonorRecordKind];
 
 export const DonorRecordKind = {
-  individual: 'individual',
-  household: 'household',
-  organization: 'organization',
+  individual: "individual",
+  household: "household",
+  organization: "organization",
 } as const;
 
 export interface GivingRelationshipDonor {
@@ -1965,24 +1951,24 @@ export interface UpdateAddressBody {
 /**
  * The positive outcome the donor verbally confirmed; not itself an actual pledge or gift.
  */
-export type OpportunityCommitmentPath = typeof OpportunityCommitmentPath[keyof typeof OpportunityCommitmentPath];
-
+export type OpportunityCommitmentPath =
+  (typeof OpportunityCommitmentPath)[keyof typeof OpportunityCommitmentPath];
 
 export const OpportunityCommitmentPath = {
-  gift: 'gift',
-  written_pledge: 'written_pledge',
-  verbal_pledge: 'verbal_pledge',
+  gift: "gift",
+  written_pledge: "written_pledge",
+  verbal_pledge: "verbal_pledge",
 } as const;
 
 /**
  * Actual positive outcome, derived from pledge finalization or received money.
  */
-export type OpportunityOutcomeType = typeof OpportunityOutcomeType[keyof typeof OpportunityOutcomeType];
-
+export type OpportunityOutcomeType =
+  (typeof OpportunityOutcomeType)[keyof typeof OpportunityOutcomeType];
 
 export const OpportunityOutcomeType = {
-  gift: 'gift',
-  pledge: 'pledge',
+  gift: "gift",
+  pledge: "pledge",
 } as const;
 
 export interface RecordVerbalCommitmentBody {
@@ -2347,7 +2333,7 @@ export interface PledgeAuditCloseResolution {
   readonly resolvedByWriteOffPledgeId: string | null;
 }
 
-export type OpportunityOrPledgeDetail = OpportunityOrPledge & ({
+export type OpportunityOrPledgeDetail = OpportunityOrPledge & {
   allocations?: PledgeAllocation[];
   /** The pledge's installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges. */
   expectedPayments?: PledgeExpectedPayment[];
@@ -2365,7 +2351,7 @@ export type OpportunityOrPledgeDetail = OpportunityOrPledge & ({
   auditClose: PledgeAuditCloseResolution;
   /** Derived (never persisted): true when an OPEN Cleanup Queue item with reason_code='needs_research' targets this record. Drives the passive 'Needs research' detail-page badge; set only via the Cleanup Queue, never writable here. */
   readonly flaggedForResearch?: boolean;
-});
+};
 
 /**
  * SUM(ask_amount) per stage over ALL rows matching the current
@@ -2376,7 +2362,7 @@ the pipeline board show true column totals even when the row
 set is truncated by pagination.
 
  */
-export type OpportunityOrPledgeListStageAskTotals = {[key: string]: string};
+export type OpportunityOrPledgeListStageAskTotals = { [key: string]: string };
 
 export interface OpportunityOrPledgeList {
   data: OpportunityOrPledge[];
@@ -2654,27 +2640,28 @@ export interface GiftOrPaymentList {
 /**
  * The payment unit's kind (null on corroborating rows).
  */
-export type GiftAuditReconciliationRecordUnitKind = typeof GiftAuditReconciliationRecordUnitKind[keyof typeof GiftAuditReconciliationRecordUnitKind] | null;
-
+export type GiftAuditReconciliationRecordUnitKind =
+  | (typeof GiftAuditReconciliationRecordUnitKind)[keyof typeof GiftAuditReconciliationRecordUnitKind]
+  | null;
 
 export const GiftAuditReconciliationRecordUnitKind = {
-  stripe_charge: 'stripe_charge',
-  check: 'check',
-  direct_ach: 'direct_ach',
-  wire: 'wire',
-  other: 'other',
+  stripe_charge: "stripe_charge",
+  check: "check",
+  direct_ach: "direct_ach",
+  wire: "wire",
+  other: "other",
 } as const;
 
 /**
  * How the gift is tied to this payment.
  */
-export type GiftAuditReconciliationRecordLinkType = typeof GiftAuditReconciliationRecordLinkType[keyof typeof GiftAuditReconciliationRecordLinkType];
-
+export type GiftAuditReconciliationRecordLinkType =
+  (typeof GiftAuditReconciliationRecordLinkType)[keyof typeof GiftAuditReconciliationRecordLinkType];
 
 export const GiftAuditReconciliationRecordLinkType = {
-  matched: 'matched',
-  created: 'created',
-  split: 'split',
+  matched: "matched",
+  created: "created",
+  split: "split",
 } as const;
 
 /**
@@ -2711,13 +2698,13 @@ export interface GiftAuditReconciliationRestriction {
   displayUsage?: string | null;
 }
 
-export type GiftAuditReconciliationDonorKind = typeof GiftAuditReconciliationDonorKind[keyof typeof GiftAuditReconciliationDonorKind];
-
+export type GiftAuditReconciliationDonorKind =
+  (typeof GiftAuditReconciliationDonorKind)[keyof typeof GiftAuditReconciliationDonorKind];
 
 export const GiftAuditReconciliationDonorKind = {
-  organization: 'organization',
-  individual: 'individual',
-  household: 'household',
+  organization: "organization",
+  individual: "individual",
+  household: "household",
 } as const;
 
 export interface GiftAuditReconciliationDonor {
@@ -2846,231 +2833,230 @@ export interface UpdateGiftOrPaymentBody {
 /**
  * QuickBooks transaction kind behind a staged row. deposit_header is a whole-deposit record staged only when a bank Deposit yields no direct lines (all lines re-record ingested Payments/SalesReceipts) — settlement-matching evidence, never donation-review work.
  */
-export type QuickbooksEntityType = typeof QuickbooksEntityType[keyof typeof QuickbooksEntityType];
-
+export type QuickbooksEntityType =
+  (typeof QuickbooksEntityType)[keyof typeof QuickbooksEntityType];
 
 export const QuickbooksEntityType = {
-  sales_receipt: 'sales_receipt',
-  payment: 'payment',
-  deposit: 'deposit',
-  deposit_header: 'deposit_header',
+  sales_receipt: "sales_receipt",
+  payment: "payment",
+  deposit: "deposit",
+  deposit_header: "deposit_header",
 } as const;
 
 /**
  * The QuickBooks payer/entity kind behind this incoming money (Customer for a SalesReceipt/Payment, or the deposit line's Entity ref). Null when QuickBooks recorded no entity (e.g. a bare deposit line).
  */
-export type QuickbooksPayerType = typeof QuickbooksPayerType[keyof typeof QuickbooksPayerType];
-
+export type QuickbooksPayerType =
+  (typeof QuickbooksPayerType)[keyof typeof QuickbooksPayerType];
 
 export const QuickbooksPayerType = {
-  vendor: 'vendor',
-  customer: 'customer',
-  employee: 'employee',
+  vendor: "vendor",
+  customer: "customer",
+  employee: "employee",
 } as const;
 
 /**
  * DERIVED lifecycle of a staged payment / Stripe charge — computed from the row's facts (gift links + match_confirmed_at + exclusion_reason), never stored. pending: no gift link. match_proposed: a system-applied gift link awaits human review. match_confirmed: human-owned — the evidence row is tied to a CRM gift (it is NOT itself a gift and is NEVER archived). excluded: filed as non-gift money. Shared by QuickBooks staged_payments and Stripe staged charges.
  */
-export type StagedPaymentStatus = typeof StagedPaymentStatus[keyof typeof StagedPaymentStatus];
-
+export type StagedPaymentStatus =
+  (typeof StagedPaymentStatus)[keyof typeof StagedPaymentStatus];
 
 export const StagedPaymentStatus = {
-  pending: 'pending',
-  match_proposed: 'match_proposed',
-  match_confirmed: 'match_confirmed',
-  excluded: 'excluded',
+  pending: "pending",
+  match_proposed: "match_proposed",
+  match_confirmed: "match_confirmed",
+  excluded: "excluded",
 } as const;
 
 /**
  * Why a staged QuickBooks payment / Stripe charge was filtered from the queue. failed_charge is Stripe-only (charge never settled; auto-set at ingest). refunded_charge is auto-set on fully-refunded money never booked into a CRM gift (a Stripe charge with no gift link, or a QB staged payment whose whole Stripe trace is such charges); charges with a gift link take the refund-propagation path instead. loan / government_reimbursement / fiscally_sponsored are LEGACY (no longer produced; retained for historical rows).
  */
-export type StagedPaymentExclusionReason = typeof StagedPaymentExclusionReason[keyof typeof StagedPaymentExclusionReason];
-
+export type StagedPaymentExclusionReason =
+  (typeof StagedPaymentExclusionReason)[keyof typeof StagedPaymentExclusionReason];
 
 export const StagedPaymentExclusionReason = {
-  zero_amount: 'zero_amount',
-  membership: 'membership',
-  interest: 'interest',
-  tax_refund: 'tax_refund',
-  other_revenue: 'other_revenue',
-  earned_income: 'earned_income',
-  intercompany_transfer: 'intercompany_transfer',
-  other: 'other',
-  insurance: 'insurance',
-  expense_refund: 'expense_refund',
-  expensify: 'expensify',
-  returned_wire: 'returned_wire',
-  processor_payout: 'processor_payout',
-  loan_repayment: 'loan_repayment',
-  loan_proceeds: 'loan_proceeds',
-  note_payable: 'note_payable',
-  miscoded_withdrawal: 'miscoded_withdrawal',
-  non_wf: 'non_wf',
-  failed_charge: 'failed_charge',
-  refunded_charge: 'refunded_charge',
-  loan: 'loan',
-  government_reimbursement: 'government_reimbursement',
-  fiscally_sponsored: 'fiscally_sponsored',
+  zero_amount: "zero_amount",
+  membership: "membership",
+  interest: "interest",
+  tax_refund: "tax_refund",
+  other_revenue: "other_revenue",
+  earned_income: "earned_income",
+  intercompany_transfer: "intercompany_transfer",
+  other: "other",
+  insurance: "insurance",
+  expense_refund: "expense_refund",
+  expensify: "expensify",
+  returned_wire: "returned_wire",
+  processor_payout: "processor_payout",
+  loan_repayment: "loan_repayment",
+  loan_proceeds: "loan_proceeds",
+  note_payable: "note_payable",
+  miscoded_withdrawal: "miscoded_withdrawal",
+  non_wf: "non_wf",
+  failed_charge: "failed_charge",
+  refunded_charge: "refunded_charge",
+  loan: "loan",
+  government_reimbursement: "government_reimbursement",
+  fiscally_sponsored: "fiscally_sponsored",
 } as const;
 
-export type StagedPaymentMatchStatus = typeof StagedPaymentMatchStatus[keyof typeof StagedPaymentMatchStatus];
-
+export type StagedPaymentMatchStatus =
+  (typeof StagedPaymentMatchStatus)[keyof typeof StagedPaymentMatchStatus];
 
 export const StagedPaymentMatchStatus = {
-  matched: 'matched',
-  suggested: 'suggested',
-  unmatched: 'unmatched',
+  matched: "matched",
+  suggested: "suggested",
+  unmatched: "unmatched",
 } as const;
 
-export type StagedPaymentMatchMethod = typeof StagedPaymentMatchMethod[keyof typeof StagedPaymentMatchMethod];
-
+export type StagedPaymentMatchMethod =
+  (typeof StagedPaymentMatchMethod)[keyof typeof StagedPaymentMatchMethod];
 
 export const StagedPaymentMatchMethod = {
-  email: 'email',
-  name: 'name',
-  name_amount_date: 'name_amount_date',
-  amount_date: 'amount_date',
-  memo: 'memo',
-  intermediary: 'intermediary',
-  manual: 'manual',
+  email: "email",
+  name: "name",
+  name_amount_date: "name_amount_date",
+  amount_date: "amount_date",
+  memo: "memo",
+  intermediary: "intermediary",
+  manual: "manual",
 } as const;
 
-export type StagedPaymentClassificationSource = typeof StagedPaymentClassificationSource[keyof typeof StagedPaymentClassificationSource];
-
+export type StagedPaymentClassificationSource =
+  (typeof StagedPaymentClassificationSource)[keyof typeof StagedPaymentClassificationSource];
 
 export const StagedPaymentClassificationSource = {
-  auto: 'auto',
-  manual: 'manual',
+  auto: "auto",
+  manual: "manual",
 } as const;
 
 /**
  * Whether the Wildflower-entity attribution was derived by detectEntity (auto) or pinned by a human (manual). A manual attribution survives every re-sync / reclassify.
  */
-export type StagedPaymentEntitySource = typeof StagedPaymentEntitySource[keyof typeof StagedPaymentEntitySource];
-
+export type StagedPaymentEntitySource =
+  (typeof StagedPaymentEntitySource)[keyof typeof StagedPaymentEntitySource];
 
 export const StagedPaymentEntitySource = {
-  auto: 'auto',
-  manual: 'manual',
+  auto: "auto",
+  manual: "manual",
 } as const;
 
 /**
  * WHERE the incoming money came from / how it rendered. A first-class origin dimension, DISTINCT from qbPaymentMethod (the QB instrument like Visa/Check) and from the derived reconciliation funding lane (reconcile progress, not origin). Auto-seeded at ingest by detectFundingSource and human-correctable. other = a known origin outside this list.
  */
-export type StagedPaymentFundingSource = typeof StagedPaymentFundingSource[keyof typeof StagedPaymentFundingSource];
-
+export type StagedPaymentFundingSource =
+  (typeof StagedPaymentFundingSource)[keyof typeof StagedPaymentFundingSource];
 
 export const StagedPaymentFundingSource = {
-  stripe: 'stripe',
-  brokerage: 'brokerage',
-  daf: 'daf',
-  donorbox: 'donorbox',
-  paypal: 'paypal',
-  wire_ach: 'wire_ach',
-  check: 'check',
-  cash: 'cash',
-  employer_match: 'employer_match',
-  other: 'other',
+  stripe: "stripe",
+  brokerage: "brokerage",
+  daf: "daf",
+  donorbox: "donorbox",
+  paypal: "paypal",
+  wire_ach: "wire_ach",
+  check: "check",
+  cash: "cash",
+  employer_match: "employer_match",
+  other: "other",
 } as const;
 
 /**
  * Whether fundingSource was derived by detectFundingSource (auto) or pinned by a human (manual). A manual value survives every re-sync / reclassify.
  */
-export type StagedPaymentFundingSourceProvenance = typeof StagedPaymentFundingSourceProvenance[keyof typeof StagedPaymentFundingSourceProvenance];
-
+export type StagedPaymentFundingSourceProvenance =
+  (typeof StagedPaymentFundingSourceProvenance)[keyof typeof StagedPaymentFundingSourceProvenance];
 
 export const StagedPaymentFundingSourceProvenance = {
-  auto: 'auto',
-  manual: 'manual',
+  auto: "auto",
+  manual: "manual",
 } as const;
 
 /**
  * Derived queue bucket. needs_review: pending rows. auto_matched: match_proposed (a system-applied gift link awaiting review). done: match_confirmed evidence rows tied to a CRM gift — hidden from the active work queues but filterable on demand. refund_review: a Stripe-only cross-cutting filter (independent of status) for charges with an open refund/chargeback proposal awaiting confirm/dismiss — never emitted as a row's derived bucket.
  */
-export type StagedPaymentQueue = typeof StagedPaymentQueue[keyof typeof StagedPaymentQueue];
-
+export type StagedPaymentQueue =
+  (typeof StagedPaymentQueue)[keyof typeof StagedPaymentQueue];
 
 export const StagedPaymentQueue = {
-  needs_review: 'needs_review',
-  auto_matched: 'auto_matched',
-  excluded: 'excluded',
-  done: 'done',
-  refund_review: 'refund_review',
+  needs_review: "needs_review",
+  auto_matched: "auto_matched",
+  excluded: "excluded",
+  done: "done",
+  refund_review: "refund_review",
 } as const;
 
 /**
  * Lifecycle of a Stripe refund/chargeback proposal against a charge already booked into a CRM gift (INV-13). none: no refund/dispute or no linked gift. proposed: detected, awaiting human confirm. applied: human confirmed (gift reversed/reduced). dismissed: human declined to propagate.
  */
-export type StripeRefundPropagationStatus = typeof StripeRefundPropagationStatus[keyof typeof StripeRefundPropagationStatus];
-
+export type StripeRefundPropagationStatus =
+  (typeof StripeRefundPropagationStatus)[keyof typeof StripeRefundPropagationStatus];
 
 export const StripeRefundPropagationStatus = {
-  none: 'none',
-  proposed: 'proposed',
-  applied: 'applied',
-  dismissed: 'dismissed',
+  none: "none",
+  proposed: "proposed",
+  applied: "applied",
+  dismissed: "dismissed",
 } as const;
 
 /**
  * Kind of Stripe reversal. full_refund/chargeback reverse (archive) the gift; partial_refund reduces the gift amount.
  */
-export type StripeRefundKind = typeof StripeRefundKind[keyof typeof StripeRefundKind];
-
+export type StripeRefundKind =
+  (typeof StripeRefundKind)[keyof typeof StripeRefundKind];
 
 export const StripeRefundKind = {
-  full_refund: 'full_refund',
-  partial_refund: 'partial_refund',
-  chargeback: 'chargeback',
+  full_refund: "full_refund",
+  partial_refund: "partial_refund",
+  chargeback: "chargeback",
 } as const;
 
 /**
  * QuickBooks staged-payment queue buckets. Adds the fiscally_sponsored parking queue (entity-attributed sponsored money split out of needs_review) to the shared buckets; no refund_review (Stripe-only).
  */
-export type QuickbooksStagedPaymentQueue = typeof QuickbooksStagedPaymentQueue[keyof typeof QuickbooksStagedPaymentQueue];
-
+export type QuickbooksStagedPaymentQueue =
+  (typeof QuickbooksStagedPaymentQueue)[keyof typeof QuickbooksStagedPaymentQueue];
 
 export const QuickbooksStagedPaymentQueue = {
-  needs_review: 'needs_review',
-  fiscally_sponsored: 'fiscally_sponsored',
-  auto_matched: 'auto_matched',
-  excluded: 'excluded',
-  done: 'done',
+  needs_review: "needs_review",
+  fiscally_sponsored: "fiscally_sponsored",
+  auto_matched: "auto_matched",
+  excluded: "excluded",
+  done: "done",
 } as const;
 
 /**
  * Queue buckets accepted by the reconciliation cards endpoint query param. Mirrors QuickbooksStagedPaymentQueue but kept as its own schema so card-only query filters never leak into the staged-payment response queue enum.
  */
-export type ReconciliationCardQueue = typeof ReconciliationCardQueue[keyof typeof ReconciliationCardQueue];
-
+export type ReconciliationCardQueue =
+  (typeof ReconciliationCardQueue)[keyof typeof ReconciliationCardQueue];
 
 export const ReconciliationCardQueue = {
-  needs_review: 'needs_review',
-  fiscally_sponsored: 'fiscally_sponsored',
-  auto_matched: 'auto_matched',
-  excluded: 'excluded',
-  done: 'done',
+  needs_review: "needs_review",
+  fiscally_sponsored: "fiscally_sponsored",
+  auto_matched: "auto_matched",
+  excluded: "excluded",
+  done: "done",
 } as const;
 
-export type StagedPaymentSort = typeof StagedPaymentSort[keyof typeof StagedPaymentSort];
-
+export type StagedPaymentSort =
+  (typeof StagedPaymentSort)[keyof typeof StagedPaymentSort];
 
 export const StagedPaymentSort = {
-  date_desc: 'date_desc',
-  date_asc: 'date_asc',
-  amount_desc: 'amount_desc',
-  amount_asc: 'amount_asc',
-  payer_asc: 'payer_asc',
-  payer_desc: 'payer_desc',
+  date_desc: "date_desc",
+  date_asc: "date_asc",
+  amount_desc: "amount_desc",
+  amount_asc: "amount_asc",
+  payer_asc: "payer_asc",
+  payer_desc: "payer_desc",
 } as const;
 
-export type GiftSort = typeof GiftSort[keyof typeof GiftSort];
-
+export type GiftSort = (typeof GiftSort)[keyof typeof GiftSort];
 
 export const GiftSort = {
-  date_desc: 'date_desc',
-  date_asc: 'date_asc',
-  amount_desc: 'amount_desc',
-  amount_asc: 'amount_asc',
+  date_desc: "date_desc",
+  date_asc: "date_asc",
+  amount_desc: "amount_desc",
+  amount_asc: "amount_asc",
 } as const;
 
 export interface QuickbooksOauthStatus {
@@ -3099,14 +3085,14 @@ export interface QuickbooksSyncSummary {
 /**
  * Lifecycle of the background full re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome.
  */
-export type QuickbooksResyncStatusStatus = typeof QuickbooksResyncStatusStatus[keyof typeof QuickbooksResyncStatusStatus];
-
+export type QuickbooksResyncStatusStatus =
+  (typeof QuickbooksResyncStatusStatus)[keyof typeof QuickbooksResyncStatusStatus];
 
 export const QuickbooksResyncStatusStatus = {
-  idle: 'idle',
-  running: 'running',
-  done: 'done',
-  error: 'error',
+  idle: "idle",
+  running: "running",
+  done: "done",
+  error: "error",
 } as const;
 
 export interface QuickbooksResyncStatus {
@@ -3140,45 +3126,45 @@ export interface QuickbooksReclassifySummary {
   included: number;
 }
 
-export type QuickbooksRuleAction = typeof QuickbooksRuleAction[keyof typeof QuickbooksRuleAction];
-
+export type QuickbooksRuleAction =
+  (typeof QuickbooksRuleAction)[keyof typeof QuickbooksRuleAction];
 
 export const QuickbooksRuleAction = {
-  exclude: 'exclude',
-  auto_create_approve: 'auto_create_approve',
+  exclude: "exclude",
+  auto_create_approve: "auto_create_approve",
 } as const;
 
-export type QuickbooksRuleConditionField = typeof QuickbooksRuleConditionField[keyof typeof QuickbooksRuleConditionField];
-
+export type QuickbooksRuleConditionField =
+  (typeof QuickbooksRuleConditionField)[keyof typeof QuickbooksRuleConditionField];
 
 export const QuickbooksRuleConditionField = {
-  payer_name: 'payer_name',
-  line_item_name: 'line_item_name',
-  line_account_name: 'line_account_name',
-  memo_reference: 'memo_reference',
-  line_description: 'line_description',
-  qb_class: 'qb_class',
-  any_text: 'any_text',
-  amount: 'amount',
+  payer_name: "payer_name",
+  line_item_name: "line_item_name",
+  line_account_name: "line_account_name",
+  memo_reference: "memo_reference",
+  line_description: "line_description",
+  qb_class: "qb_class",
+  any_text: "any_text",
+  amount: "amount",
 } as const;
 
-export type QuickbooksRuleConditionMode = typeof QuickbooksRuleConditionMode[keyof typeof QuickbooksRuleConditionMode];
-
+export type QuickbooksRuleConditionMode =
+  (typeof QuickbooksRuleConditionMode)[keyof typeof QuickbooksRuleConditionMode];
 
 export const QuickbooksRuleConditionMode = {
-  contains: 'contains',
-  exact: 'exact',
-  prefix: 'prefix',
-  regex: 'regex',
-  lte: 'lte',
+  contains: "contains",
+  exact: "exact",
+  prefix: "prefix",
+  regex: "regex",
+  lte: "lte",
 } as const;
 
-export type QuickbooksRuleMatchLogic = typeof QuickbooksRuleMatchLogic[keyof typeof QuickbooksRuleMatchLogic];
-
+export type QuickbooksRuleMatchLogic =
+  (typeof QuickbooksRuleMatchLogic)[keyof typeof QuickbooksRuleMatchLogic];
 
 export const QuickbooksRuleMatchLogic = {
-  any: 'any',
-  all: 'all',
+  any: "any",
+  all: "all",
 } as const;
 
 export interface QuickbooksRuleCondition {
@@ -3266,25 +3252,27 @@ export interface ApplyRuleToPendingResult {
 /**
  * Derived revenue type: grant when a grant letter, reporting requirement, or any donor restriction is present; otherwise donation.
  */
-export type RevenueCodingPreviewRevenueType = typeof RevenueCodingPreviewRevenueType[keyof typeof RevenueCodingPreviewRevenueType] | null;
-
+export type RevenueCodingPreviewRevenueType =
+  | (typeof RevenueCodingPreviewRevenueType)[keyof typeof RevenueCodingPreviewRevenueType]
+  | null;
 
 export const RevenueCodingPreviewRevenueType = {
-  grant: 'grant',
-  donation: 'donation',
+  grant: "grant",
+  donation: "donation",
 } as const;
 
 /**
  * Derived restriction label from the three restriction axes (regional/usage ⇒ Purpose, time ⇒ Time).
  */
-export type RevenueCodingPreviewRestrictionType = typeof RevenueCodingPreviewRestrictionType[keyof typeof RevenueCodingPreviewRestrictionType] | null;
-
+export type RevenueCodingPreviewRestrictionType =
+  | (typeof RevenueCodingPreviewRestrictionType)[keyof typeof RevenueCodingPreviewRestrictionType]
+  | null;
 
 export const RevenueCodingPreviewRestrictionType = {
-  Unrestricted: 'Unrestricted',
-  Purpose: 'Purpose',
-  Time: 'Time',
-  Both: 'Both',
+  Unrestricted: "Unrestricted",
+  Purpose: "Purpose",
+  Time: "Time",
+  Both: "Both",
 } as const;
 
 /**
@@ -3381,23 +3369,24 @@ export interface RevenueExtractorReport {
   rows: RevenueExtractorRow[];
 }
 
-export type RevenueAccountKind = typeof RevenueAccountKind[keyof typeof RevenueAccountKind];
-
+export type RevenueAccountKind =
+  (typeof RevenueAccountKind)[keyof typeof RevenueAccountKind];
 
 export const RevenueAccountKind = {
-  unrestricted: 'unrestricted',
-  restricted: 'restricted',
-  special: 'special',
+  unrestricted: "unrestricted",
+  restricted: "restricted",
+  special: "special",
 } as const;
 
-export type RevenueAccountPayerType = typeof RevenueAccountPayerType[keyof typeof RevenueAccountPayerType] | null;
-
+export type RevenueAccountPayerType =
+  | (typeof RevenueAccountPayerType)[keyof typeof RevenueAccountPayerType]
+  | null;
 
 export const RevenueAccountPayerType = {
-  individual: 'individual',
-  foundation: 'foundation',
-  corporation: 'corporation',
-  governmental: 'governmental',
+  individual: "individual",
+  foundation: "foundation",
+  corporation: "corporation",
+  governmental: "governmental",
 } as const;
 
 export interface RevenueAccount {
@@ -3631,13 +3620,13 @@ export interface StripeRematchSummary {
 /**
  * 'deposit-lump' = tie payout↔deposit (multi-charge or a deposit-typed exact row exists); 'charge-payment' = single donation booked as a donor payment, match at the charge grain; 'none' = no exact QB row, needs manual review.
  */
-export type StripeUntiedPayoutDiagnosticRowSuggestedGrain = typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain[keyof typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain];
-
+export type StripeUntiedPayoutDiagnosticRowSuggestedGrain =
+  (typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain)[keyof typeof StripeUntiedPayoutDiagnosticRowSuggestedGrain];
 
 export const StripeUntiedPayoutDiagnosticRowSuggestedGrain = {
-  'deposit-lump': 'deposit-lump',
-  'charge-payment': 'charge-payment',
-  none: 'none',
+  "deposit-lump": "deposit-lump",
+  "charge-payment": "charge-payment",
+  none: "none",
 } as const;
 
 export interface StripeUntiedPayoutDiagnosticRow {
@@ -3682,14 +3671,14 @@ export interface StripeUntiedPayoutDiagnostic {
 /**
  * Lifecycle of the background full Stripe re-pull. 'idle' = none has run since boot; 'running' = in progress; 'done'/'error' = last run outcome.
  */
-export type StripeResyncStatusStatus = typeof StripeResyncStatusStatus[keyof typeof StripeResyncStatusStatus];
-
+export type StripeResyncStatusStatus =
+  (typeof StripeResyncStatusStatus)[keyof typeof StripeResyncStatusStatus];
 
 export const StripeResyncStatusStatus = {
-  idle: 'idle',
-  running: 'running',
-  done: 'done',
-  error: 'error',
+  idle: "idle",
+  running: "running",
+  done: "done",
+  error: "error",
 } as const;
 
 export interface StripeResyncStatus {
@@ -3723,14 +3712,14 @@ path; duplicate = a duplicate donation; not_a_gift = not donation
 revenue; other = anything else.
 
  */
-export type DonorboxExclusionReason = typeof DonorboxExclusionReason[keyof typeof DonorboxExclusionReason];
-
+export type DonorboxExclusionReason =
+  (typeof DonorboxExclusionReason)[keyof typeof DonorboxExclusionReason];
 
 export const DonorboxExclusionReason = {
-  already_booked: 'already_booked',
-  duplicate: 'duplicate',
-  not_a_gift: 'not_a_gift',
-  other: 'other',
+  already_booked: "already_booked",
+  duplicate: "duplicate",
+  not_a_gift: "not_a_gift",
+  other: "other",
 } as const;
 
 /**
@@ -3739,25 +3728,25 @@ candidates; done = linked to an existing gift or minted a new one;
 excluded = filed out.
 
  */
-export type DonorboxReviewQueue = typeof DonorboxReviewQueue[keyof typeof DonorboxReviewQueue];
-
+export type DonorboxReviewQueue =
+  (typeof DonorboxReviewQueue)[keyof typeof DonorboxReviewQueue];
 
 export const DonorboxReviewQueue = {
-  needs_review: 'needs_review',
-  done: 'done',
-  excluded: 'excluded',
+  needs_review: "needs_review",
+  done: "done",
+  excluded: "excluded",
 } as const;
 
 /**
  * Review status in the shared derived vocabulary: pending | match_confirmed (linked or minted) | excluded. Donorbox stores its own lifecycle column; it is mapped to this vocabulary at the API edge (match_proposed never occurs here).
  */
-export type DonorboxReviewRowStatus = typeof DonorboxReviewRowStatus[keyof typeof DonorboxReviewRowStatus];
-
+export type DonorboxReviewRowStatus =
+  (typeof DonorboxReviewRowStatus)[keyof typeof DonorboxReviewRowStatus];
 
 export const DonorboxReviewRowStatus = {
-  pending: 'pending',
-  match_confirmed: 'match_confirmed',
-  excluded: 'excluded',
+  pending: "pending",
+  match_confirmed: "match_confirmed",
+  excluded: "excluded",
 } as const;
 
 /**
@@ -3878,13 +3867,13 @@ export interface DonorboxCreateGiftResponse {
 /**
  * Where the possible duplicate was found.
  */
-export type DonorboxDuplicateCandidateKind = typeof DonorboxDuplicateCandidateKind[keyof typeof DonorboxDuplicateCandidateKind];
-
+export type DonorboxDuplicateCandidateKind =
+  (typeof DonorboxDuplicateCandidateKind)[keyof typeof DonorboxDuplicateCandidateKind];
 
 export const DonorboxDuplicateCandidateKind = {
-  gift: 'gift',
-  staged_payment: 'staged_payment',
-  donorbox: 'donorbox',
+  gift: "gift",
+  staged_payment: "staged_payment",
+  donorbox: "donorbox",
 } as const;
 
 export interface DonorboxDuplicateCandidate {
@@ -3898,11 +3887,11 @@ export interface DonorboxDuplicateCandidate {
   reason?: string | null;
 }
 
-export type DonorboxDuplicateResponseError = typeof DonorboxDuplicateResponseError[keyof typeof DonorboxDuplicateResponseError];
-
+export type DonorboxDuplicateResponseError =
+  (typeof DonorboxDuplicateResponseError)[keyof typeof DonorboxDuplicateResponseError];
 
 export const DonorboxDuplicateResponseError = {
-  possible_duplicate: 'possible_duplicate',
+  possible_duplicate: "possible_duplicate",
 } as const;
 
 /**
@@ -3914,7 +3903,7 @@ export interface DonorboxDuplicateResponse {
   candidates: DonorboxDuplicateCandidate[];
 }
 
-export type StripeStagedChargeMetadata = {[key: string]: string} | null;
+export type StripeStagedChargeMetadata = { [key: string]: string } | null;
 
 export interface StripeStagedCharge {
   /** The Stripe charge id (ch_...) — also the primary key. */
@@ -3997,24 +3986,24 @@ export interface StripeStagedChargeList {
 /**
  * Whether a Stripe payout is paired with its QuickBooks deposit lump, DERIVED read-only from the pairing fact (staged_payments.settled_stripe_payout_id). unmatched: no settled QB lump. confirmed_reconciled: a QB lump carries the pairing — the per-charge Stripe gifts are the source of truth and the lump is settlement evidence (kept, never archived).
  */
-export type StripePayoutReconciliationStatus = typeof StripePayoutReconciliationStatus[keyof typeof StripePayoutReconciliationStatus];
-
+export type StripePayoutReconciliationStatus =
+  (typeof StripePayoutReconciliationStatus)[keyof typeof StripePayoutReconciliationStatus];
 
 export const StripePayoutReconciliationStatus = {
-  unmatched: 'unmatched',
-  confirmed_reconciled: 'confirmed_reconciled',
+  unmatched: "unmatched",
+  confirmed_reconciled: "confirmed_reconciled",
 } as const;
 
 /**
  * Which pairing bucket to list. unmatched: no settled QB deposit lump (stray Stripe). confirmed: paired with a settled QB lump. all: every payout.
  */
-export type StripePayoutReconciliationQueue = typeof StripePayoutReconciliationQueue[keyof typeof StripePayoutReconciliationQueue];
-
+export type StripePayoutReconciliationQueue =
+  (typeof StripePayoutReconciliationQueue)[keyof typeof StripePayoutReconciliationQueue];
 
 export const StripePayoutReconciliationQueue = {
-  unmatched: 'unmatched',
-  confirmed: 'confirmed',
-  all: 'all',
+  unmatched: "unmatched",
+  confirmed: "confirmed",
+  all: "all",
 } as const;
 
 export interface StripePayoutReconciliation {
@@ -4048,12 +4037,12 @@ export interface StripePayoutReconciliationList {
 /**
  * Whether this gift was minted from the charge (created) or the charge linked to a pre-existing gift (matched).
  */
-export type GiftStripeChainChargeLinkage = typeof GiftStripeChainChargeLinkage[keyof typeof GiftStripeChainChargeLinkage];
-
+export type GiftStripeChainChargeLinkage =
+  (typeof GiftStripeChainChargeLinkage)[keyof typeof GiftStripeChainChargeLinkage];
 
 export const GiftStripeChainChargeLinkage = {
-  created: 'created',
-  matched: 'matched',
+  created: "created",
+  matched: "matched",
 } as const;
 
 export type GiftStripeChainCharge = {
@@ -4103,15 +4092,15 @@ export interface GiftStripeChain {
 /**
  * A node in a reconciliation card's match graph. qb is the required anchor; donor/gift/opportunity are the resolvable nodes (opportunity covers pledges — same table). stripe appears ONLY as a candidate source label in the un-anchored qb-search results (a Stripe staged charge, linkable via the per-charge link-gift path) — it is never a graph node, and /reconciliation/search/{nodeType} rejects it.
  */
-export type ReconciliationMatchNodeType = typeof ReconciliationMatchNodeType[keyof typeof ReconciliationMatchNodeType];
-
+export type ReconciliationMatchNodeType =
+  (typeof ReconciliationMatchNodeType)[keyof typeof ReconciliationMatchNodeType];
 
 export const ReconciliationMatchNodeType = {
-  qb: 'qb',
-  donor: 'donor',
-  gift: 'gift',
-  opportunity: 'opportunity',
-  stripe: 'stripe',
+  qb: "qb",
+  donor: "donor",
+  gift: "gift",
+  opportunity: "opportunity",
+  stripe: "stripe",
 } as const;
 
 /**
@@ -4124,55 +4113,59 @@ none: no candidate found.
 create: the human intends to create a new record for this node (new donor / new gift).
 
  */
-export type ReconciliationEdgeState = typeof ReconciliationEdgeState[keyof typeof ReconciliationEdgeState];
-
+export type ReconciliationEdgeState =
+  (typeof ReconciliationEdgeState)[keyof typeof ReconciliationEdgeState];
 
 export const ReconciliationEdgeState = {
-  determined: 'determined',
-  ambiguous: 'ambiguous',
-  filter_only: 'filter_only',
-  conflict: 'conflict',
-  none: 'none',
-  create: 'create',
+  determined: "determined",
+  ambiguous: "ambiguous",
+  filter_only: "filter_only",
+  conflict: "conflict",
+  none: "none",
+  create: "create",
 } as const;
 
 /**
  * How a candidate was derived (audit + UI badge).
  */
-export type ReconciliationCandidateSource = typeof ReconciliationCandidateSource[keyof typeof ReconciliationCandidateSource];
-
+export type ReconciliationCandidateSource =
+  (typeof ReconciliationCandidateSource)[keyof typeof ReconciliationCandidateSource];
 
 export const ReconciliationCandidateSource = {
-  donor_xor: 'donor_xor',
-  payment_on_pledge: 'payment_on_pledge',
-  name: 'name',
-  email: 'email',
-  amount_date: 'amount_date',
-  memo: 'memo',
-  intermediary: 'intermediary',
-  stripe: 'stripe',
-  manual: 'manual',
+  donor_xor: "donor_xor",
+  payment_on_pledge: "payment_on_pledge",
+  name: "name",
+  email: "email",
+  amount_date: "amount_date",
+  memo: "memo",
+  intermediary: "intermediary",
+  stripe: "stripe",
+  manual: "manual",
 } as const;
 
-export type ReconciliationCandidateDonorKind = typeof ReconciliationCandidateDonorKind[keyof typeof ReconciliationCandidateDonorKind] | null;
-
+export type ReconciliationCandidateDonorKind =
+  | (typeof ReconciliationCandidateDonorKind)[keyof typeof ReconciliationCandidateDonorKind]
+  | null;
 
 export const ReconciliationCandidateDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
- * Structured discriminator behind conflictReason for qb-search pick-list rows, so clients can decide overridability without parsing the label. Only `excluded` is human-overridable (the confirm endpoints accept overrideExclusion to re-include the row in the same transaction); the other kinds mean the row's money is already claimed and overriding would double-count.
+ * Structured discriminator behind conflictReason for qb-search pick-list rows.
  */
-export type ReconciliationCandidateConflictKind = typeof ReconciliationCandidateConflictKind[keyof typeof ReconciliationCandidateConflictKind] | null;
-
+export type ReconciliationCandidateConflictKind =
+  | (typeof ReconciliationCandidateConflictKind)[keyof typeof ReconciliationCandidateConflictKind]
+  | null;
 
 export const ReconciliationCandidateConflictKind = {
-  excluded: 'excluded',
-  settled_elsewhere: 'settled_elsewhere',
-  tied_to_charge: 'tied_to_charge',
+  excluded: "excluded",
+  settled_elsewhere: "settled_elsewhere",
+  tied_to_charge: "tied_to_charge",
+  deposit_evidence: "deposit_evidence",
+  component_evidence: "component_evidence",
 } as const;
 
 export interface ReconciliationCandidate {
@@ -4261,14 +4254,14 @@ stripe_pulled: a Donorbox donation tied to a Stripe charge via the pulled donati
 stripe_confirmed: a reviewer-confirmed donation↔charge link (donation.linkedStripeChargeId).
 
  */
-export type SettlementLineageLinkSource = typeof SettlementLineageLinkSource[keyof typeof SettlementLineageLinkSource];
-
+export type SettlementLineageLinkSource =
+  (typeof SettlementLineageLinkSource)[keyof typeof SettlementLineageLinkSource];
 
 export const SettlementLineageLinkSource = {
-  pulled: 'pulled',
-  qb_confirmed: 'qb_confirmed',
-  stripe_pulled: 'stripe_pulled',
-  stripe_confirmed: 'stripe_confirmed',
+  pulled: "pulled",
+  qb_confirmed: "qb_confirmed",
+  stripe_pulled: "stripe_pulled",
+  stripe_confirmed: "stripe_confirmed",
 } as const;
 
 /**
@@ -4391,42 +4384,43 @@ export interface ReconciliationCardGiftAllocation {
   timeRestrictionType: RestrictionAxis;
 }
 
-export type ReconciliationCardProposedDonorKind = typeof ReconciliationCardProposedDonorKind[keyof typeof ReconciliationCardProposedDonorKind] | null;
-
+export type ReconciliationCardProposedDonorKind =
+  | (typeof ReconciliationCardProposedDonorKind)[keyof typeof ReconciliationCardProposedDonorKind]
+  | null;
 
 export const ReconciliationCardProposedDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
  * Server-authoritative 3-state match verdict for the card's 'Status:' line: matched = money tied to a resolved CRM gift; proposal = the matcher has a candidate gift/donor a human still has to confirm; none = no candidate yet. Derived server-side (deriveCardVerdict) so the UI never re-derives it.
  */
-export type ReconciliationCardCardStatus = typeof ReconciliationCardCardStatus[keyof typeof ReconciliationCardCardStatus];
-
+export type ReconciliationCardCardStatus =
+  (typeof ReconciliationCardCardStatus)[keyof typeof ReconciliationCardCardStatus];
 
 export const ReconciliationCardCardStatus = {
-  none: 'none',
-  proposal: 'proposal',
-  matched: 'matched',
+  none: "none",
+  proposal: "proposal",
+  matched: "matched",
 } as const;
 
 /**
  * Derived display state for one QB evidence card. Also carries the record's linkage vocabulary: raw = no candidate gift yet (pending); match_proposed = candidate awaiting human confirm; matched_* = counted into a gift; excluded = marked not-a-donation. enriched is reserved for the future fill-out-QB documentation workflow.
  */
-export type WorkbenchRowQbCardState = typeof WorkbenchRowQbCardState[keyof typeof WorkbenchRowQbCardState];
-
+export type WorkbenchRowQbCardState =
+  (typeof WorkbenchRowQbCardState)[keyof typeof WorkbenchRowQbCardState];
 
 export const WorkbenchRowQbCardState = {
-  raw: 'raw',
-  enriched: 'enriched',
-  match_proposed: 'match_proposed',
-  matched_complete: 'matched_complete',
-  matched_partial_qb_surplus: 'matched_partial_qb_surplus',
-  matched_partial_external_surplus: 'matched_partial_external_surplus',
-  matched_conflict: 'matched_conflict',
-  excluded: 'excluded',
+  raw: "raw",
+  enriched: "enriched",
+  match_proposed: "match_proposed",
+  matched_complete: "matched_complete",
+  matched_partial_qb_surplus: "matched_partial_qb_surplus",
+  matched_partial_external_surplus: "matched_partial_external_surplus",
+  matched_conflict: "matched_conflict",
+  excluded: "excluded",
 } as const;
 
 /**
@@ -4632,6 +4626,7 @@ export interface ConfirmChargeTiesBody {
   chargeId?: string;
   /** Deliberate human override of the exact-amount rule for a PINNED tie (chargeId required): tie the row to the charge even though its amount matches neither the charge's gross nor its net — the human asserts the row records this charge's money (e.g. the bookkeeper booked a partial/adjusted amount). Default false: a mismatched pinned row is refused with 409 amount_mismatch. */
   overrideAmountMismatch?: boolean;
+  reassignEvidence?: boolean;
 }
 
 export interface RejectChargeQbTieResult {
@@ -4708,13 +4703,13 @@ export interface UnsplitStagedPaymentUnitsResult {
 /**
  * Which path ran: a clean pairing (coarse counted rows superseded), a linkage-only pairing against a deposit that already booked its own money (left untouched), or an idempotent no-op on an already-paired payout.
  */
-export type ConfirmSettlementLinkResultKind = typeof ConfirmSettlementLinkResultKind[keyof typeof ConfirmSettlementLinkResultKind];
-
+export type ConfirmSettlementLinkResultKind =
+  (typeof ConfirmSettlementLinkResultKind)[keyof typeof ConfirmSettlementLinkResultKind];
 
 export const ConfirmSettlementLinkResultKind = {
-  confirmed_reconciled: 'confirmed_reconciled',
-  confirmed_linkage_only: 'confirmed_linkage_only',
-  already_confirmed: 'already_confirmed',
+  confirmed_reconciled: "confirmed_reconciled",
+  confirmed_linkage_only: "confirmed_linkage_only",
+  already_confirmed: "already_confirmed",
 } as const;
 
 export interface ConfirmSettlementLinkResult {
@@ -4727,24 +4722,25 @@ export interface ConfirmSettlementLinkResult {
   depositStagedPaymentId?: string | null;
 }
 
-export type GiftMissingQbDonorKind = typeof GiftMissingQbDonorKind[keyof typeof GiftMissingQbDonorKind] | null;
-
+export type GiftMissingQbDonorKind =
+  | (typeof GiftMissingQbDonorKind)[keyof typeof GiftMissingQbDonorKind]
+  | null;
 
 export const GiftMissingQbDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
  * Which processor this proposal comes from — determines the reconcile target and endpoint.
  */
-export type GiftMissingQbProposedPaymentSource = typeof GiftMissingQbProposedPaymentSource[keyof typeof GiftMissingQbProposedPaymentSource];
-
+export type GiftMissingQbProposedPaymentSource =
+  (typeof GiftMissingQbProposedPaymentSource)[keyof typeof GiftMissingQbProposedPaymentSource];
 
 export const GiftMissingQbProposedPaymentSource = {
-  quickbooks: 'quickbooks',
-  stripe: 'stripe',
+  quickbooks: "quickbooks",
+  stripe: "stripe",
 } as const;
 
 /**
@@ -4836,24 +4832,25 @@ falling back to the gift's display amount.
   proposedPayment?: GiftMissingQbProposedPayment | null;
 }
 
-export type GiftMissingQbLinkedMatchDonorKind = typeof GiftMissingQbLinkedMatchDonorKind[keyof typeof GiftMissingQbLinkedMatchDonorKind] | null;
-
+export type GiftMissingQbLinkedMatchDonorKind =
+  | (typeof GiftMissingQbLinkedMatchDonorKind)[keyof typeof GiftMissingQbLinkedMatchDonorKind]
+  | null;
 
 export const GiftMissingQbLinkedMatchDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
  * Why the gift is excluded from the worklist: quickbooks = it has a QuickBooks cash-application ledger row; processor = it is settled through Stripe/Donorbox (payout-level money, never gets a per-gift QB record).
  */
-export type GiftMissingQbLinkedMatchLinkedVia = typeof GiftMissingQbLinkedMatchLinkedVia[keyof typeof GiftMissingQbLinkedMatchLinkedVia];
-
+export type GiftMissingQbLinkedMatchLinkedVia =
+  (typeof GiftMissingQbLinkedMatchLinkedVia)[keyof typeof GiftMissingQbLinkedMatchLinkedVia];
 
 export const GiftMissingQbLinkedMatchLinkedVia = {
-  quickbooks: 'quickbooks',
-  processor: 'processor',
+  quickbooks: "quickbooks",
+  processor: "processor",
 } as const;
 
 /**
@@ -4902,29 +4899,30 @@ missing_reporting_deadline: the linked opportunity requires a written report but
 no reporting_deadline task exists.
 
  */
-export type BookableReason = typeof BookableReason[keyof typeof BookableReason];
-
+export type BookableReason =
+  (typeof BookableReason)[keyof typeof BookableReason];
 
 export const BookableReason = {
-  missing_donor: 'missing_donor',
-  missing_amount: 'missing_amount',
-  missing_date: 'missing_date',
-  no_allocations: 'no_allocations',
-  missing_entity: 'missing_entity',
-  missing_fiscal_year: 'missing_fiscal_year',
-  missing_intended_usage: 'missing_intended_usage',
-  missing_fundable_project: 'missing_fundable_project',
-  missing_restriction_evidence: 'missing_restriction_evidence',
-  missing_reporting_deadline: 'missing_reporting_deadline',
+  missing_donor: "missing_donor",
+  missing_amount: "missing_amount",
+  missing_date: "missing_date",
+  no_allocations: "no_allocations",
+  missing_entity: "missing_entity",
+  missing_fiscal_year: "missing_fiscal_year",
+  missing_intended_usage: "missing_intended_usage",
+  missing_fundable_project: "missing_fundable_project",
+  missing_restriction_evidence: "missing_restriction_evidence",
+  missing_reporting_deadline: "missing_reporting_deadline",
 } as const;
 
-export type IncompleteGiftDonorKind = typeof IncompleteGiftDonorKind[keyof typeof IncompleteGiftDonorKind] | null;
-
+export type IncompleteGiftDonorKind =
+  | (typeof IncompleteGiftDonorKind)[keyof typeof IncompleteGiftDonorKind]
+  | null;
 
 export const IncompleteGiftDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
@@ -4966,13 +4964,13 @@ opportunity. It is a pledge payment only when pledgeCommittedAt was set
 before the payment arrived; otherwise it is a direct gift outcome.
 
  */
-export type ReconciliationOutcome = typeof ReconciliationOutcome[keyof typeof ReconciliationOutcome];
-
+export type ReconciliationOutcome =
+  (typeof ReconciliationOutcome)[keyof typeof ReconciliationOutcome];
 
 export const ReconciliationOutcome = {
-  link_existing_gift: 'link_existing_gift',
-  create_gift: 'create_gift',
-  create_gift_from_opportunity: 'create_gift_from_opportunity',
+  link_existing_gift: "link_existing_gift",
+  create_gift: "create_gift",
+  create_gift_from_opportunity: "create_gift_from_opportunity",
 } as const;
 
 /**
@@ -5020,61 +5018,61 @@ export interface ReconciliationApproveResult {
 /**
  * The settlement anchor a bundle reconciles: a QuickBooks deposit (staged_payments) or a Stripe payout (stripe_payouts).
  */
-export type BundleAnchorType = typeof BundleAnchorType[keyof typeof BundleAnchorType];
-
+export type BundleAnchorType =
+  (typeof BundleAnchorType)[keyof typeof BundleAnchorType];
 
 export const BundleAnchorType = {
-  qb_staged_payment: 'qb_staged_payment',
-  stripe_payout: 'stripe_payout',
+  qb_staged_payment: "qb_staged_payment",
+  stripe_payout: "stripe_payout",
 } as const;
 
 /**
  * Draft lifecycle. open: editable. confirmed: committed (terminal). superseded: the anchor changed shape and the draft was reset.
  */
-export type BundleProposalStatus = typeof BundleProposalStatus[keyof typeof BundleProposalStatus];
-
+export type BundleProposalStatus =
+  (typeof BundleProposalStatus)[keyof typeof BundleProposalStatus];
 
 export const BundleProposalStatus = {
-  open: 'open',
-  confirmed: 'confirmed',
-  superseded: 'superseded',
+  open: "open",
+  confirmed: "confirmed",
+  superseded: "superseded",
 } as const;
 
 /**
  * Coarse confidence band for an auto-proposed row value, derived from the numeric match score (high ≥ 90, medium ≥ 70, low > 0, none = no candidate).
  */
-export type BundleConfidenceTier = typeof BundleConfidenceTier[keyof typeof BundleConfidenceTier];
-
+export type BundleConfidenceTier =
+  (typeof BundleConfidenceTier)[keyof typeof BundleConfidenceTier];
 
 export const BundleConfidenceTier = {
-  high: 'high',
-  medium: 'medium',
-  low: 'low',
-  none: 'none',
+  high: "high",
+  medium: "medium",
+  low: "low",
+  none: "none",
 } as const;
 
 /**
  * How the current value was set. auto: server best-guess. override: a human edited this row. sync: refreshed from a processor sync.
  */
-export type BundleProvenance = typeof BundleProvenance[keyof typeof BundleProvenance];
-
+export type BundleProvenance =
+  (typeof BundleProvenance)[keyof typeof BundleProvenance];
 
 export const BundleProvenance = {
-  auto: 'auto',
-  override: 'override',
-  sync: 'sync',
+  auto: "auto",
+  override: "override",
+  sync: "sync",
 } as const;
 
 /**
  * info: FYI. warning: review advised, still confirmable (with allowWarnings). blocker: prevents confirm until resolved.
  */
-export type BundleWarningSeverity = typeof BundleWarningSeverity[keyof typeof BundleWarningSeverity];
-
+export type BundleWarningSeverity =
+  (typeof BundleWarningSeverity)[keyof typeof BundleWarningSeverity];
 
 export const BundleWarningSeverity = {
-  info: 'info',
-  warning: 'warning',
-  blocker: 'blocker',
+  info: "info",
+  warning: "warning",
+  blocker: "blocker",
 } as const;
 
 export interface BundleWarning {
@@ -5085,13 +5083,13 @@ export interface BundleWarning {
   severity: BundleWarningSeverity;
 }
 
-export type BundleNewDonorDraftKind = typeof BundleNewDonorDraftKind[keyof typeof BundleNewDonorDraftKind];
-
+export type BundleNewDonorDraftKind =
+  (typeof BundleNewDonorDraftKind)[keyof typeof BundleNewDonorDraftKind];
 
 export const BundleNewDonorDraftKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
@@ -5106,22 +5104,23 @@ export interface BundleNewDonorDraft {
   email?: string | null;
 }
 
-export type BundleDonorProposalKind = typeof BundleDonorProposalKind[keyof typeof BundleDonorProposalKind];
-
+export type BundleDonorProposalKind =
+  (typeof BundleDonorProposalKind)[keyof typeof BundleDonorProposalKind];
 
 export const BundleDonorProposalKind = {
-  existing: 'existing',
-  new: 'new',
-  unresolved: 'unresolved',
+  existing: "existing",
+  new: "new",
+  unresolved: "unresolved",
 } as const;
 
-export type BundleDonorProposalDonorKind = typeof BundleDonorProposalDonorKind[keyof typeof BundleDonorProposalDonorKind] | null;
-
+export type BundleDonorProposalDonorKind =
+  | (typeof BundleDonorProposalDonorKind)[keyof typeof BundleDonorProposalDonorKind]
+  | null;
 
 export const BundleDonorProposalDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
@@ -5156,14 +5155,14 @@ export interface BundleGiftMintDraft {
   paymentMethod?: GiftPaymentMethod | null;
 }
 
-export type BundleGiftProposalKind = typeof BundleGiftProposalKind[keyof typeof BundleGiftProposalKind];
-
+export type BundleGiftProposalKind =
+  (typeof BundleGiftProposalKind)[keyof typeof BundleGiftProposalKind];
 
 export const BundleGiftProposalKind = {
-  match: 'match',
-  mint: 'mint',
-  research: 'research',
-  exclude: 'exclude',
+  match: "match",
+  mint: "mint",
+  research: "research",
+  exclude: "exclude",
 } as const;
 
 /**
@@ -5225,13 +5224,13 @@ export interface BundleChargeRow {
 /**
  * What confirm will do: confirm_tie stamps the payout↔deposit reconciliation; none = nothing to tie; conflict = the deposit is already a gift, needs a keep/replace decision first.
  */
-export type BundleTieProposalAction = typeof BundleTieProposalAction[keyof typeof BundleTieProposalAction];
-
+export type BundleTieProposalAction =
+  (typeof BundleTieProposalAction)[keyof typeof BundleTieProposalAction];
 
 export const BundleTieProposalAction = {
-  confirm_tie: 'confirm_tie',
-  none: 'none',
-  conflict: 'conflict',
+  confirm_tie: "confirm_tie",
+  none: "none",
+  conflict: "conflict",
 } as const;
 
 /**
@@ -5319,13 +5318,13 @@ reconciled (paired/charge-tied Stripe payouts; QB approved/reconciled).
 all: every eligible anchor.
 
  */
-export type BundleAnchorQueue = typeof BundleAnchorQueue[keyof typeof BundleAnchorQueue];
-
+export type BundleAnchorQueue =
+  (typeof BundleAnchorQueue)[keyof typeof BundleAnchorQueue];
 
 export const BundleAnchorQueue = {
-  needs_review: 'needs_review',
-  confirmed: 'confirmed',
-  all: 'all',
+  needs_review: "needs_review",
+  confirmed: "confirmed",
+  all: "all",
 } as const;
 
 /**
@@ -5337,12 +5336,12 @@ Combined with anchorType this fully places a row: Stripe orphan → the
 "missing deposit" column; QB orphan → the "missing payout" column.
 
  */
-export type SettlementBatchStatus = typeof SettlementBatchStatus[keyof typeof SettlementBatchStatus];
-
+export type SettlementBatchStatus =
+  (typeof SettlementBatchStatus)[keyof typeof SettlementBatchStatus];
 
 export const SettlementBatchStatus = {
-  settled: 'settled',
-  orphan: 'orphan',
+  settled: "settled",
+  orphan: "orphan",
 } as const;
 
 /**
@@ -5432,13 +5431,14 @@ export interface BundleAnchorListResponse {
   pagination: Pagination;
 }
 
-export type WorkbenchClusterGiftDonorKind = typeof WorkbenchClusterGiftDonorKind[keyof typeof WorkbenchClusterGiftDonorKind] | null;
-
+export type WorkbenchClusterGiftDonorKind =
+  | (typeof WorkbenchClusterGiftDonorKind)[keyof typeof WorkbenchClusterGiftDonorKind]
+  | null;
 
 export const WorkbenchClusterGiftDonorKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 export type WorkbenchClusterGiftAllocationsItem = {
@@ -5451,26 +5451,27 @@ export type WorkbenchClusterGiftAllocationsItem = {
   purpose?: string | null;
 };
 
-export type WorkbenchDepositNodeQbRecordRole = typeof WorkbenchDepositNodeQbRecordRole[keyof typeof WorkbenchDepositNodeQbRecordRole];
-
+export type WorkbenchDepositNodeQbRecordRole =
+  (typeof WorkbenchDepositNodeQbRecordRole)[keyof typeof WorkbenchDepositNodeQbRecordRole];
 
 export const WorkbenchDepositNodeQbRecordRole = {
-  component: 'component',
-  provisional: 'provisional',
-  deposit: 'deposit',
-  fee: 'fee',
-  charge_tie: 'charge_tie',
+  component: "component",
+  provisional: "provisional",
+  deposit: "deposit",
+  fee: "fee",
+  charge_tie: "charge_tie",
 } as const;
 
 /**
  * For fee / charge_tie roles: lifecycle of the source_links charge tie. Drives the correct undo — proposed ties are dismissed (reject endpoint); confirmed ties are reverted (POST /reconciliation/charges/{chargeId}/qb-tie/revert). Null for component/provisional roles.
  */
-export type WorkbenchDepositNodeQbRecordTieLifecycle = typeof WorkbenchDepositNodeQbRecordTieLifecycle[keyof typeof WorkbenchDepositNodeQbRecordTieLifecycle] | null;
-
+export type WorkbenchDepositNodeQbRecordTieLifecycle =
+  | (typeof WorkbenchDepositNodeQbRecordTieLifecycle)[keyof typeof WorkbenchDepositNodeQbRecordTieLifecycle]
+  | null;
 
 export const WorkbenchDepositNodeQbRecordTieLifecycle = {
-  proposed: 'proposed',
-  confirmed: 'confirmed',
+  proposed: "proposed",
+  confirmed: "confirmed",
 } as const;
 
 /**
@@ -5551,23 +5552,24 @@ export interface WorkbenchClusterGift {
 /**
  * The kind of proposed reversal; null when no reversal is proposed (whether one is pending comes from the charge's coverage.state.transactions entry: refundStatus = anticipated).
  */
-export type WorkbenchClusterChargeRefundKind = typeof WorkbenchClusterChargeRefundKind[keyof typeof WorkbenchClusterChargeRefundKind] | null;
-
+export type WorkbenchClusterChargeRefundKind =
+  | (typeof WorkbenchClusterChargeRefundKind)[keyof typeof WorkbenchClusterChargeRefundKind]
+  | null;
 
 export const WorkbenchClusterChargeRefundKind = {
-  full_refund: 'full_refund',
-  partial_refund: 'partial_refund',
-  chargeback: 'chargeback',
+  full_refund: "full_refund",
+  partial_refund: "partial_refund",
+  chargeback: "chargeback",
 } as const;
 
 /**
  * Donor identified on this specific charge via the Identify action. Null when no donor has been identified on this charge.
  */
-export type WorkbenchClusterChargeAttributedDonor = ({
-  donorKind: 'organization' | 'person' | 'household';
+export type WorkbenchClusterChargeAttributedDonor = {
+  donorKind: "organization" | "person" | "household";
   donorId: string;
   donorName?: string | null;
-}) | null;
+} | null;
 
 /**
  * One Stripe charge in the cluster's payment-evidence facet. Per-charge status/exclusion/refund state is NOT carried here — read the matching coverage.state.transactions entry (keyed by chargeId), the one source of truth.
@@ -5601,37 +5603,38 @@ export interface WorkbenchClusterCharge {
 /**
  * How the row participates: anchor = the qb_standalone cluster's own row; deposit = the payout's settlement-linked deposit lump; fee = a processor-fee row linked via a charge; charge_tie = a per-charge QB tie.
  */
-export type WorkbenchClusterQbRecordRole = typeof WorkbenchClusterQbRecordRole[keyof typeof WorkbenchClusterQbRecordRole];
-
+export type WorkbenchClusterQbRecordRole =
+  (typeof WorkbenchClusterQbRecordRole)[keyof typeof WorkbenchClusterQbRecordRole];
 
 export const WorkbenchClusterQbRecordRole = {
-  anchor: 'anchor',
-  deposit: 'deposit',
-  fee: 'fee',
-  charge_tie: 'charge_tie',
+  anchor: "anchor",
+  deposit: "deposit",
+  fee: "fee",
+  charge_tie: "charge_tie",
 } as const;
 
 /**
  * The QuickBooks transaction type this staged row came from — drives the 'View in QuickBooks' deep link (deposit_header deep-links to its Deposit).
  */
-export type WorkbenchClusterQbRecordQbEntityType = typeof WorkbenchClusterQbRecordQbEntityType[keyof typeof WorkbenchClusterQbRecordQbEntityType] | null;
-
+export type WorkbenchClusterQbRecordQbEntityType =
+  | (typeof WorkbenchClusterQbRecordQbEntityType)[keyof typeof WorkbenchClusterQbRecordQbEntityType]
+  | null;
 
 export const WorkbenchClusterQbRecordQbEntityType = {
-  sales_receipt: 'sales_receipt',
-  payment: 'payment',
-  deposit: 'deposit',
-  deposit_header: 'deposit_header',
+  sales_receipt: "sales_receipt",
+  payment: "payment",
+  deposit: "deposit",
+  deposit_header: "deposit_header",
 } as const;
 
 /**
  * Donor identified on this specific QB row via the Identify action. Present for anchor/deposit roles when a donor has been identified; null otherwise.
  */
-export type WorkbenchClusterQbRecordAttributedDonor = ({
-  donorKind: 'organization' | 'person' | 'household';
+export type WorkbenchClusterQbRecordAttributedDonor = {
+  donorKind: "organization" | "person" | "household";
   donorId: string;
   donorName?: string | null;
-}) | null;
+} | null;
 
 /**
  * One QuickBooks staged row in the cluster's bank-and-accounting facet. Per-record linkage state is NOT carried here — read the matching coverage.state.qbCards entry (keyed by stagedPaymentId), the one source of truth.
@@ -5675,15 +5678,15 @@ partial_mixed — both partial and mixed.
 missing — no connections at all (only one column of evidence).
 
  */
-export type WorkbenchRowLinkCompleteness = typeof WorkbenchRowLinkCompleteness[keyof typeof WorkbenchRowLinkCompleteness];
-
+export type WorkbenchRowLinkCompleteness =
+  (typeof WorkbenchRowLinkCompleteness)[keyof typeof WorkbenchRowLinkCompleteness];
 
 export const WorkbenchRowLinkCompleteness = {
-  complete: 'complete',
-  partial: 'partial',
-  mixed: 'mixed',
-  partial_mixed: 'partial_mixed',
-  missing: 'missing',
+  complete: "complete",
+  partial: "partial",
+  mixed: "mixed",
+  partial_mixed: "partial_mixed",
+  missing: "missing",
 } as const;
 
 /**
@@ -5693,45 +5696,45 @@ accounting_pending — CRM records complete but accounting not yet settled or a 
 incomplete — one or more CRM gift records lack required donor / allocation information.
 
  */
-export type WorkbenchRowInformationCompleteness = typeof WorkbenchRowInformationCompleteness[keyof typeof WorkbenchRowInformationCompleteness];
-
+export type WorkbenchRowInformationCompleteness =
+  (typeof WorkbenchRowInformationCompleteness)[keyof typeof WorkbenchRowInformationCompleteness];
 
 export const WorkbenchRowInformationCompleteness = {
-  audit_ready: 'audit_ready',
-  accounting_pending: 'accounting_pending',
-  incomplete: 'incomplete',
+  audit_ready: "audit_ready",
+  accounting_pending: "accounting_pending",
+  incomplete: "incomplete",
 } as const;
 
 /**
  * State of the payout↔deposit pairing fact for stripe_payout clusters. Absent for qb_standalone and crm_only. `confirmed` = a settled QB lump carries the pairing; `exempt` = a negative payout (Stripe withdrawal — no bank deposit ever reaches QuickBooks).
  */
-export type WorkbenchRowSettlementLinkState = typeof WorkbenchRowSettlementLinkState[keyof typeof WorkbenchRowSettlementLinkState];
-
+export type WorkbenchRowSettlementLinkState =
+  (typeof WorkbenchRowSettlementLinkState)[keyof typeof WorkbenchRowSettlementLinkState];
 
 export const WorkbenchRowSettlementLinkState = {
-  unlinked: 'unlinked',
-  confirmed: 'confirmed',
-  exempt: 'exempt',
+  unlinked: "unlinked",
+  confirmed: "confirmed",
+  exempt: "exempt",
 } as const;
 
-export type WorkbenchRowCoverageStateState = typeof WorkbenchRowCoverageStateState[keyof typeof WorkbenchRowCoverageStateState];
-
+export type WorkbenchRowCoverageStateState =
+  (typeof WorkbenchRowCoverageStateState)[keyof typeof WorkbenchRowCoverageStateState];
 
 export const WorkbenchRowCoverageStateState = {
-  missing: 'missing',
-  partial: 'partial',
-  complete: 'complete',
-  mixed: 'mixed',
+  missing: "missing",
+  partial: "partial",
+  complete: "complete",
+  mixed: "mixed",
 } as const;
 
-export type WorkbenchRowCoverageStateGrain = typeof WorkbenchRowCoverageStateGrain[keyof typeof WorkbenchRowCoverageStateGrain];
-
+export type WorkbenchRowCoverageStateGrain =
+  (typeof WorkbenchRowCoverageStateGrain)[keyof typeof WorkbenchRowCoverageStateGrain];
 
 export const WorkbenchRowCoverageStateGrain = {
-  unit: 'unit',
-  bundle: 'bundle',
-  mixed: 'mixed',
-  none: 'none',
+  unit: "unit",
+  bundle: "bundle",
+  mixed: "mixed",
+  none: "none",
 } as const;
 
 /**
@@ -5757,34 +5760,36 @@ export interface WorkbenchRowQbCardEntry {
 /**
  * Derived display state for one CRM gift card.
  */
-export type WorkbenchRowCrmCardState = typeof WorkbenchRowCrmCardState[keyof typeof WorkbenchRowCrmCardState];
-
+export type WorkbenchRowCrmCardState =
+  (typeof WorkbenchRowCrmCardState)[keyof typeof WorkbenchRowCrmCardState];
 
 export const WorkbenchRowCrmCardState = {
-  missing: 'missing',
-  unmatched_incomplete: 'unmatched_incomplete',
-  unmatched_complete: 'unmatched_complete',
-  matched_incomplete: 'matched_incomplete',
-  matched_complete: 'matched_complete',
-  partial_gift_surplus: 'partial_gift_surplus',
-  partial_external_surplus: 'partial_external_surplus',
-  mixed: 'mixed',
-  conflict: 'conflict',
-  pledge_link_broken: 'pledge_link_broken',
-  lost: 'lost',
-  dormant: 'dormant',
+  missing: "missing",
+  unmatched_incomplete: "unmatched_incomplete",
+  unmatched_complete: "unmatched_complete",
+  matched_incomplete: "matched_incomplete",
+  matched_complete: "matched_complete",
+  partial_gift_surplus: "partial_gift_surplus",
+  partial_external_surplus: "partial_external_surplus",
+  mixed: "mixed",
+  conflict: "conflict",
+  pledge_link_broken: "pledge_link_broken",
+  lost: "lost",
+  dormant: "dormant",
 } as const;
 
 /**
  * Canonical vocabulary for which completeness path was satisfied; null when the gift is incomplete.
  */
-export type WorkbenchRowCrmSatisfiedByCanonical = typeof WorkbenchRowCrmSatisfiedByCanonical[keyof typeof WorkbenchRowCrmSatisfiedByCanonical] | null;
-
+export type WorkbenchRowCrmSatisfiedByCanonical =
+  | (typeof WorkbenchRowCrmSatisfiedByCanonical)[keyof typeof WorkbenchRowCrmSatisfiedByCanonical]
+  | null;
 
 export const WorkbenchRowCrmSatisfiedByCanonical = {
-  donorbox: 'donorbox',
-  completed_coding_form: 'completed_coding_form',
-  donor_allocations_and_supporting_documents: 'donor_allocations_and_supporting_documents',
+  donorbox: "donorbox",
+  completed_coding_form: "completed_coding_form",
+  donor_allocations_and_supporting_documents:
+    "donor_allocations_and_supporting_documents",
 } as const;
 
 /**
@@ -5807,27 +5812,27 @@ refund_anticipated / refunded apply to the individual transaction only;
 excluded = intentionally excluded from active reconciliation.
 
  */
-export type WorkbenchRowTransactionCardState = typeof WorkbenchRowTransactionCardState[keyof typeof WorkbenchRowTransactionCardState];
-
+export type WorkbenchRowTransactionCardState =
+  (typeof WorkbenchRowTransactionCardState)[keyof typeof WorkbenchRowTransactionCardState];
 
 export const WorkbenchRowTransactionCardState = {
-  unmatched: 'unmatched',
-  partial: 'partial',
-  amount_mismatch: 'amount_mismatch',
-  info_conflict: 'info_conflict',
-  matched: 'matched',
-  refund_anticipated: 'refund_anticipated',
-  refunded: 'refunded',
-  excluded: 'excluded',
+  unmatched: "unmatched",
+  partial: "partial",
+  amount_mismatch: "amount_mismatch",
+  info_conflict: "info_conflict",
+  matched: "matched",
+  refund_anticipated: "refund_anticipated",
+  refunded: "refunded",
+  excluded: "excluded",
 } as const;
 
-export type WorkbenchRowTransactionEntryRefundStatus = typeof WorkbenchRowTransactionEntryRefundStatus[keyof typeof WorkbenchRowTransactionEntryRefundStatus];
-
+export type WorkbenchRowTransactionEntryRefundStatus =
+  (typeof WorkbenchRowTransactionEntryRefundStatus)[keyof typeof WorkbenchRowTransactionEntryRefundStatus];
 
 export const WorkbenchRowTransactionEntryRefundStatus = {
-  none: 'none',
-  anticipated: 'anticipated',
-  refunded: 'refunded',
+  none: "none",
+  anticipated: "anticipated",
+  refunded: "refunded",
 } as const;
 
 /**
@@ -5889,14 +5894,14 @@ export interface WorkbenchRowState {
 /**
  * Grain at which a dimension is satisfied: none = no evidence yet; unit = one evidence record per charge / QB row; bundle = one record covers all units; mixed = competing unit + bundle representations (always incomplete).
  */
-export type WorkbenchClusterDimensionGrain = typeof WorkbenchClusterDimensionGrain[keyof typeof WorkbenchClusterDimensionGrain];
-
+export type WorkbenchClusterDimensionGrain =
+  (typeof WorkbenchClusterDimensionGrain)[keyof typeof WorkbenchClusterDimensionGrain];
 
 export const WorkbenchClusterDimensionGrain = {
-  none: 'none',
-  unit: 'unit',
-  bundle: 'bundle',
-  mixed: 'mixed',
+  none: "none",
+  unit: "unit",
+  bundle: "bundle",
+  mixed: "mixed",
 } as const;
 
 /**
@@ -5918,25 +5923,26 @@ export interface WorkbenchClusterCrmLinkage {
 /**
  * Why a specific linked gift fails the record-completeness predicate.
  */
-export type WorkbenchClusterCrmRecordReason = typeof WorkbenchClusterCrmRecordReason[keyof typeof WorkbenchClusterCrmRecordReason];
-
+export type WorkbenchClusterCrmRecordReason =
+  (typeof WorkbenchClusterCrmRecordReason)[keyof typeof WorkbenchClusterCrmRecordReason];
 
 export const WorkbenchClusterCrmRecordReason = {
-  missing_donor: 'missing_donor',
-  missing_restriction_fields: 'missing_restriction_fields',
-  missing_allocation: 'missing_allocation',
+  missing_donor: "missing_donor",
+  missing_restriction_fields: "missing_restriction_fields",
+  missing_allocation: "missing_allocation",
 } as const;
 
 /**
  * Which path satisfied completeness; null when the gift is incomplete.
  */
-export type WorkbenchClusterCrmRecordGiftDetailSatisfiedBy = typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy[keyof typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy] | null;
-
+export type WorkbenchClusterCrmRecordGiftDetailSatisfiedBy =
+  | (typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy)[keyof typeof WorkbenchClusterCrmRecordGiftDetailSatisfiedBy]
+  | null;
 
 export const WorkbenchClusterCrmRecordGiftDetailSatisfiedBy = {
-  donorbox: 'donorbox',
-  coding_form: 'coding_form',
-  donor_and_allocations: 'donor_and_allocations',
+  donorbox: "donorbox",
+  coding_form: "coding_form",
+  donor_and_allocations: "donor_and_allocations",
 } as const;
 
 /**
@@ -5973,33 +5979,33 @@ export interface WorkbenchClusterDonorPurpose {
   complete: boolean;
 }
 
-export type WorkbenchClusterEvidenceRecordSource = typeof WorkbenchClusterEvidenceRecordSource[keyof typeof WorkbenchClusterEvidenceRecordSource];
-
+export type WorkbenchClusterEvidenceRecordSource =
+  (typeof WorkbenchClusterEvidenceRecordSource)[keyof typeof WorkbenchClusterEvidenceRecordSource];
 
 export const WorkbenchClusterEvidenceRecordSource = {
-  stripe_charge: 'stripe_charge',
-  qb_record: 'qb_record',
-  donorbox: 'donorbox',
+  stripe_charge: "stripe_charge",
+  qb_record: "qb_record",
+  donorbox: "donorbox",
 } as const;
 
-export type WorkbenchClusterEvidenceRecordRolesItem = typeof WorkbenchClusterEvidenceRecordRolesItem[keyof typeof WorkbenchClusterEvidenceRecordRolesItem];
-
+export type WorkbenchClusterEvidenceRecordRolesItem =
+  (typeof WorkbenchClusterEvidenceRecordRolesItem)[keyof typeof WorkbenchClusterEvidenceRecordRolesItem];
 
 export const WorkbenchClusterEvidenceRecordRolesItem = {
-  payment_transaction: 'payment_transaction',
-  accounting: 'accounting',
-  donor_purpose: 'donor_purpose',
+  payment_transaction: "payment_transaction",
+  accounting: "accounting",
+  donor_purpose: "donor_purpose",
 } as const;
 
 /**
  * unit = covers one charge / unit; bundle = covers the whole payout / group.
  */
-export type WorkbenchClusterEvidenceRecordGrain = typeof WorkbenchClusterEvidenceRecordGrain[keyof typeof WorkbenchClusterEvidenceRecordGrain];
-
+export type WorkbenchClusterEvidenceRecordGrain =
+  (typeof WorkbenchClusterEvidenceRecordGrain)[keyof typeof WorkbenchClusterEvidenceRecordGrain];
 
 export const WorkbenchClusterEvidenceRecordGrain = {
-  unit: 'unit',
-  bundle: 'bundle',
+  unit: "unit",
+  bundle: "bundle",
 } as const;
 
 /**
@@ -6065,54 +6071,55 @@ and not_fundraising. not_fundraising is derived from loan/interest memo text;
 brokerage-transfer memos remain fundraising.
 
  */
-export type WorkbenchDepositLens = typeof WorkbenchDepositLens[keyof typeof WorkbenchDepositLens];
-
+export type WorkbenchDepositLens =
+  (typeof WorkbenchDepositLens)[keyof typeof WorkbenchDepositLens];
 
 export const WorkbenchDepositLens = {
-  all_open: 'all_open',
-  unresolved_composition: 'unresolved_composition',
-  ambiguous_pairing: 'ambiguous_pairing',
-  needs_gift: 'needs_gift',
-  accounting_corrections: 'accounting_corrections',
-  refunds: 'refunds',
-  completed: 'completed',
-  not_fundraising: 'not_fundraising',
+  all_open: "all_open",
+  unresolved_composition: "unresolved_composition",
+  ambiguous_pairing: "ambiguous_pairing",
+  needs_gift: "needs_gift",
+  accounting_corrections: "accounting_corrections",
+  refunds: "refunds",
+  completed: "completed",
+  not_fundraising: "not_fundraising",
 } as const;
 
-export type WorkbenchDepositCompositionKind = typeof WorkbenchDepositCompositionKind[keyof typeof WorkbenchDepositCompositionKind];
-
+export type WorkbenchDepositCompositionKind =
+  (typeof WorkbenchDepositCompositionKind)[keyof typeof WorkbenchDepositCompositionKind];
 
 export const WorkbenchDepositCompositionKind = {
-  stripe_payout: 'stripe_payout',
-  stripe_unlinked: 'stripe_unlinked',
-  components: 'components',
-  unresolved: 'unresolved',
+  stripe_payout: "stripe_payout",
+  stripe_unlinked: "stripe_unlinked",
+  components: "components",
+  unresolved: "unresolved",
 } as const;
 
-export type WorkbenchDepositCompositionComponentsItemKind = typeof WorkbenchDepositCompositionComponentsItemKind[keyof typeof WorkbenchDepositCompositionComponentsItemKind];
-
+export type WorkbenchDepositCompositionComponentsItemKind =
+  (typeof WorkbenchDepositCompositionComponentsItemKind)[keyof typeof WorkbenchDepositCompositionComponentsItemKind];
 
 export const WorkbenchDepositCompositionComponentsItemKind = {
-  check: 'check',
-  direct_ach: 'direct_ach',
-  wire: 'wire',
-  other: 'other',
-  stripe_charge: 'stripe_charge',
+  check: "check",
+  direct_ach: "direct_ach",
+  wire: "wire",
+  other: "other",
+  stripe_charge: "stripe_charge",
 } as const;
 
-export type WorkbenchDepositCompositionComponentsItemSource = typeof WorkbenchDepositCompositionComponentsItemSource[keyof typeof WorkbenchDepositCompositionComponentsItemSource];
-
+export type WorkbenchDepositCompositionComponentsItemSource =
+  (typeof WorkbenchDepositCompositionComponentsItemSource)[keyof typeof WorkbenchDepositCompositionComponentsItemSource];
 
 export const WorkbenchDepositCompositionComponentsItemSource = {
-  bank_spine: 'bank_spine',
+  bank_spine: "bank_spine",
 } as const;
 
-export type WorkbenchDepositCompositionComponentsItemMatchBasis = typeof WorkbenchDepositCompositionComponentsItemMatchBasis[keyof typeof WorkbenchDepositCompositionComponentsItemMatchBasis] | null;
-
+export type WorkbenchDepositCompositionComponentsItemMatchBasis =
+  | (typeof WorkbenchDepositCompositionComponentsItemMatchBasis)[keyof typeof WorkbenchDepositCompositionComponentsItemMatchBasis]
+  | null;
 
 export const WorkbenchDepositCompositionComponentsItemMatchBasis = {
-  deposit_header_exact: 'deposit_header_exact',
-  deposit_header_ambiguous: 'deposit_header_ambiguous',
+  deposit_header_exact: "deposit_header_exact",
+  deposit_header_ambiguous: "deposit_header_ambiguous",
 } as const;
 
 export type WorkbenchDepositCompositionComponentsItem = {
@@ -6142,15 +6149,15 @@ export type WorkbenchDepositCompositionComponentsItem = {
   qboRecords?: WorkbenchDepositNodeQbRecord[];
 };
 
-export type WorkbenchDepositCompositionUnitsItemKind = typeof WorkbenchDepositCompositionUnitsItemKind[keyof typeof WorkbenchDepositCompositionUnitsItemKind];
-
+export type WorkbenchDepositCompositionUnitsItemKind =
+  (typeof WorkbenchDepositCompositionUnitsItemKind)[keyof typeof WorkbenchDepositCompositionUnitsItemKind];
 
 export const WorkbenchDepositCompositionUnitsItemKind = {
-  check: 'check',
-  direct_ach: 'direct_ach',
-  wire: 'wire',
-  other: 'other',
-  stripe_charge: 'stripe_charge',
+  check: "check",
+  direct_ach: "direct_ach",
+  wire: "wire",
+  other: "other",
+  stripe_charge: "stripe_charge",
 } as const;
 
 export type WorkbenchDepositCompositionUnitsItem = {
@@ -6189,19 +6196,23 @@ export interface WorkbenchDepositComposition {
   units?: WorkbenchDepositCompositionUnitsItem[];
 }
 
-export type WorkbenchDepositAccountingCheckDisposition = typeof WorkbenchDepositAccountingCheckDisposition[keyof typeof WorkbenchDepositAccountingCheckDisposition];
-
+export type WorkbenchDepositAccountingCheckDisposition =
+  (typeof WorkbenchDepositAccountingCheckDisposition)[keyof typeof WorkbenchDepositAccountingCheckDisposition];
 
 export const WorkbenchDepositAccountingCheckDisposition = {
-  consistent: 'consistent',
-  correction_needed: 'correction_needed',
-  corrected: 'corrected',
-  accepted_historical: 'accepted_historical',
+  consistent: "consistent",
+  correction_needed: "correction_needed",
+  corrected: "corrected",
+  accepted_historical: "accepted_historical",
 } as const;
 
-export type WorkbenchDepositAccountingCheckExpected = { [key: string]: unknown } | null;
+export type WorkbenchDepositAccountingCheckExpected = {
+  [key: string]: unknown;
+} | null;
 
-export type WorkbenchDepositAccountingCheckActual = { [key: string]: unknown } | null;
+export type WorkbenchDepositAccountingCheckActual = {
+  [key: string]: unknown;
+} | null;
 
 export interface WorkbenchDepositAccountingCheck {
   id: string;
@@ -6260,11 +6271,11 @@ export interface InlineError {
   message: string;
 }
 
-export type WorkbenchDepositKind = typeof WorkbenchDepositKind[keyof typeof WorkbenchDepositKind];
-
+export type WorkbenchDepositKind =
+  (typeof WorkbenchDepositKind)[keyof typeof WorkbenchDepositKind];
 
 export const WorkbenchDepositKind = {
-  bank_deposit: 'bank_deposit',
+  bank_deposit: "bank_deposit",
 } as const;
 
 export type WorkbenchDepositBank = {
@@ -6279,7 +6290,7 @@ export type WorkbenchDepositBank = {
   txnType: string | null;
 };
 
-export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({
+export type WorkbenchDepositCharge = WorkbenchClusterCharge & {
   /** Derived QBO evidence aligned to this Stripe charge. */
   qboRecords?: WorkbenchDepositNodeQbRecord[];
   refunded?: boolean | null;
@@ -6292,25 +6303,27 @@ export type WorkbenchDepositCharge = WorkbenchClusterCharge & ({
   status?: string | null;
   /** Imported Stripe captured flag from raw_charge.captured. */
   captured?: boolean | null;
-});
+};
 
-export type WorkbenchDepositQbRecordSource = typeof WorkbenchDepositQbRecordSource[keyof typeof WorkbenchDepositQbRecordSource] | null;
-
+export type WorkbenchDepositQbRecordSource =
+  | (typeof WorkbenchDepositQbRecordSource)[keyof typeof WorkbenchDepositQbRecordSource]
+  | null;
 
 export const WorkbenchDepositQbRecordSource = {
-  bank_spine: 'bank_spine',
-  qbo_provisional: 'qbo_provisional',
+  bank_spine: "bank_spine",
+  qbo_provisional: "qbo_provisional",
 } as const;
 
-export type WorkbenchDepositQbRecordMatchBasis = typeof WorkbenchDepositQbRecordMatchBasis[keyof typeof WorkbenchDepositQbRecordMatchBasis] | null;
-
+export type WorkbenchDepositQbRecordMatchBasis =
+  | (typeof WorkbenchDepositQbRecordMatchBasis)[keyof typeof WorkbenchDepositQbRecordMatchBasis]
+  | null;
 
 export const WorkbenchDepositQbRecordMatchBasis = {
-  deposit_header_exact: 'deposit_header_exact',
-  deposit_header_ambiguous: 'deposit_header_ambiguous',
+  deposit_header_exact: "deposit_header_exact",
+  deposit_header_ambiguous: "deposit_header_ambiguous",
 } as const;
 
-export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
+export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & {
   qbTransactionMemo?: string | null;
   qbLocation?: string | null;
   revenueLocation?: string | null;
@@ -6330,28 +6343,28 @@ export type WorkbenchDepositQbRecord = WorkbenchClusterQbRecord & ({
   refNo?: string | null;
   reconciliationStatus?: string | null;
   account?: string | null;
-});
+};
 
-export type DepositExclusionReason = typeof DepositExclusionReason[keyof typeof DepositExclusionReason];
-
+export type DepositExclusionReason =
+  (typeof DepositExclusionReason)[keyof typeof DepositExclusionReason];
 
 export const DepositExclusionReason = {
-  membership: 'membership',
-  loan_repayment: 'loan_repayment',
-  loan_proceeds: 'loan_proceeds',
-  note_payable: 'note_payable',
-  earned_income: 'earned_income',
-  interest: 'interest',
-  other_revenue: 'other_revenue',
-  intercompany_transfer: 'intercompany_transfer',
-  tax_refund: 'tax_refund',
-  insurance: 'insurance',
-  expense_refund: 'expense_refund',
-  expensify: 'expensify',
-  returned_wire: 'returned_wire',
-  miscoded_withdrawal: 'miscoded_withdrawal',
-  non_wf: 'non_wf',
-  other: 'other',
+  membership: "membership",
+  loan_repayment: "loan_repayment",
+  loan_proceeds: "loan_proceeds",
+  note_payable: "note_payable",
+  earned_income: "earned_income",
+  interest: "interest",
+  other_revenue: "other_revenue",
+  intercompany_transfer: "intercompany_transfer",
+  tax_refund: "tax_refund",
+  insurance: "insurance",
+  expense_refund: "expense_refund",
+  expensify: "expensify",
+  returned_wire: "returned_wire",
+  miscoded_withdrawal: "miscoded_withdrawal",
+  non_wf: "non_wf",
+  other: "other",
 } as const;
 
 export interface BankDepositExclusion {
@@ -6394,12 +6407,12 @@ export interface BankDepositComponentExclusion {
   classificationSource: StagedPaymentClassificationSource;
 }
 
-export type SetQboAccountingCheckDispositionBodyDisposition = typeof SetQboAccountingCheckDispositionBodyDisposition[keyof typeof SetQboAccountingCheckDispositionBodyDisposition];
-
+export type SetQboAccountingCheckDispositionBodyDisposition =
+  (typeof SetQboAccountingCheckDispositionBodyDisposition)[keyof typeof SetQboAccountingCheckDispositionBodyDisposition];
 
 export const SetQboAccountingCheckDispositionBodyDisposition = {
-  corrected: 'corrected',
-  accepted_historical: 'accepted_historical',
+  corrected: "corrected",
+  accepted_historical: "accepted_historical",
 } as const;
 
 export interface SetQboAccountingCheckDispositionBody {
@@ -6408,12 +6421,12 @@ export interface SetQboAccountingCheckDispositionBody {
   note?: string | null;
 }
 
-export type QboAccountingCheckDispositionResultDisposition = typeof QboAccountingCheckDispositionResultDisposition[keyof typeof QboAccountingCheckDispositionResultDisposition];
-
+export type QboAccountingCheckDispositionResultDisposition =
+  (typeof QboAccountingCheckDispositionResultDisposition)[keyof typeof QboAccountingCheckDispositionResultDisposition];
 
 export const QboAccountingCheckDispositionResultDisposition = {
-  corrected: 'corrected',
-  accepted_historical: 'accepted_historical',
+  corrected: "corrected",
+  accepted_historical: "accepted_historical",
 } as const;
 
 export interface QboAccountingCheckDispositionResult {
@@ -6424,14 +6437,14 @@ export interface QboAccountingCheckDispositionResult {
   resolvedAt: string | null;
 }
 
-export type DepositCandidatePaymentUnitKind = typeof DepositCandidatePaymentUnitKind[keyof typeof DepositCandidatePaymentUnitKind];
-
+export type DepositCandidatePaymentUnitKind =
+  (typeof DepositCandidatePaymentUnitKind)[keyof typeof DepositCandidatePaymentUnitKind];
 
 export const DepositCandidatePaymentUnitKind = {
-  check: 'check',
-  direct_ach: 'direct_ach',
-  wire: 'wire',
-  other: 'other',
+  check: "check",
+  direct_ach: "direct_ach",
+  wire: "wire",
+  other: "other",
 } as const;
 
 export interface DepositCandidatePaymentUnit {
@@ -6447,29 +6460,42 @@ export interface DepositCandidatePaymentUnitList {
   data: DepositCandidatePaymentUnit[];
 }
 
-export type AddBankDepositComponentBody = {
-  mode: 'placeholder';
-  amount: string;
-} | {
-  mode: 'attach';
-  paymentUnitId: string;
-  amount?: string | null;
-} | {
-  mode: 'create';
-  kind: 'check' | 'direct_ach' | 'wire' | 'other';
-  amount: string;
-  receivedDate?: string | null;
-} | {
-  mode: 'gift';
-  giftId: string;
-  /** Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder. */
-  amount?: string | null;
-  /** Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie. */
-  paymentUnitId?: string | null;
-};
+export type AddBankDepositComponentBody =
+  | {
+      mode: "placeholder";
+      amount: string;
+    }
+  | {
+      mode: "attach";
+      paymentUnitId: string;
+      amount?: string | null;
+      reassignEvidence?: boolean;
+    }
+  | {
+      mode: "create";
+      kind: "check" | "direct_ach" | "wire" | "other";
+      amount: string;
+      receivedDate?: string | null;
+    }
+  | {
+      mode: "gift";
+      giftId: string;
+      /** Component amount in major units; defaults to the gift's unclaimed unit amount or the deposit's unexplained remainder. */
+      amount?: string | null;
+      /** Adopt exactly this deposit component's gift-less unit for the gift (skips amount-based candidate matching). Must belong to a component of this deposit and carry no gift tie. */
+      paymentUnitId?: string | null;
+      /** Required when this CRM gift already belongs to another direct payment. Disconnects that prior counted relationship and moves the gift or its existing payment component here atomically after explicit user confirmation. */
+      reassignGift?: boolean;
+    }
+  | {
+      mode: "pledge";
+      opportunityId: string;
+      amount: string;
+    };
 
 export interface AttachDepositQboEvidenceBody {
   stagedPaymentId: string;
+  reassignEvidence?: boolean;
 }
 
 export interface AttachDepositQboEvidenceResult {
@@ -6484,11 +6510,11 @@ export interface FlagQboAccountingErrorBody {
   note: string;
 }
 
-export type FlagQboAccountingErrorResultDisposition = typeof FlagQboAccountingErrorResultDisposition[keyof typeof FlagQboAccountingErrorResultDisposition];
-
+export type FlagQboAccountingErrorResultDisposition =
+  (typeof FlagQboAccountingErrorResultDisposition)[keyof typeof FlagQboAccountingErrorResultDisposition];
 
 export const FlagQboAccountingErrorResultDisposition = {
-  correction_needed: 'correction_needed',
+  correction_needed: "correction_needed",
 } as const;
 
 export interface FlagQboAccountingErrorResult {
@@ -6497,11 +6523,11 @@ export interface FlagQboAccountingErrorResult {
   disposition: FlagQboAccountingErrorResultDisposition;
 }
 
-export type BankDepositComponentMutationSource = typeof BankDepositComponentMutationSource[keyof typeof BankDepositComponentMutationSource];
-
+export type BankDepositComponentMutationSource =
+  (typeof BankDepositComponentMutationSource)[keyof typeof BankDepositComponentMutationSource];
 
 export const BankDepositComponentMutationSource = {
-  manual: 'manual',
+  manual: "manual",
 } as const;
 
 export interface BankDepositComponentMutation {
@@ -6510,11 +6536,13 @@ export interface BankDepositComponentMutation {
   amount: string;
   source: BankDepositComponentMutationSource;
   needsReview: boolean;
+  giftId?: string | null;
 }
 
 export interface SetBankDepositComponentSourceStagedPaymentBody {
   /** QBO staged-payment id to attach, or null to clear the pointer. */
   stagedPaymentId: string | null;
+  reassignEvidence?: boolean;
 }
 
 export interface BankDepositComponentSourceStagedPaymentMutation {
@@ -6575,12 +6603,12 @@ export interface ManualBankReportImportBody {
   contentBase64: string;
 }
 
-export type BankReportImportResultStatus = typeof BankReportImportResultStatus[keyof typeof BankReportImportResultStatus];
-
+export type BankReportImportResultStatus =
+  (typeof BankReportImportResultStatus)[keyof typeof BankReportImportResultStatus];
 
 export const BankReportImportResultStatus = {
-  succeeded: 'succeeded',
-  rejected: 'rejected',
+  succeeded: "succeeded",
+  rejected: "rejected",
 } as const;
 
 export interface BankReportImportResult {
@@ -6593,14 +6621,14 @@ export interface BankReportImportResult {
   error?: string | null;
 }
 
-export type WorkbenchRecentChangeUndoKind = typeof WorkbenchRecentChangeUndoKind[keyof typeof WorkbenchRecentChangeUndoKind];
-
+export type WorkbenchRecentChangeUndoKind =
+  (typeof WorkbenchRecentChangeUndoKind)[keyof typeof WorkbenchRecentChangeUndoKind];
 
 export const WorkbenchRecentChangeUndoKind = {
-  revert_staged_payment: 'revert_staged_payment',
-  reinclude_staged_payment: 'reinclude_staged_payment',
-  revert_stripe_charge: 'revert_stripe_charge',
-  reinclude_stripe_charge: 'reinclude_stripe_charge',
+  revert_staged_payment: "revert_staged_payment",
+  reinclude_staged_payment: "reinclude_staged_payment",
+  revert_stripe_charge: "revert_stripe_charge",
+  reinclude_stripe_charge: "reinclude_stripe_charge",
 } as const;
 
 /**
@@ -6631,35 +6659,38 @@ export interface WorkbenchRecentChangesResponse {
 /**
  * Switch the donor proposal mode.
  */
-export type BundleRowOverrideDonorKind = typeof BundleRowOverrideDonorKind[keyof typeof BundleRowOverrideDonorKind] | null;
-
+export type BundleRowOverrideDonorKind =
+  | (typeof BundleRowOverrideDonorKind)[keyof typeof BundleRowOverrideDonorKind]
+  | null;
 
 export const BundleRowOverrideDonorKind = {
-  existing: 'existing',
-  new: 'new',
-  unresolved: 'unresolved',
+  existing: "existing",
+  new: "new",
+  unresolved: "unresolved",
 } as const;
 
-export type BundleRowOverrideDonorRecordKind = typeof BundleRowOverrideDonorRecordKind[keyof typeof BundleRowOverrideDonorRecordKind] | null;
-
+export type BundleRowOverrideDonorRecordKind =
+  | (typeof BundleRowOverrideDonorRecordKind)[keyof typeof BundleRowOverrideDonorRecordKind]
+  | null;
 
 export const BundleRowOverrideDonorRecordKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 /**
  * Switch the gift outcome.
  */
-export type BundleRowOverrideGiftKind = typeof BundleRowOverrideGiftKind[keyof typeof BundleRowOverrideGiftKind] | null;
-
+export type BundleRowOverrideGiftKind =
+  | (typeof BundleRowOverrideGiftKind)[keyof typeof BundleRowOverrideGiftKind]
+  | null;
 
 export const BundleRowOverrideGiftKind = {
-  match: 'match',
-  mint: 'mint',
-  research: 'research',
-  exclude: 'exclude',
+  match: "match",
+  mint: "mint",
+  research: "research",
+  exclude: "exclude",
 } as const;
 
 /**
@@ -6692,12 +6723,13 @@ export interface BundleRowOverride {
 /**
  * Force the tie action (or clear it back to auto).
  */
-export type BundleTieOverrideAction = typeof BundleTieOverrideAction[keyof typeof BundleTieOverrideAction] | null;
-
+export type BundleTieOverrideAction =
+  | (typeof BundleTieOverrideAction)[keyof typeof BundleTieOverrideAction]
+  | null;
 
 export const BundleTieOverrideAction = {
-  confirm_tie: 'confirm_tie',
-  none: 'none',
+  confirm_tie: "confirm_tie",
+  none: "none",
 } as const;
 
 /**
@@ -6729,15 +6761,15 @@ export interface BundleConfirmInput {
   allowWarnings?: boolean | null;
 }
 
-export type BundleConfirmResultRowOutcome = typeof BundleConfirmResultRowOutcome[keyof typeof BundleConfirmResultRowOutcome];
-
+export type BundleConfirmResultRowOutcome =
+  (typeof BundleConfirmResultRowOutcome)[keyof typeof BundleConfirmResultRowOutcome];
 
 export const BundleConfirmResultRowOutcome = {
-  matched_gift: 'matched_gift',
-  minted_gift: 'minted_gift',
-  researched: 'researched',
-  excluded: 'excluded',
-  skipped: 'skipped',
+  matched_gift: "matched_gift",
+  minted_gift: "minted_gift",
+  researched: "researched",
+  excluded: "excluded",
+  skipped: "skipped",
 } as const;
 
 export interface BundleConfirmResultRow {
@@ -6767,13 +6799,13 @@ export interface ReconciliationBundleConfirmResult {
   alreadyConfirmed?: boolean;
 }
 
-export type DonorSearchResultKind = typeof DonorSearchResultKind[keyof typeof DonorSearchResultKind];
-
+export type DonorSearchResultKind =
+  (typeof DonorSearchResultKind)[keyof typeof DonorSearchResultKind];
 
 export const DonorSearchResultKind = {
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
+  organization: "organization",
+  person: "person",
+  household: "household",
 } as const;
 
 export interface DonorSearchResult {
@@ -6789,12 +6821,12 @@ export interface DonorSearchList {
 /**
  * Where the pending money came from.
  */
-export type PendingDonorMoneyItemSource = typeof PendingDonorMoneyItemSource[keyof typeof PendingDonorMoneyItemSource];
-
+export type PendingDonorMoneyItemSource =
+  (typeof PendingDonorMoneyItemSource)[keyof typeof PendingDonorMoneyItemSource];
 
 export const PendingDonorMoneyItemSource = {
-  quickbooks: 'quickbooks',
-  stripe: 'stripe',
+  quickbooks: "quickbooks",
+  stripe: "stripe",
 } as const;
 
 export interface PendingDonorMoneyItem {
@@ -6821,15 +6853,14 @@ export interface PendingDonorMoney {
   items: PendingDonorMoneyItem[];
 }
 
-export type SearchHitType = typeof SearchHitType[keyof typeof SearchHitType];
-
+export type SearchHitType = (typeof SearchHitType)[keyof typeof SearchHitType];
 
 export const SearchHitType = {
-  person: 'person',
-  organization: 'organization',
-  household: 'household',
-  opportunity: 'opportunity',
-  gift: 'gift',
+  person: "person",
+  organization: "organization",
+  household: "household",
+  opportunity: "opportunity",
+  gift: "gift",
 } as const;
 
 export interface SearchHit {
@@ -6865,20 +6896,20 @@ export interface DuplicatePairSide {
   giftCount: number;
 }
 
-export type DuplicatePairType = typeof DuplicatePairType[keyof typeof DuplicatePairType];
-
+export type DuplicatePairType =
+  (typeof DuplicatePairType)[keyof typeof DuplicatePairType];
 
 export const DuplicatePairType = {
-  organization: 'organization',
-  person: 'person',
+  organization: "organization",
+  person: "person",
 } as const;
 
-export type DuplicatePairSignalsItem = typeof DuplicatePairSignalsItem[keyof typeof DuplicatePairSignalsItem];
-
+export type DuplicatePairSignalsItem =
+  (typeof DuplicatePairSignalsItem)[keyof typeof DuplicatePairSignalsItem];
 
 export const DuplicatePairSignalsItem = {
-  name: 'name',
-  phone: 'phone',
+  name: "name",
+  phone: "phone",
 } as const;
 
 /**
@@ -6919,12 +6950,12 @@ export interface DuplicatePairList {
   pairs: DuplicatePair[];
 }
 
-export type DismissDuplicateBodyType = typeof DismissDuplicateBodyType[keyof typeof DismissDuplicateBodyType];
-
+export type DismissDuplicateBodyType =
+  (typeof DismissDuplicateBodyType)[keyof typeof DismissDuplicateBodyType];
 
 export const DismissDuplicateBodyType = {
-  organization: 'organization',
-  person: 'person',
+  organization: "organization",
+  person: "person",
 } as const;
 
 /**
@@ -6953,12 +6984,12 @@ export interface FinancialCorrectionGift {
 /**
  * Which evidence source this row comes from.
  */
-export type FinancialCorrectionEvidenceKind = typeof FinancialCorrectionEvidenceKind[keyof typeof FinancialCorrectionEvidenceKind];
-
+export type FinancialCorrectionEvidenceKind =
+  (typeof FinancialCorrectionEvidenceKind)[keyof typeof FinancialCorrectionEvidenceKind];
 
 export const FinancialCorrectionEvidenceKind = {
-  qb_staged: 'qb_staged',
-  stripe_charge: 'stripe_charge',
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
 } as const;
 
 export interface FinancialCorrectionEvidence {
@@ -6988,12 +7019,12 @@ export interface FinancialCorrectionMergeSuggestion {
 /**
  * merge_gifts = collapse near-duplicate gifts into one with allocations; link_evidence = corroborate many gifts with one bulk deposit.
  */
-export type FinancialCorrectionKind = typeof FinancialCorrectionKind[keyof typeof FinancialCorrectionKind];
-
+export type FinancialCorrectionKind =
+  (typeof FinancialCorrectionKind)[keyof typeof FinancialCorrectionKind];
 
 export const FinancialCorrectionKind = {
-  merge_gifts: 'merge_gifts',
-  link_evidence: 'link_evidence',
+  merge_gifts: "merge_gifts",
+  link_evidence: "link_evidence",
 } as const;
 
 export interface FinancialCorrection {
@@ -7016,12 +7047,12 @@ export interface FinancialCorrectionList {
   corrections: FinancialCorrection[];
 }
 
-export type ApplyFinancialCorrectionBodyEvidenceKind = typeof ApplyFinancialCorrectionBodyEvidenceKind[keyof typeof ApplyFinancialCorrectionBodyEvidenceKind];
-
+export type ApplyFinancialCorrectionBodyEvidenceKind =
+  (typeof ApplyFinancialCorrectionBodyEvidenceKind)[keyof typeof ApplyFinancialCorrectionBodyEvidenceKind];
 
 export const ApplyFinancialCorrectionBodyEvidenceKind = {
-  qb_staged: 'qb_staged',
-  stripe_charge: 'stripe_charge',
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
 } as const;
 
 /**
@@ -7034,12 +7065,12 @@ export interface ApplyFinancialCorrectionBody {
   giftIds: string[];
 }
 
-export type ApplyFinancialCorrectionResultEvidenceKind = typeof ApplyFinancialCorrectionResultEvidenceKind[keyof typeof ApplyFinancialCorrectionResultEvidenceKind];
-
+export type ApplyFinancialCorrectionResultEvidenceKind =
+  (typeof ApplyFinancialCorrectionResultEvidenceKind)[keyof typeof ApplyFinancialCorrectionResultEvidenceKind];
 
 export const ApplyFinancialCorrectionResultEvidenceKind = {
-  qb_staged: 'qb_staged',
-  stripe_charge: 'stripe_charge',
+  qb_staged: "qb_staged",
+  stripe_charge: "stripe_charge",
 } as const;
 
 export interface ApplyFinancialCorrectionResult {
@@ -7063,14 +7094,14 @@ export interface SplitGiftAcrossStripeChargesResult {
   giftName?: string | null;
 }
 
-export type DonorRoutingMode = typeof DonorRoutingMode[keyof typeof DonorRoutingMode];
-
+export type DonorRoutingMode =
+  (typeof DonorRoutingMode)[keyof typeof DonorRoutingMode];
 
 export const DonorRoutingMode = {
-  automatic: 'automatic',
-  self: 'self',
-  target: 'target',
-  ask: 'ask',
+  automatic: "automatic",
+  self: "self",
+  target: "target",
+  ask: "ask",
 } as const;
 
 export interface DonorReference {
@@ -7112,30 +7143,30 @@ export interface UpdateDonorRoutingBody {
   defaultPaymentIntermediaryId: string | null;
 }
 
-export type CleanupQueueStatus = typeof CleanupQueueStatus[keyof typeof CleanupQueueStatus];
-
+export type CleanupQueueStatus =
+  (typeof CleanupQueueStatus)[keyof typeof CleanupQueueStatus];
 
 export const CleanupQueueStatus = {
-  open: 'open',
-  resolved: 'resolved',
-  dismissed: 'dismissed',
+  open: "open",
+  resolved: "resolved",
+  dismissed: "dismissed",
 } as const;
 
-export type CleanupProposalKind = typeof CleanupProposalKind[keyof typeof CleanupProposalKind];
-
+export type CleanupProposalKind =
+  (typeof CleanupProposalKind)[keyof typeof CleanupProposalKind];
 
 export const CleanupProposalKind = {
-  gift_donor: 'gift_donor',
-  default_intermediary: 'default_intermediary',
+  gift_donor: "gift_donor",
+  default_intermediary: "default_intermediary",
 } as const;
 
-export type CleanupProposalConfidence = typeof CleanupProposalConfidence[keyof typeof CleanupProposalConfidence];
-
+export type CleanupProposalConfidence =
+  (typeof CleanupProposalConfidence)[keyof typeof CleanupProposalConfidence];
 
 export const CleanupProposalConfidence = {
-  high: 'high',
-  medium: 'medium',
-  low: 'low',
+  high: "high",
+  medium: "medium",
+  low: "low",
 } as const;
 
 export interface CleanupProposalDonorRef {
@@ -7197,18 +7228,18 @@ export interface ApplyHighConfidenceCleanupProposalsResult {
 /**
  * Kind of record being flagged.
  */
-export type FlagForResearchBodyTargetType = typeof FlagForResearchBodyTargetType[keyof typeof FlagForResearchBodyTargetType];
-
+export type FlagForResearchBodyTargetType =
+  (typeof FlagForResearchBodyTargetType)[keyof typeof FlagForResearchBodyTargetType];
 
 export const FlagForResearchBodyTargetType = {
-  opportunity: 'opportunity',
-  pledge: 'pledge',
-  organization: 'organization',
-  person: 'person',
-  household: 'household',
-  gift: 'gift',
-  staged_payment: 'staged_payment',
-  stripe_payout: 'stripe_payout',
+  opportunity: "opportunity",
+  pledge: "pledge",
+  organization: "organization",
+  person: "person",
+  household: "household",
+  gift: "gift",
+  staged_payment: "staged_payment",
+  stripe_payout: "stripe_payout",
 } as const;
 
 /**
@@ -7238,59 +7269,60 @@ export interface UpdateCleanupItemBody {
   note: string;
 }
 
-export type CodingFormRowStatus = typeof CodingFormRowStatus[keyof typeof CodingFormRowStatus];
-
+export type CodingFormRowStatus =
+  (typeof CodingFormRowStatus)[keyof typeof CodingFormRowStatus];
 
 export const CodingFormRowStatus = {
-  pending: 'pending',
-  applied: 'applied',
-  skipped: 'skipped',
+  pending: "pending",
+  applied: "applied",
+  skipped: "skipped",
 } as const;
 
 /**
  * new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.
  */
-export type CrossCheckStatus = typeof CrossCheckStatus[keyof typeof CrossCheckStatus];
-
+export type CrossCheckStatus =
+  (typeof CrossCheckStatus)[keyof typeof CrossCheckStatus];
 
 export const CrossCheckStatus = {
-  new: 'new',
-  same: 'same',
-  conflict: 'conflict',
-  na: 'na',
+  new: "new",
+  same: "same",
+  conflict: "conflict",
+  na: "na",
 } as const;
 
 /**
  * Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes.
  */
-export type CodingFormCrossCheckAttribute = typeof CodingFormCrossCheckAttribute[keyof typeof CodingFormCrossCheckAttribute];
-
+export type CodingFormCrossCheckAttribute =
+  (typeof CodingFormCrossCheckAttribute)[keyof typeof CodingFormCrossCheckAttribute];
 
 export const CodingFormCrossCheckAttribute = {
-  reportDeadline: 'reportDeadline',
-  restrictionDescription: 'restrictionDescription',
-  purposeVerbatim: 'purposeVerbatim',
-  otherRestriction: 'otherRestriction',
-  timeRestriction: 'timeRestriction',
-  intendedUsage: 'intendedUsage',
-  regionalRestriction: 'regionalRestriction',
-  allocationEntity: 'allocationEntity',
-  address: 'address',
-  circle: 'circle',
-  seriesType: 'seriesType',
-  additionalNotes: 'additionalNotes',
-  internalMemo: 'internalMemo',
+  reportDeadline: "reportDeadline",
+  restrictionDescription: "restrictionDescription",
+  purposeVerbatim: "purposeVerbatim",
+  otherRestriction: "otherRestriction",
+  timeRestriction: "timeRestriction",
+  intendedUsage: "intendedUsage",
+  regionalRestriction: "regionalRestriction",
+  allocationEntity: "allocationEntity",
+  address: "address",
+  circle: "circle",
+  seriesType: "seriesType",
+  additionalNotes: "additionalNotes",
+  internalMemo: "internalMemo",
 } as const;
 
 /**
  * The reviewer's stored decision for this attribute, if any.
  */
-export type CodingFormCrossCheckDecision = typeof CodingFormCrossCheckDecision[keyof typeof CodingFormCrossCheckDecision] | null;
-
+export type CodingFormCrossCheckDecision =
+  | (typeof CodingFormCrossCheckDecision)[keyof typeof CodingFormCrossCheckDecision]
+  | null;
 
 export const CodingFormCrossCheckDecision = {
-  apply: 'apply',
-  skip: 'skip',
+  apply: "apply",
+  skip: "skip",
 } as const;
 
 export interface CodingFormCrossCheck {
@@ -7345,27 +7377,28 @@ export interface CodingFormGiftCandidate {
 /**
  * na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
  */
-export type CodingFormGrantAgreementStatus = typeof CodingFormGrantAgreementStatus[keyof typeof CodingFormGrantAgreementStatus];
-
+export type CodingFormGrantAgreementStatus =
+  (typeof CodingFormGrantAgreementStatus)[keyof typeof CodingFormGrantAgreementStatus];
 
 export const CodingFormGrantAgreementStatus = {
-  na: 'na',
-  no_match: 'no_match',
-  ready: 'ready',
-  imported: 'imported',
-  conflict: 'conflict',
-  failed: 'failed',
+  na: "na",
+  no_match: "no_match",
+  ready: "ready",
+  imported: "imported",
+  conflict: "conflict",
+  failed: "failed",
 } as const;
 
 /**
  * Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.
  */
-export type CodingFormGrantAgreementTargetType = typeof CodingFormGrantAgreementTargetType[keyof typeof CodingFormGrantAgreementTargetType] | null;
-
+export type CodingFormGrantAgreementTargetType =
+  | (typeof CodingFormGrantAgreementTargetType)[keyof typeof CodingFormGrantAgreementTargetType]
+  | null;
 
 export const CodingFormGrantAgreementTargetType = {
-  opportunity: 'opportunity',
-  gift: 'gift',
+  opportunity: "opportunity",
+  gift: "gift",
 } as const;
 
 /**
@@ -7388,17 +7421,17 @@ export interface CodingFormGrantAgreement {
   error?: string | null;
 }
 
-export type CodingFormAiInterpretationJunkFieldsItem = typeof CodingFormAiInterpretationJunkFieldsItem[keyof typeof CodingFormAiInterpretationJunkFieldsItem];
-
+export type CodingFormAiInterpretationJunkFieldsItem =
+  (typeof CodingFormAiInterpretationJunkFieldsItem)[keyof typeof CodingFormAiInterpretationJunkFieldsItem];
 
 export const CodingFormAiInterpretationJunkFieldsItem = {
-  internalMemo: 'internalMemo',
-  restrictionLanguage: 'restrictionLanguage',
-  additionalNotes: 'additionalNotes',
-  circleRaw: 'circleRaw',
-  seriesTypeRaw: 'seriesTypeRaw',
-  donorNameAddressRaw: 'donorNameAddressRaw',
-  reportRequiredRaw: 'reportRequiredRaw',
+  internalMemo: "internalMemo",
+  restrictionLanguage: "restrictionLanguage",
+  additionalNotes: "additionalNotes",
+  circleRaw: "circleRaw",
+  seriesTypeRaw: "seriesTypeRaw",
+  donorNameAddressRaw: "donorNameAddressRaw",
+  reportRequiredRaw: "reportRequiredRaw",
 } as const;
 
 /**
@@ -7556,12 +7589,14 @@ export interface SetCodingFormMatchBody {
 /**
  * Map of cross-check attribute → apply | skip.
  */
-export type ApplyCodingFormRowBodyDecisions = {[key: string]: 'apply' | 'skip'};
+export type ApplyCodingFormRowBodyDecisions = {
+  [key: string]: "apply" | "skip";
+};
 
 /**
  * Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them.
  */
-export type ApplyCodingFormRowBodyOverrides = {[key: string]: string};
+export type ApplyCodingFormRowBodyOverrides = { [key: string]: string };
 
 /**
  * Per-attribute apply/skip decisions plus optional override values. Only attributes set to 'apply' are written; everything else is left untouched.
@@ -7592,13 +7627,13 @@ export interface PullGrantAgreementBody {
 /**
  * imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error).
  */
-export type PullGrantAgreementResultOutcome = typeof PullGrantAgreementResultOutcome[keyof typeof PullGrantAgreementResultOutcome];
-
+export type PullGrantAgreementResultOutcome =
+  (typeof PullGrantAgreementResultOutcome)[keyof typeof PullGrantAgreementResultOutcome];
 
 export const PullGrantAgreementResultOutcome = {
-  imported: 'imported',
-  already_imported: 'already_imported',
-  failed: 'failed',
+  imported: "imported",
+  already_imported: "already_imported",
+  failed: "failed",
 } as const;
 
 export interface PullGrantAgreementResult {
@@ -7705,7 +7740,7 @@ export interface MintGiftOverridesBody {
   countsTowardGoal?: boolean | null;
 }
 
-export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
+export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & {
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -7713,12 +7748,12 @@ export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
   paymentIntermediaryId?: string | null;
   /** Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge's allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit. */
   opportunityId?: string | null;
-});
+};
 
-export type StripeChargeCreateGiftBody = MintGiftOverridesBody & ({
+export type StripeChargeCreateGiftBody = MintGiftOverridesBody & {
   /** Record this charge's GROSS as a payment on a finalized pledge. The donor derives from the pledge, the gift links through gift.opportunityId, and allocations seed from its plan. The pledge must be live (not archived/lost/dormant) and finalized; convert an open opportunity to a pledge first. */
   opportunityId?: string | null;
-});
+};
 
 export interface PaymentUnitGiftResponse {
   gift: GiftOrPayment;
@@ -7730,13 +7765,13 @@ export interface StagedGiftResponse {
   stagedPaymentId: string;
 }
 
-export type GiftCandidate = GiftOrPayment & ({
+export type GiftCandidate = GiftOrPayment & {
   organizationName?: string | null;
   householdName?: string | null;
   individualGiverPersonName?: string | null;
   /** Set when this gift is already owned by another money event — for a QB staged-payment anchor, another staged payment (QB cash-application ledger); for a Stripe-charge anchor, another Stripe charge (the QB ledger is expected, not a conflict). The UI disables linking to it to avoid double-counting. */
   alreadyLinkedStagedPaymentId?: string | null;
-});
+};
 
 export interface GiftCandidateList {
   data: GiftCandidate[];
@@ -7923,12 +7958,12 @@ export interface UpdateGiftAllocationBody {
 /**
  * Whether this row is a gift allocation or a pledge allocation.
  */
-export type RestrictionTextReviewRowSource = typeof RestrictionTextReviewRowSource[keyof typeof RestrictionTextReviewRowSource];
-
+export type RestrictionTextReviewRowSource =
+  (typeof RestrictionTextReviewRowSource)[keyof typeof RestrictionTextReviewRowSource];
 
 export const RestrictionTextReviewRowSource = {
-  gift: 'gift',
-  pledge: 'pledge',
+  gift: "gift",
+  pledge: "pledge",
 } as const;
 
 export interface RestrictionTextReviewRow {
@@ -7955,15 +7990,15 @@ export interface RestrictionTextReviewList {
   pagination: Pagination;
 }
 
-export type InteractionKind = typeof InteractionKind[keyof typeof InteractionKind];
-
+export type InteractionKind =
+  (typeof InteractionKind)[keyof typeof InteractionKind];
 
 export const InteractionKind = {
-  meeting: 'meeting',
-  phone_call: 'phone_call',
-  video_call: 'video_call',
-  conference: 'conference',
-  other: 'other',
+  meeting: "meeting",
+  phone_call: "phone_call",
+  video_call: "video_call",
+  conference: "conference",
+  other: "other",
 } as const;
 
 export interface Interaction {
@@ -8013,12 +8048,12 @@ export interface UpdateInteractionBody {
   householdIds?: string[] | null;
 }
 
-export type EmailMessageDirection = typeof EmailMessageDirection[keyof typeof EmailMessageDirection];
-
+export type EmailMessageDirection =
+  (typeof EmailMessageDirection)[keyof typeof EmailMessageDirection];
 
 export const EmailMessageDirection = {
-  sent: 'sent',
-  received: 'received',
+  sent: "sent",
+  received: "received",
 } as const;
 
 export interface EmailMessage {
@@ -8058,11 +8093,11 @@ export interface EmailAttachmentSummary {
   gmailAttachmentId?: string | null;
 }
 
-export type EmailMessageDetail = EmailMessage & ({
+export type EmailMessageDetail = EmailMessage & {
   bodyText?: string | null;
   bodyHtml?: string | null;
   attachments?: EmailAttachmentSummary[];
-});
+};
 
 export interface EmailMessageList {
   data: EmailMessage[];
@@ -8145,12 +8180,12 @@ export interface GoogleOauthStatus {
   lastError?: string | null;
 }
 
-export type DerivationDriftRowTable = typeof DerivationDriftRowTable[keyof typeof DerivationDriftRowTable];
-
+export type DerivationDriftRowTable =
+  (typeof DerivationDriftRowTable)[keyof typeof DerivationDriftRowTable];
 
 export const DerivationDriftRowTable = {
-  opportunities_and_pledges: 'opportunities_and_pledges',
-  gifts_and_payments: 'gifts_and_payments',
+  opportunities_and_pledges: "opportunities_and_pledges",
+  gifts_and_payments: "gifts_and_payments",
 } as const;
 
 export interface DerivationDriftRow {
@@ -8168,7 +8203,7 @@ export interface DerivationDriftRow {
 /**
  * Per-field drift totals (uncapped)
  */
-export type DerivationHealthReportByField = {[key: string]: number};
+export type DerivationHealthReportByField = { [key: string]: number };
 
 export interface DerivationHealthReport {
   ranAt: string;
@@ -8187,13 +8222,14 @@ export interface DerivationHealthReport {
 /**
  * State of the most recent run
  */
-export type SchoolSyncStatusLastStatus = typeof SchoolSyncStatusLastStatus[keyof typeof SchoolSyncStatusLastStatus] | null;
-
+export type SchoolSyncStatusLastStatus =
+  | (typeof SchoolSyncStatusLastStatus)[keyof typeof SchoolSyncStatusLastStatus]
+  | null;
 
 export const SchoolSyncStatusLastStatus = {
-  ok: 'ok',
-  error: 'error',
-  running: 'running',
+  ok: "ok",
+  error: "error",
+  running: "running",
 } as const;
 
 export interface SchoolSyncStatus {
@@ -8257,13 +8293,13 @@ export interface GoogleSyncStatus {
   calendar?: GoogleSyncStatusCalendar;
 }
 
-export type GmailSyncRunResponseReportMode = typeof GmailSyncRunResponseReportMode[keyof typeof GmailSyncRunResponseReportMode];
-
+export type GmailSyncRunResponseReportMode =
+  (typeof GmailSyncRunResponseReportMode)[keyof typeof GmailSyncRunResponseReportMode];
 
 export const GmailSyncRunResponseReportMode = {
-  bootstrap: 'bootstrap',
-  incremental: 'incremental',
-  rebootstrap: 'rebootstrap',
+  bootstrap: "bootstrap",
+  incremental: "incremental",
+  rebootstrap: "rebootstrap",
 } as const;
 
 export type GmailSyncRunResponseReport = {
@@ -8282,13 +8318,13 @@ export interface GmailSyncRunResponse {
   report?: GmailSyncRunResponseReport;
 }
 
-export type CalendarSyncRunResponseReportMode = typeof CalendarSyncRunResponseReportMode[keyof typeof CalendarSyncRunResponseReportMode];
-
+export type CalendarSyncRunResponseReportMode =
+  (typeof CalendarSyncRunResponseReportMode)[keyof typeof CalendarSyncRunResponseReportMode];
 
 export const CalendarSyncRunResponseReportMode = {
-  bootstrap: 'bootstrap',
-  incremental: 'incremental',
-  rebootstrap: 'rebootstrap',
+  bootstrap: "bootstrap",
+  incremental: "incremental",
+  rebootstrap: "rebootstrap",
 } as const;
 
 export type CalendarSyncRunResponseReport = {
@@ -8307,58 +8343,58 @@ export interface CalendarSyncRunResponse {
   report?: CalendarSyncRunResponseReport;
 }
 
-export type EmailProposalKind = typeof EmailProposalKind[keyof typeof EmailProposalKind];
-
+export type EmailProposalKind =
+  (typeof EmailProposalKind)[keyof typeof EmailProposalKind];
 
 export const EmailProposalKind = {
-  linkedin_job_change: 'linkedin_job_change',
-  auto_responder_move: 'auto_responder_move',
-  bounce_invalid: 'bounce_invalid',
-  bounce_soft: 'bounce_soft',
-  signature_update: 'signature_update',
-  grant_opportunity: 'grant_opportunity',
-  thank_you_acknowledgment: 'thank_you_acknowledgment',
-  wildflower_update: 'wildflower_update',
+  linkedin_job_change: "linkedin_job_change",
+  auto_responder_move: "auto_responder_move",
+  bounce_invalid: "bounce_invalid",
+  bounce_soft: "bounce_soft",
+  signature_update: "signature_update",
+  grant_opportunity: "grant_opportunity",
+  thank_you_acknowledgment: "thank_you_acknowledgment",
+  wildflower_update: "wildflower_update",
 } as const;
 
-export type EmailProposalStatus = typeof EmailProposalStatus[keyof typeof EmailProposalStatus];
-
+export type EmailProposalStatus =
+  (typeof EmailProposalStatus)[keyof typeof EmailProposalStatus];
 
 export const EmailProposalStatus = {
-  pending: 'pending',
-  applied: 'applied',
-  rejected: 'rejected',
-  ignored: 'ignored',
+  pending: "pending",
+  applied: "applied",
+  rejected: "rejected",
+  ignored: "ignored",
 } as const;
 
 export type EmailProposalPayload = { [key: string]: unknown };
 
-export type ProposedActionType = typeof ProposedActionType[keyof typeof ProposedActionType];
-
+export type ProposedActionType =
+  (typeof ProposedActionType)[keyof typeof ProposedActionType];
 
 export const ProposedActionType = {
-  deactivate_per: 'deactivate_per',
-  create_per: 'create_per',
-  create_person_with_per: 'create_person_with_per',
-  add_email: 'add_email',
-  set_primary_email: 'set_primary_email',
-  mark_email_invalid: 'mark_email_invalid',
-  create_grant_opportunity: 'create_grant_opportunity',
+  deactivate_per: "deactivate_per",
+  create_per: "create_per",
+  create_person_with_per: "create_person_with_per",
+  add_email: "add_email",
+  set_primary_email: "set_primary_email",
+  mark_email_invalid: "mark_email_invalid",
+  create_grant_opportunity: "create_grant_opportunity",
 } as const;
 
 export interface ProposedAction {
   type: ProposedActionType;
   reason: string;
   [key: string]: unknown;
- }
+}
 
-export type ApplyActionResultStatus = typeof ApplyActionResultStatus[keyof typeof ApplyActionResultStatus];
-
+export type ApplyActionResultStatus =
+  (typeof ApplyActionResultStatus)[keyof typeof ApplyActionResultStatus];
 
 export const ApplyActionResultStatus = {
-  applied: 'applied',
-  skipped: 'skipped',
-  failed: 'failed',
+  applied: "applied",
+  skipped: "skipped",
+  failed: "failed",
 } as const;
 
 export interface ApplyActionResult {
@@ -8411,14 +8447,16 @@ export interface EmailProposalSummary {
   totalPending: number;
 }
 
-export type EmailProposalActionFailedError = typeof EmailProposalActionFailedError[keyof typeof EmailProposalActionFailedError];
-
+export type EmailProposalActionFailedError =
+  (typeof EmailProposalActionFailedError)[keyof typeof EmailProposalActionFailedError];
 
 export const EmailProposalActionFailedError = {
-  action_failed: 'action_failed',
+  action_failed: "action_failed",
 } as const;
 
-export type EmailProposalActionFailedAttemptedResultsItem = { [key: string]: unknown };
+export type EmailProposalActionFailedAttemptedResultsItem = {
+  [key: string]: unknown;
+};
 
 export interface EmailProposalActionFailed {
   error: EmailProposalActionFailedError;
@@ -8431,7 +8469,7 @@ export interface AcceptEmailProposalBody {
   reviewerNote?: string | null;
   selectedActionIndexes?: number[] | null;
   [key: string]: unknown;
- }
+}
 
 export interface RejectEmailProposalBody {
   reviewerNote?: string | null;
@@ -8442,13 +8480,13 @@ export interface ReviseEmailProposalBody {
   reviewerGuidance: string;
 }
 
-export type TaskProposalStatus = typeof TaskProposalStatus[keyof typeof TaskProposalStatus];
-
+export type TaskProposalStatus =
+  (typeof TaskProposalStatus)[keyof typeof TaskProposalStatus];
 
 export const TaskProposalStatus = {
-  pending: 'pending',
-  accepted: 'accepted',
-  dismissed: 'dismissed',
+  pending: "pending",
+  accepted: "accepted",
+  dismissed: "dismissed",
 } as const;
 
 export type TaskProposalPayload = { [key: string]: unknown };
@@ -8489,23 +8527,21 @@ export interface AcceptTaskProposalBody {
   reviewerNote?: string | null;
 }
 
-export type TaskKind = typeof TaskKind[keyof typeof TaskKind];
-
+export type TaskKind = (typeof TaskKind)[keyof typeof TaskKind];
 
 export const TaskKind = {
-  general: 'general',
-  reporting_deadline: 'reporting_deadline',
-  thank_you_followup: 'thank_you_followup',
+  general: "general",
+  reporting_deadline: "reporting_deadline",
+  thank_you_followup: "thank_you_followup",
 } as const;
 
-export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus];
-
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus];
 
 export const TaskStatus = {
-  open: 'open',
-  waiting: 'waiting',
-  done: 'done',
-  cancelled: 'cancelled',
+  open: "open",
+  waiting: "waiting",
+  done: "done",
+  cancelled: "cancelled",
 } as const;
 
 export interface Task {
@@ -8543,42 +8579,42 @@ export interface ReviseTaskProposalBody {
   reviewerGuidance: string;
 }
 
-export type EmailIntelPromptStatus = typeof EmailIntelPromptStatus[keyof typeof EmailIntelPromptStatus];
-
+export type EmailIntelPromptStatus =
+  (typeof EmailIntelPromptStatus)[keyof typeof EmailIntelPromptStatus];
 
 export const EmailIntelPromptStatus = {
-  active: 'active',
-  draft: 'draft',
-  archived: 'archived',
+  active: "active",
+  draft: "draft",
+  archived: "archived",
 } as const;
 
-export type EmailIntelPromptOrigin = typeof EmailIntelPromptOrigin[keyof typeof EmailIntelPromptOrigin];
-
+export type EmailIntelPromptOrigin =
+  (typeof EmailIntelPromptOrigin)[keyof typeof EmailIntelPromptOrigin];
 
 export const EmailIntelPromptOrigin = {
-  hand_edited: 'hand_edited',
-  ai_generated: 'ai_generated',
-  reverted: 'reverted',
+  hand_edited: "hand_edited",
+  ai_generated: "ai_generated",
+  reverted: "reverted",
 } as const;
 
-export type EmailIntelSignalType = typeof EmailIntelSignalType[keyof typeof EmailIntelSignalType];
-
+export type EmailIntelSignalType =
+  (typeof EmailIntelSignalType)[keyof typeof EmailIntelSignalType];
 
 export const EmailIntelSignalType = {
-  linkedin_job_change: 'linkedin_job_change',
-  auto_responder_move: 'auto_responder_move',
-  bounce: 'bounce',
-  signature_update: 'signature_update',
-  grant_opportunity: 'grant_opportunity',
-  thank_you_acknowledgment: 'thank_you_acknowledgment',
+  linkedin_job_change: "linkedin_job_change",
+  auto_responder_move: "auto_responder_move",
+  bounce: "bounce",
+  signature_update: "signature_update",
+  grant_opportunity: "grant_opportunity",
+  thank_you_acknowledgment: "thank_you_acknowledgment",
 } as const;
 
-export type EmailIntelReviewPhase = typeof EmailIntelReviewPhase[keyof typeof EmailIntelReviewPhase];
-
+export type EmailIntelReviewPhase =
+  (typeof EmailIntelReviewPhase)[keyof typeof EmailIntelReviewPhase];
 
 export const EmailIntelReviewPhase = {
-  accuracy: 'accuracy',
-  suppression: 'suppression',
+  accuracy: "accuracy",
+  suppression: "suppression",
 } as const;
 
 export interface EmailIntelPrompt {
@@ -8798,14 +8834,14 @@ export interface UpdateTaskBody {
   mentionUserIds?: string[] | null;
 }
 
-export type GrantLeadStatus = typeof GrantLeadStatus[keyof typeof GrantLeadStatus];
-
+export type GrantLeadStatus =
+  (typeof GrantLeadStatus)[keyof typeof GrantLeadStatus];
 
 export const GrantLeadStatus = {
-  new: 'new',
-  claimed: 'claimed',
-  converted: 'converted',
-  archived: 'archived',
+  new: "new",
+  claimed: "claimed",
+  converted: "converted",
+  archived: "archived",
 } as const;
 
 export interface GrantLeadSighting {
@@ -8992,12 +9028,12 @@ export interface PromoteActionItemBody {
 /**
  * team = shared with everyone (creator-edit-only); individual = private to creator.
  */
-export type SavedViewVisibility = typeof SavedViewVisibility[keyof typeof SavedViewVisibility];
-
+export type SavedViewVisibility =
+  (typeof SavedViewVisibility)[keyof typeof SavedViewVisibility];
 
 export const SavedViewVisibility = {
-  team: 'team',
-  individual: 'individual',
+  team: "team",
+  individual: "individual",
 } as const;
 
 /**
@@ -9125,12 +9161,12 @@ export interface EmailTrackingInboundQueue {
   data: EmailTrackingInboundQueueRow[];
 }
 
-export type EmailTrackingResolutionQueueType = typeof EmailTrackingResolutionQueueType[keyof typeof EmailTrackingResolutionQueueType];
-
+export type EmailTrackingResolutionQueueType =
+  (typeof EmailTrackingResolutionQueueType)[keyof typeof EmailTrackingResolutionQueueType];
 
 export const EmailTrackingResolutionQueueType = {
-  outbound: 'outbound',
-  inbound: 'inbound',
+  outbound: "outbound",
+  inbound: "inbound",
 } as const;
 
 export interface EmailTrackingResolution {
@@ -9351,45 +9387,45 @@ export interface BulkArchiveBody {
 /**
  * replace = overwrite the person's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.
  */
-export type BulkUpdatePeoplePatchInterestsThematicMode = typeof BulkUpdatePeoplePatchInterestsThematicMode[keyof typeof BulkUpdatePeoplePatchInterestsThematicMode];
-
+export type BulkUpdatePeoplePatchInterestsThematicMode =
+  (typeof BulkUpdatePeoplePatchInterestsThematicMode)[keyof typeof BulkUpdatePeoplePatchInterestsThematicMode];
 
 export const BulkUpdatePeoplePatchInterestsThematicMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
  */
-export type BulkUpdatePeoplePatchInterestsAgesMode = typeof BulkUpdatePeoplePatchInterestsAgesMode[keyof typeof BulkUpdatePeoplePatchInterestsAgesMode];
-
+export type BulkUpdatePeoplePatchInterestsAgesMode =
+  (typeof BulkUpdatePeoplePatchInterestsAgesMode)[keyof typeof BulkUpdatePeoplePatchInterestsAgesMode];
 
 export const BulkUpdatePeoplePatchInterestsAgesMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
  */
-export type BulkUpdatePeoplePatchInterestsGovModelsMode = typeof BulkUpdatePeoplePatchInterestsGovModelsMode[keyof typeof BulkUpdatePeoplePatchInterestsGovModelsMode];
-
+export type BulkUpdatePeoplePatchInterestsGovModelsMode =
+  (typeof BulkUpdatePeoplePatchInterestsGovModelsMode)[keyof typeof BulkUpdatePeoplePatchInterestsGovModelsMode];
 
 export const BulkUpdatePeoplePatchInterestsGovModelsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing ids.
  */
-export type BulkUpdatePeoplePatchRegionIdsMode = typeof BulkUpdatePeoplePatchRegionIdsMode[keyof typeof BulkUpdatePeoplePatchRegionIdsMode];
-
+export type BulkUpdatePeoplePatchRegionIdsMode =
+  (typeof BulkUpdatePeoplePatchRegionIdsMode)[keyof typeof BulkUpdatePeoplePatchRegionIdsMode];
 
 export const BulkUpdatePeoplePatchRegionIdsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
@@ -9435,45 +9471,45 @@ export interface BulkUpdatePeopleBody {
 /**
  * replace = overwrite the organization's interests_thematic with this set (DESTRUCTIVE). append = union this set into the existing tags.
  */
-export type BulkUpdateOrganizationsPatchInterestsThematicMode = typeof BulkUpdateOrganizationsPatchInterestsThematicMode[keyof typeof BulkUpdateOrganizationsPatchInterestsThematicMode];
-
+export type BulkUpdateOrganizationsPatchInterestsThematicMode =
+  (typeof BulkUpdateOrganizationsPatchInterestsThematicMode)[keyof typeof BulkUpdateOrganizationsPatchInterestsThematicMode];
 
 export const BulkUpdateOrganizationsPatchInterestsThematicMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
  */
-export type BulkUpdateOrganizationsPatchInterestsAgesMode = typeof BulkUpdateOrganizationsPatchInterestsAgesMode[keyof typeof BulkUpdateOrganizationsPatchInterestsAgesMode];
-
+export type BulkUpdateOrganizationsPatchInterestsAgesMode =
+  (typeof BulkUpdateOrganizationsPatchInterestsAgesMode)[keyof typeof BulkUpdateOrganizationsPatchInterestsAgesMode];
 
 export const BulkUpdateOrganizationsPatchInterestsAgesMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing tags.
  */
-export type BulkUpdateOrganizationsPatchInterestsGovModelsMode = typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode[keyof typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode];
-
+export type BulkUpdateOrganizationsPatchInterestsGovModelsMode =
+  (typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode)[keyof typeof BulkUpdateOrganizationsPatchInterestsGovModelsMode];
 
 export const BulkUpdateOrganizationsPatchInterestsGovModelsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = overwrite (DESTRUCTIVE). append = union into existing ids.
  */
-export type BulkUpdateOrganizationsPatchRegionIdsMode = typeof BulkUpdateOrganizationsPatchRegionIdsMode[keyof typeof BulkUpdateOrganizationsPatchRegionIdsMode];
-
+export type BulkUpdateOrganizationsPatchRegionIdsMode =
+  (typeof BulkUpdateOrganizationsPatchRegionIdsMode)[keyof typeof BulkUpdateOrganizationsPatchRegionIdsMode];
 
 export const BulkUpdateOrganizationsPatchRegionIdsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 export interface BulkUpdateOrganizationsPatch {
@@ -9530,23 +9566,23 @@ export interface BulkUpdateHouseholdsBody {
 /**
  * replace = wipe pledge_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.
  */
-export type BulkUpdateOpportunitiesPatchEntitiesMode = typeof BulkUpdateOpportunitiesPatchEntitiesMode[keyof typeof BulkUpdateOpportunitiesPatchEntitiesMode];
-
+export type BulkUpdateOpportunitiesPatchEntitiesMode =
+  (typeof BulkUpdateOpportunitiesPatchEntitiesMode)[keyof typeof BulkUpdateOpportunitiesPatchEntitiesMode];
 
 export const BulkUpdateOpportunitiesPatchEntitiesMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = wipe existing pledge_allocations on each opp and recreate one minimal row per FY (DESTRUCTIVE: loses subAmount/intendedUsage on those rows). append = add allocations only for FYs not already present.
  */
-export type BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode = typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode[keyof typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode];
-
+export type BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode =
+  (typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode)[keyof typeof BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode];
 
 export const BulkUpdateOpportunitiesPatchCoveredFiscalYearsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 export interface BulkUpdateOpportunitiesPatch {
@@ -9586,23 +9622,23 @@ export interface BulkUpdateOpportunitiesBody {
 /**
  * replace = wipe gift_allocations rows whose entity_id is set (DESTRUCTIVE) and recreate one minimal row per entity. append = add allocations only for entities not already present.
  */
-export type BulkUpdateGiftsPatchEntityIdsMode = typeof BulkUpdateGiftsPatchEntityIdsMode[keyof typeof BulkUpdateGiftsPatchEntityIdsMode];
-
+export type BulkUpdateGiftsPatchEntityIdsMode =
+  (typeof BulkUpdateGiftsPatchEntityIdsMode)[keyof typeof BulkUpdateGiftsPatchEntityIdsMode];
 
 export const BulkUpdateGiftsPatchEntityIdsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 /**
  * replace = wipe gift_allocations rows whose grant_year is set (DESTRUCTIVE) and recreate one minimal row per FY. append = add allocations only for FYs not already present.
  */
-export type BulkUpdateGiftsPatchGrantYearsMode = typeof BulkUpdateGiftsPatchGrantYearsMode[keyof typeof BulkUpdateGiftsPatchGrantYearsMode];
-
+export type BulkUpdateGiftsPatchGrantYearsMode =
+  (typeof BulkUpdateGiftsPatchGrantYearsMode)[keyof typeof BulkUpdateGiftsPatchGrantYearsMode];
 
 export const BulkUpdateGiftsPatchGrantYearsMode = {
-  replace: 'replace',
-  append: 'append',
+  replace: "replace",
+  append: "append",
 } as const;
 
 export interface BulkUpdateGiftsPatch {
@@ -9789,154 +9825,154 @@ export type PageParameter = number;
 export type IncludeArchivedQueryParameter = boolean;
 
 export type SearchParams = {
-/**
- * Search query (min 2 chars; shorter returns empty groups).
- */
-q: string;
-/**
- * Max hits returned per entity group.
- * @minimum 1
- * @maximum 20
- */
-limitPerType?: number;
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Search query (min 2 chars; shorter returns empty groups).
+   */
+  q: string;
+  /**
+   * Max hits returned per entity group.
+   * @minimum 1
+   * @maximum 20
+   */
+  limitPerType?: number;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
 };
 
 export type ListPotentialDuplicatesParams = {
-/**
- * Which entity type to scan for duplicates.
- */
-type: ListPotentialDuplicatesType;
-/**
- * Max candidate pairs to return.
- * @minimum 1
- * @maximum 200
- */
-limit?: number;
+  /**
+   * Which entity type to scan for duplicates.
+   */
+  type: ListPotentialDuplicatesType;
+  /**
+   * Max candidate pairs to return.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
 };
 
-export type ListPotentialDuplicatesType = typeof ListPotentialDuplicatesType[keyof typeof ListPotentialDuplicatesType];
-
+export type ListPotentialDuplicatesType =
+  (typeof ListPotentialDuplicatesType)[keyof typeof ListPotentialDuplicatesType];
 
 export const ListPotentialDuplicatesType = {
-  organization: 'organization',
-  person: 'person',
+  organization: "organization",
+  person: "person",
 } as const;
 
 export type ListFinancialCorrectionsParams = {
-/**
- * Max proposals to return.
- * @minimum 1
- * @maximum 200
- */
-limit?: number;
+  /**
+   * Max proposals to return.
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
 };
 
 export type ListCleanupQueueParams = {
-/**
- * Filter by status. Omit to get open items only.
- */
-status?: CleanupQueueStatus;
-proposalKind?: CleanupProposalKind;
-reasonCode?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Filter by status. Omit to get open items only.
+   */
+  status?: CleanupQueueStatus;
+  proposalKind?: CleanupProposalKind;
+  reasonCode?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListCodingFormRowsParams = {
-/**
- * Filter by apply status. Omit for all.
- */
-status?: CodingFormRowStatus;
-/**
- * Filter by source sheet.
- */
-source?: ListCodingFormRowsSource;
-/**
- * Filter by match confidence tier.
- */
-matchTier?: ListCodingFormRowsMatchTier;
-/**
- * When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).
- */
-hasDriveLink?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Filter by apply status. Omit for all.
+   */
+  status?: CodingFormRowStatus;
+  /**
+   * Filter by source sheet.
+   */
+  source?: ListCodingFormRowsSource;
+  /**
+   * Filter by match confidence tier.
+   */
+  matchTier?: ListCodingFormRowsMatchTier;
+  /**
+   * When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).
+   */
+  hasDriveLink?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListCodingFormRowsSource = typeof ListCodingFormRowsSource[keyof typeof ListCodingFormRowsSource];
-
+export type ListCodingFormRowsSource =
+  (typeof ListCodingFormRowsSource)[keyof typeof ListCodingFormRowsSource];
 
 export const ListCodingFormRowsSource = {
-  fy24: 'fy24',
-  fy25: 'fy25',
-  fy26: 'fy26',
-  fy27: 'fy27',
-  girasol: 'girasol',
+  fy24: "fy24",
+  fy25: "fy25",
+  fy26: "fy26",
+  fy27: "fy27",
+  girasol: "girasol",
 } as const;
 
-export type ListCodingFormRowsMatchTier = typeof ListCodingFormRowsMatchTier[keyof typeof ListCodingFormRowsMatchTier];
-
+export type ListCodingFormRowsMatchTier =
+  (typeof ListCodingFormRowsMatchTier)[keyof typeof ListCodingFormRowsMatchTier];
 
 export const ListCodingFormRowsMatchTier = {
-  high: 'high',
-  suggested: 'suggested',
-  none: 'none',
+  high: "high",
+  suggested: "suggested",
+  none: "none",
 } as const;
 
 export type ListEmailProposalsParams = {
-kind?: EmailProposalKind;
-status?: EmailProposalStatus;
-mailboxUserId?: string;
-/**
- * Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.
- */
-allMailboxes?: boolean;
-/**
- * Filter to proposals targeting this person.
- */
-personId?: string;
-/**
- * Filter to proposals targeting this funder.
- */
-organizationId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  kind?: EmailProposalKind;
+  status?: EmailProposalStatus;
+  mailboxUserId?: string;
+  /**
+   * Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.
+   */
+  allMailboxes?: boolean;
+  /**
+   * Filter to proposals targeting this person.
+   */
+  personId?: string;
+  /**
+   * Filter to proposals targeting this funder.
+   */
+  organizationId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetTaskProposalParams = {
-/**
- * Entity to suggest a next step for (person).
- */
-personId?: string;
-/**
- * Entity to suggest a next step for (organization).
- */
-organizationId?: string;
+  /**
+   * Entity to suggest a next step for (person).
+   */
+  personId?: string;
+  /**
+   * Entity to suggest a next step for (organization).
+   */
+  organizationId?: string;
 };
 
 export type AdminDiscardEmailIntelPrompt200 = {
@@ -9944,309 +9980,309 @@ export type AdminDiscardEmailIntelPrompt200 = {
 };
 
 export type AdminListEmailIntelFeedbackParams = {
-kind?: EmailProposalKind;
-status?: EmailProposalStatus;
-/**
+  kind?: EmailProposalKind;
+  status?: EmailProposalStatus;
+  /**
  * Filter the feed by who resolved each proposal. `all` (default) returns every resolved proposal. `real` excludes feedback authored by automated test accounts (the "Test Dev"/"Test Admin" users auto-provisioned during end-to-end test runs), leaving only feedback from real human reviewers.
 
  */
-reviewerSource?: AdminListEmailIntelFeedbackReviewerSource;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  reviewerSource?: AdminListEmailIntelFeedbackReviewerSource;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type AdminListEmailIntelFeedbackReviewerSource = typeof AdminListEmailIntelFeedbackReviewerSource[keyof typeof AdminListEmailIntelFeedbackReviewerSource];
-
+export type AdminListEmailIntelFeedbackReviewerSource =
+  (typeof AdminListEmailIntelFeedbackReviewerSource)[keyof typeof AdminListEmailIntelFeedbackReviewerSource];
 
 export const AdminListEmailIntelFeedbackReviewerSource = {
-  all: 'all',
-  real: 'real',
+  all: "all",
+  real: "real",
 } as const;
 
 export type ListUnrecognizedCorrespondentsParams = {
-mailboxUserId?: string;
-/**
- * Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.
- */
-allMailboxes?: boolean;
-/**
- * @minimum 1
- * @maximum 365
- */
-days?: number;
-/**
- * @minimum 1
- */
-minThreads?: number;
+  mailboxUserId?: string;
+  /**
+   * Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.
+   */
+  allMailboxes?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   */
+  minThreads?: number;
 };
 
 export type ListRegionsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-type?: RegionType;
-/**
- * Case-insensitive match against name, displayPath, stateAbbreviation, and aliases.
- */
-search?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  type?: RegionType;
+  /**
+   * Case-insensitive match against name, displayPath, stateAbbreviation, and aliases.
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetRegionContainmentParams = {
-/**
- * Region ids to expand (max 200).
- */
-ids: string[];
+  /**
+   * Region ids to expand (max 200).
+   */
+  ids: string[];
 };
 
 export type ListSchoolsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-status?: SchoolStatus;
-governanceModel?: GovernanceModel;
-search?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  status?: SchoolStatus;
+  governanceModel?: GovernanceModel;
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListFiscalYearEntityGoalsParams = {
-/**
- * Filter by fiscal_year.id
- */
-fyId?: string;
-/**
- * Filter by entity.id
- */
-entityId?: string;
-/**
- * Filter by category. Accepts the new loan/grant tokens AND the legacy revenue/loan_capital tokens.
- */
-category?: GoalCategoryParam;
+  /**
+   * Filter by fiscal_year.id
+   */
+  fyId?: string;
+  /**
+   * Filter by entity.id
+   */
+  entityId?: string;
+  /**
+   * Filter by category. Accepts the new loan/grant tokens AND the legacy revenue/loan_capital tokens.
+   */
+  category?: GoalCategoryParam;
 };
 
 export type ListFundraisingCampaignsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
 };
 
 export type ListFundableProjectsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
 };
 
 export type ListFiscalYearsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
 };
 
 export type ListOrganizationsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-search?: string;
-/**
- * Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.
- */
-issuesGrants?: boolean;
-/**
- * Filter to organizations that make PRIs (true) or do not (false). Omit for all.
- */
-makesPris?: boolean;
-/**
- * Filter to direct child organizations of the given parent.
- */
-parentOrganizationId?: string;
-/**
- * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.
- */
-lifetimeGivingPresence?: ListOrganizationsLifetimeGivingPresence;
-/**
- * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
- */
-openAsksPresence?: ListOrganizationsOpenAsksPresence;
-/**
- * Presence filter on primary contact (`has` = set, `blank` = none).
- */
-primaryContactPresence?: ListOrganizationsPrimaryContactPresence;
-entityType?: string[];
-activeStatus?: string[];
-connectionStatus?: string[];
-enthusiasm?: string[];
-strategicAlignment?: string[];
-capacityRating?: string[];
-ownerUserId?: string[];
-/**
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  search?: string;
+  /**
+   * Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.
+   */
+  issuesGrants?: boolean;
+  /**
+   * Filter to organizations that make PRIs (true) or do not (false). Omit for all.
+   */
+  makesPris?: boolean;
+  /**
+   * Filter to direct child organizations of the given parent.
+   */
+  parentOrganizationId?: string;
+  /**
+   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.
+   */
+  lifetimeGivingPresence?: ListOrganizationsLifetimeGivingPresence;
+  /**
+   * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
+   */
+  openAsksPresence?: ListOrganizationsOpenAsksPresence;
+  /**
+   * Presence filter on primary contact (`has` = set, `blank` = none).
+   */
+  primaryContactPresence?: ListOrganizationsPrimaryContactPresence;
+  entityType?: string[];
+  activeStatus?: string[];
+  connectionStatus?: string[];
+  enthusiasm?: string[];
+  strategicAlignment?: string[];
+  capacityRating?: string[];
+  ownerUserId?: string[];
+  /**
  * Filter to organizations whose `priority` tier is in the given set
 (top/high/medium/low). Multi-value: repeat or comma-separate.
 Accepts the literal `__blank__` to match rows with no priority set.
 
  */
-priority?: string[];
-/**
+  priority?: string[];
+  /**
  * Filter to organizations whose `regionIds` array overlaps the given set.
 Multi-value: repeat or comma-separate.
 
  */
-regionIds?: string[];
-/**
+  regionIds?: string[];
+  /**
  * Filter to organizations whose `interestsThematic` array overlaps the
 given set (OR semantics). Multi-value: repeat or comma-separate.
 
  */
-interestsThematic?: string[];
-type?: string[];
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  interestsThematic?: string[];
+  type?: string[];
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListOrganizationsLifetimeGivingPresence = typeof ListOrganizationsLifetimeGivingPresence[keyof typeof ListOrganizationsLifetimeGivingPresence];
-
+export type ListOrganizationsLifetimeGivingPresence =
+  (typeof ListOrganizationsLifetimeGivingPresence)[keyof typeof ListOrganizationsLifetimeGivingPresence];
 
 export const ListOrganizationsLifetimeGivingPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOrganizationsOpenAsksPresence = typeof ListOrganizationsOpenAsksPresence[keyof typeof ListOrganizationsOpenAsksPresence];
-
+export type ListOrganizationsOpenAsksPresence =
+  (typeof ListOrganizationsOpenAsksPresence)[keyof typeof ListOrganizationsOpenAsksPresence];
 
 export const ListOrganizationsOpenAsksPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOrganizationsPrimaryContactPresence = typeof ListOrganizationsPrimaryContactPresence[keyof typeof ListOrganizationsPrimaryContactPresence];
-
+export type ListOrganizationsPrimaryContactPresence =
+  (typeof ListOrganizationsPrimaryContactPresence)[keyof typeof ListOrganizationsPrimaryContactPresence];
 
 export const ListOrganizationsPrimaryContactPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
 export type ListPaymentIntermediariesParams = {
-search?: string;
-type?: PaymentIntermediaryType;
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  type?: PaymentIntermediaryType;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListHouseholdsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-search?: string;
-active?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  search?: string;
+  active?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ExportPeopleCsvParams = {
-fields?: string;
+  fields?: string;
 };
 
 export type ExportOrganizationsCsvParams = {
-fields?: string;
+  fields?: string;
 };
 
 export type ExportOpportunitiesAndPledgesCsvParams = {
-fields?: string;
+  fields?: string;
 };
 
 export type ExportGiftsAndPaymentsCsvParams = {
-fields?: string;
+  fields?: string;
 };
 
 export type ListPeopleParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-search?: string;
-deceased?: boolean;
-/**
- * When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff / "foundation partners"). Omit or `true` to include everyone.
- */
-showFoundationPartners?: boolean;
-regionId?: string;
-/**
- * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
- */
-lifetimeGivingPresence?: ListPeopleLifetimeGivingPresence;
-/**
- * Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).
- */
-lastGiftPresence?: ListPeopleLastGiftPresence;
-/**
- * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
- */
-openAsksPresence?: ListPeopleOpenAsksPresence;
-/**
- * Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).
- */
-activeAffiliationPresence?: ListPeopleActiveAffiliationPresence;
-/**
- * Presence filter on last contacted date (`has` = set, `blank` = null).
- */
-lastContactedPresence?: ListPeopleLastContactedPresence;
-/**
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  search?: string;
+  deceased?: boolean;
+  /**
+   * When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff / "foundation partners"). Omit or `true` to include everyone.
+   */
+  showFoundationPartners?: boolean;
+  regionId?: string;
+  /**
+   * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
+   */
+  lifetimeGivingPresence?: ListPeopleLifetimeGivingPresence;
+  /**
+   * Rollup presence filter on most-recent gift date (`has` = any gift, `blank` = none).
+   */
+  lastGiftPresence?: ListPeopleLastGiftPresence;
+  /**
+   * Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).
+   */
+  openAsksPresence?: ListPeopleOpenAsksPresence;
+  /**
+   * Presence filter on current funder/organization roles (`has` = any current role, `blank` = none).
+   */
+  activeAffiliationPresence?: ListPeopleActiveAffiliationPresence;
+  /**
+   * Presence filter on last contacted date (`has` = set, `blank` = null).
+   */
+  lastContactedPresence?: ListPeopleLastContactedPresence;
+  /**
  * Filter to people by derived newsletter status. Multi-value
 (OR semantics): repeat or comma-separate. `subscribed` =
 newsletter on and not unsubscribed; `unsubscribed` =
@@ -10254,208 +10290,208 @@ unsubscribed flag set (wins over newsletter); `not_subscribed`
 = newsletter off and not unsubscribed.
 
  */
-newsletterStatus?: ListPeopleNewsletterStatusItem[];
-/**
+  newsletterStatus?: ListPeopleNewsletterStatusItem[];
+  /**
  * Capacity-rating slugs (see CapacityRating). Accepts the
 literal `__blank__` to match rows with no capacity rating set.
 
  */
-capacityRating?: string[];
-/**
+  capacityRating?: string[];
+  /**
  * Connection-status slugs (see ConnectionStatus). Accepts the
 literal `__blank__` to match rows with no connection status set.
 
  */
-connectionStatus?: string[];
-enthusiasm?: string[];
-/**
+  connectionStatus?: string[];
+  enthusiasm?: string[];
+  /**
  * Owner user-id values. Accepts the literal `__blank__` to match
 rows with no owner assigned.
 
  */
-ownerUserId?: string[];
-/**
+  ownerUserId?: string[];
+  /**
  * Filter to people whose `priority` tier is in the given set
 (top/high/medium/low). Multi-value: repeat or comma-separate.
 Accepts the literal `__blank__` to match rows with no priority set.
 
  */
-priority?: string[];
-/**
+  priority?: string[];
+  /**
  * Filter to people whose `regionIds` array overlaps the given set
 (any selected region appears in the person's regions). Multi-value:
 repeat or comma-separate. Distinct from `regionId` which filters
 on `currentHomeRegionId`.
 
  */
-regionIds?: string[];
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  regionIds?: string[];
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListPeopleLifetimeGivingPresence = typeof ListPeopleLifetimeGivingPresence[keyof typeof ListPeopleLifetimeGivingPresence];
-
+export type ListPeopleLifetimeGivingPresence =
+  (typeof ListPeopleLifetimeGivingPresence)[keyof typeof ListPeopleLifetimeGivingPresence];
 
 export const ListPeopleLifetimeGivingPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListPeopleLastGiftPresence = typeof ListPeopleLastGiftPresence[keyof typeof ListPeopleLastGiftPresence];
-
+export type ListPeopleLastGiftPresence =
+  (typeof ListPeopleLastGiftPresence)[keyof typeof ListPeopleLastGiftPresence];
 
 export const ListPeopleLastGiftPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListPeopleOpenAsksPresence = typeof ListPeopleOpenAsksPresence[keyof typeof ListPeopleOpenAsksPresence];
-
+export type ListPeopleOpenAsksPresence =
+  (typeof ListPeopleOpenAsksPresence)[keyof typeof ListPeopleOpenAsksPresence];
 
 export const ListPeopleOpenAsksPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListPeopleActiveAffiliationPresence = typeof ListPeopleActiveAffiliationPresence[keyof typeof ListPeopleActiveAffiliationPresence];
-
+export type ListPeopleActiveAffiliationPresence =
+  (typeof ListPeopleActiveAffiliationPresence)[keyof typeof ListPeopleActiveAffiliationPresence];
 
 export const ListPeopleActiveAffiliationPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListPeopleLastContactedPresence = typeof ListPeopleLastContactedPresence[keyof typeof ListPeopleLastContactedPresence];
-
+export type ListPeopleLastContactedPresence =
+  (typeof ListPeopleLastContactedPresence)[keyof typeof ListPeopleLastContactedPresence];
 
 export const ListPeopleLastContactedPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListPeopleNewsletterStatusItem = typeof ListPeopleNewsletterStatusItem[keyof typeof ListPeopleNewsletterStatusItem];
-
+export type ListPeopleNewsletterStatusItem =
+  (typeof ListPeopleNewsletterStatusItem)[keyof typeof ListPeopleNewsletterStatusItem];
 
 export const ListPeopleNewsletterStatusItem = {
-  subscribed: 'subscribed',
-  unsubscribed: 'unsubscribed',
-  not_subscribed: 'not_subscribed',
+  subscribed: "subscribed",
+  unsubscribed: "unsubscribed",
+  not_subscribed: "not_subscribed",
 } as const;
 
 export type ListPeopleEntityRolesParams = {
-personId?: string;
-organizationId?: string;
-paymentIntermediaryId?: string;
-householdId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  personId?: string;
+  organizationId?: string;
+  paymentIntermediaryId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListDonorPaymentIntermediariesParams = {
-organizationId?: string;
-individualGiverPersonId?: string;
-householdId?: string;
+  organizationId?: string;
+  individualGiverPersonId?: string;
+  householdId?: string;
 };
 
 export type ListEmailsParams = {
-/**
- * Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.
- */
-email?: string;
-personId?: string;
-organizationId?: string;
-paymentIntermediaryId?: string;
-householdId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Exact address lookup (case-insensitive). Used to preflight 'is this address already on file' before creating a person from a correspondent.
+   */
+  email?: string;
+  personId?: string;
+  organizationId?: string;
+  paymentIntermediaryId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListPhoneNumbersParams = {
-personId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  personId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListAddressesParams = {
-personId?: string;
-organizationId?: string;
-paymentIntermediaryId?: string;
-householdId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  personId?: string;
+  organizationId?: string;
+  paymentIntermediaryId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListOpportunitiesAndPledgesParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-/**
- * Tokenized case-insensitive search: every whitespace-separated word must match the record name or donor display name (org / household / individual). Word order and connector words (e.g. 'and') don't matter.
- */
-search?: string;
-/**
- * Rollup presence filter on paid amount (`has` = >0, `blank` = none).
- */
-paidPresence?: ListOpportunitiesAndPledgesPaidPresence;
-/**
- * Presence filter on covered fiscal years (`has` = any, `blank` = none).
- */
-coveredFysPresence?: ListOpportunitiesAndPledgesCoveredFysPresence;
-/**
- * Presence filter on linked entities (`has` = any allocation, `blank` = none).
- */
-entitiesPresence?: ListOpportunitiesAndPledgesEntitiesPresence;
-/**
- * Presence filter on projected close date (`has` = set, `blank` = null).
- */
-projectedCloseDatePresence?: ListOpportunitiesAndPledgesProjectedCloseDatePresence;
-/**
- * Presence filter on application deadline (`has` = set, `blank` = null).
- */
-applicationDeadlinePresence?: ListOpportunitiesAndPledgesApplicationDeadlinePresence;
-/**
- * Presence filter on win probability (`has` = set, `blank` = null).
- */
-winProbabilityPresence?: ListOpportunitiesAndPledgesWinProbabilityPresence;
-status?: string[];
-stage?: string[];
-/**
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Tokenized case-insensitive search: every whitespace-separated word must match the record name or donor display name (org / household / individual). Word order and connector words (e.g. 'and') don't matter.
+   */
+  search?: string;
+  /**
+   * Rollup presence filter on paid amount (`has` = >0, `blank` = none).
+   */
+  paidPresence?: ListOpportunitiesAndPledgesPaidPresence;
+  /**
+   * Presence filter on covered fiscal years (`has` = any, `blank` = none).
+   */
+  coveredFysPresence?: ListOpportunitiesAndPledgesCoveredFysPresence;
+  /**
+   * Presence filter on linked entities (`has` = any allocation, `blank` = none).
+   */
+  entitiesPresence?: ListOpportunitiesAndPledgesEntitiesPresence;
+  /**
+   * Presence filter on projected close date (`has` = set, `blank` = null).
+   */
+  projectedCloseDatePresence?: ListOpportunitiesAndPledgesProjectedCloseDatePresence;
+  /**
+   * Presence filter on application deadline (`has` = set, `blank` = null).
+   */
+  applicationDeadlinePresence?: ListOpportunitiesAndPledgesApplicationDeadlinePresence;
+  /**
+   * Presence filter on win probability (`has` = set, `blank` = null).
+   */
+  winProbabilityPresence?: ListOpportunitiesAndPledgesWinProbabilityPresence;
+  status?: string[];
+  stage?: string[];
+  /**
  * Convenience filter encoding the page split:
   pledges       — writtenPledge=true (the sticky commitment outcome).
                   Drives the /pledges page; historical pledges stay
@@ -10465,12 +10501,12 @@ stage?: string[];
 Omit to include all rows.
 
  */
-pledgeView?: ListOpportunitiesAndPledgesPledgeView;
-/**
- * Filter strictly on the written_pledge column.
- */
-writtenPledge?: boolean;
-/**
+  pledgeView?: ListOpportunitiesAndPledgesPledgeView;
+  /**
+   * Filter strictly on the written_pledge column.
+   */
+  writtenPledge?: boolean;
+  /**
  * Donor-lifecycle worklist preset ("what hasn't been done yet"). Each
 value applies a composite server-side filter on top of any other
 filters (status, owner, entity scope, etc.) and is the canonical,
@@ -10490,247 +10526,247 @@ drift-proof definition shared with the dashboard worklist counts:
                      "overdue" proxy.
 
  */
-worklist?: ListOpportunitiesAndPledgesWorklist;
-type?: string[];
-organizationId?: string;
-householdId?: string;
-individualGiverPersonId?: string;
-ownerUserId?: string[];
-/**
+  worklist?: ListOpportunitiesAndPledgesWorklist;
+  type?: string[];
+  organizationId?: string;
+  householdId?: string;
+  individualGiverPersonId?: string;
+  ownerUserId?: string[];
+  /**
  * Filter to opportunities that have at least one pledge_allocation
 with `entity_id` in the given set. Comma-separated form supported.
 
  */
-entityId?: string[];
-/**
+  entityId?: string[];
+  /**
  * Filter to opportunities that have at least one pledge_allocation
 with `grant_year` in the given set (e.g. `fy2026`). Multi-value:
 repeat the param or comma-separate. Omit to include all fiscal
 years.
 
  */
-fiscalYear?: string[];
-/**
+  fiscalYear?: string[];
+  /**
  * Filter to opportunities/pledges that have at least one pledge_allocation
 with fundable_project_id in the given set. Comma-separated form supported.
 
  */
-fundableProjectId?: string[];
-/**
+  fundableProjectId?: string[];
+  /**
  * When true, the response includes `stageAskTotals` — SUM(ask_amount)
 per stage over ALL rows matching the filters, not just the
 returned page. Used by the pipeline board so column totals stay
 correct when the result set exceeds the page limit.
 
  */
-includeStageAskTotals?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  includeStageAskTotals?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListOpportunitiesAndPledgesPaidPresence = typeof ListOpportunitiesAndPledgesPaidPresence[keyof typeof ListOpportunitiesAndPledgesPaidPresence];
-
+export type ListOpportunitiesAndPledgesPaidPresence =
+  (typeof ListOpportunitiesAndPledgesPaidPresence)[keyof typeof ListOpportunitiesAndPledgesPaidPresence];
 
 export const ListOpportunitiesAndPledgesPaidPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesCoveredFysPresence = typeof ListOpportunitiesAndPledgesCoveredFysPresence[keyof typeof ListOpportunitiesAndPledgesCoveredFysPresence];
-
+export type ListOpportunitiesAndPledgesCoveredFysPresence =
+  (typeof ListOpportunitiesAndPledgesCoveredFysPresence)[keyof typeof ListOpportunitiesAndPledgesCoveredFysPresence];
 
 export const ListOpportunitiesAndPledgesCoveredFysPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesEntitiesPresence = typeof ListOpportunitiesAndPledgesEntitiesPresence[keyof typeof ListOpportunitiesAndPledgesEntitiesPresence];
-
+export type ListOpportunitiesAndPledgesEntitiesPresence =
+  (typeof ListOpportunitiesAndPledgesEntitiesPresence)[keyof typeof ListOpportunitiesAndPledgesEntitiesPresence];
 
 export const ListOpportunitiesAndPledgesEntitiesPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesProjectedCloseDatePresence = typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence[keyof typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence];
-
+export type ListOpportunitiesAndPledgesProjectedCloseDatePresence =
+  (typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence)[keyof typeof ListOpportunitiesAndPledgesProjectedCloseDatePresence];
 
 export const ListOpportunitiesAndPledgesProjectedCloseDatePresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesApplicationDeadlinePresence = typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence[keyof typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence];
-
+export type ListOpportunitiesAndPledgesApplicationDeadlinePresence =
+  (typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence)[keyof typeof ListOpportunitiesAndPledgesApplicationDeadlinePresence];
 
 export const ListOpportunitiesAndPledgesApplicationDeadlinePresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesWinProbabilityPresence = typeof ListOpportunitiesAndPledgesWinProbabilityPresence[keyof typeof ListOpportunitiesAndPledgesWinProbabilityPresence];
-
+export type ListOpportunitiesAndPledgesWinProbabilityPresence =
+  (typeof ListOpportunitiesAndPledgesWinProbabilityPresence)[keyof typeof ListOpportunitiesAndPledgesWinProbabilityPresence];
 
 export const ListOpportunitiesAndPledgesWinProbabilityPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListOpportunitiesAndPledgesPledgeView = typeof ListOpportunitiesAndPledgesPledgeView[keyof typeof ListOpportunitiesAndPledgesPledgeView];
-
+export type ListOpportunitiesAndPledgesPledgeView =
+  (typeof ListOpportunitiesAndPledgesPledgeView)[keyof typeof ListOpportunitiesAndPledgesPledgeView];
 
 export const ListOpportunitiesAndPledgesPledgeView = {
-  pledges: 'pledges',
-  opportunities: 'opportunities',
+  pledges: "pledges",
+  opportunities: "opportunities",
 } as const;
 
-export type ListOpportunitiesAndPledgesWorklist = typeof ListOpportunitiesAndPledgesWorklist[keyof typeof ListOpportunitiesAndPledgesWorklist];
-
+export type ListOpportunitiesAndPledgesWorklist =
+  (typeof ListOpportunitiesAndPledgesWorklist)[keyof typeof ListOpportunitiesAndPledgesWorklist];
 
 export const ListOpportunitiesAndPledgesWorklist = {
-  verbal_no_letter: 'verbal_no_letter',
-  committed_unpaid: 'committed_unpaid',
-  partially_paid: 'partially_paid',
+  verbal_no_letter: "verbal_no_letter",
+  committed_unpaid: "committed_unpaid",
+  partially_paid: "partially_paid",
 } as const;
 
 export type ListPledgeAllocationsParams = {
-pledgeOrOpportunityId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  pledgeOrOpportunityId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListPledgeExpectedPaymentsParams = {
-pledgeOrOpportunityId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  pledgeOrOpportunityId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListGiftsAndPaymentsParams = {
-/**
- * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
- */
-includeArchived?: IncludeArchivedQueryParameter;
-/**
- * Tokenized case-insensitive search: every whitespace-separated word must match the record name, donor display name (org / household / individual), or linked payment-intermediary name. Word order and connector words (e.g. 'and') don't matter.
- */
-search?: string;
-/**
- * Presence filter on linked entities (`has` = any allocation, `blank` = none).
- */
-entitiesPresence?: ListGiftsAndPaymentsEntitiesPresence;
-/**
- * Presence filter on display usages (`has` = any, `blank` = none).
- */
-usagesPresence?: ListGiftsAndPaymentsUsagesPresence;
-/**
- * Presence filter on grant years (`has` = any, `blank` = none).
- */
-grantYearsPresence?: ListGiftsAndPaymentsGrantYearsPresence;
-type?: string[];
-organizationId?: string;
-householdId?: string;
-individualGiverPersonId?: string;
-opportunityId?: string;
-paymentMethod?: string[];
-/**
- * Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).
- */
-thankYouSentAtPresence?: ListGiftsAndPaymentsThankYouSentAtPresence;
-/**
- * Presence filter on date received (`has` = set, `blank` = null).
- */
-dateReceivedPresence?: ListGiftsAndPaymentsDateReceivedPresence;
-/**
- * Presence filter on purpose verbatim notes across allocations (`has` = any allocation has one, `blank` = none).
- */
-purposeVerbatimPresence?: ListGiftsAndPaymentsPurposeVerbatimPresence;
-/**
- * Filter by restriction summary label (OR semantics). `restricted` = at least one allocation has a donor-restricted axis (regional/usage/time), a fundable project, or an entity other than wildflower_foundation; `unrestricted` = none of those conditions hold on any allocation.
- */
-restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
-/**
- * Filter to gifts with at least one allocation whose regional_restriction_type is in the given set (OR). Repeat or comma-separate.
- */
-regionalRestrictionTypes?: RestrictionAxis[];
-/**
- * Filter to gifts with at least one allocation whose other_restriction_type is in the given set (OR). Repeat or comma-separate.
- */
-otherRestrictionTypes?: RestrictionAxis[];
-/**
- * Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate.
- */
-timeRestrictionTypes?: RestrictionAxis[];
-ownerUserId?: string[];
-/**
+  /**
+   * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+   */
+  includeArchived?: IncludeArchivedQueryParameter;
+  /**
+   * Tokenized case-insensitive search: every whitespace-separated word must match the record name, donor display name (org / household / individual), or linked payment-intermediary name. Word order and connector words (e.g. 'and') don't matter.
+   */
+  search?: string;
+  /**
+   * Presence filter on linked entities (`has` = any allocation, `blank` = none).
+   */
+  entitiesPresence?: ListGiftsAndPaymentsEntitiesPresence;
+  /**
+   * Presence filter on display usages (`has` = any, `blank` = none).
+   */
+  usagesPresence?: ListGiftsAndPaymentsUsagesPresence;
+  /**
+   * Presence filter on grant years (`has` = any, `blank` = none).
+   */
+  grantYearsPresence?: ListGiftsAndPaymentsGrantYearsPresence;
+  type?: string[];
+  organizationId?: string;
+  householdId?: string;
+  individualGiverPersonId?: string;
+  opportunityId?: string;
+  paymentMethod?: string[];
+  /**
+   * Presence filter on thank-you sent date (`has` = sent, `blank` = not sent).
+   */
+  thankYouSentAtPresence?: ListGiftsAndPaymentsThankYouSentAtPresence;
+  /**
+   * Presence filter on date received (`has` = set, `blank` = null).
+   */
+  dateReceivedPresence?: ListGiftsAndPaymentsDateReceivedPresence;
+  /**
+   * Presence filter on purpose verbatim notes across allocations (`has` = any allocation has one, `blank` = none).
+   */
+  purposeVerbatimPresence?: ListGiftsAndPaymentsPurposeVerbatimPresence;
+  /**
+   * Filter by restriction summary label (OR semantics). `restricted` = at least one allocation has a donor-restricted axis (regional/usage/time), a fundable project, or an entity other than wildflower_foundation; `unrestricted` = none of those conditions hold on any allocation.
+   */
+  restrictionLabels?: ListGiftsAndPaymentsRestrictionLabelsItem[];
+  /**
+   * Filter to gifts with at least one allocation whose regional_restriction_type is in the given set (OR). Repeat or comma-separate.
+   */
+  regionalRestrictionTypes?: RestrictionAxis[];
+  /**
+   * Filter to gifts with at least one allocation whose other_restriction_type is in the given set (OR). Repeat or comma-separate.
+   */
+  otherRestrictionTypes?: RestrictionAxis[];
+  /**
+   * Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate.
+   */
+  timeRestrictionTypes?: RestrictionAxis[];
+  ownerUserId?: string[];
+  /**
  * Filter to gifts that have at least one gift_allocation with `entity_id`
 in the given set. Comma-separated form supported.
 
  */
-entityId?: string[];
-/**
+  entityId?: string[];
+  /**
  * Filter to gifts that have at least one gift_allocation with
 `grant_year` in the given set (e.g. `fy2026`). Multi-value:
 repeat the param or comma-separate. Omit to include all
 fiscal years.
 
  */
-fiscalYear?: string[];
-/**
+  fiscalYear?: string[];
+  /**
  * Filter to gifts that have at least one gift_allocation with
 fundable_project_id in the given set. Comma-separated form supported.
 
  */
-fundableProjectId?: string[];
-/**
- * Keep gifts with dateReceived on/after this date (inclusive).
- */
-dateAfter?: string;
-/**
- * Keep gifts with dateReceived on/before this date (inclusive).
- */
-dateBefore?: string;
-/**
- * Exact gift amount (major units) to filter by, e.g. `480` or `480.00`. Numeric-equality match on the gift's `amount`; non-numeric values are ignored.
- */
-amount?: string;
-/**
- * Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).
- */
-linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;
-/**
+  fundableProjectId?: string[];
+  /**
+   * Keep gifts with dateReceived on/after this date (inclusive).
+   */
+  dateAfter?: string;
+  /**
+   * Keep gifts with dateReceived on/before this date (inclusive).
+   */
+  dateBefore?: string;
+  /**
+   * Exact gift amount (major units) to filter by, e.g. `480` or `480.00`. Numeric-equality match on the gift's `amount`; non-numeric values are ignored.
+   */
+  amount?: string;
+  /**
+   * Filter by whether a QuickBooks staged payment is reconciled to / created this gift (`linked`) or not (`unlinked`).
+   */
+  linkedToQuickbooks?: ListGiftsAndPaymentsLinkedToQuickbooks;
+  /**
  * Filter on the derived per-gift QuickBooks-tie status. Repeat or
 comma-separate for multiple values. The special value `untied`
 (sugar for `missing` + `amount_mismatch`) lists on-books gifts that
 should tie to a QuickBooks record but don't.
 
  */
-quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
-/**
- * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. Answered entirely from the ledger-derived tie: `quickbooksTieStatus = missing` (no counted payment-application row from any source). Off-books/exempt and processor-sourced (tied) gifts are excluded.
- */
-awaitingEvidence?: boolean;
-/**
+  quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
+  /**
+   * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. Answered entirely from the ledger-derived tie: `quickbooksTieStatus = missing` (no counted payment-application row from any source). Off-books/exempt and processor-sourced (tied) gifts are excluded.
+   */
+  awaitingEvidence?: boolean;
+  /**
  * Donor-lifecycle worklist preset ("what hasn't been done yet"), the
 canonical definition shared with the dashboard worklist counts:
   missing_allocations — gift headers with no gift_allocations rows
@@ -10740,315 +10776,315 @@ canonical definition shared with the dashboard worklist counts:
                         and needs allocation work.
 
  */
-worklist?: ListGiftsAndPaymentsWorklist;
-/**
- * When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).
- */
-donorboxBacked?: boolean;
-/**
- * When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.
- */
-codingForm?: boolean;
-/**
- * Filter to gifts whose campaign_slug is in the given set (OR). Repeat or comma-separate.
- */
-campaignSlugs?: string[];
-/**
- * Sort order (default date_desc).
- */
-sort?: GiftSort;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  worklist?: ListGiftsAndPaymentsWorklist;
+  /**
+   * When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).
+   */
+  donorboxBacked?: boolean;
+  /**
+   * When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.
+   */
+  codingForm?: boolean;
+  /**
+   * Filter to gifts whose campaign_slug is in the given set (OR). Repeat or comma-separate.
+   */
+  campaignSlugs?: string[];
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: GiftSort;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListGiftsAndPaymentsEntitiesPresence = typeof ListGiftsAndPaymentsEntitiesPresence[keyof typeof ListGiftsAndPaymentsEntitiesPresence];
-
+export type ListGiftsAndPaymentsEntitiesPresence =
+  (typeof ListGiftsAndPaymentsEntitiesPresence)[keyof typeof ListGiftsAndPaymentsEntitiesPresence];
 
 export const ListGiftsAndPaymentsEntitiesPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsUsagesPresence = typeof ListGiftsAndPaymentsUsagesPresence[keyof typeof ListGiftsAndPaymentsUsagesPresence];
-
+export type ListGiftsAndPaymentsUsagesPresence =
+  (typeof ListGiftsAndPaymentsUsagesPresence)[keyof typeof ListGiftsAndPaymentsUsagesPresence];
 
 export const ListGiftsAndPaymentsUsagesPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsGrantYearsPresence = typeof ListGiftsAndPaymentsGrantYearsPresence[keyof typeof ListGiftsAndPaymentsGrantYearsPresence];
-
+export type ListGiftsAndPaymentsGrantYearsPresence =
+  (typeof ListGiftsAndPaymentsGrantYearsPresence)[keyof typeof ListGiftsAndPaymentsGrantYearsPresence];
 
 export const ListGiftsAndPaymentsGrantYearsPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsThankYouSentAtPresence = typeof ListGiftsAndPaymentsThankYouSentAtPresence[keyof typeof ListGiftsAndPaymentsThankYouSentAtPresence];
-
+export type ListGiftsAndPaymentsThankYouSentAtPresence =
+  (typeof ListGiftsAndPaymentsThankYouSentAtPresence)[keyof typeof ListGiftsAndPaymentsThankYouSentAtPresence];
 
 export const ListGiftsAndPaymentsThankYouSentAtPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsDateReceivedPresence = typeof ListGiftsAndPaymentsDateReceivedPresence[keyof typeof ListGiftsAndPaymentsDateReceivedPresence];
-
+export type ListGiftsAndPaymentsDateReceivedPresence =
+  (typeof ListGiftsAndPaymentsDateReceivedPresence)[keyof typeof ListGiftsAndPaymentsDateReceivedPresence];
 
 export const ListGiftsAndPaymentsDateReceivedPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsPurposeVerbatimPresence = typeof ListGiftsAndPaymentsPurposeVerbatimPresence[keyof typeof ListGiftsAndPaymentsPurposeVerbatimPresence];
-
+export type ListGiftsAndPaymentsPurposeVerbatimPresence =
+  (typeof ListGiftsAndPaymentsPurposeVerbatimPresence)[keyof typeof ListGiftsAndPaymentsPurposeVerbatimPresence];
 
 export const ListGiftsAndPaymentsPurposeVerbatimPresence = {
-  has: 'has',
-  blank: 'blank',
+  has: "has",
+  blank: "blank",
 } as const;
 
-export type ListGiftsAndPaymentsRestrictionLabelsItem = typeof ListGiftsAndPaymentsRestrictionLabelsItem[keyof typeof ListGiftsAndPaymentsRestrictionLabelsItem];
-
+export type ListGiftsAndPaymentsRestrictionLabelsItem =
+  (typeof ListGiftsAndPaymentsRestrictionLabelsItem)[keyof typeof ListGiftsAndPaymentsRestrictionLabelsItem];
 
 export const ListGiftsAndPaymentsRestrictionLabelsItem = {
-  restricted: 'restricted',
-  unrestricted: 'unrestricted',
+  restricted: "restricted",
+  unrestricted: "unrestricted",
 } as const;
 
-export type ListGiftsAndPaymentsLinkedToQuickbooks = typeof ListGiftsAndPaymentsLinkedToQuickbooks[keyof typeof ListGiftsAndPaymentsLinkedToQuickbooks];
-
+export type ListGiftsAndPaymentsLinkedToQuickbooks =
+  (typeof ListGiftsAndPaymentsLinkedToQuickbooks)[keyof typeof ListGiftsAndPaymentsLinkedToQuickbooks];
 
 export const ListGiftsAndPaymentsLinkedToQuickbooks = {
-  linked: 'linked',
-  unlinked: 'unlinked',
+  linked: "linked",
+  unlinked: "unlinked",
 } as const;
 
-export type ListGiftsAndPaymentsQuickbooksTieItem = typeof ListGiftsAndPaymentsQuickbooksTieItem[keyof typeof ListGiftsAndPaymentsQuickbooksTieItem];
-
+export type ListGiftsAndPaymentsQuickbooksTieItem =
+  (typeof ListGiftsAndPaymentsQuickbooksTieItem)[keyof typeof ListGiftsAndPaymentsQuickbooksTieItem];
 
 export const ListGiftsAndPaymentsQuickbooksTieItem = {
-  exempt: 'exempt',
-  tied: 'tied',
-  amount_mismatch: 'amount_mismatch',
-  missing: 'missing',
-  untied: 'untied',
+  exempt: "exempt",
+  tied: "tied",
+  amount_mismatch: "amount_mismatch",
+  missing: "missing",
+  untied: "untied",
 } as const;
 
-export type ListGiftsAndPaymentsWorklist = typeof ListGiftsAndPaymentsWorklist[keyof typeof ListGiftsAndPaymentsWorklist];
-
+export type ListGiftsAndPaymentsWorklist =
+  (typeof ListGiftsAndPaymentsWorklist)[keyof typeof ListGiftsAndPaymentsWorklist];
 
 export const ListGiftsAndPaymentsWorklist = {
-  missing_allocations: 'missing_allocations',
+  missing_allocations: "missing_allocations",
 } as const;
 
 export type ListGiftAllocationsParams = {
-giftId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  giftId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListRestrictionTextReviewParams = {
-/**
- * Restrict to gift or pledge allocations. Omit for both.
- */
-source?: ListRestrictionTextReviewSource;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Restrict to gift or pledge allocations. Omit for both.
+   */
+  source?: ListRestrictionTextReviewSource;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListRestrictionTextReviewSource = typeof ListRestrictionTextReviewSource[keyof typeof ListRestrictionTextReviewSource];
-
+export type ListRestrictionTextReviewSource =
+  (typeof ListRestrictionTextReviewSource)[keyof typeof ListRestrictionTextReviewSource];
 
 export const ListRestrictionTextReviewSource = {
-  gift: 'gift',
-  pledge: 'pledge',
+  gift: "gift",
+  pledge: "pledge",
 } as const;
 
 export type GetRevenueExtractorReportParams = {
-/**
- * Inclusive lower bound on gift date_received (YYYY-MM-DD).
- */
-startDate: string;
-/**
- * Inclusive upper bound on gift date_received (YYYY-MM-DD).
- */
-endDate: string;
+  /**
+   * Inclusive lower bound on gift date_received (YYYY-MM-DD).
+   */
+  startDate: string;
+  /**
+   * Inclusive upper bound on gift date_received (YYYY-MM-DD).
+   */
+  endDate: string;
 };
 
 export type ListInteractionsParams = {
-search?: string;
-personId?: string;
-organizationId?: string;
-householdId?: string;
-ownerUserId?: string[];
-kind?: InteractionKind[];
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  ownerUserId?: string[];
+  kind?: InteractionKind[];
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListNotesParams = {
-search?: string;
-personId?: string;
-organizationId?: string;
-householdId?: string;
-opportunityId?: string;
-giftId?: string;
-/**
- * Filter to notes mentioning this user.
- */
-mentionUserId?: string;
-authorUserId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  opportunityId?: string;
+  giftId?: string;
+  /**
+   * Filter to notes mentioning this user.
+   */
+  mentionUserId?: string;
+  authorUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListMediaMentionsParams = {
-search?: string;
-personId?: string;
-organizationId?: string;
-/**
- * Filter to pinned (true) or unpinned (false) mentions.
- */
-pinned?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  personId?: string;
+  organizationId?: string;
+  /**
+   * Filter to pinned (true) or unpinned (false) mentions.
+   */
+  pinned?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListTasksParams = {
-search?: string;
-personId?: string;
-organizationId?: string;
-householdId?: string;
-opportunityId?: string;
-/**
- * Filter to tasks linked to an opportunity/pledge whose donor is this organization (e.g. reporting deadlines by donor).
- */
-opportunityOrganizationId?: string;
-/**
- * Filter to tasks linked to an opportunity/pledge whose donor is this household.
- */
-opportunityHouseholdId?: string;
-/**
- * Filter to tasks linked to an opportunity/pledge whose donor is this individual.
- */
-opportunityIndividualGiverPersonId?: string;
-giftId?: string;
-grantLeadId?: string;
-mentionUserId?: string;
-assigneeUserId?: string;
-createdByUserId?: string;
-kind?: TaskKind[];
-status?: TaskStatus[];
-/**
- * Inclusive upper bound on due_date.
- */
-dueBefore?: string;
-/**
- * Inclusive lower bound on due_date.
- */
-dueAfter?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  opportunityId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this organization (e.g. reporting deadlines by donor).
+   */
+  opportunityOrganizationId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this household.
+   */
+  opportunityHouseholdId?: string;
+  /**
+   * Filter to tasks linked to an opportunity/pledge whose donor is this individual.
+   */
+  opportunityIndividualGiverPersonId?: string;
+  giftId?: string;
+  grantLeadId?: string;
+  mentionUserId?: string;
+  assigneeUserId?: string;
+  createdByUserId?: string;
+  kind?: TaskKind[];
+  status?: TaskStatus[];
+  /**
+   * Inclusive upper bound on due_date.
+   */
+  dueBefore?: string;
+  /**
+   * Inclusive lower bound on due_date.
+   */
+  dueAfter?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListMeetingNotesParams = {
-personId?: string;
-organizationId?: string;
-householdId?: string;
-creatorUserId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  creatorUserId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListSavedViewsParams = {
-/**
- * Page identifier, e.g. 'individuals', 'funders'.
- */
-listKey: string;
+  /**
+   * Page identifier, e.g. 'individuals', 'funders'.
+   */
+  listKey: string;
 };
 
 export type ListTrackedEmailsParams = {
-/**
- * @minimum 1
- * @maximum 1000
- */
-limit?: number;
+  /**
+   * @minimum 1
+   * @maximum 1000
+   */
+  limit?: number;
 };
 
 export type ListTrackedOutboundQueueParams = {
-allMailboxes?: boolean;
+  allMailboxes?: boolean;
 };
 
 export type ListTrackedInboundQueueParams = {
-allMailboxes?: boolean;
+  allMailboxes?: boolean;
 };
 
 export type SearchTrackedEmailParams = {
-subject: string;
+  subject: string;
 };
 
 export type ListTrackedEmailsByContactParams = {
-personId?: string;
-organizationId?: string;
-householdId?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
 };
 
 export type DeleteLatestTrackedEmailView200 = {
@@ -11056,57 +11092,57 @@ export type DeleteLatestTrackedEmailView200 = {
 };
 
 export type ListEmailMessagesParams = {
-search?: string;
-mailboxUserId?: string;
-personId?: string;
-organizationId?: string;
-householdId?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  mailboxUserId?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListCalendarEventsParams = {
-search?: string;
-calendarUserId?: string;
-personId?: string;
-organizationId?: string;
-householdId?: string;
-/**
- * Only events with startAt >= this timestamp.
- */
-startAfter?: string;
-/**
- * Only events with startAt < this timestamp.
- */
-startBefore?: string;
-/**
- * Sort by startAt. Default desc (most recent first).
- */
-order?: ListCalendarEventsOrder;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  search?: string;
+  calendarUserId?: string;
+  personId?: string;
+  organizationId?: string;
+  householdId?: string;
+  /**
+   * Only events with startAt >= this timestamp.
+   */
+  startAfter?: string;
+  /**
+   * Only events with startAt < this timestamp.
+   */
+  startBefore?: string;
+  /**
+   * Sort by startAt. Default desc (most recent first).
+   */
+  order?: ListCalendarEventsOrder;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
-export type ListCalendarEventsOrder = typeof ListCalendarEventsOrder[keyof typeof ListCalendarEventsOrder];
-
+export type ListCalendarEventsOrder =
+  (typeof ListCalendarEventsOrder)[keyof typeof ListCalendarEventsOrder];
 
 export const ListCalendarEventsOrder = {
-  asc: 'asc',
-  desc: 'desc',
+  asc: "asc",
+  desc: "desc",
 } as const;
 
 export type AdminResyncGoogleUser200 = { [key: string]: unknown };
@@ -11120,63 +11156,63 @@ export type DisconnectQuickbooksOauth200 = {
 };
 
 export type ListStripeStagedChargesParams = {
-/**
- * Which queue to list (default needs_review).
- */
-queue?: StagedPaymentQueue;
-/**
- * Sort order (default date_desc).
- */
-sort?: StagedPaymentSort;
-/**
- * Free-text filter across payer name/email, description, and statement descriptor.
- */
-search?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which queue to list (default needs_review).
+   */
+  queue?: StagedPaymentQueue;
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: StagedPaymentSort;
+  /**
+   * Free-text filter across payer name/email, description, and statement descriptor.
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListDonorboxReviewParams = {
-/**
- * Which worklist bucket to list (default needs_review).
- */
-queue?: DonorboxReviewQueue;
-/**
- * Free-text filter across donor name/email, comment, designation, and campaign.
- */
-search?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which worklist bucket to list (default needs_review).
+   */
+  queue?: DonorboxReviewQueue;
+  /**
+   * Free-text filter across donor name/email, comment, designation, and campaign.
+   */
+  search?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListStripePayoutReconciliationsParams = {
-/**
- * Which queue to list (default all).
- */
-queue?: StripePayoutReconciliationQueue;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which queue to list (default all).
+   */
+  queue?: StripePayoutReconciliationQueue;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type AdminDeleteQuickbooksRule200 = {
@@ -11184,10 +11220,10 @@ export type AdminDeleteQuickbooksRule200 = {
 };
 
 export type ListRevenueAccountsParams = {
-/**
- * When true, omit deactivated accounts.
- */
-activeOnly?: boolean;
+  /**
+   * When true, omit deactivated accounts.
+   */
+  activeOnly?: boolean;
 };
 
 export type AdminDeleteEntityCodingRule200 = {
@@ -11195,139 +11231,139 @@ export type AdminDeleteEntityCodingRule200 = {
 };
 
 export type ListStagedPaymentsParams = {
-/**
- * Which queue to list (default needs_review).
- */
-queue?: QuickbooksStagedPaymentQueue;
-/**
- * Sort order (default date_desc).
- */
-sort?: StagedPaymentSort;
-/**
- * Free-text filter across payer, memo, and line item / account / class detail.
- */
-search?: string;
-/**
- * Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows.
- */
-entity?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which queue to list (default needs_review).
+   */
+  queue?: QuickbooksStagedPaymentQueue;
+  /**
+   * Sort order (default date_desc).
+   */
+  sort?: StagedPaymentSort;
+  /**
+   * Free-text filter across payer, memo, and line item / account / class detail.
+   */
+  search?: string;
+  /**
+   * Restrict to one Wildflower entity (entities.id). Empty or 'all' = no restriction; the Foundation id also includes unattributed (null-entity) rows.
+   */
+  entity?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type SearchStagedPaymentDonorsParams = {
-/**
- * Search query (min 2 chars).
- */
-q: string;
+  /**
+   * Search query (min 2 chars).
+   */
+  q: string;
 };
 
 export type GetPendingStagedMoneyForDonorParams = {
-/**
- * Donor kind.
- */
-donorType: GetPendingStagedMoneyForDonorDonorType;
-/**
- * Donor record id.
- */
-donorId: string;
+  /**
+   * Donor kind.
+   */
+  donorType: GetPendingStagedMoneyForDonorDonorType;
+  /**
+   * Donor record id.
+   */
+  donorId: string;
 };
 
-export type GetPendingStagedMoneyForDonorDonorType = typeof GetPendingStagedMoneyForDonorDonorType[keyof typeof GetPendingStagedMoneyForDonorDonorType];
-
+export type GetPendingStagedMoneyForDonorDonorType =
+  (typeof GetPendingStagedMoneyForDonorDonorType)[keyof typeof GetPendingStagedMoneyForDonorDonorType];
 
 export const GetPendingStagedMoneyForDonorDonorType = {
-  organization: 'organization',
-  individual: 'individual',
-  household: 'household',
+  organization: "organization",
+  individual: "individual",
+  household: "household",
 } as const;
 
 export type ListStagedPaymentGiftWindowParams = {
-/**
- * ± days around the staged date (default 30).
- * @minimum 1
- * @maximum 365
- */
-days?: number;
+  /**
+   * ± days around the staged date (default 30).
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
 };
 
 export type ListGrantLeadsParams = {
-/**
- * Filter by status. Omit to get all active (new + claimed) leads.
- */
-status?: GrantLeadStatus;
-/**
- * Filter by assignee.
- */
-assigneeUserId?: string;
-/**
- * Free-text filter across title and funder name.
- */
-search?: string;
-/**
- * When true, include archived and converted leads.
- */
-includeArchived?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Filter by status. Omit to get all active (new + claimed) leads.
+   */
+  status?: GrantLeadStatus;
+  /**
+   * Filter by assignee.
+   */
+  assigneeUserId?: string;
+  /**
+   * Free-text filter across title and funder name.
+   */
+  search?: string;
+  /**
+   * When true, include archived and converted leads.
+   */
+  includeArchived?: boolean;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetDashboardSummaryParams = {
-/**
+  /**
  * Optional list of `entities.id` slugs. When provided, the money tiles
 (received / openPipelineAsk / openPipelineWeighted / goal) are restricted
 to allocations on those entities. Counts are unaffected. Omit or pass an
 empty list to include all entities.
 
  */
-entityIds?: string[];
+  entityIds?: string[];
 };
 
 export type GetProjectionsByFyEntityParams = {
-/**
+  /**
  * Optional set of `entities.id` slugs. When provided, only allocations
 on those entities are included. Comma-separated form supported.
 
  */
-entityId?: string[];
+  entityId?: string[];
 };
 
 export type GetFiscalYearBreakdownParams = {
-/**
+  /**
  * Optional `entities.id` slug. When provided, both the `received` and
 `openPipeline` sections are restricted to allocations on that entity.
 Omit to include all entities.
 
  */
-entityId?: string;
+  entityId?: string;
 };
 
 export type GetFiscalYearReportParams = {
-/**
- * Which track to report — `revenue` (Grants) or `loan_capital` (Loans). Defaults to revenue.
- */
-category?: FundraisingCategory;
-/**
+  /**
+   * Which track to report — `revenue` (Grants) or `loan_capital` (Loans). Defaults to revenue.
+   */
+  category?: FundraisingCategory;
+  /**
  * Optional list of `entities.id` slugs. When provided, all three buckets
 and the goal are restricted to allocations on those entities. Omit or
 pass an empty list to include all entities.
 
  */
-entityIds?: string[];
+  entityIds?: string[];
 };
 
 export type RequestUploadUrlBody = {
@@ -11352,192 +11388,192 @@ export type RequestUploadUrl200 = {
 };
 
 export type ListPersonSuppressionWindowsParams = {
-/**
- * Filter to a specific person.
- */
-personId?: string;
+  /**
+   * Filter to a specific person.
+   */
+  personId?: string;
 };
 
 export type ListAuditLogParams = {
-/**
- * Filter to one entity type (e.g. person, organization).
- */
-entityType?: string;
-/**
- * Filter to a single entity's timeline (usually paired with entityType).
- */
-entityId?: string;
-/**
- * Filter to actions taken by one user.
- */
-actorUserId?: string;
-/**
- * Filter to one action (create/update/archive/unarchive/merge/bulk_update/bulk_archive).
- */
-action?: string;
-/**
- * Case-insensitive partial match across the entry summary, the actor's name/email, and the recorded field changes.
- */
-search?: string;
-/**
- * Inclusive lower bound — only entries on or after the start of this America/Chicago calendar day.
- */
-dateFrom?: string;
-/**
- * Inclusive upper bound — only entries on or before the end of this America/Chicago calendar day.
- */
-dateTo?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Filter to one entity type (e.g. person, organization).
+   */
+  entityType?: string;
+  /**
+   * Filter to a single entity's timeline (usually paired with entityType).
+   */
+  entityId?: string;
+  /**
+   * Filter to actions taken by one user.
+   */
+  actorUserId?: string;
+  /**
+   * Filter to one action (create/update/archive/unarchive/merge/bulk_update/bulk_archive).
+   */
+  action?: string;
+  /**
+   * Case-insensitive partial match across the entry summary, the actor's name/email, and the recorded field changes.
+   */
+  search?: string;
+  /**
+   * Inclusive lower bound — only entries on or after the start of this America/Chicago calendar day.
+   */
+  dateFrom?: string;
+  /**
+   * Inclusive upper bound — only entries on or before the end of this America/Chicago calendar day.
+   */
+  dateTo?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type GetOwnedRecordCountsParams = {
-/**
- * The user whose owned records to count.
- */
-userId: string;
+  /**
+   * The user whose owned records to count.
+   */
+  userId: string;
 };
 
 export type ListReconciliationCardsParams = {
-/**
- * Queue bucket to list. Omit for the active work queue (excludes match_confirmed/excluded rows AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
- */
-queue?: ReconciliationCardQueue;
-/**
- * Free-text over payer name / reference / memo.
- */
-q?: string;
-/**
- * Filter to one Wildflower legal entity attribution.
- */
-entityId?: string;
-/**
- * Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate.
- */
-ready?: boolean;
-/**
- * Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise.
- */
-exclusionReason?: StagedPaymentExclusionReason;
-/**
- * Filter cards by funding source (Gift report §4.5): stripe / donorbox / qb_direct (checks, ACH, cash — money not routed through a processor, including unclassified). Applies across all queues.
- */
-fundingSource?: ListReconciliationCardsFundingSource;
-/**
- * @minimum 1
- * @maximum 500
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
+  /**
+   * Queue bucket to list. Omit for the active work queue (excludes match_confirmed/excluded rows AND parks pending fiscally-sponsored money out of the main flow). Request queue=fiscally_sponsored to view the parked queue (still fully matchable).
+   */
+  queue?: ReconciliationCardQueue;
+  /**
+   * Free-text over payer name / reference / memo.
+   */
+  q?: string;
+  /**
+   * Filter to one Wildflower legal entity attribution.
+   */
+  entityId?: string;
+  /**
+   * Filter to cards whose auto-proposal passes (true) / fails (false) the consistency gate.
+   */
+  ready?: boolean;
+  /**
+   * Filter the Excluded queue to a single exclusion reason. Only meaningful with queue=excluded; ignored otherwise.
+   */
+  exclusionReason?: StagedPaymentExclusionReason;
+  /**
+   * Filter cards by funding source (Gift report §4.5): stripe / donorbox / qb_direct (checks, ACH, cash — money not routed through a processor, including unclassified). Applies across all queues.
+   */
+  fundingSource?: ListReconciliationCardsFundingSource;
+  /**
+   * @minimum 1
+   * @maximum 500
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };
 
-export type ListReconciliationCardsFundingSource = typeof ListReconciliationCardsFundingSource[keyof typeof ListReconciliationCardsFundingSource];
-
+export type ListReconciliationCardsFundingSource =
+  (typeof ListReconciliationCardsFundingSource)[keyof typeof ListReconciliationCardsFundingSource];
 
 export const ListReconciliationCardsFundingSource = {
-  stripe: 'stripe',
-  donorbox: 'donorbox',
-  qb_direct: 'qb_direct',
+  stripe: "stripe",
+  donorbox: "donorbox",
+  qb_direct: "qb_direct",
 } as const;
 
 export type SearchReconciliationNodeParams = {
-/**
- * QuickBooks card anchor; scopes amount/date windows and cross-filtering. Provide exactly one of stagedPaymentId or stripeChargeId.
- */
-stagedPaymentId?: string;
-/**
- * Stripe charge anchor (its GROSS amount + date scope the window); for donor/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId.
- */
-stripeChargeId?: string;
-/**
- * Free-text query (donor/gift name, payer, reference).
- */
-q?: string;
-/**
- * Cross-filter gift/opportunity candidates to this donor (FILTER edge).
- */
-donorId?: string;
-/**
- * Split mode (gift search only): candidate gifts are FRACTIONS of the payment, not near-equal to it. Drops the lower amount bound (returns gifts with amount > 0 up to the payment total within fee-band tolerance), relaxes the date window, and orders by date proximity/recency instead of proximity to the full amount.
- */
-split?: boolean;
-/**
- * ± days around the anchor date for amount/date windows.
- * @minimum 1
- * @maximum 365
- */
-days?: number;
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
+  /**
+   * QuickBooks card anchor; scopes amount/date windows and cross-filtering. Provide exactly one of stagedPaymentId or stripeChargeId.
+   */
+  stagedPaymentId?: string;
+  /**
+   * Stripe charge anchor (its GROSS amount + date scope the window); for donor/gift search on a charge that has no staged payment. Provide exactly one of stagedPaymentId or stripeChargeId.
+   */
+  stripeChargeId?: string;
+  /**
+   * Free-text query (donor/gift name, payer, reference).
+   */
+  q?: string;
+  /**
+   * Cross-filter gift/opportunity candidates to this donor (FILTER edge).
+   */
+  donorId?: string;
+  /**
+   * Split mode (gift search only): candidate gifts are FRACTIONS of the payment, not near-equal to it. Drops the lower amount bound (returns gifts with amount > 0 up to the payment total within fee-band tolerance), relaxes the date window, and orders by date proximity/recency instead of proximity to the full amount.
+   */
+  split?: boolean;
+  /**
+   * ± days around the anchor date for amount/date windows.
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 export type SearchReconciliationQbStagedParams = {
-/**
- * Free-text over payer name / reference / memo / doc number (for Stripe: payer name / email / description / statement descriptor).
- */
-q?: string;
-/**
- * Target amount (major units); when set, results are scored/filtered around it.
- */
-amount?: string;
-/**
- * Anchor date; pair with days for a ± window.
- */
-date?: string;
-/**
- * ± days around date for the amount/date window.
- * @minimum 1
- * @maximum 365
- */
-days?: number;
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
-/**
- * Also search Stripe staged charges and interleave them with the QB rows by amount/date proximity (nodeType=stripe). Default false: QB-only, preserving existing callers.
- */
-includeStripe?: boolean;
+  /**
+   * Free-text over payer name / reference / memo / doc number (for Stripe: payer name / email / description / statement descriptor).
+   */
+  q?: string;
+  /**
+   * Target amount (major units); when set, results are scored/filtered around it.
+   */
+  amount?: string;
+  /**
+   * Anchor date; pair with days for a ± window.
+   */
+  date?: string;
+  /**
+   * ± days around date for the amount/date window.
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
+  /**
+   * Also search Stripe staged charges and interleave them with the QB rows by amount/date proximity (nodeType=stripe). Default false: QB-only, preserving existing callers.
+   */
+  includeStripe?: boolean;
 };
 
 export type SearchReconciliationPayoutsParams = {
-/**
- * Free-text over the Stripe payout id (po_...).
- */
-q?: string;
-/**
- * Target amount (major units); when set, results are banded around the payout net.
- */
-amount?: string;
-/**
- * Anchor date; pair with days for a ± window.
- */
-date?: string;
-/**
- * ± days around date for the amount/date window.
- * @minimum 1
- * @maximum 365
- */
-days?: number;
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
+  /**
+   * Free-text over the Stripe payout id (po_...).
+   */
+  q?: string;
+  /**
+   * Target amount (major units); when set, results are banded around the payout net.
+   */
+  amount?: string;
+  /**
+   * Anchor date; pair with days for a ± window.
+   */
+  date?: string;
+  /**
+   * ± days around date for the amount/date window.
+   * @minimum 1
+   * @maximum 365
+   */
+  days?: number;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 export type ListDepositCandidatePayouts200 = {
@@ -11545,27 +11581,27 @@ export type ListDepositCandidatePayouts200 = {
 };
 
 export type ListDepositCandidatePaymentUnitsParams = {
-/**
- * Target amount in major units; results are ordered by proximity but not filtered by proximity.
- */
-amount?: string;
-/**
- * Optional text over payer, memo, amount, date, source label, or payment-unit id.
- */
-q?: string;
-/**
- * Optional exact payment-unit amount in major units.
- */
-filterAmount?: string;
-/**
- * Optional exact payment-unit received date.
- */
-filterDate?: string;
-/**
- * @minimum 1
- * @maximum 100
- */
-limit?: number;
+  /**
+   * Target amount in major units; results are ordered by proximity but not filtered by proximity.
+   */
+  amount?: string;
+  /**
+   * Optional text over payer, memo, amount, date, source label, or payment-unit id.
+   */
+  q?: string;
+  /**
+   * Optional exact payment-unit amount in major units.
+   */
+  filterAmount?: string;
+  /**
+   * Optional exact payment-unit received date.
+   */
+  filterDate?: string;
+  /**
+   * @minimum 1
+   * @maximum 100
+   */
+  limit?: number;
 };
 
 export type LinkPayoutDepositBody = {
@@ -11577,101 +11613,100 @@ export type ListPayoutCandidateDeposits200 = {
 };
 
 export type ListGiftsMissingQbParams = {
-/**
- * Free-text over donor name (organization / person / household) or the CRM gift name. When set, the response ALSO carries `linkedMatches`: gifts matching the text that are excluded from the list because they are already tied to money, so a search never silently hides an already-matched gift.
- */
-q?: string;
-/**
- * Filter to one Wildflower legal entity.
- */
-entityId?: string;
-/**
- * Filter to one recorded gift payment method.
- */
-paymentMethod?: GiftPaymentMethod;
-/**
- * Filter by the source of this gift's best-guess UNLINKED payment proposal (the same match the row's one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column's filter set matches the other two Gift-report columns.
- */
-fundingSource?: ListGiftsMissingQbFundingSource;
-dateFrom?: string;
-dateTo?: string;
-/**
- * @minimum 1
- * @maximum 200
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
+  /**
+   * Free-text over donor name (organization / person / household) or the CRM gift name. When set, the response ALSO carries `linkedMatches`: gifts matching the text that are excluded from the list because they are already tied to money, so a search never silently hides an already-matched gift.
+   */
+  q?: string;
+  /**
+   * Filter to one Wildflower legal entity.
+   */
+  entityId?: string;
+  /**
+   * Filter to one recorded gift payment method.
+   */
+  paymentMethod?: GiftPaymentMethod;
+  /**
+   * Filter by the source of this gift's best-guess UNLINKED payment proposal (the same match the row's one-click Link surfaces): stripe = only a Stripe charge is plausible; qb_direct = a QuickBooks staged payment is plausible (preferred over Stripe); donorbox = no proposals originate from Donorbox (settles via Stripe), so this always yields none — kept only so the column's filter set matches the other two Gift-report columns.
+   */
+  fundingSource?: ListGiftsMissingQbFundingSource;
+  dateFrom?: string;
+  dateTo?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };
 
-export type ListGiftsMissingQbFundingSource = typeof ListGiftsMissingQbFundingSource[keyof typeof ListGiftsMissingQbFundingSource];
-
+export type ListGiftsMissingQbFundingSource =
+  (typeof ListGiftsMissingQbFundingSource)[keyof typeof ListGiftsMissingQbFundingSource];
 
 export const ListGiftsMissingQbFundingSource = {
-  stripe: 'stripe',
-  donorbox: 'donorbox',
-  qb_direct: 'qb_direct',
+  stripe: "stripe",
+  donorbox: "donorbox",
+  qb_direct: "qb_direct",
 } as const;
 
 export type ListIncompleteGiftsParams = {
-/**
- * Free-text over donor name (organization / person / household).
- */
-q?: string;
-/**
- * Filter to gifts with an allocation attributed to this Wildflower legal entity.
- */
-entityId?: string;
-/**
- * @minimum 1
- * @maximum 200
- */
-limit?: number;
-/**
- * @minimum 0
- */
-offset?: number;
+  /**
+   * Free-text over donor name (organization / person / household).
+   */
+  q?: string;
+  /**
+   * Filter to gifts with an allocation attributed to this Wildflower legal entity.
+   */
+  entityId?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * @minimum 0
+   */
+  offset?: number;
 };
 
 export type ListReconciliationBundleAnchorsParams = {
-/**
- * Which bucket to list (default needs_review).
- */
-queue?: BundleAnchorQueue;
-/**
- * Restrict to one anchor source. Omit to list both.
- */
-source?: BundleAnchorType;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which bucket to list (default needs_review).
+   */
+  queue?: BundleAnchorQueue;
+  /**
+   * Restrict to one anchor source. Omit to list both.
+   */
+  source?: BundleAnchorType;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
 
 export type ListWorkbenchDepositsParams = {
-/**
- * Which deposit lens to list (default all_open).
- */
-lens?: WorkbenchDepositLens;
-/**
- * Free-text over bank memo/reference/account, payment-unit ids and linked gift names.
- */
-q?: string;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
+  /**
+   * Which deposit lens to list (default all_open).
+   */
+  lens?: WorkbenchDepositLens;
+  /**
+   * Free-text over bank memo/reference/account, payment-unit ids and linked gift names.
+   */
+  q?: string;
+  /**
+   * @minimum 1
+   * @maximum 10000
+   */
+  limit?: LimitParameter;
+  /**
+   * @minimum 1
+   */
+  page?: PageParameter;
 };
-

@@ -2,7 +2,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkbenchDeposit } from "@workspace/api-client-react";
-import { DEPOSIT_LENSES, DepositRow, type DepositActions } from "./rows";
+import {
+  DEPOSIT_LENSES,
+  DepositGridHeader,
+  DepositRow,
+  type DepositActions,
+} from "./rows";
 
 (globalThis as Record<string, unknown>)["IS_REACT_ACT_ENVIRONMENT"] = true;
 
@@ -73,6 +78,11 @@ function render(deposit: WorkbenchDeposit, actions?: Partial<DepositActions>) {
 }
 
 describe("deposit workbench rows", () => {
+  it("names the bank account in the bank column header", () => {
+    act(() => root.render(<DepositGridHeader />));
+    expect(container.textContent).toContain("Wells Business Checking");
+  });
+
   it("renders payout, component, and unresolved compositions", () => {
     render(
       makeDeposit({
@@ -207,6 +217,7 @@ describe("deposit workbench rows", () => {
     expect(menu).not.toBeNull();
     for (const label of [
       "Search CRM gifts to link…",
+      "Search CRM pledges to link…",
       "Browse unlinked CRM gifts…",
       "Attach an existing payment record…",
       "Flag remainder for research",
@@ -224,7 +235,7 @@ describe("deposit workbench rows", () => {
       "Search CRM gifts…",
       "Browse unlinked CRM gifts…",
       "Create new gift…",
-      "Record as payment on pledge…",
+      "Search CRM pledges to link…",
     ]) {
       const item = menuItem(menu as HTMLElement, label);
       expect(item, label).not.toBeNull();
@@ -263,13 +274,13 @@ describe("deposit workbench rows", () => {
       }),
       { isFinanceOrAdmin: true },
     );
-    const menu = openMenuContaining("Record as payment on pledge…");
+    const menu = openMenuContaining("Search CRM pledges to link…");
     expect(menu).not.toBeNull();
     for (const label of [
       "Search CRM gifts…",
       "Browse unlinked CRM gifts…",
       "Create new gift…",
-      "Record as payment on pledge…",
+      "Search CRM pledges to link…",
     ]) {
       expect(
         menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
@@ -350,7 +361,7 @@ describe("deposit workbench rows", () => {
       "Browse unlinked CRM gifts…",
       "Create new gift…",
       "Identify donor…",
-      "Record as payment on pledge…",
+      "Search CRM pledges to link…",
     ]) {
       expect(
         menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
@@ -362,7 +373,7 @@ describe("deposit workbench rows", () => {
     );
   });
 
-  it("labels gift-linked payment unlinking as blocked", () => {
+  it("offers a gift-unlink correction before blocking payment unlinking", () => {
     render(
       makeDeposit({
         composition: {
@@ -388,12 +399,43 @@ describe("deposit workbench rows", () => {
       { isFinanceOrAdmin: true },
     );
     const menu = openMenuContaining("Unlink payment");
+    expect(menuItem(menu as HTMLElement, "Unlink CRM gift…")).not.toBeNull();
     const item = menuItem(menu as HTMLElement, "Unlink payment");
     expect(item).not.toBeNull();
     expect(item?.getAttribute("data-disabled")).not.toBeNull();
     expect(menu?.textContent).toContain(
       "Unlink the CRM gift from this payment first.",
     );
+  });
+
+  it("offers to make the sole known payment absorb an unresolved remainder", () => {
+    render(
+      makeDeposit({
+        bank: { ...makeDeposit().bank, amount: "1600000.00" },
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "1150000.00",
+          unexplainedAmount: "450000.00",
+          components: [
+            {
+              componentId: "component_split_qbo",
+              paymentUnitId: "unit_split_qbo",
+              amount: "1150000.00",
+              kind: "check",
+              needsReview: false,
+              ambiguousDepositMatch: false,
+              countedGiftIds: ["gift_1600"],
+              source: "bank_spine",
+            },
+          ],
+          units: [],
+        },
+      }),
+      { isFinanceOrAdmin: true },
+    );
+    const menu = openMenuContaining("Make this payment the full deposit…");
+    expect(menu).not.toBeNull();
   });
 
   it("falls back to the unit-backed component anchor when the staged QB row is no longer actionable", () => {
@@ -441,7 +483,7 @@ describe("deposit workbench rows", () => {
     expect(
       menuItem(
         menu as HTMLElement,
-        "Record as payment on pledge…",
+        "Search CRM pledges to link…",
       )?.getAttribute("data-disabled"),
     ).toBeNull();
     act(() => {
@@ -457,7 +499,7 @@ describe("deposit workbench rows", () => {
     expect(
       menuItem(
         menu as HTMLElement,
-        "Record as payment on pledge…",
+        "Search CRM pledges to link…",
       )?.getAttribute("data-disabled"),
     ).toBeNull();
   });

@@ -142,6 +142,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  apiErrorCode,
   apiErrorHasIssue,
   apiErrorMessage,
   is409,
@@ -385,6 +386,12 @@ export default function ReconciliationDepositsPage() {
     depositId: string;
     remainder: string;
   } | null>(null);
+  const [paymentReassignmentFor, setPaymentReassignmentFor] =
+    useState<CandidatePaymentUnitWithClaim | null>(null);
+  const [remainderPledgeFor, setRemainderPledgeFor] = useState<{
+    depositId: string;
+    amount: string;
+  } | null>(null);
   const [excludeRemainderFor, setExcludeRemainderFor] = useState<{
     depositId: string;
     remainder: string;
@@ -403,6 +410,20 @@ export default function ReconciliationDepositsPage() {
   const [manualComponentFor, setManualComponentFor] = useState<{
     id: string;
     label: string;
+  } | null>(null);
+  const [unlinkComponentGiftFor, setUnlinkComponentGiftFor] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
+  const [absorbComponentFor, setAbsorbComponentFor] = useState<{
+    id: string;
+    label: string;
+  } | null>(null);
+  const [componentCorrectionBusy, setComponentCorrectionBusy] = useState(false);
+  const [giftReassignmentFor, setGiftReassignmentFor] = useState<{
+    giftLabel: string;
+    message: string;
+    confirm: () => Promise<void>;
   } | null>(null);
   const [tieChargeFor, setTieChargeFor] = useState<{
     payoutId: string;
@@ -556,7 +577,8 @@ export default function ReconciliationDepositsPage() {
     removeManualComponent.isPending ||
     setComponentQbSource.isPending ||
     attachQboEvidence.isPending ||
-    flagAccountingError.isPending;
+    flagAccountingError.isPending ||
+    componentCorrectionBusy;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({
@@ -735,7 +757,27 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const linkAnchorToGift = async (anchor: AnchorRef, giftId: string) => {
+  const queueGiftReassignment = (
+    error: unknown,
+    giftLabel: string,
+    retry: () => Promise<void>,
+  ): boolean => {
+    if (apiErrorCode(error) !== "gift_reassignment_required") return false;
+    setGiftReassignmentFor({
+      giftLabel,
+      message:
+        apiErrorMessage(error) ??
+        "That CRM gift already belongs to another payment.",
+      confirm: retry,
+    });
+    return true;
+  };
+
+  const linkAnchorToGift = async (
+    anchor: AnchorRef,
+    giftId: string,
+    reassignGift = false,
+  ) => {
     if (anchor.kind === "charge") {
       try {
         await linkCharge.mutateAsync({ id: anchor.id, data: { giftId } });
@@ -771,6 +813,7 @@ export default function ReconciliationDepositsPage() {
             : anchor.amount
               ? { amount: anchor.amount }
               : {}),
+          ...(reassignGift ? { reassignGift: true } : {}),
         },
       });
     }
@@ -781,7 +824,7 @@ export default function ReconciliationDepositsPage() {
     individualGiverPersonId: type === "individual" ? id : null,
     householdId: type === "household" ? id : null,
   });
-  const handlePickGift = async (gift: GiftOrPayment) => {
+  const handlePickGift = async (gift: GiftOrPayment, reassignGift = false) => {
     if (!linkGiftFor) return;
     try {
       if (donorboxLinkRow) {
@@ -789,10 +832,10 @@ export default function ReconciliationDepositsPage() {
           id: donorboxLinkRow.id,
           data: { giftId: gift.id },
         });
-        await linkAnchorToGift(linkGiftFor, gift.id);
+        await linkAnchorToGift(linkGiftFor, gift.id, reassignGift);
         setDonorboxLinkRow(null);
       } else {
-        await linkAnchorToGift(linkGiftFor, gift.id);
+        await linkAnchorToGift(linkGiftFor, gift.id, reassignGift);
       }
       setLinkGiftFor(null);
       invalidate();
@@ -801,6 +844,14 @@ export default function ReconciliationDepositsPage() {
         description: `${linkGiftFor.label} now pays “${gift.name ?? gift.id}”.`,
       });
     } catch (err) {
+      if (
+        !reassignGift &&
+        queueGiftReassignment(err, gift.name ?? gift.id, () =>
+          handlePickGift(gift, true),
+        )
+      ) {
+        return;
+      }
       toast({
         title: "Couldn't link gift",
         description: apiErrorMessage(err) ?? errMessage(err),
@@ -810,12 +861,23 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const handleSinglePaymentPick = async (gift: GiftOrPayment) => {
+  const handleSinglePaymentPick = async (
+    gift: GiftOrPayment,
+    reassignGift = false,
+  ) => {
     if (!singlePaymentFor) return;
     try {
       const created = await addBankComponent.mutateAsync({
         bankDepositId: singlePaymentFor.depositId,
-        data: { mode: "gift", giftId: gift.id },
+        data: {
+          mode: "gift",
+          giftId: gift.id,
+          amount:
+            singlePaymentFor.mode === "code"
+              ? singlePaymentFor.amount
+              : (gift.amount ?? "0"),
+          ...(reassignGift ? { reassignGift: true } : {}),
+        },
       });
       setSinglePaymentFor(null);
       invalidate();
@@ -834,6 +896,14 @@ export default function ReconciliationDepositsPage() {
             },
       );
     } catch (err) {
+      if (
+        !reassignGift &&
+        queueGiftReassignment(err, gift.name ?? gift.id, () =>
+          handleSinglePaymentPick(gift, true),
+        )
+      ) {
+        return;
+      }
       toast({
         title: "Couldn't link deposit to gift",
         description: apiErrorMessage(err) ?? errMessage(err),
@@ -869,12 +939,18 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const handleQbEvidencePick = async (qbStagedPaymentId: string) => {
+  const handleQbEvidencePick = async (
+    qbStagedPaymentId: string,
+    opts?: PickOptions,
+  ) => {
     if (!qbEvidenceFor) return;
     try {
       await attachQboEvidence.mutateAsync({
         bankDepositId: qbEvidenceFor.anchorId,
-        data: { stagedPaymentId: qbStagedPaymentId },
+        data: {
+          stagedPaymentId: qbStagedPaymentId,
+          ...(opts?.reassignEvidence ? { reassignEvidence: true } : {}),
+        },
       });
       setQbEvidenceFor(null);
       invalidate();
@@ -1173,7 +1249,10 @@ export default function ReconciliationDepositsPage() {
     }
     return true;
   };
-  const handleColumnGiftPick = async (gift: GiftOrPayment) => {
+  const handleColumnGiftPick = async (
+    gift: GiftOrPayment,
+    reassignGift = false,
+  ) => {
     const deposit = columnGiftFor?.deposit;
     if (!deposit) return;
     const plan = buildGiftPlacementPlan(deposit, gift);
@@ -1188,7 +1267,7 @@ export default function ReconciliationDepositsPage() {
     }
     if (plan.directTarget) {
       try {
-        await linkAnchorToGift(plan.directTarget.anchor, gift.id);
+        await linkAnchorToGift(plan.directTarget.anchor, gift.id, reassignGift);
         setColumnGiftFor(null);
         invalidate();
         toast({
@@ -1196,6 +1275,14 @@ export default function ReconciliationDepositsPage() {
           description: `The ${formatCurrency(plan.directTarget.amount ?? "0")} payment now pays “${gift.name ?? gift.id}”.`,
         });
       } catch (err) {
+        if (
+          !reassignGift &&
+          queueGiftReassignment(err, gift.name ?? gift.id, () =>
+            handleColumnGiftPick(gift, true),
+          )
+        ) {
+          return;
+        }
         toast({
           title: "Couldn't link gift",
           description: apiErrorMessage(err) ?? errMessage(err),
@@ -1260,7 +1347,10 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const handlePlaceGift = async (target: GiftPlacementTarget) => {
+  const handlePlaceGift = async (
+    target: GiftPlacementTarget,
+    reassignGift = false,
+  ) => {
     const placement = giftPlacementFor;
     if (!placement) return;
     if (target.currentGiftId === placement.gift.id) {
@@ -1272,7 +1362,7 @@ export default function ReconciliationDepositsPage() {
       return;
     }
     try {
-      await linkAnchorToGift(target.anchor, placement.gift.id);
+      await linkAnchorToGift(target.anchor, placement.gift.id, reassignGift);
       setGiftPlacementFor(null);
       invalidate();
       toast({
@@ -1280,6 +1370,16 @@ export default function ReconciliationDepositsPage() {
         description: `${target.label} now pays “${placement.gift.name ?? placement.gift.id}”.`,
       });
     } catch (err) {
+      if (
+        !reassignGift &&
+        queueGiftReassignment(
+          err,
+          placement.gift.name ?? placement.gift.id,
+          () => handlePlaceGift(target, true),
+        )
+      ) {
+        return;
+      }
       toast({
         title: "Couldn't link gift",
         description: apiErrorMessage(err) ?? errMessage(err),
@@ -1314,7 +1414,10 @@ export default function ReconciliationDepositsPage() {
     }
   };
 
-  const handleLinkEvidenceGift = async (gift: GiftOrPayment) => {
+  const handleLinkEvidenceGift = async (
+    gift: GiftOrPayment,
+    reassignGift = false,
+  ) => {
     const target = linkEvidenceFor;
     if (!target) return;
     try {
@@ -1326,7 +1429,7 @@ export default function ReconciliationDepositsPage() {
         );
         if (!done) return;
       } else {
-        await linkAnchorToGift(target.anchor, gift.id);
+        await linkAnchorToGift(target.anchor, gift.id, reassignGift);
       }
       setLinkEvidenceFor(null);
       invalidate();
@@ -1335,6 +1438,14 @@ export default function ReconciliationDepositsPage() {
         description: `“${target.anchor.label}” now pays the selected gift.`,
       });
     } catch (err) {
+      if (
+        !reassignGift &&
+        queueGiftReassignment(err, gift.name ?? gift.id, () =>
+          handleLinkEvidenceGift(gift, true),
+        )
+      ) {
+        return;
+      }
       toast({
         title: "Couldn't link gift",
         description: is409(err) ? apiErrorMessage(err) : errMessage(err),
@@ -1448,6 +1559,10 @@ export default function ReconciliationDepositsPage() {
     candidate: CandidatePaymentUnitWithClaim,
   ) => {
     if (!knownPaymentFor) return;
+    if (candidate.claimed && !candidate.claimedByCurrentDeposit) {
+      setPaymentReassignmentFor(candidate);
+      return;
+    }
     await addBankComponent.mutateAsync({
       bankDepositId: knownPaymentFor.depositId,
       data: { mode: "attach", paymentUnitId: candidate.id },
@@ -1457,6 +1572,50 @@ export default function ReconciliationDepositsPage() {
     setKnownPaymentFilterAmount("");
     setKnownPaymentFilterDate("");
     invalidate();
+  };
+  const handleConfirmPaymentReassignment = async () => {
+    const candidate = paymentReassignmentFor;
+    if (!candidate || !knownPaymentFor) return;
+    await addBankComponent.mutateAsync({
+      bankDepositId: knownPaymentFor.depositId,
+      data: {
+        mode: "attach",
+        paymentUnitId: candidate.id,
+        reassignEvidence: true,
+      },
+    });
+    setPaymentReassignmentFor(null);
+    setKnownPaymentFor(null);
+    setKnownPaymentSearch("");
+    setKnownPaymentFilterAmount("");
+    setKnownPaymentFilterDate("");
+    invalidate();
+  };
+  const handleRemainderPledgePick = async (opp: OpportunityOrPledge) => {
+    const target = remainderPledgeFor;
+    if (!target) return;
+    try {
+      await addBankComponent.mutateAsync({
+        bankDepositId: target.depositId,
+        data: {
+          mode: "pledge",
+          opportunityId: opp.id,
+          amount: target.amount,
+        },
+      });
+      setRemainderPledgeFor(null);
+      invalidate();
+      toast({
+        title: "Pledge payment recorded",
+        description: `${formatCurrency(target.amount)} was composed as a payment on “${opp.name ?? opp.id}”.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't record pledge payment",
+        description: apiErrorMessage(error) ?? errMessage(error),
+        variant: "destructive",
+      });
+    }
   };
   const handleUnlinkCandidatePaymentUnit = async (
     candidate: CandidatePaymentUnitWithClaim,
@@ -1494,6 +1653,78 @@ export default function ReconciliationDepositsPage() {
         "The payment remains available to attach to another deposit.",
     });
     invalidate();
+  };
+  const postComponentCorrection = async (
+    componentId: string,
+    action: "unlink-gift" | "absorb-remainder",
+  ): Promise<{ amount?: string }> => {
+    const response = await fetch(
+      `/api/reconciliation/deposit-components/${encodeURIComponent(componentId)}/${action}`,
+      { method: "POST", credentials: "include" },
+    );
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      throw new Error(body?.message ?? "Could not correct this payment.");
+    }
+    if (response.status === 204) return {};
+    return (await response.json()) as { amount?: string };
+  };
+  const handleUnlinkComponentGift = async () => {
+    if (!unlinkComponentGiftFor) return;
+    setComponentCorrectionBusy(true);
+    try {
+      await postComponentCorrection(unlinkComponentGiftFor.id, "unlink-gift");
+      setUnlinkComponentGiftFor(null);
+      toast({
+        title: "CRM gift unlinked",
+        description:
+          "The gift was preserved and is available to link elsewhere. You can now remove or recode this payment component.",
+      });
+      invalidate();
+    } catch (error) {
+      toast({
+        title: "Couldn't unlink CRM gift",
+        description: errMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setComponentCorrectionBusy(false);
+    }
+  };
+  const handleAbsorbComponentRemainder = async () => {
+    if (!absorbComponentFor) return;
+    setComponentCorrectionBusy(true);
+    try {
+      const result = await postComponentCorrection(
+        absorbComponentFor.id,
+        "absorb-remainder",
+      );
+      setAbsorbComponentFor(null);
+      toast({
+        title: "Payment corrected",
+        description: `This is now a ${formatCurrency(result.amount ?? "0")} payment for the full deposit. Its QuickBooks line remains accounting evidence, not a separate payment.`,
+      });
+      invalidate();
+    } catch (error) {
+      toast({
+        title: "Couldn't expand payment",
+        description: errMessage(error),
+        variant: "destructive",
+      });
+    } finally {
+      setComponentCorrectionBusy(false);
+    }
+  };
+  const handleConfirmGiftReassignment = async () => {
+    const pending = giftReassignmentFor;
+    if (!pending) return;
+    try {
+      await pending.confirm();
+    } finally {
+      setGiftReassignmentFor(null);
+    }
   };
   const handleUnlinkAccountingRecord = async (
     bankDepositId: string,
@@ -1551,12 +1782,18 @@ export default function ReconciliationDepositsPage() {
       });
     }
   };
-  const handleComponentQbPick = async (qbStagedPaymentId: string) => {
+  const handleComponentQbPick = async (
+    qbStagedPaymentId: string,
+    opts?: PickOptions,
+  ) => {
     if (!componentQbFor) return;
     try {
       await setComponentQbSource.mutateAsync({
         id: componentQbFor.id,
-        data: { stagedPaymentId: qbStagedPaymentId },
+        data: {
+          stagedPaymentId: qbStagedPaymentId,
+          ...(opts?.reassignEvidence ? { reassignEvidence: true } : {}),
+        },
       });
       toast({
         title: "QuickBooks source attached",
@@ -1693,7 +1930,14 @@ export default function ReconciliationDepositsPage() {
     openExcludeRemainder: (depositId, remainder) => {
       setExcludeRemainderFor({ depositId, remainder });
     },
+    openRemainderPledgeSearch: (depositId, amount) => {
+      setRemainderPledgeFor({ depositId, amount });
+    },
     removeManualComponent: (id, label) => setManualComponentFor({ id, label }),
+    unlinkComponentGift: (id, label) =>
+      setUnlinkComponentGiftFor({ id, label }),
+    absorbComponentRemainder: (id, label) =>
+      setAbsorbComponentFor({ id, label }),
     openChargeQbSearch: (charge) => {
       const deposit = deposits.find((item) =>
         item.charges.some(
@@ -1853,10 +2097,7 @@ export default function ReconciliationDepositsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
-          Wells Fargo deposit ledger
-        </p>
-        <h1 className="mt-1 text-3xl font-serif font-bold text-foreground">
+        <h1 className="text-3xl font-serif font-bold text-foreground">
           Reconciliation
         </h1>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
@@ -2071,7 +2312,7 @@ export default function ReconciliationDepositsPage() {
         </aside>
       </div>
       <AlertDialog
-        open={knownPaymentFor != null}
+        open={knownPaymentFor != null && paymentReassignmentFor == null}
         onOpenChange={(open) => {
           if (!open && !busy) setKnownPaymentFor(null);
         }}
@@ -2284,6 +2525,120 @@ export default function ReconciliationDepositsPage() {
         </AlertDialogContent>
       </AlertDialog>
       <AlertDialog
+        open={paymentReassignmentFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setPaymentReassignmentFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reassign this payment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Choosing this payment will disconnect it from the deposit it is
+              currently composed on
+              {paymentReassignmentFor?.claimedDepositDate
+                ? ` (${paymentReassignmentFor.claimedDepositDate})`
+                : ""}
+              , then move the same payment record here. The previous deposit
+              will return to the reconciliation queue. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void handleConfirmPaymentReassignment()}
+            >
+              Disconnect and move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={giftReassignmentFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setGiftReassignmentFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Move this CRM gift?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {giftReassignmentFor?.message} Choosing “Disconnect and move” will
+              remove the gift from the payment it currently belongs to, then
+              link “{giftReassignmentFor?.giftLabel}” here. The previous payment
+              will return to the reconciliation queue; the CRM gift itself will
+              not be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void handleConfirmGiftReassignment()}
+            >
+              Disconnect and move
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={unlinkComponentGiftFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setUnlinkComponentGiftFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlink CRM gift?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Disconnect the CRM gift from “
+              {unlinkComponentGiftFor?.label ?? "this payment"}”. Both the gift
+              and the deposit payment will be preserved. The gift will be
+              available to link elsewhere, and this component can then be
+              removed or recoded.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void handleUnlinkComponentGift()}
+            >
+              Unlink CRM gift
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={absorbComponentFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setAbsorbComponentFor(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Make this the full deposit?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Expand “{absorbComponentFor?.label ?? "this payment"}” to absorb
+              the unresolved remainder. Its linked CRM gift must equal the
+              resulting deposit amount. Any QuickBooks line currently used as
+              this component's source will stay attached as accounting evidence;
+              a finance-team QBO split will not become a second bank payment.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => void handleAbsorbComponentRemainder()}
+            >
+              Make full deposit
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
         open={manualComponentFor != null}
         onOpenChange={(open) => {
           if (!open && !busy) setManualComponentFor(null);
@@ -2405,7 +2760,7 @@ export default function ReconciliationDepositsPage() {
           onOpenChange={(open) => {
             if (!open) setQbEvidenceFor(null);
           }}
-          onPick={(id) => void handleQbEvidencePick(id)}
+          onPick={(id, options) => void handleQbEvidencePick(id, options)}
           busy={busy}
         />
       ) : null}
@@ -2559,6 +2914,17 @@ export default function ReconciliationDepositsPage() {
         onSubmit={(type, id, overrides) =>
           void handleCreateStandalone(type, id, overrides)
         }
+      />
+      <LinkEvidenceSearchDialog
+        open={remainderPledgeFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setRemainderPledgeFor(null);
+        }}
+        mode="pledges"
+        anchorKind="deposit"
+        busy={busy}
+        onPickGift={() => undefined}
+        onPickOpp={(opp) => void handleRemainderPledgePick(opp)}
       />
       <LinkEvidenceSearchDialog
         open={linkEvidenceFor != null}
@@ -3144,7 +3510,7 @@ export default function ReconciliationDepositsPage() {
           onOpenChange={(open) => {
             if (!open) setComponentQbFor(null);
           }}
-          onPick={(id) => void handleComponentQbPick(id)}
+          onPick={(id, options) => void handleComponentQbPick(id, options)}
           busy={busy}
         />
       ) : null}

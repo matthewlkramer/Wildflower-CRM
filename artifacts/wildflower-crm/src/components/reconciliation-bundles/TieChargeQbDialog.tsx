@@ -76,19 +76,31 @@ export function TieChargeQbDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === "component" ? "Find the QuickBooks row for this component" : "Find the QuickBooks row for this charge"}</DialogTitle>
+          <DialogTitle>
+            {mode === "component"
+              ? "Find the QuickBooks row for this component"
+              : "Find the QuickBooks row for this charge"}
+          </DialogTitle>
           <DialogDescription>
-            {mode === "component" ? "Attach the unclaimed QuickBooks row documenting " : "Tie the QuickBooks row recording the same donation as "}
+            {mode === "component"
+              ? "Attach the unclaimed QuickBooks row documenting "
+              : "Tie the QuickBooks row recording the same donation as "}
             {payer || shortId(charge.id)}
             {charge.amount != null
               ? ` (${formatCurrency(charge.amount)}`
               : " ("}
             {charge.date ? ` · ${formatDate(charge.date)})` : ")"}
-            {mode === "charge" ? ` on payout ${shortId(payoutId)}. The row's amount normally must exactly match the charge's gross` : ". The row must not already be tied to a charge, gift, payment unit, or exclusion."}
+            {mode === "charge"
+              ? ` on payout ${shortId(payoutId)}. The row's amount normally must exactly match the charge's gross`
+              : ". A row already documenting another deposit or direct payment can be moved here after confirmation."}
             {charge.net != null && charge.net !== charge.amount
-              ? mode === "charge" ? ` or net (${formatCurrency(charge.net)})` : ""
+              ? mode === "charge"
+                ? ` or net (${formatCurrency(charge.net)})`
+                : ""
               : ""}{" "}
-            {mode === "charge" ? "amount — a differently-booked row can be tied with a deliberate second click." : ""}
+            {mode === "charge"
+              ? "amount — a differently-booked row can be tied with a deliberate second click."
+              : ""}
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
@@ -103,7 +115,13 @@ export function TieChargeQbDialog({
           />
         </div>
         <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-          <QbRowResults q={q} charge={charge} busy={busy} onPick={onPick} mode={mode} />
+          <QbRowResults
+            q={q}
+            charge={charge}
+            busy={busy}
+            onPick={onPick}
+            mode={mode}
+          />
         </div>
       </DialogContent>
     </Dialog>
@@ -146,14 +164,24 @@ function QbRowResults({
       rowCents !== chargeCents &&
       (netCents == null || rowCents !== netCents);
     const excluded = c.conflictKind === "excluded";
+    const movableDirectEvidence =
+      c.conflictKind === "deposit_evidence" ||
+      c.conflictKind === "component_evidence";
     // Settled/tied-elsewhere rows are never overridable (their money is
     // already claimed). An exclusion and/or an amount mismatch ARE
     // deliberately overridable — the tie is pinned to THIS charge, so the
     // human can assert "this row records this charge's money" even when the
     // bookkeeper booked a different amount (e.g. a partial or adjusted
     // booking). Each blocker contributes its own explicit override flag.
-    const hardBlocked = c.conflictReason != null && (mode === "component" || !excluded);
-    const overridable = mode === "charge" && !hardBlocked && (excluded || amountMismatch);
+    const hardBlocked =
+      c.conflictReason != null &&
+      !movableDirectEvidence &&
+      (mode === "component" || !excluded);
+    const overridable =
+      mode === "charge" &&
+      !hardBlocked &&
+      !movableDirectEvidence &&
+      (excluded || amountMismatch);
     return {
       id: c.id,
       primary: c.label ?? shortId(c.id),
@@ -188,6 +216,15 @@ function QbRowResults({
             ? "Click again to tie anyway — this row returns to review and is tied to this charge despite the different amount."
             : "Click again to tie anyway — you're asserting this row records this charge's money despite the different amount."
           : "Click again to tie anyway — this row will be put back into review and tied."
+        : undefined,
+      reassignment: movableDirectEvidence
+        ? {
+            description: `${c.conflictReason}. Choosing it will disconnect that accounting evidence from the thing it was previously connected to and attach it here instead. The prior deposit or payment will return to the appropriate reconciliation queue.`,
+            pick: {
+              reassignEvidence: true,
+              ...(amountMismatch ? { overrideAmountMismatch: true } : {}),
+            },
+          }
         : undefined,
     };
   });

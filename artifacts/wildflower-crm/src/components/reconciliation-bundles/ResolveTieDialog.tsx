@@ -13,6 +13,16 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { shortId } from "./bundle-ui";
 
@@ -40,6 +50,13 @@ export interface ResultRow {
   /** Warning under an ARMED overridable row — say exactly what the second
    *  click will do. */
   armedHint?: string;
+  /** A movable ownership conflict. Selecting opens an explicit confirmation
+   *  dialog; the confirmed pick asks the endpoint to disconnect the prior
+   *  direct-evidence relationship and reattach atomically. */
+  reassignment?: {
+    description: string;
+    pick: PickOptions;
+  };
 }
 
 export interface PickOptions {
@@ -50,6 +67,8 @@ export interface PickOptions {
    *  charge's gross nor its net — the confirm should tie it to the pinned
    *  charge anyway (charge-tie dialog only; requires the pinned chargeId). */
   overrideAmountMismatch?: boolean;
+  /** Disconnect a prior deposit/component evidence owner before attaching. */
+  reassignEvidence?: boolean;
 }
 
 /**
@@ -91,8 +110,8 @@ export function ResolveTieDialog({
           <DialogTitle>Find the QuickBooks deposit</DialogTitle>
           <DialogDescription>
             Tie the correct counterpart to {shortId(anchor.anchorId)}
-            {anchor.amount != null ? ` (${formatCurrency(anchor.amount)})` : ""},
-            then approve.
+            {anchor.amount != null ? ` (${formatCurrency(anchor.amount)})` : ""}
+            , then approve.
           </DialogDescription>
         </DialogHeader>
         <div className="relative">
@@ -187,8 +206,10 @@ export function ResultsList({
   // the second click ties anyway with overrideExclusion. Clicking any other
   // row disarms.
   const [armedId, setArmedId] = useState<string | null>(null);
+  const [reassignRow, setReassignRow] = useState<ResultRow | null>(null);
   useEffect(() => {
     setArmedId(null);
+    setReassignRow(null);
   }, [resetKey]);
   if (isError) {
     return (
@@ -215,72 +236,110 @@ export function ResultsList({
       {rows.map((r) => {
         const blocked = r.blockedReason != null;
         const canOverride = blocked && r.overridable === true;
+        const canReassign = blocked && r.reassignment != null;
         const armed = canOverride && armedId === r.id;
         return (
-        <Button
-          key={r.id}
-          type="button"
-          variant="outline"
-          className={
-            "h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left disabled:opacity-60" +
-            (armed ? " border-amber-500 bg-amber-500/10" : "")
-          }
-          disabled={busy || (blocked && !canOverride)}
-          onClick={() => {
-            if (!blocked) {
-              setArmedId(null);
-              onPick(r.id);
-              return;
+          <Button
+            key={r.id}
+            type="button"
+            variant="outline"
+            className={
+              "h-auto w-full justify-between gap-2 whitespace-normal px-2 py-1.5 text-left disabled:opacity-60" +
+              (armed ? " border-amber-500 bg-amber-500/10" : "")
             }
-            // Overridable blocked row: first click arms, second confirms
-            // with the row's specific override flags.
-            if (armed) {
-              setArmedId(null);
-              onPick(r.id, r.overridePick ?? { overrideExclusion: true });
-            } else {
-              setArmedId(r.id);
-            }
-          }}
-          data-testid={`button-resolve-pick-${r.id}`}
-        >
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-sm font-medium">{r.primary}</span>
-            {r.secondary && (
-              <span className="truncate text-xs text-muted-foreground">
-                {r.secondary}
-              </span>
-            )}
-            {r.blockedReason && (
-              <span className="truncate text-xs text-amber-600">
-                {r.blockedReason}
-              </span>
-            )}
-            {armed ? (
-              <span className="whitespace-normal text-xs font-medium text-amber-700">
-                {r.armedHint ??
-                  "Click again to tie anyway — this row will be put back into review and tied."}
-              </span>
-            ) : (
-              canOverride && (
+            disabled={busy || (blocked && !canOverride && !canReassign)}
+            onClick={() => {
+              if (canReassign) {
+                setArmedId(null);
+                setReassignRow(r);
+                return;
+              }
+              if (!blocked) {
+                setArmedId(null);
+                onPick(r.id);
+                return;
+              }
+              // Overridable blocked row: first click arms, second confirms
+              // with the row's specific override flags.
+              if (armed) {
+                setArmedId(null);
+                onPick(r.id, r.overridePick ?? { overrideExclusion: true });
+              } else {
+                setArmedId(r.id);
+              }
+            }}
+            data-testid={`button-resolve-pick-${r.id}`}
+          >
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-sm font-medium">{r.primary}</span>
+              {r.secondary && (
+                <span className="truncate text-xs text-muted-foreground">
+                  {r.secondary}
+                </span>
+              )}
+              {r.blockedReason && (
+                <span className="truncate text-xs text-amber-600">
+                  {r.blockedReason}
+                </span>
+              )}
+              {armed ? (
+                <span className="whitespace-normal text-xs font-medium text-amber-700">
+                  {r.armedHint ??
+                    "Click again to tie anyway — this row will be put back into review and tied."}
+                </span>
+              ) : canReassign ? (
+                <span className="whitespace-normal text-xs text-muted-foreground">
+                  Select to review and confirm reassignment.
+                </span>
+              ) : canOverride ? (
                 <span className="truncate text-xs text-muted-foreground">
                   {r.overrideHint ?? "Click to override the exclusion."}
                 </span>
-              )
-            )}
-          </span>
-          <span className="flex shrink-0 flex-col items-end">
-            <span className="text-sm font-semibold">
-              {r.amount != null ? formatCurrency(r.amount) : "—"}
+              ) : null}
             </span>
-            {r.date && (
-              <span className="text-xs text-muted-foreground">
-                {formatDate(r.date)}
+            <span className="flex shrink-0 flex-col items-end">
+              <span className="text-sm font-semibold">
+                {r.amount != null ? formatCurrency(r.amount) : "—"}
               </span>
-            )}
-          </span>
-        </Button>
+              {r.date && (
+                <span className="text-xs text-muted-foreground">
+                  {formatDate(r.date)}
+                </span>
+              )}
+            </span>
+          </Button>
         );
       })}
+      <AlertDialog
+        open={reassignRow != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setReassignRow(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reassign accounting evidence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {reassignRow?.reassignment?.description}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={() => {
+                const row = reassignRow;
+                setReassignRow(null);
+                if (row?.reassignment) {
+                  onPick(row.id, row.reassignment.pick);
+                }
+              }}
+            >
+              Disconnect and reassign
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
