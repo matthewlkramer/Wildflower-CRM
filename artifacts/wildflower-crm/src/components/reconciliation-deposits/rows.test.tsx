@@ -308,7 +308,7 @@ describe("deposit workbench rows", () => {
 
     const cardMenu = openMenuContaining("QB detail");
     expect(cardMenu).not.toBeNull();
-    expect(cardMenu?.textContent).toContain("Exclude");
+    expect(cardMenu?.textContent).not.toContain("Exclude");
   });
 
   it("enables all unit-backed gift actions for a manual gift-less payment", () => {

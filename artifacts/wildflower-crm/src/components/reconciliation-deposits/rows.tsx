@@ -937,15 +937,6 @@ function Accounting({
       });
     }
 
-    items.push({
-      label: "Exclude",
-      onSelect: () =>
-        actions.openExclude({
-          kind: "staged",
-          id: record.stagedPaymentId,
-          label: accountingLabel(record),
-        }),
-    });
     if (check?.disposition === "correction_needed") {
       items.push(
         {
@@ -1002,40 +993,29 @@ function Accounting({
       {unalignedItems.map(({ record, check }) => {
         const display = record ?? check;
         if (!display) return null;
-        const anchor: AnchorRef = {
-          kind: "staged",
-          id: display.stagedPaymentId,
-          label: accountingLabel(display),
-        };
         const menuItems: CardActionMenuItem[] = record
           ? nodeMenuItems(record, check)
           : actions.isFinanceOrAdmin
-            ? [
-                {
-                  label: "Exclude",
-                  onSelect: () => actions.openExclude(anchor),
-                },
-                ...(check?.disposition === "correction_needed"
-                  ? [
-                      {
-                        label: "Mark corrected",
-                        onSelect: () =>
-                          actions.openAccountingDisposition?.(
-                            check.id,
-                            "corrected",
-                          ),
-                      },
-                      {
-                        label: "Accept historical…",
-                        onSelect: () =>
-                          actions.openAccountingDisposition?.(
-                            check.id,
-                            "accepted_historical",
-                          ),
-                      },
-                    ]
-                  : []),
-              ]
+            ? check?.disposition === "correction_needed"
+              ? [
+                  {
+                    label: "Mark corrected",
+                    onSelect: () =>
+                      actions.openAccountingDisposition?.(
+                        check.id,
+                        "corrected",
+                      ),
+                  },
+                  {
+                    label: "Accept historical…",
+                    onSelect: () =>
+                      actions.openAccountingDisposition?.(
+                        check.id,
+                        "accepted_historical",
+                      ),
+                  },
+                ]
+              : []
             : [];
         return (
           <div

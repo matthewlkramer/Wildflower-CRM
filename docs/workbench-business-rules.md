@@ -74,9 +74,10 @@ Cards represent evidence records, not missing-state placeholders. An unresolved
 composition remainder and an empty Gifts column render as concise text
 (`Unresolved` / `No CRM gifts linked`) with their available actions in the
 column's three-dot menu. Record-specific actions stay on the evidence card they
-affect; for example, QuickBooks detail, exclude, unlink, and correction
-dispositions belong on the individual accounting card rather than acting on the
-first record through a column-level menu.
+affect; for example, QuickBooks detail, unlink, and correction dispositions
+belong on the individual accounting card rather than acting on the first record
+through a column-level menu. Exclusion remains a component-level decision in
+Composition, not an accounting-card action.
 
 QBO is downstream documentation. Typed `source_links` claims and
 `deposit_qbo_components` remain the authorities for QBO ties; gift/allocation
