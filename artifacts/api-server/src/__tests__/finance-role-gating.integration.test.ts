@@ -94,6 +94,10 @@ const NOPE = "nonexistent_id_xyz";
 // Every finance-gated endpoint (path, body). Keep in sync with the inventory
 // comment in src/lib/financeGuard.ts.
 const GATED: Array<{ name: string; path: string; body?: unknown }> = [
+  {
+    name: "importManualBankReport",
+    path: "/api/reconciliation/bank-report-imports",
+  },
   // Settled payout pairing (payout ↔ QB deposit)
   {
     name: "confirmSettlementLink",

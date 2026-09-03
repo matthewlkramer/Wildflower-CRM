@@ -11436,6 +11436,29 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /reconciliation/bank-report-imports:
+    post:
+      operationId: importManualBankReport
+      tags: [reconciliation]
+      summary: Import a QuickBooks Banking Transactions report into the bank-spine workbench.
+      description: |
+        Finance-only manual fallback for the same YTD report accepted from the
+        scheduled Intuit email. Uses the shared filename/content/account
+        validation, stable bank-transaction deduplication, durable import receipt,
+        and bank-spine recomputation. Re-uploading identical content is idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ManualBankReportImportBody" }
+      responses:
+        "200":
+          description: Import outcome. A rejected report is recorded and returned with status rejected.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BankReportImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
   /reconciliation/workbench-recent-changes:
     get:
       operationId: listWorkbenchRecentChanges
@@ -21056,6 +21079,34 @@ components:
         sourceFileCount:
           type: integer
           description: Number of distinct spreadsheet files represented by the stored bank transaction rows.
+    ManualBankReportImportBody:
+      type: object
+      additionalProperties: false
+      required: [filename, contentBase64]
+      properties:
+        filename:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Original QuickBooks report filename (.csv, .xls, or .xlsx).
+        contentBase64:
+          type: string
+          minLength: 1
+          maxLength: 7000000
+          description: Base64-encoded report bytes (maximum decoded size 5 MiB).
+    BankReportImportResult:
+      type: object
+      required: [status, rowsSeen, rowsInserted, alreadyProcessed]
+      properties:
+        status:
+          type: string
+          enum: [succeeded, rejected]
+        rowsSeen: { type: integer, minimum: 0 }
+        rowsInserted: { type: integer, minimum: 0 }
+        alreadyProcessed: { type: boolean }
+        error:
+          type: string
+          nullable: true
     WorkbenchRecentChangeUndo:
       type: object
       required: [kind, targetId]

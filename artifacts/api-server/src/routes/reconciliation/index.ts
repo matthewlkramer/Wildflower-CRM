@@ -14,6 +14,7 @@ import splitUnitsRouter from "./splitUnits";
 import workbenchDepositsRouter from "./workbenchDeposits";
 import recentChangesRouter from "./recentChanges";
 import splitGiftAcrossStripeChargesRouter from "./splitGiftAcrossStripeCharges";
+import manualBankReportRouter from "./manualBankReport";
 
 /**
  * Unified "complete-match" reconciler. One card per money event, anchored on a
@@ -42,6 +43,7 @@ router.use(chargeTiesRouter);
 router.use(splitUnitsRouter);
 router.use(workbenchDepositsRouter);
 router.use(splitGiftAcrossStripeChargesRouter);
+router.use(manualBankReportRouter);
 router.use(recentChangesRouter);
 
 export default router;
