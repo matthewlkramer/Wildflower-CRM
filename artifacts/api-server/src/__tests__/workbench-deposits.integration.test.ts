@@ -297,6 +297,15 @@ async function postJson(path: string, body: unknown) {
   return { status: response.status, json: await response.json() };
 }
 
+async function patchJson(path: string, body: unknown) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, json: await response.json() };
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   schema = await import("@workspace/db");
@@ -1876,14 +1885,14 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     });
     depositQboComponentIds.push(sourceLinkId);
 
-    const blocked = await postJson(
+    const blocked = await patchJson(
       `/api/reconciliation/deposit-components/${targetComponent!.id}/source-staged-payment`,
       { stagedPaymentId },
     );
     expect(blocked.status).toBe(409);
     expect(blocked.json.error).toBe("evidence_reassignment_required");
 
-    const moved = await postJson(
+    const moved = await patchJson(
       `/api/reconciliation/deposit-components/${targetComponent!.id}/source-staged-payment`,
       { stagedPaymentId, reassignEvidence: true },
     );
@@ -1909,6 +1918,8 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
     expect(response.status).toBe(201);
     expect(response.json.giftId).toBeTruthy();
     giftIds.push(response.json.giftId);
+    componentIds.push(response.json.id);
+    unitIds.push(response.json.paymentUnitId);
 
     const gift = await db.query.giftsAndPayments.findFirst({
       where: eqFn(schema.giftsAndPayments.id, response.json.giftId),
