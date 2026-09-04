@@ -39,3 +39,14 @@ past explicit deadlines, image/link fragments, and quoted reply tails.
 The extractor is deterministic code in `intelDetectors.ts` and
 `grantLeadIdentity.ts`. The admin-editable email intelligence prompts generate
 legacy `email_proposals`; they do not generate `grant_leads`.
+
+## Display headline
+
+The source subject/extracted title remains stored as provenance and as the
+default name when a reviewer converts a lead. The headline beside the
+lightbulb is instead `grant_leads.ai_summary`: a one-sentence AI summary of the
+opportunity's purpose, eligibility, amount, and deadline using only facts that
+the extractor captured. New leads are summarized asynchronously. A bounded
+background sweep fills older or temporarily failed rows; while it is pending,
+the list says that the opportunity summary is being generated rather than
+falling back to an email subject.

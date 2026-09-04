@@ -38,6 +38,7 @@ import {
   parseEmailSignature,
 } from "./intelDetectors";
 import { buildGrantLeadDedupeKey } from "./grantLeadIdentity";
+import { summarizeGrantLeadById } from "./summarizeGrantLead";
 
 /**
  * Orchestrates the per-message email-intelligence pass. Pure detectors
@@ -404,6 +405,10 @@ async function handleGrants(args: {
         createdAt: now,
       })
       .onConflictDoNothing();
+
+    // Best-effort and concurrency-limited. The scheduler backfills failures
+    // and pre-existing leads, so email ingestion never waits on the model.
+    void summarizeGrantLeadById(resolvedLeadId);
   }
 }
 

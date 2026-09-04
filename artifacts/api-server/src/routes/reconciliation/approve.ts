@@ -27,6 +27,8 @@ import {
 } from "../../lib/reconciliationGate";
 import {
   ReconcileAbort as ApproveAbort,
+  applyOpportunityPaymentTransition,
+  lockAndValidateOpportunityForReceivedPayment,
   mintGiftInTx,
   linkGiftInTx,
 } from "../../lib/reconciliationCommit";
@@ -68,6 +70,7 @@ type MintBody = Partial<DonorXor> & {
   stripeChargeId?: string | null;
   paymentIntermediaryId?: string | null;
   overrideAmountMismatchReason?: string | null;
+  opportunityTransition?: "gift" | "pledge" | null;
 };
 
 interface MintOpts {
@@ -91,12 +94,11 @@ interface MintOpts {
  * idempotent — re-approving a reconciled row is a 409.
  *
  *   - create_gift: donor is the human-chosen BODY donor; no opportunity.
- *   - create_gift_from_opportunity: a one-time PAYMENT against an existing
- *     opportunity/pledge — donor DERIVED from the opp; gift.opportunityId set;
- *     the opp derives to cash_in when fully paid. Stage is left untouched.
- * An unfinalized opportunity always produces a direct gift. A payment is treated
- * as a pledge payment only when the selected record was finalized previously
- * through the pledge workflow.
+ *   - create_gift_from_opportunity: received money against an existing
+ *     opportunity/pledge — donor DERIVED from the record; gift.opportunityId
+ *     set; the record derives to cash_in when fully paid. An open opportunity
+ *     requires the human to choose a one-time gift or pledge-with-first-payment
+ *     transition; existing pledges simply receive another payment.
  */
 async function mintGiftFromEvidence(
   req: Request,
@@ -306,36 +308,14 @@ async function mintGiftFromEvidence(
       }
       const staged = lockedRows.find((r) => r.id === stagedPaymentId)!;
 
-      // Lock the chosen opportunity (opp outcomes). The donor is derived from it.
+      // Lock the chosen opportunity (opp outcomes). The donor is derived from it;
+      // open opportunities are resolved explicitly after the evidence amount is known.
       let opp: typeof opportunitiesAndPledges.$inferSelect | null = null;
       if (opportunityId) {
-        opp =
-          (await tx
-            .select()
-            .from(opportunitiesAndPledges)
-            .where(eq(opportunitiesAndPledges.id, opportunityId))
-            .for("update")
-            .then((r) => r[0])) ?? null;
-        if (!opp) {
-          throw new ApproveAbort(404, {
-            error: "not_found",
-            message: "opportunity not found",
-          });
-        }
-        if (opp.archivedAt != null) {
-          throw new ApproveAbort(409, {
-            error: "opportunity_archived",
-            message:
-              "Restore this opportunity before recording received money against it.",
-          });
-        }
-        if (opp.lossType != null) {
-          throw new ApproveAbort(409, {
-            error: "opportunity_closed",
-            message:
-              "Reopen this opportunity before recording received money against it.",
-          });
-        }
+        opp = await lockAndValidateOpportunityForReceivedPayment(
+          tx,
+          opportunityId,
+        );
       }
 
       let charge: typeof stripeStagedCharges.$inferSelect | null = null;
@@ -370,6 +350,16 @@ async function mintGiftFromEvidence(
               "The selected Stripe charge has already been resolved. Refresh and try again.",
           });
         }
+      }
+
+      if (opp) {
+        opp = await applyOpportunityPaymentTransition(
+          tx,
+          opp,
+          body.opportunityTransition,
+          charge?.dateReceived ?? staged.dateReceived,
+          charge?.grossAmount ?? staged.amount,
+        );
       }
 
       // ── Charge-anchored mint (settlement-only confirmed deposit) ──────────
@@ -547,7 +537,7 @@ async function mintGiftFromEvidence(
     giftId: newGiftId,
     opportunityId: opportunityId ?? null,
     createdGift: true,
-    createdPledge: false,
+    createdPledge: body.opportunityTransition === "pledge",
   });
 }
 

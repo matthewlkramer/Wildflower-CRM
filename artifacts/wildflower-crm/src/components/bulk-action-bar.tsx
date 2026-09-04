@@ -13,6 +13,7 @@ export function BulkActionBar({
   onArchive,
   onClear,
   entityNoun,
+  entityPlural,
   extraActions,
 }: {
   count: number;
@@ -24,6 +25,8 @@ export function BulkActionBar({
   onClear: () => void;
   /** Singular noun used in the label, e.g. "person" → "1 person selected". */
   entityNoun: string;
+  /** Irregular plural, e.g. "opportunities". Defaults to `${entityNoun}s`. */
+  entityPlural?: string;
   /**
    * Extra action buttons rendered once 2+ rows are selected (e.g. the gifts
    * page's two merge variants). The caller is responsible for their own
@@ -32,7 +35,7 @@ export function BulkActionBar({
   extraActions?: React.ReactNode;
 }) {
   if (count === 0) return null;
-  const label = `${count.toLocaleString()} ${count === 1 ? entityNoun : `${entityNoun}s`} selected`;
+  const label = `${count.toLocaleString()} ${count === 1 ? entityNoun : (entityPlural ?? `${entityNoun}s`)} selected`;
   return (
     <div
       className="sticky bottom-4 z-30 mx-auto flex w-fit items-center gap-3 rounded-full border bg-card px-4 py-2 shadow-lg"

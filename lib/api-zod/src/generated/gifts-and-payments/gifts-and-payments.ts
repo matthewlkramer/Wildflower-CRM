@@ -848,17 +848,19 @@ export const UntieGiftPaymentUnitResponse = zod.object({
 /**
  * @summary Merge several gifts into one gift, summing amounts and combining allocations.
  */
+export const mergeGiftsAndPaymentsBodyModeDefault = `combine_amounts`;
 export const mergeGiftsAndPaymentsBodyMergeIdsMax = 49;
 
 
 
 export const MergeGiftsAndPaymentsBody = zod.object({
   "primaryId": zod.string(),
+  "mode": zod.enum(['combine_amounts', 'deduplicate']).default(mergeGiftsAndPaymentsBodyModeDefault).describe('combine_amounts preserves the legacy summed merge; deduplicate keeps the survivor amount and archives true duplicate records without double-counting.'),
   "mergeIds": zod.array(zod.string()).min(1).max(mergeGiftsAndPaymentsBodyMergeIdsMax),
   "organizationId": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish()
-}).describe('Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor\'s amount becomes the sum of all selected gifts, every loser\'s allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor.')
+}).describe('Consolidate `mergeIds` into `primaryId`. In legacy combine_amounts mode, the survivor receives the summed amount and allocations. In deduplicate mode, the survivor keeps its amount and allocations while redundant records are archived so one payment is counted once.')
 
 export const MergeGiftsAndPaymentsResponse = zod.object({
   "primaryId": zod.string().describe('The surviving record id.'),
@@ -1202,4 +1204,3 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
-
