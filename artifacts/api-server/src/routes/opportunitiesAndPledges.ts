@@ -170,6 +170,7 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import {
+  freezeErrorBody,
   resolvePledgeFreeze,
   resolvePledgeFreezeById,
   respondFrozen,
@@ -1913,6 +1914,12 @@ router.post(
           message: `Opportunity record(s) not found: ${missing.join(", ")}`,
         };
       }
+      for (const row of rows) {
+        const freeze = await resolvePledgeFreeze(row.actualCompletionDate);
+        if (freeze.frozen) {
+          return { status: 409, ...freezeErrorBody(freeze) };
+        }
+      }
       const unavailable = rows.filter(
         (row) =>
           row.archivedAt != null ||
@@ -2075,6 +2082,12 @@ router.post(
           error: "validation_error",
           message: `Opportunity record(s) not found: ${missing.join(", ")}`,
         };
+      }
+      for (const row of rows) {
+        const freeze = await resolvePledgeFreeze(row.actualCompletionDate);
+        if (freeze.frozen) {
+          return { status: 409, ...freezeErrorBody(freeze) };
+        }
       }
       const unavailable = rows.filter(
         (row) =>

@@ -156,6 +156,11 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Entity-merge engine: repoints donor FKs on gift/pledge rows and archives duplicate orgs/people — a structural identity consolidation, not a human edit of an audited amount/date. FOLLOW-UP (architect-agreed deferrable): a merge repointing a closed-FY gift/pledge donor is not freeze-gated yet.",
   },
+  "lib/fundraisingConsolidation.ts": {
+    classification: "exempt",
+    reason:
+      "Structural consolidation helper: repoints notes, tasks, import references, and relationship pointers only. Audited gift/pledge amounts, dates, allocations, and archive writes remain in the calling routes, which freeze-check every selected record before invoking this helper.",
+  },
   "routes/adminReassign.ts": {
     classification: "exempt",
     reason:
