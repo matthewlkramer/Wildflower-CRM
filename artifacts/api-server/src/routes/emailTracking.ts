@@ -843,11 +843,36 @@ router.get(
     }
     const allMailboxes = canReviewAllMailboxes(me, wantsAllMailboxes(req));
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60_000);
-    const hasCrmContact = sql`(
-      cardinality(COALESCE(${emailMessages.matchedPersonIds}, '{}'::text[])) > 0 OR
-      cardinality(COALESCE(${emailMessages.matchedOrganizationIds}, '{}'::text[])) > 0 OR
-      cardinality(COALESCE(${emailMessages.matchedHouseholdIds}, '{}'::text[])) > 0
+    // The sync deliberately stores a broader set than this action queue: a
+    // message can be retained because another participant is a CRM contact or
+    // because an unknown sender shares a known organization's domain. Neither
+    // case means the sender is someone the fundraiser owes a reply. Require an
+    // exact, current email-row match for the sender instead.
+    const hasExactCrmSender = sql`EXISTS (
+      SELECT 1
+      FROM ${emailsTable} AS sender_crm_email
+      WHERE lower(sender_crm_email.email) = lower(${emailMessages.fromEmail})
+        AND (
+          sender_crm_email.person_id IS NOT NULL OR
+          sender_crm_email.organization_id IS NOT NULL OR
+          sender_crm_email.household_id IS NOT NULL
+        )
     )`;
+    const isNotMailboxOwner = sql`
+      lower(COALESCE(${emailMessages.fromEmail}, '')) <> lower(${users.email})
+    `;
+    const internalDomains = await loadInternalDomains();
+    const internalList = [...internalDomains];
+    const hasExternalSender =
+      internalList.length === 0
+        ? sql`TRUE`
+        : sql`
+            lower(split_part(COALESCE(${emailMessages.fromEmail}, ''), '@', 2))
+            NOT IN (${sql.join(
+              internalList.map((domain) => sql`${domain}`),
+              sql`, `,
+            )})
+          `;
     const noLaterReply = sql`NOT EXISTS (
       SELECT 1
       FROM email_messages AS sent_message
@@ -881,7 +906,9 @@ router.get(
         and(
           eq(emailMessages.direction, "received"),
           sql`${emailMessages.sentAt} <= ${twentyFourHoursAgo}`,
-          hasCrmContact,
+          hasExactCrmSender,
+          isNotMailboxOwner,
+          hasExternalSender,
           noLaterReply,
           mailboxScope(me, allMailboxes, emailMessages.mailboxUserId),
           privateVisibility(me, emailMessages.isPrivate, emailMessages.mailboxUserId),

@@ -13,6 +13,10 @@ const MEMBER_ID = `${RUN}_member`;
 const ADMIN_EMAIL = `${ADMIN_ID}@wildflowerschools.org`;
 const OWNER_EMAIL = `${OWNER_ID}@wildflowerschools.org`;
 const MEMBER_EMAIL = `${MEMBER_ID}@wildflowerschools.org`;
+const CRM_PERSON_ID = `${RUN}_crm_person`;
+const CRM_EMAIL_ID = `${RUN}_crm_email`;
+const CRM_EMAIL = `${RUN}.crm@example.org`;
+const OWNER_CRM_EMAIL_ID = `${RUN}_owner_crm_email`;
 const OUT_OWNER = `${RUN}_out_owner`;
 const OUT_MEMBER = `${RUN}_out_member`;
 const OUT_OLD = `${RUN}_out_old`;
@@ -26,6 +30,9 @@ const IN_MEMBER_WAIT = `${RUN}_in_member_wait`;
 const IN_MEMBER_PRIVATE = `${RUN}_in_member_private`;
 const IN_MEMBER_PRIVATE_REPLY_SOURCE = `${RUN}_in_member_private_reply_source`;
 const MEMBER_PRIVATE_REPLY = `${RUN}_member_private_reply`;
+const IN_DOMAIN_ONLY = `${RUN}_in_domain_only`;
+const IN_OTHER_PARTICIPANT_MATCH = `${RUN}_in_other_participant_match`;
+const IN_MAILBOX_OWNER = `${RUN}_in_mailbox_owner`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "", email: "" } as {
@@ -96,6 +103,22 @@ beforeAll(async () => {
       displayName: "Other Mailbox",
     },
   ]);
+  await db.insert(dbMod.people).values({
+    id: CRM_PERSON_ID,
+    fullName: "Tracking Queue Contact",
+  });
+  await db.insert(dbMod.emails).values([
+    {
+      id: CRM_EMAIL_ID,
+      email: CRM_EMAIL,
+      personId: CRM_PERSON_ID,
+    },
+    {
+      id: OWNER_CRM_EMAIL_ID,
+      email: OWNER_EMAIL,
+      personId: CRM_PERSON_ID,
+    },
+  ]);
   const now = Date.now();
   await db.insert(dbMod.trackedEmails).values([
     {
@@ -147,8 +170,8 @@ beforeAll(async () => {
     direction: "received" as const,
     sentAt: new Date(now - hoursAgo * 60 * 60_000),
     subject: `Subject ${id}`,
-    fromEmail: "crm-person@example.org",
-    matchedPersonIds: [`${RUN}_person`],
+    fromEmail: CRM_EMAIL,
+    matchedPersonIds: [CRM_PERSON_ID],
     ...extra,
   });
   await db.insert(dbMod.emailMessages).values([
@@ -198,6 +221,25 @@ beforeAll(async () => {
       34,
       { isPrivate: true },
     ),
+    received(IN_DOMAIN_ONLY, OWNER_ID, `${RUN}_thread_in_domain_only`, 36, {
+      fromEmail: `newsletter@${RUN}.example.org`,
+      matchedPersonIds: [],
+      matchedOrganizationIds: [`${RUN}_domain_org`],
+    }),
+    received(
+      IN_OTHER_PARTICIPANT_MATCH,
+      OWNER_ID,
+      `${RUN}_thread_in_other_participant`,
+      37,
+      {
+        fromEmail: `${RUN}.unknown@example.net`,
+        matchedPersonIds: [CRM_PERSON_ID],
+        toEmails: [CRM_EMAIL, OWNER_EMAIL],
+      },
+    ),
+    received(IN_MAILBOX_OWNER, OWNER_ID, `${RUN}_thread_in_mailbox_owner`, 38, {
+      fromEmail: OWNER_EMAIL,
+    }),
   ]);
 
   const { default: app } = await import("../app");
@@ -212,7 +254,7 @@ afterAll(async () => {
   if (!HAS_DB) return;
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
-  const { inArray } = await import("drizzle-orm");
+  const { eq, inArray } = await import("drizzle-orm");
   await db
     .delete(dbMod.emailTrackingResolutions)
     .where(
@@ -237,6 +279,9 @@ afterAll(async () => {
         IN_MEMBER_PRIVATE_REPLY_SOURCE,
         MEMBER_PRIVATE_REPLY,
         IN_MEMBER_PRIVATE,
+        IN_DOMAIN_ONLY,
+        IN_OTHER_PARTICIPANT_MATCH,
+        IN_MAILBOX_OWNER,
       ]),
     );
   await db
@@ -249,6 +294,10 @@ afterAll(async () => {
         OUT_NO_CRM,
       ]),
     );
+  await db
+    .delete(dbMod.emails)
+    .where(inArray(dbMod.emails.id, [CRM_EMAIL_ID, OWNER_CRM_EMAIL_ID]));
+  await db.delete(dbMod.people).where(eq(dbMod.people.id, CRM_PERSON_ID));
   await db
     .delete(dbMod.users)
     .where(inArray(dbMod.users.id, [ADMIN_ID, OWNER_ID, MEMBER_ID]));
@@ -285,6 +334,9 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     expect(inboundIds).toContain(IN_OWNER_WAIT);
     expect(inboundIds).not.toContain(IN_OWNER_YOUNG);
     expect(inboundIds).not.toContain(IN_OWNER_REPLIED);
+    expect(inboundIds).not.toContain(IN_DOMAIN_ONLY);
+    expect(inboundIds).not.toContain(IN_OTHER_PARTICIPANT_MATCH);
+    expect(inboundIds).not.toContain(IN_MAILBOX_OWNER);
   }, 30_000);
 
   it("lets admins review non-private rows across mailboxes without exposing private source email", async () => {

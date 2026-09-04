@@ -174,6 +174,15 @@ chatter shouldn't pollute donor timelines), then looks up the rest:
 If anything matches, the message takes the **matched path**; if nothing
 matches, it takes the **unmatched path**.
 
+The inbox sync and the Email Tracking action queue intentionally have
+different thresholds. Gmail excludes Spam and Trash before sync. Other
+unmatched messages keep only lightweight header metadata in the skip table,
+while a domain-only organization match may retain the full message for CRM
+timelines. The Email Tracking inbound queue is narrower: it shows a message
+only when the actual sender address exactly matches a person, organization, or
+household email in the CRM. The synced mailbox owner's address and configured
+internal staff domains never qualify it.
+
 *(Code: `artifacts/api-server/src/lib/emailMatcher.ts`.)*
 
 ### Stage 3 — Signal detection
