@@ -31,4 +31,19 @@ describe("pledge payment eligibility", () => {
       ),
     ).toContain("finalize it as a written or verbal pledge");
   });
+
+  it("offers an open opportunity in the transition-aware search", () => {
+    expect(
+      pledgePaymentBlockedReason(
+        {
+          id: "open",
+          pledgeCommittedAt: null,
+          commitmentPath: null,
+          writtenPledge: false,
+          loanOrGrant: "grant",
+        } as any,
+        false,
+      ),
+    ).toBeNull();
+  });
 });

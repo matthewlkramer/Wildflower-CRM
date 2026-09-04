@@ -2167,7 +2167,7 @@ export default function Gifts() {
               title={!isAdmin ? "Admin role required" : undefined}
               data-testid="button-bulk-merge-gift"
             >
-              Merge into one gift{!isAdmin ? " (admin only)" : ""}
+              Dedup{!isAdmin ? " (admin only)" : ""}
             </Button>
             <Button
               size="sm"
@@ -2177,7 +2177,7 @@ export default function Gifts() {
               title={!isAdmin ? "Admin role required" : undefined}
               data-testid="button-bulk-merge-pledge"
             >
-              Merge into one pledge{!isAdmin ? " (admin only)" : ""}
+              Combine as pledge{!isAdmin ? " (admin only)" : ""}
             </Button>
           </>
         }

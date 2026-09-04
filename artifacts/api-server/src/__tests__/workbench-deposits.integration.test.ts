@@ -2211,7 +2211,7 @@ describe.skipIf(!HAS_DB)(
       expect(unit.createdTheGift).toBe(true);
     }, 30_000);
 
-    it("rejects non-pledges, lost, archived, and unknown opportunities without minting anything", async () => {
+    it("requires a transition for an open opportunity and rejects lost, archived, and unknown records without minting anything", async () => {
       const deposit = await seedDeposit("Pledge payment blocked", "50.00");
       const unitId = await seedUnit(deposit, "50.00");
 
@@ -2220,7 +2220,7 @@ describe.skipIf(!HAS_DB)(
       const archived = await seedPledge({ archivedAt: new Date() });
 
       const cases: Array<[string, number, string]> = [
-        [open.oppId, 409, "not_a_pledge"],
+        [open.oppId, 409, "opportunity_transition_required"],
         [lost.oppId, 409, "pledge_lost"],
         [archived.oppId, 409, "opportunity_archived"],
         [`${RUN}_missing_opp`, 404, "not_found"],

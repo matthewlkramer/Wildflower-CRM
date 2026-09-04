@@ -362,7 +362,8 @@ export const CreateGiftFromStripeStagedChargeBody = zod.object({
   "entityId": zod.string().nullish().describe('Override the receiving Wildflower entity on the seeded allocation. Explicit null clears it; omitted keeps the evidence attribution (QuickBooks path) or none (Stripe path).'),
   "countsTowardGoal": zod.boolean().nullish().describe('Override whether the seeded allocation counts toward fundraising goals. Omitted keeps the default (true, except QuickBooks government-reimbursement money).')
 }).describe('Optional human overrides for the evidence-mint create-gift endpoints\n(\/staged-payments\/{id}\/create-gift, \/stripe-staged-charges\/{id}\/create-gift\nand \/reconciliation\/payment-units\/{id}\/create-gift).\nEvery field is optional: an OMITTED field keeps today\'s evidence-derived\ndefault (payer\/date from the evidence row; entity + goal-counting from the\nQuickBooks attribution where present). A PRESENT field overrides that\ndefault on the minted gift header and its seeded starter allocation. The\ngift AMOUNT is never overridable here — the mint books the evidence amount\n(Stripe GROSS \/ QB amount) and the counted ledger row; adjust the gift on\nits detail page afterward if the entered amount should differ.\n').and(zod.object({
-  "opportunityId": zod.string().nullish().describe('Record this charge\'s GROSS as a payment on a finalized pledge. The donor derives from the pledge, the gift links through gift.opportunityId, and allocations seed from its plan. The pledge must be live (not archived\/lost\/dormant) and finalized; convert an open opportunity to a pledge first.')
+  "opportunityId": zod.string().nullish().describe('Apply this charge\'s GROSS to an opportunity or pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. An open opportunity also requires opportunityTransition; an existing pledge does not.'),
+  "opportunityTransition": zod.enum(['gift', 'pledge']).describe('Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge.').nullish()
 }).describe('Overrides for the per-charge mint. Optionally set opportunityId to book the charge as a payment on a pledge — the donor then DERIVES from the pledge (the charge row\'s resolved donor is ignored).'))
 
 /**
@@ -879,4 +880,3 @@ export const ListStripePayoutReconciliationsResponse = zod.object({
   "total": zod.number()
 })
 })
-

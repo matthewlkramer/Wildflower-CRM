@@ -111,6 +111,7 @@ import { TieChargeQbDialog } from "@/components/reconciliation-bundles/TieCharge
 import {
   CreateStandaloneGiftDialog,
   LinkEvidenceSearchDialog,
+  OpportunityPaymentChoiceDialog,
 } from "@/components/reconciliation-deposits/gift-column-dialogs";
 import {
   buildGiftPlacementPlan,
@@ -330,7 +331,11 @@ export default function ReconciliationDepositsPage() {
   } | null>(null);
   const [linkEvidenceFor, setLinkEvidenceFor] = useState<{
     anchor: AnchorRef;
-    mode: "all" | "pledges";
+    mode: "all" | "opportunities" | "pledges";
+  } | null>(null);
+  const [opportunityPaymentFor, setOpportunityPaymentFor] = useState<{
+    anchor: AnchorRef;
+    opportunity: OpportunityOrPledge;
   } | null>(null);
   const [identifyFor, setIdentifyFor] = useState<{
     anchor: AnchorRef;
@@ -392,6 +397,11 @@ export default function ReconciliationDepositsPage() {
   const [remainderPledgeFor, setRemainderPledgeFor] = useState<{
     depositId: string;
     amount: string;
+  } | null>(null);
+  const [remainderOpportunityFor, setRemainderOpportunityFor] = useState<{
+    depositId: string;
+    amount: string;
+    opportunity: OpportunityOrPledge;
   } | null>(null);
   const [excludeRemainderFor, setExcludeRemainderFor] = useState<{
     depositId: string;
@@ -1158,6 +1168,7 @@ export default function ReconciliationDepositsPage() {
     stagedPaymentId: string,
     pick: { giftId?: string; giftLabel?: string; opp?: OpportunityOrPledge },
     outcomeChoice: "create_gift_from_opportunity",
+    opportunityTransition?: "gift" | "pledge",
   ): Promise<boolean> => {
     const graph = await queryClient.fetchQuery(
       getGetReconciliationGraphQueryOptions(stagedPaymentId),
@@ -1204,7 +1215,13 @@ export default function ReconciliationDepositsPage() {
       return false;
     }
     try {
-      await approveCard.mutateAsync({ stagedPaymentId, data: derived.body });
+      await approveCard.mutateAsync({
+        stagedPaymentId,
+        data: {
+          ...derived.body,
+          ...(opportunityTransition ? { opportunityTransition } : {}),
+        },
+      });
     } catch (err) {
       const switchStripeSource = apiErrorHasIssue(
         err,
@@ -1249,6 +1266,7 @@ export default function ReconciliationDepositsPage() {
         stagedPaymentId,
         data: {
           ...derived.body,
+          ...(opportunityTransition ? { opportunityTransition } : {}),
           ...(switchStripeSource ? { switchStripeSource: true } : {}),
           ...(displaceLinkedPayment ? { displaceLinkedPayment: true } : {}),
           ...(moveOwnApplication ? { moveOwnApplication: true } : {}),
@@ -1303,18 +1321,22 @@ export default function ReconciliationDepositsPage() {
     setGiftPlacementFor({ deposit, gift, plan });
   };
 
-  // One payment ⇒ one new gift/payment minted under the picked pledge. The
-  // server locks the pledge, re-checks it's still a live written pledge, and
-  // copies its allocation shape onto the new gift.
+  // One received payment ⇒ one new gift/payment under the picked fundraising
+  // record. The server locks it, applies any explicit open-opportunity
+  // transition, and copies its allocation shape onto the new gift.
   const mintPledgePaymentAt = async (
     anchor: AnchorRef,
     opp: OpportunityOrPledge,
+    opportunityTransition?: "gift" | "pledge",
   ): Promise<boolean> => {
     try {
       if (anchor.kind === "charge") {
         await createChargeGift.mutateAsync({
           id: anchor.id,
-          data: { opportunityId: opp.id },
+          data: {
+            opportunityId: opp.id,
+            ...(opportunityTransition ? { opportunityTransition } : {}),
+          },
         });
       } else if (anchor.kind === "component") {
         if (!anchor.paymentUnitId) {
@@ -1328,13 +1350,17 @@ export default function ReconciliationDepositsPage() {
         }
         await createUnitGift.mutateAsync({
           id: anchor.paymentUnitId,
-          data: { opportunityId: opp.id },
+          data: {
+            opportunityId: opp.id,
+            ...(opportunityTransition ? { opportunityTransition } : {}),
+          },
         });
       } else {
         const done = await approveStagedAgainst(
           anchor.id,
           { opp },
           "create_gift_from_opportunity",
+          opportunityTransition,
         );
         if (!done) return false;
       }
@@ -1465,9 +1491,17 @@ export default function ReconciliationDepositsPage() {
   const handleLinkEvidenceOpp = async (opp: OpportunityOrPledge) => {
     const target = linkEvidenceFor;
     if (!target) return;
+    const finalized =
+      opp.pledgeCommittedAt != null ||
+      (opp.commitmentPath == null && opp.writtenPledge === true);
+    if (!finalized) {
+      setOpportunityPaymentFor({ anchor: target.anchor, opportunity: opp });
+      setLinkEvidenceFor(null);
+      return;
+    }
     if (target.anchor.kind !== "staged") {
-      // Charge/component anchors are pledge-only (the dialog blocks open
-      // opportunities): mint the gift directly under the picked pledge.
+      // Charge/component anchors mint directly from their payment evidence.
+      // Open opportunities were already routed through the choice dialog.
       const done = await mintPledgePaymentAt(target.anchor, opp);
       if (done) setLinkEvidenceFor(null);
       return;
@@ -1495,6 +1529,18 @@ export default function ReconciliationDepositsPage() {
       });
       if (is409(err)) invalidate();
     }
+  };
+  const handleOpportunityPaymentChoice = async (
+    transition: "gift" | "pledge",
+  ) => {
+    const target = opportunityPaymentFor;
+    if (!target) return;
+    const done = await mintPledgePaymentAt(
+      target.anchor,
+      target.opportunity,
+      transition,
+    );
+    if (done) setOpportunityPaymentFor(null);
   };
   const handleExclude = async (reason: StagedPaymentExclusionReason) => {
     if (!excludeFor) return;
@@ -1599,9 +1645,20 @@ export default function ReconciliationDepositsPage() {
     setKnownPaymentFilterDate("");
     invalidate();
   };
-  const handleRemainderPledgePick = async (opp: OpportunityOrPledge) => {
+  const handleRemainderPledgePick = async (
+    opp: OpportunityOrPledge,
+    opportunityTransition?: "gift" | "pledge",
+  ) => {
     const target = remainderPledgeFor;
     if (!target) return;
+    const finalized =
+      opp.pledgeCommittedAt != null ||
+      (opp.commitmentPath == null && opp.writtenPledge === true);
+    if (!finalized && !opportunityTransition) {
+      setRemainderOpportunityFor({ ...target, opportunity: opp });
+      setRemainderPledgeFor(null);
+      return;
+    }
     try {
       await addBankComponent.mutateAsync({
         bankDepositId: target.depositId,
@@ -1609,6 +1666,7 @@ export default function ReconciliationDepositsPage() {
           mode: "pledge",
           opportunityId: opp.id,
           amount: target.amount,
+          ...(opportunityTransition ? { opportunityTransition } : {}),
         },
       });
       setRemainderPledgeFor(null);
@@ -1620,6 +1678,75 @@ export default function ReconciliationDepositsPage() {
     } catch (error) {
       toast({
         title: "Couldn't record pledge payment",
+        description: apiErrorMessage(error) ?? errMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+  const handleRemainderGiftPick = async (
+    gift: GiftOrPayment,
+    reassignGift = false,
+  ) => {
+    const target = remainderPledgeFor;
+    if (!target) return;
+    try {
+      const amount = gift.amount ?? target.amount;
+      await addBankComponent.mutateAsync({
+        bankDepositId: target.depositId,
+        data: {
+          mode: "gift",
+          giftId: gift.id,
+          amount,
+          ...(reassignGift ? { reassignGift: true } : {}),
+        },
+      });
+      setRemainderPledgeFor(null);
+      invalidate();
+      toast({
+        title: "Payment linked to gift",
+        description: `${formatCurrency(amount)} was composed as the payment for “${gift.name ?? gift.id}”.`,
+      });
+    } catch (error) {
+      if (
+        !reassignGift &&
+        queueGiftReassignment(error, gift.name ?? gift.id, () =>
+          handleRemainderGiftPick(gift, true),
+        )
+      ) {
+        return;
+      }
+      toast({
+        title: "Couldn't link gift",
+        description: apiErrorMessage(error) ?? errMessage(error),
+        variant: "destructive",
+      });
+    }
+  };
+  const handleRemainderOpportunityChoice = async (
+    transition: "gift" | "pledge",
+  ) => {
+    const target = remainderOpportunityFor;
+    if (!target) return;
+    const doneTarget = target;
+    try {
+      await addBankComponent.mutateAsync({
+        bankDepositId: doneTarget.depositId,
+        data: {
+          mode: "pledge",
+          opportunityId: doneTarget.opportunity.id,
+          amount: doneTarget.amount,
+          opportunityTransition: transition,
+        },
+      });
+      setRemainderOpportunityFor(null);
+      invalidate();
+      toast({
+        title: transition === "gift" ? "Gift recorded" : "Pledge payment recorded",
+        description: `${formatCurrency(doneTarget.amount)} was applied to “${doneTarget.opportunity.name ?? doneTarget.opportunity.id}”.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Couldn't record payment",
         description: apiErrorMessage(error) ?? errMessage(error),
         variant: "destructive",
       });
@@ -2955,11 +3082,26 @@ export default function ReconciliationDepositsPage() {
         onOpenChange={(open) => {
           if (!open && !busy) setRemainderPledgeFor(null);
         }}
-        mode="pledges"
-        anchorKind="deposit"
+        mode="all"
         busy={busy}
-        onPickGift={() => undefined}
+        onPickGift={(gift) => void handleRemainderGiftPick(gift)}
         onPickOpp={(opp) => void handleRemainderPledgePick(opp)}
+      />
+      <OpportunityPaymentChoiceDialog
+        open={remainderOpportunityFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setRemainderOpportunityFor(null);
+        }}
+        opportunity={remainderOpportunityFor?.opportunity ?? null}
+        recordLabel={
+          remainderOpportunityFor
+            ? `${formatCurrency(remainderOpportunityFor.amount)} of this deposit`
+            : "This payment"
+        }
+        busy={busy}
+        onSubmit={(transition) =>
+          void handleRemainderOpportunityChoice(transition)
+        }
       />
       <LinkEvidenceSearchDialog
         open={linkEvidenceFor != null}
@@ -2967,10 +3109,21 @@ export default function ReconciliationDepositsPage() {
           if (!open) setLinkEvidenceFor(null);
         }}
         mode={linkEvidenceFor?.mode ?? "all"}
-        anchorKind={linkEvidenceFor?.anchor.kind ?? null}
         busy={busy}
         onPickGift={(gift) => void handleLinkEvidenceGift(gift)}
         onPickOpp={(opp) => void handleLinkEvidenceOpp(opp)}
+      />
+      <OpportunityPaymentChoiceDialog
+        open={opportunityPaymentFor != null}
+        onOpenChange={(open) => {
+          if (!open && !busy) setOpportunityPaymentFor(null);
+        }}
+        opportunity={opportunityPaymentFor?.opportunity ?? null}
+        recordLabel={opportunityPaymentFor?.anchor.label ?? "This payment"}
+        busy={busy}
+        onSubmit={(transition) =>
+          void handleOpportunityPaymentChoice(transition)
+        }
       />
       <DonorResolveDialog
         open={identifyFor != null}
