@@ -417,7 +417,8 @@ export default function EmailTrackingPage() {
           </CardTitle>
           <p className="text-sm text-muted-foreground">
             Messages from an email address on a CRM contact, at least 24 hours
-            old without a later sent reply in the same Gmail thread.
+            old without a later sent reply in the same Gmail thread. Automatic
+            replies and bulk or computer-generated messages are excluded.
           </p>
         </CardHeader>
         <CardContent>

@@ -33,6 +33,9 @@ const MEMBER_PRIVATE_REPLY = `${RUN}_member_private_reply`;
 const IN_DOMAIN_ONLY = `${RUN}_in_domain_only`;
 const IN_OTHER_PARTICIPANT_MATCH = `${RUN}_in_other_participant_match`;
 const IN_MAILBOX_OWNER = `${RUN}_in_mailbox_owner`;
+const IN_AUTO_REPLY = `${RUN}_in_auto_reply`;
+const IN_BULK_MESSAGE = `${RUN}_in_bulk_message`;
+const IN_MACHINE_MESSAGE = `${RUN}_in_machine_message`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "", email: "" } as {
@@ -240,6 +243,20 @@ beforeAll(async () => {
     received(IN_MAILBOX_OWNER, OWNER_ID, `${RUN}_thread_in_mailbox_owner`, 38, {
       fromEmail: OWNER_EMAIL,
     }),
+    received(IN_AUTO_REPLY, OWNER_ID, `${RUN}_thread_in_auto_reply`, 39, {
+      subject: "Automatic reply: Site visit",
+      bodyText: "I am out of the office and will return next week.",
+    }),
+    received(IN_BULK_MESSAGE, OWNER_ID, `${RUN}_thread_in_bulk_message`, 40, {
+      subject: "September education update",
+      bodyText:
+        "View this email in your browser. Manage your email preferences or unsubscribe.",
+    }),
+    received(IN_MACHINE_MESSAGE, OWNER_ID, `${RUN}_thread_in_machine_message`, 41, {
+      subject: "Grant portal notification",
+      bodyText:
+        "This is an automatically generated message. Please do not reply to this email.",
+    }),
   ]);
 
   const { default: app } = await import("../app");
@@ -282,6 +299,9 @@ afterAll(async () => {
         IN_DOMAIN_ONLY,
         IN_OTHER_PARTICIPANT_MATCH,
         IN_MAILBOX_OWNER,
+        IN_AUTO_REPLY,
+        IN_BULK_MESSAGE,
+        IN_MACHINE_MESSAGE,
       ]),
     );
   await db
@@ -337,6 +357,9 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     expect(inboundIds).not.toContain(IN_DOMAIN_ONLY);
     expect(inboundIds).not.toContain(IN_OTHER_PARTICIPANT_MATCH);
     expect(inboundIds).not.toContain(IN_MAILBOX_OWNER);
+    expect(inboundIds).not.toContain(IN_AUTO_REPLY);
+    expect(inboundIds).not.toContain(IN_BULK_MESSAGE);
+    expect(inboundIds).not.toContain(IN_MACHINE_MESSAGE);
   }, 30_000);
 
   it("lets admins review non-private rows across mailboxes without exposing private source email", async () => {
