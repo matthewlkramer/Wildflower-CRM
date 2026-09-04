@@ -1297,7 +1297,7 @@ describe.skipIf(!HAS_DB)(
       expect(opp.writtenPledge).toBe(false);
     }, 30_000);
 
-    it("records arriving money from an open opportunity as a direct gift, not a pledge", async () => {
+    it("records arriving money from an open opportunity as a direct gift when explicitly chosen", async () => {
       const oppId = await seedOpp({
         stage: "in_conversation",
         awardedAmount: "100.00",
@@ -1307,6 +1307,7 @@ describe.skipIf(!HAS_DB)(
       const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
         outcome: "create_gift_from_opportunity",
         opportunityId: oppId,
+        opportunityTransition: "gift",
       });
       expect(res.status).toBe(201);
       giftIds.push(res.json.giftId as string);
@@ -1319,6 +1320,52 @@ describe.skipIf(!HAS_DB)(
       expect(opp.pledgeCommittedAt).toBeNull();
       expect(opp.writtenPledge).toBe(false);
       expect(opp.actualCompletionDate).toBe("2026-03-15");
+    }, 30_000);
+
+    it("converts an open opportunity to a pledge and records the arriving money as its first payment when explicitly chosen", async () => {
+      const oppId = await seedOpp({
+        stage: "in_conversation",
+        awardedAmount: "500.00",
+      });
+      const stagedId = await seedStaged("100.00");
+
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "create_gift_from_opportunity",
+        opportunityId: oppId,
+        opportunityTransition: "pledge",
+      });
+      expect(res.status).toBe(201);
+      expect(res.json.createdPledge).toBe(true);
+      giftIds.push(res.json.giftId as string);
+
+      const gift = await readGift(res.json.giftId as string);
+      expect(gift.opportunityId).toBe(oppId);
+      expect(gift.amount).toBe("100.00");
+
+      const opp = await readOpp(oppId);
+      expect(opp.status).toBe("pledge");
+      expect(opp.commitmentPath).toBe("verbal_pledge");
+      expect(opp.verbalCommitmentAt).toBe("2026-03-15");
+      expect(opp.pledgeCommittedAt).toBe("2026-03-15");
+      expect(opp.writtenPledge).toBe(true);
+      expect(opp.awardedAmount).toBe("500.00");
+    }, 30_000);
+
+    it("requires an explicit gift-or-pledge choice for an open opportunity", async () => {
+      const oppId = await seedOpp({
+        stage: "in_conversation",
+        awardedAmount: "100.00",
+      });
+      const stagedId = await seedStaged("100.00");
+
+      const res = await api(`/api/reconciliation/cards/${stagedId}/approve`, {
+        outcome: "create_gift_from_opportunity",
+        opportunityId: oppId,
+      });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe("opportunity_transition_required");
+      expect((await readStaged(stagedId)).status).toBe("pending");
+      expect((await readOpp(oppId)).pledgeCommittedAt).toBeNull();
     }, 30_000);
 
     it("rejects the retired convert-to-pledge reconciliation outcome", async () => {

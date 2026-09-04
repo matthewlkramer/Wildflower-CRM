@@ -378,9 +378,10 @@ export const ApproveReconciliationCardParams = zod.object({
 })
 
 export const ApproveReconciliationCardBody = zod.object({
-  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nopportunity. It is a pledge payment only when pledgeCommittedAt was set\nbefore the payment arrived; otherwise it is a direct gift outcome.\n'),
+  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nfundraising record. An existing pledge receives another payment. An open\nopportunity requires an explicit opportunityTransition choice: close it\nas a one-time gift, or convert it to a pledge and record the first payment.\n'),
   "giftId": zod.string().nullish().describe('Existing gift to link (required for link_existing_gift).'),
   "opportunityId": zod.string().nullish().describe('Opportunity\/pledge to generate from or link to (required for the \*_opportunity \/ convert_\* outcomes).'),
+  "opportunityTransition": zod.enum(['gift', 'pledge']).describe('Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge.').nullish().describe('Explicit lifecycle choice when opportunityId is still open. Omit when opportunityId is already a pledge.'),
   "organizationId": zod.string().nullish().describe('Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn\'t derivable.'),
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
@@ -395,7 +396,7 @@ export const ApproveReconciliationCardBody = zod.object({
 
 export const ApproveReconciliationCardResponse = zod.object({
   "ok": zod.literal(true),
-  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nopportunity. It is a pledge payment only when pledgeCommittedAt was set\nbefore the payment arrived; otherwise it is a direct gift outcome.\n'),
+  "outcome": zod.enum(['link_existing_gift', 'create_gift', 'create_gift_from_opportunity']).describe('What approving the card does.\nlink_existing_gift: tie the evidence to an existing gift; no new gift.\ncreate_gift: mint a new gift from evidence for the chosen donor.\ncreate_gift_from_opportunity: record arriving money from the selected\nfundraising record. An existing pledge receives another payment. An open\nopportunity requires an explicit opportunityTransition choice: close it\nas a one-time gift, or convert it to a pledge and record the first payment.\n'),
   "stagedPaymentId": zod.string(),
   "giftId": zod.string().describe('The existing-or-newly-created gift the evidence is now tied to.'),
   "opportunityId": zod.string().nullish(),
@@ -605,8 +606,9 @@ export const AddBankDepositComponentBody = zod.union([zod.object({
   "reassignGift": zod.boolean().optional().describe('Required when this CRM gift already belongs to another direct payment. Disconnects that prior counted relationship and moves the gift or its existing payment component here atomically after explicit user confirmation.')
 }),zod.object({
   "mode": zod.enum(['pledge']),
-  "opportunityId": zod.string().describe('Written CRM pledge to receive the newly composed payment.'),
-  "amount": zod.string()
+  "opportunityId": zod.string().describe('Opportunity or pledge to receive the newly composed payment.'),
+  "amount": zod.string(),
+  "opportunityTransition": zod.enum(['gift', 'pledge']).describe('Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge.').nullish().describe('Required for an open opportunity; omit for an existing pledge.')
 })])
 
 /**
@@ -649,7 +651,8 @@ export const CreateGiftFromPaymentUnitBody = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish().describe('Conduit the donor gave through, propagated onto the gift.'),
-  "opportunityId": zod.string().nullish().describe('Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge\'s allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost\/dormant (409 otherwise). The pledge\'s derived status\/paid totals recompute after commit.')
+  "opportunityId": zod.string().nullish().describe('Apply this payment to an opportunity or pledge. The minted gift ties through gift.opportunityId, derives its donor from the selected record, and inherits its allocation plan. An open opportunity also requires opportunityTransition; an existing pledge does not.'),
+  "opportunityTransition": zod.enum(['gift', 'pledge']).describe('Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge.').nullish()
 }).describe('Donor + overrides for the unit-anchored mint. Exactly one donor FK must be set (Donor XOR); null\/omit the others. Alternatively set opportunityId to book the unit as a payment on a pledge — the donor then DERIVES from the pledge and body donor fields are ignored. The gift AMOUNT is never overridable — the mint books the unit\'s money.'))
 
 /**
@@ -2236,4 +2239,3 @@ export const ConfirmReconciliationBundleResponse = zod.object({
   "donorsCreated": zod.number(),
   "alreadyConfirmed": zod.boolean().optional().describe('True when the draft was already confirmed at this revision (idempotent replay).')
 }).describe('Outcome of an atomic bundle confirm.')
-

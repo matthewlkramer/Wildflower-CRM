@@ -24,6 +24,7 @@ import {
   households,
   people,
   tasks,
+  bulkOperations,
   type NewPledgeAllocation,
 } from "@workspace/db/schema";
 import { derivePledgePlanning } from "../lib/pledgePlanning";
@@ -143,6 +144,8 @@ import {
   WriteOffPledgeBody,
   MintGiftFromOpportunityBody,
   CloseAwardBody,
+  DeduplicateOpportunitiesAndPledgesBody,
+  CombineOpportunitiesAsPledgeBody,
   validateOppInvariants,
   validateOppCloseTransition,
   type InvariantIssue,
@@ -155,6 +158,7 @@ import {
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
+import { getAppUser } from "../lib/appRequest";
 import {
   asyncHandler,
   newId,
@@ -186,6 +190,7 @@ import {
   activeOnlyUnlessAdmin,
   archiveOne,
   executeBulkArchive,
+  requireAdmin,
   unarchiveOne,
 } from "../lib/archive";
 import {
@@ -202,9 +207,33 @@ import {
   maskDonorDisplayFields,
   type DonorDisplayHelperFields,
 } from "../lib/donorJoinSelect";
+import { repointFundraisingReferences } from "../lib/fundraisingConsolidation";
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+function opportunityDonorKey(row: {
+  organizationId: string | null;
+  individualGiverPersonId: string | null;
+  householdId: string | null;
+}): string {
+  if (row.organizationId) return `org:${row.organizationId}`;
+  if (row.individualGiverPersonId)
+    return `person:${row.individualGiverPersonId}`;
+  if (row.householdId) return `household:${row.householdId}`;
+  return "none";
+}
+
+function distinctLoserIds(primaryId: string, rawIds: string[]): string[] {
+  return [...new Set(rawIds)].filter((id) => id !== primaryId);
+}
+
+function effectiveOpportunityAmount(row: {
+  awardedAmount: string | null;
+  askAmount: string | null;
+}): string {
+  return Number(row.awardedAmount ?? row.askAmount ?? 0).toFixed(2);
+}
 
 // Mask the denormalized donor / primary-contact display names on a
 // donorJoinSelect row and strip the anonymous/owner helper aliases so the JSON
@@ -1845,6 +1874,339 @@ router.post(
       "Reopened award",
     );
     res.json(final);
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/deduplicate",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = parseOrBadRequest(
+      DeduplicateOpportunitiesAndPledgesBody,
+      req.body,
+      res,
+    );
+    if (!body) return;
+    const loserIds = distinctLoserIds(body.primaryId, body.mergeIds);
+    if (loserIds.length === 0) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Select at least one duplicate distinct from the survivor.",
+      });
+      return;
+    }
+    const allIds = [body.primaryId, ...loserIds];
+    const actor = getAppUser(req);
+
+    const outcome = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(opportunitiesAndPledges)
+        .where(inArray(opportunitiesAndPledges.id, allIds))
+        .for("update");
+      const found = new Set(rows.map((row) => row.id));
+      const missing = allIds.filter((id) => !found.has(id));
+      if (missing.length) {
+        return {
+          status: 400,
+          error: "validation_error",
+          message: `Opportunity record(s) not found: ${missing.join(", ")}`,
+        };
+      }
+      const unavailable = rows.filter(
+        (row) =>
+          row.archivedAt != null ||
+          row.status !== "open" ||
+          row.pledgeCommittedAt != null ||
+          row.lossType != null ||
+          row.isWriteOff,
+      );
+      if (unavailable.length) {
+        return {
+          status: 409,
+          error: "not_open_opportunity",
+          message: "Only active, open opportunities can be deduplicated.",
+        };
+      }
+      if (new Set(rows.map(opportunityDonorKey)).size !== 1) {
+        return {
+          status: 409,
+          error: "duplicate_donor_mismatch",
+          message: "Exact duplicate opportunities must have the same donor.",
+        };
+      }
+      if (new Set(rows.map(effectiveOpportunityAmount)).size !== 1) {
+        return {
+          status: 409,
+          error: "duplicate_amount_mismatch",
+          message:
+            "Exact duplicate opportunities must have the same ask or award amount.",
+        };
+      }
+      if (
+        new Set(
+          rows.map((row) => `${row.loanOrGrant}:${row.disbursementModel}`),
+        ).size !== 1
+      ) {
+        return {
+          status: 409,
+          error: "duplicate_money_model_mismatch",
+          message:
+            "The selected opportunities use different grant/loan or disbursement models.",
+        };
+      }
+
+      const [linkedGift] = await tx
+        .select({ id: giftsAndPayments.id })
+        .from(giftsAndPayments)
+        .where(
+          and(
+            inArray(giftsAndPayments.opportunityId, loserIds),
+            isNull(giftsAndPayments.archivedAt),
+          ),
+        )
+        .limit(1);
+      const [expectedPayment] = await tx
+        .select({ id: pledgeExpectedPayments.id })
+        .from(pledgeExpectedPayments)
+        .where(inArray(pledgeExpectedPayments.pledgeOrOpportunityId, loserIds))
+        .limit(1);
+      const [writeOffChild] = await tx
+        .select({ id: opportunitiesAndPledges.id })
+        .from(opportunitiesAndPledges)
+        .where(inArray(opportunitiesAndPledges.writeOffOfPledgeId, loserIds))
+        .limit(1);
+      if (linkedGift || expectedPayment || writeOffChild) {
+        return {
+          status: 409,
+          error: "duplicate_has_money_children",
+          message:
+            "A duplicate record has payment, installment, or write-off history. Keep that record as the survivor or resolve its money records first.",
+        };
+      }
+
+      await repointFundraisingReferences(
+        tx,
+        "opportunity",
+        body.primaryId,
+        loserIds,
+      );
+      await tx
+        .update(opportunitiesAndPledges)
+        .set({ archivedAt: new Date(), updatedAt: new Date() })
+        .where(inArray(opportunitiesAndPledges.id, loserIds));
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "opportunities-and-pledges/deduplicate",
+          fields: ["archivedAt"],
+          targetIds: allIds,
+          succeededIds: allIds,
+          failedIds: [],
+        });
+      }
+      return { status: 200 };
+    });
+
+    if (outcome.status !== 200) {
+      res.status(outcome.status).json(outcome);
+      return;
+    }
+    res.json({ primaryId: body.primaryId, mergedIds: loserIds });
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/combine-as-pledge",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const body = parseOrBadRequest(
+      CombineOpportunitiesAsPledgeBody,
+      req.body,
+      res,
+    );
+    if (!body) return;
+    const loserIds = distinctLoserIds(body.primaryId, body.mergeIds);
+    if (loserIds.length === 0) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Select at least two distinct opportunities.",
+      });
+      return;
+    }
+    const allIds = [body.primaryId, ...loserIds];
+    const actor = getAppUser(req);
+
+    const paymentBySource = new Map(
+      body.expectedPayments.map((payment) => [
+        payment.sourceOpportunityId,
+        payment,
+      ]),
+    );
+    if (
+      paymentBySource.size !== allIds.length ||
+      allIds.some((id) => !paymentBySource.has(id)) ||
+      body.expectedPayments.some(
+        (payment) =>
+          Number(payment.amount) <= 0 ||
+          !Number.isFinite(Number(payment.amount)),
+      )
+    ) {
+      res.status(400).json({
+        error: "validation_error",
+        message:
+          "Provide one positive, dated expected payment for every selected opportunity.",
+      });
+      return;
+    }
+
+    const outcome = await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(opportunitiesAndPledges)
+        .where(inArray(opportunitiesAndPledges.id, allIds))
+        .for("update");
+      const found = new Set(rows.map((row) => row.id));
+      const missing = allIds.filter((id) => !found.has(id));
+      if (missing.length) {
+        return {
+          status: 400,
+          error: "validation_error",
+          message: `Opportunity record(s) not found: ${missing.join(", ")}`,
+        };
+      }
+      const unavailable = rows.filter(
+        (row) =>
+          row.archivedAt != null ||
+          row.status !== "open" ||
+          row.pledgeCommittedAt != null ||
+          row.lossType != null ||
+          row.isWriteOff,
+      );
+      if (unavailable.length) {
+        return {
+          status: 409,
+          error: "not_open_opportunity",
+          message:
+            "Only active, open opportunities can be combined into a pledge.",
+        };
+      }
+      if (new Set(rows.map(opportunityDonorKey)).size !== 1) {
+        return {
+          status: 409,
+          error: "donor_mismatch",
+          message:
+            "All payment expectations on one pledge must have the same donor.",
+        };
+      }
+      if (
+        new Set(
+          rows.map((row) => `${row.loanOrGrant}:${row.disbursementModel}`),
+        ).size !== 1
+      ) {
+        return {
+          status: 409,
+          error: "money_model_mismatch",
+          message:
+            "The selected opportunities use different grant/loan or disbursement models.",
+        };
+      }
+      const [existingSchedule] = await tx
+        .select({ id: pledgeExpectedPayments.id })
+        .from(pledgeExpectedPayments)
+        .where(inArray(pledgeExpectedPayments.pledgeOrOpportunityId, allIds))
+        .limit(1);
+      if (existingSchedule) {
+        return {
+          status: 409,
+          error: "existing_payment_schedule",
+          message:
+            "One selected opportunity already has an installment schedule. Remove or preserve it before combining these records.",
+        };
+      }
+
+      const total = body.expectedPayments
+        .reduce((sum, payment) => sum + Number(payment.amount), 0)
+        .toFixed(2);
+      const primary = rows.find((row) => row.id === body.primaryId)!;
+      const now = new Date();
+
+      await tx
+        .update(pledgeAllocations)
+        .set({
+          pledgeOrOpportunityId: body.primaryId,
+          status: "committed",
+          updatedAt: now,
+        })
+        .where(inArray(pledgeAllocations.pledgeOrOpportunityId, allIds));
+      await tx
+        .update(giftsAndPayments)
+        .set({ opportunityId: body.primaryId, updatedAt: now })
+        .where(inArray(giftsAndPayments.opportunityId, allIds));
+
+      await tx.insert(pledgeExpectedPayments).values(
+        body.expectedPayments.map((payment) => ({
+          id: newId(),
+          pledgeOrOpportunityId: body.primaryId,
+          expectedDate: payment.expectedDate,
+          amount: Number(payment.amount).toFixed(2),
+        })),
+      );
+      await tx
+        .update(opportunitiesAndPledges)
+        .set({
+          name: body.name?.trim() || primary.name,
+          awardedAmount: total,
+          stage: "verbal_confirmation",
+          commitmentPath: "verbal_pledge",
+          verbalCommitmentAt: body.commitmentDate,
+          pledgeCommittedAt: body.commitmentDate,
+          writtenPledge: true,
+          lossType: null,
+          updatedAt: now,
+        })
+        .where(eq(opportunitiesAndPledges.id, body.primaryId));
+
+      await repointFundraisingReferences(
+        tx,
+        "opportunity",
+        body.primaryId,
+        loserIds,
+      );
+      await tx
+        .update(opportunitiesAndPledges)
+        .set({ archivedAt: now, updatedAt: now })
+        .where(inArray(opportunitiesAndPledges.id, loserIds));
+
+      if (actor) {
+        await tx.insert(bulkOperations).values({
+          id: newId(),
+          actorUserId: actor.id,
+          entity: "opportunities-and-pledges/combine-as-pledge",
+          fields: [
+            "awardedAmount",
+            "pledgeCommittedAt",
+            "expectedPayments",
+            "allocations",
+          ],
+          targetIds: allIds,
+          succeededIds: allIds,
+          failedIds: [],
+        });
+      }
+      return { status: 200, organizationId: primary.organizationId };
+    });
+
+    if (outcome.status !== 200) {
+      res.status(outcome.status).json(outcome);
+      return;
+    }
+    await applyDerivedOppFields(body.primaryId);
+    if (outcome.organizationId) {
+      enqueueDonorSignal({ organizationId: outcome.organizationId });
+    }
+    res.json({ pledgeId: body.primaryId, archivedOpportunityIds: loserIds });
   }),
 );
 

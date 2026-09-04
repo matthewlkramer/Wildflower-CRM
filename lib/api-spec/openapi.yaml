@@ -8805,6 +8805,44 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /opportunities-and-pledges/deduplicate:
+    post:
+      operationId: deduplicateOpportunitiesAndPledges
+      tags: [opportunities-and-pledges]
+      summary: "Archive duplicate opportunity records while preserving one authoritative survivor."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DeduplicateOpportunitiesBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MergeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: "The selected records are not safe duplicates; choose compatible records or preserve the record with dependent data."
+  /opportunities-and-pledges/combine-as-pledge:
+    post:
+      operationId: combineOpportunitiesAsPledge
+      tags: [opportunities-and-pledges]
+      summary: "Combine multiple opportunities into one pledge with explicit expected-payment installments."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CombineOpportunitiesAsPledgeBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CombineOpportunitiesAsPledgeResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: "The selected records cannot be combined without ambiguous or destructive accounting changes."
   /gifts-and-payments/bulk-update:
     post:
       operationId: bulkUpdateGiftsAndPayments
@@ -19189,8 +19227,13 @@ components:
         link_existing_gift: tie the evidence to an existing gift; no new gift.
         create_gift: mint a new gift from evidence for the chosen donor.
         create_gift_from_opportunity: record arriving money from the selected
-        opportunity. It is a pledge payment only when pledgeCommittedAt was set
-        before the payment arrived; otherwise it is a direct gift outcome.
+        fundraising record. An existing pledge receives another payment. An open
+        opportunity requires an explicit opportunityTransition choice: close it
+        as a one-time gift, or convert it to a pledge and record the first payment.
+    OpportunityPaymentTransition:
+      type: string
+      enum: [gift, pledge]
+      description: "Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge."
     ApproveCompleteMatchBody:
       type: object
       required: [outcome]
@@ -19208,6 +19251,12 @@ components:
             type: string,
             nullable: true,
             description: "Opportunity/pledge to generate from or link to (required for the *_opportunity / convert_* outcomes).",
+          }
+        opportunityTransition:
+          {
+            allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+            nullable: true,
+            description: "Explicit lifecycle choice when opportunityId is still open. Omit when opportunityId is already a pledge.",
           }
         organizationId:
           {
@@ -20986,9 +21035,15 @@ components:
             opportunityId:
               {
                 type: string,
-                description: "Written CRM pledge to receive the newly composed payment.",
+                description: "Opportunity or pledge to receive the newly composed payment.",
               }
             amount: { type: string }
+            opportunityTransition:
+              {
+                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                nullable: true,
+                description: "Required for an open opportunity; omit for an existing pledge.",
+              }
     AttachDepositQboEvidenceBody:
       type: object
       required: [stagedPaymentId]
@@ -22803,7 +22858,12 @@ components:
               {
                 type: string,
                 nullable: true,
-                description: "Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge's allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit.",
+                description: "Apply this payment to an opportunity or pledge. The minted gift ties through gift.opportunityId, derives its donor from the selected record, and inherits its allocation plan. An open opportunity also requires opportunityTransition; an existing pledge does not.",
+              }
+            opportunityTransition:
+              {
+                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                nullable: true,
               }
     StripeChargeCreateGiftBody:
       allOf:
@@ -22815,7 +22875,12 @@ components:
               {
                 type: string,
                 nullable: true,
-                description: "Record this charge's GROSS as a payment on a finalized pledge. The donor derives from the pledge, the gift links through gift.opportunityId, and allocations seed from its plan. The pledge must be live (not archived/lost/dormant) and finalized; convert an open opportunity to a pledge first.",
+                description: "Apply this charge's GROSS to an opportunity or pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. An open opportunity also requires opportunityTransition; an existing pledge does not.",
+              }
+            opportunityTransition:
+              {
+                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                nullable: true,
               }
     PaymentUnitGiftResponse:
       type: object
@@ -24328,6 +24393,12 @@ components:
         dedupeKey: { type: string }
         status: { $ref: "#/components/schemas/GrantLeadStatus" }
         title: { type: string }
+        aiSummary:
+          {
+            type: string,
+            nullable: true,
+            description: "AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.",
+          }
         funderName: { type: string, nullable: true }
         targetOrganizationId: { type: string, nullable: true }
         targetOrganizationName:
@@ -24898,14 +24969,56 @@ components:
     MergeGiftsBody:
       type: object
       required: [primaryId, mergeIds]
-      description: "Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor's amount becomes the sum of all selected gifts, every loser's allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor."
+      description: "Consolidate `mergeIds` into `primaryId`. In legacy combine_amounts mode, the survivor receives the summed amount and allocations. In deduplicate mode, the survivor keeps its amount and allocations while redundant records are archived so one payment is counted once."
       properties:
         primaryId: { type: string }
+        mode:
+          {
+            type: string,
+            enum: [combine_amounts, deduplicate],
+            default: combine_amounts,
+            description: "combine_amounts preserves the legacy summed merge; deduplicate keeps the survivor amount and archives true duplicate records without double-counting.",
+          }
         mergeIds:
           { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
         organizationId: { type: string, nullable: true }
         individualGiverPersonId: { type: string, nullable: true }
         householdId: { type: string, nullable: true }
+    DeduplicateOpportunitiesBody:
+      type: object
+      required: [primaryId, mergeIds]
+      description: "Archive true duplicate opportunities into one survivor. Donor, amount, and money model must agree; duplicate child money records are never silently combined."
+      properties:
+        primaryId: { type: string }
+        mergeIds:
+          { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+    OpportunityExpectedPaymentInput:
+      type: object
+      required: [sourceOpportunityId, expectedDate, amount]
+      properties:
+        sourceOpportunityId: { type: string }
+        expectedDate: { type: string, format: date }
+        amount:
+          { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$" }
+    CombineOpportunitiesAsPledgeBody:
+      type: object
+      required: [primaryId, mergeIds, commitmentDate, expectedPayments]
+      description: "Turn the primary opportunity into a pledge, archive the other selected opportunities, and create one explicit expected-payment row for each source opportunity."
+      properties:
+        primaryId: { type: string }
+        mergeIds:
+          { type: array, items: { type: string }, minItems: 1, maxItems: 49 }
+        name: { type: string, nullable: true }
+        commitmentDate: { type: string, format: date }
+        expectedPayments:
+          { type: array, minItems: 2, maxItems: 50, items: { $ref: "#/components/schemas/OpportunityExpectedPaymentInput" } }
+    CombineOpportunitiesAsPledgeResult:
+      type: object
+      required: [pledgeId, archivedOpportunityIds]
+      properties:
+        pledgeId: { type: string }
+        archivedOpportunityIds:
+          { type: array, items: { type: string } }
     MergeGiftsIntoPledgeBody:
       type: object
       required: [giftIds]

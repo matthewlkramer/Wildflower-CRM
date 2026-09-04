@@ -40,6 +40,10 @@ import { useEntityFilter } from "@/lib/entity-filter-context";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
+import {
+  CombineOpportunitiesAsPledgeDialog,
+  DeduplicateOpportunitiesDialog,
+} from "@/components/opportunity-consolidation-dialogs";
 import { OPPORTUNITIES_BULK_FIELDS } from "@/lib/bulk-fields";
 import {
   RowActionIcons,
@@ -441,6 +445,8 @@ export default function Opportunities({
   );
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
+  const [dedupOpen, setDedupOpen] = useState(false);
+  const [combinePledgeOpen, setCombinePledgeOpen] = useState(false);
   const bulkMut = useBulkUpdateOpportunitiesAndPledges();
   const bulkArchiveMut = useBulkArchiveOpportunitiesAndPledges();
   const archiveMut = useArchiveOpportunityOrPledge();
@@ -515,6 +521,30 @@ export default function Opportunities({
   const rows = data?.data ?? [];
   const isPledgeView = pledgeView === "pledges";
   const userNames = useUserNameMap();
+
+  const consolidationOpen = dedupOpen || combinePledgeOpen;
+  const consolidationIds = consolidationOpen ? selection.selectedIds : [];
+  const consolidationQueries = useQueries({
+    queries: consolidationIds.map((id) =>
+      getGetOpportunityOrPledgeQueryOptions(id, {
+        query: {
+          enabled: consolidationOpen,
+          staleTime: 30_000,
+          queryKey: getGetOpportunityOrPledgeQueryKey(id),
+        },
+      }),
+    ),
+  });
+  const consolidationRecords = useMemo<OpportunityOrPledgeDetail[]>(
+    () =>
+      consolidationQueries
+        .map((query) => query.data)
+        .filter((record): record is OpportunityOrPledgeDetail => !!record),
+    [consolidationQueries],
+  );
+  const consolidationLoadError = consolidationQueries.some(
+    (query) => query.isError,
+  );
 
   const refreshList = useCallback(
     () =>
@@ -1340,8 +1370,51 @@ export default function Opportunities({
           onArchive={() => setBulkArchiveOpen(true)}
           onClear={selection.clear}
           entityNoun="opportunity"
+          entityPlural="opportunities"
+          extraActions={
+            !isPledgeView ? (
+              <>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setDedupOpen(true)}
+                  disabled={!isAdmin}
+                  title={!isAdmin ? "Admin role required" : undefined}
+                  data-testid="button-bulk-dedup-opportunities"
+                >
+                  Dedup{!isAdmin ? " (admin only)" : ""}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setCombinePledgeOpen(true)}
+                  disabled={!isAdmin}
+                  title={!isAdmin ? "Admin role required" : undefined}
+                  data-testid="button-bulk-combine-opportunities-pledge"
+                >
+                  Combine as pledge{!isAdmin ? " (admin only)" : ""}
+                </Button>
+              </>
+            ) : undefined
+          }
         />
       )}
+      <DeduplicateOpportunitiesDialog
+        open={dedupOpen}
+        onOpenChange={setDedupOpen}
+        opportunities={consolidationRecords}
+        expectedCount={consolidationIds.length}
+        loadError={consolidationLoadError}
+        onDone={() => selection.clear()}
+      />
+      <CombineOpportunitiesAsPledgeDialog
+        open={combinePledgeOpen}
+        onOpenChange={setCombinePledgeOpen}
+        opportunities={consolidationRecords}
+        expectedCount={consolidationIds.length}
+        loadError={consolidationLoadError}
+        onDone={() => selection.clear()}
+      />
       <BulkArchiveDialog
         open={bulkArchiveOpen}
         onOpenChange={setBulkArchiveOpen}

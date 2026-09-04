@@ -68,7 +68,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { SkeletonRows } from "@/components/ui/skeleton";
 import { DonorCell } from "@/components/donor-cell";
-import { X } from "lucide-react";
+import { CircleX, PauseCircle, X } from "lucide-react";
 
 const FETCH_LIMIT = 1000;
 const STAGES: OpportunityStage[] = [
@@ -599,6 +599,7 @@ export default function GrantsCalendar() {
         onEdit={() => setBulkOpen(true)}
         onClear={selection.clear}
         entityNoun="opportunity"
+        entityPlural="opportunities"
       />
       <BulkEditDialog
         open={bulkOpen}
@@ -756,23 +757,29 @@ function CalendarRow({
         <div className="flex items-center justify-end gap-1">
           <Button
             type="button"
-            size="sm"
-            variant="outline"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground hover:text-destructive"
             disabled={busy}
             onClick={() => setConfirmLoss("lost")}
+            aria-label="Mark lost"
+            title="Mark lost"
             data-testid={`button-mark-lost-cal-${o.id}`}
           >
-            Mark lost
+            <CircleX className="h-4 w-4" />
           </Button>
           <Button
             type="button"
-            size="sm"
-            variant="outline"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-muted-foreground"
             disabled={busy}
             onClick={() => setConfirmLoss("dormant")}
+            aria-label="Mark dormant"
+            title="Mark dormant"
             data-testid={`button-mark-dormant-cal-${o.id}`}
           >
-            Mark dormant
+            <PauseCircle className="h-4 w-4" />
           </Button>
           <RowActionIcons
             entityLabel={label}

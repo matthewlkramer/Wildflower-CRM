@@ -78,12 +78,14 @@ function donorsAllAgree(gifts: GiftOrPayment[]): boolean {
   return keys.size === 1;
 }
 
+function amountsAllAgree(gifts: GiftOrPayment[]): boolean {
+  return new Set(gifts.map((g) => Number(g.amount ?? 0).toFixed(2))).size === 1;
+}
+
 /**
- * Merge several gifts into ONE gift: the survivor absorbs every other gift's
- * allocations, its amount becomes the sum of all selected gifts, and the
- * losers are permanently deleted. The user picks the survivor and the donor
- * to apply (defaults to the survivor's donor — surfaced so a donor mismatch
- * can be resolved).
+ * Collapse true duplicate gift records without double-counting money. The
+ * selected survivor keeps its amount and allocations; safe evidence on the
+ * duplicate rows is re-homed and the duplicates are archived.
  */
 export function MergeGiftsDialog({
   open,
@@ -106,18 +108,8 @@ export function MergeGiftsDialog({
   const qc = useQueryClient();
   const mut = useMergeGiftsAndPayments();
   const [primaryId, setPrimaryId] = useState<string>("");
-  const [donorType, setDonorType] = useState<DonorType>("organization");
-  const [donorId, setDonorId] = useState<string | null>(null);
 
   const giftKey = useMemo(() => gifts.map((g) => g.id).join(","), [gifts]);
-
-  // Combined allocation line-items across all selected gifts — these are what
-  // roll onto the survivor, shown so the user can verify the money trail before
-  // the destructive confirm.
-  const combinedAllocations = useMemo(
-    () => gifts.flatMap((g) => g.allocations ?? []),
-    [gifts],
-  );
 
   // Default the survivor to the first selected gift whenever the set changes.
   useEffect(() => {
@@ -129,36 +121,25 @@ export function MergeGiftsDialog({
 
   const primary = gifts.find((g) => g.id === primaryId) ?? null;
 
-  // Reset the donor to the survivor's donor when the survivor changes.
-  useEffect(() => {
-    if (!primary) return;
-    const d = donorOf(primary);
-    if (d) {
-      setDonorType(d.type);
-      setDonorId(d.id);
-    } else {
-      setDonorId(null);
-    }
-  }, [primaryId, primary]);
-
   if (expectedCount < 2) return null;
 
   // Operate on EVERY selected gift — never a partially loaded subset.
   const allLoaded = allSelectedLoaded(gifts.length, expectedCount, loadError);
-  const summed = sumAmounts(gifts);
   const donorMismatch = !donorsAllAgree(gifts);
+  const amountMismatch = !amountsAllAgree(gifts);
   const submitting = mut.isPending;
-  const canSubmit = allLoaded && !!primary && !!donorId && !submitting;
+  const canSubmit =
+    allLoaded && !!primary && !donorMismatch && !amountMismatch && !submitting;
 
   const handleMerge = async () => {
-    if (!allLoaded || !primary || !donorId) return;
+    if (!allLoaded || !primary || donorMismatch || amountMismatch) return;
     const mergeIds = gifts.map((g) => g.id).filter((id) => id !== primary.id);
     try {
       await mut.mutateAsync({
         data: {
           primaryId: primary.id,
           mergeIds,
-          ...donorBodyFor(donorType, donorId),
+          mode: "deduplicate",
         },
       });
       await Promise.all([
@@ -168,16 +149,16 @@ export function MergeGiftsDialog({
         }),
       ]);
       toast({
-        title: "Gifts merged",
+        title: "Duplicate gifts archived",
         description: `${mergeIds.length.toLocaleString()} gift${
           mergeIds.length === 1 ? "" : "s"
-        } merged into one (${formatCurrency(String(summed))}).`,
+        } collapsed into the selected survivor without changing its amount.`,
       });
       onOpenChange(false);
       onDone?.(primary.id);
     } catch (err) {
       toast({
-        title: "Merge failed",
+        title: "Dedup failed",
         description:
           err instanceof Error ? err.message : "Something went wrong.",
         variant: "destructive",
@@ -195,16 +176,12 @@ export function MergeGiftsDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Merge into one gift</DialogTitle>
+          <DialogTitle>Deduplicate gifts</DialogTitle>
           <DialogDescription>
-            The selected gifts will be combined into the gift you keep. Its
-            amount becomes the total ({formatCurrency(String(summed))}) and the
-            other gifts&apos; allocations move onto it. The other{" "}
-            {gifts.length - 1} gift{gifts.length - 1 === 1 ? "" : "s"} will be{" "}
-            <span className="font-medium text-destructive">
-              permanently deleted
-            </span>
-            .
+            Keep one authoritative gift and archive the duplicate records. The
+            survivor&apos;s amount and allocations stay unchanged, so the
+            donation is counted only once. Safe linked evidence moves to the
+            survivor.
           </DialogDescription>
         </DialogHeader>
 
@@ -251,32 +228,27 @@ export function MergeGiftsDialog({
             </RadioGroup>
           </div>
 
-          <div className="space-y-2">
-            <Label>Donor for the merged gift</Label>
-            {donorMismatch && (
-              <p className="text-xs text-amber-600 dark:text-amber-500">
-                These gifts have different donors — pick the donor to keep.
-              </p>
-            )}
-            <DonorFieldPicker
-              type={donorType}
-              id={donorId}
-              onChange={(t, id) => {
-                setDonorType(t);
-                setDonorId(id);
-              }}
-              testIdBase="merge-gift-donor"
-            />
-          </div>
+          {donorMismatch && (
+            <p className="text-sm text-destructive">
+              These gifts have different donors and cannot be deduplicated.
+            </p>
+          )}
+          {amountMismatch && (
+            <p className="text-sm text-destructive">
+              These gifts have different amounts and are not exact duplicates.
+            </p>
+          )}
 
-          {combinedAllocations.length > 0 && (
+          {(primary?.allocations?.length ?? 0) > 0 && (
             <div className="space-y-2">
-              <Label>Combined allocations ({combinedAllocations.length})</Label>
+              <Label>
+                Allocations kept ({primary?.allocations?.length ?? 0})
+              </Label>
               <div
                 className="max-h-40 divide-y overflow-auto rounded-md border text-sm"
                 data-testid="list-merge-gift-allocations"
               >
-                {combinedAllocations.map((a) => (
+                {(primary?.allocations ?? []).map((a) => (
                   <div
                     key={a.id}
                     className="flex items-center justify-between gap-3 px-2 py-1.5"
@@ -292,7 +264,8 @@ export function MergeGiftsDialog({
                 ))}
               </div>
               <p className="text-xs text-muted-foreground">
-                All of these line-items move onto the surviving gift.
+                Duplicate allocation rows remain only on the archived records
+                and do not enter live totals.
               </p>
             </div>
           )}
@@ -312,7 +285,7 @@ export function MergeGiftsDialog({
             disabled={!canSubmit}
             data-testid="button-merge-gift-confirm"
           >
-            {submitting ? "Merging…" : "Merge gifts"}
+            {submitting ? "Deduplicating…" : "Deduplicate gifts"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -518,7 +491,7 @@ export function MergeIntoPledgeDialog({
     >
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Merge into a pledge</DialogTitle>
+          <DialogTitle>Combine as pledge</DialogTitle>
           <DialogDescription>
             The selected {gifts.length} gift{gifts.length === 1 ? "" : "s"} (
             {formatCurrency(String(summed))} total) will become payments on a

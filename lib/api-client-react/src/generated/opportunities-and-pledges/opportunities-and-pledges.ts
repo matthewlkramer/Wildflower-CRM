@@ -25,14 +25,18 @@ import type {
   BulkUpdateOpportunitiesBody,
   BulkUpdateResult,
   CloseAwardBody,
+  CombineOpportunitiesAsPledgeBody,
+  CombineOpportunitiesAsPledgeResult,
   ConvertPledgeToGiftResult,
   CorrectionReasonBody,
   CreateOpportunityOrPledgeBody,
+  DeduplicateOpportunitiesBody,
   ExportOpportunitiesAndPledgesCsvParams,
   FinalizePledgeBody,
   ForbiddenResponse,
   GiftOrPayment,
   ListOpportunitiesAndPledgesParams,
+  MergeResult,
   MintGiftFromOpportunityBody,
   NotFoundResponse,
   OpportunityCommitmentResult,
@@ -685,6 +689,146 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getBulkUpdateOpportunitiesAndPledgesMutationOptions(options));
+    }
+    /**
+ * @summary Archive duplicate opportunity records while preserving one authoritative survivor.
+ */
+export const getDeduplicateOpportunitiesAndPledgesUrl = () => {
+
+
+
+
+  return `/api/opportunities-and-pledges/deduplicate`
+}
+
+export const deduplicateOpportunitiesAndPledges = async (deduplicateOpportunitiesBody: DeduplicateOpportunitiesBody, options?: RequestInit): Promise<MergeResult> => {
+
+  return customFetch<MergeResult>(getDeduplicateOpportunitiesAndPledgesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      deduplicateOpportunitiesBody,)
+  }
+);}
+
+
+
+
+export const getDeduplicateOpportunitiesAndPledgesMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>, TError,{data: BodyType<DeduplicateOpportunitiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>, TError,{data: BodyType<DeduplicateOpportunitiesBody>}, TContext> => {
+
+const mutationKey = ['deduplicateOpportunitiesAndPledges'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>, {data: BodyType<DeduplicateOpportunitiesBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  deduplicateOpportunitiesAndPledges(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeduplicateOpportunitiesAndPledgesMutationResult = NonNullable<Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>>
+    export type DeduplicateOpportunitiesAndPledgesMutationBody = BodyType<DeduplicateOpportunitiesBody>
+    export type DeduplicateOpportunitiesAndPledgesMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary Archive duplicate opportunity records while preserving one authoritative survivor.
+ */
+export const useDeduplicateOpportunitiesAndPledges = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>, TError,{data: BodyType<DeduplicateOpportunitiesBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deduplicateOpportunitiesAndPledges>>,
+        TError,
+        {data: BodyType<DeduplicateOpportunitiesBody>},
+        TContext
+      > => {
+      return useMutation(getDeduplicateOpportunitiesAndPledgesMutationOptions(options));
+    }
+    /**
+ * @summary Combine multiple opportunities into one pledge with explicit expected-payment installments.
+ */
+export const getCombineOpportunitiesAsPledgeUrl = () => {
+
+
+
+
+  return `/api/opportunities-and-pledges/combine-as-pledge`
+}
+
+export const combineOpportunitiesAsPledge = async (combineOpportunitiesAsPledgeBody: CombineOpportunitiesAsPledgeBody, options?: RequestInit): Promise<CombineOpportunitiesAsPledgeResult> => {
+
+  return customFetch<CombineOpportunitiesAsPledgeResult>(getCombineOpportunitiesAsPledgeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      combineOpportunitiesAsPledgeBody,)
+  }
+);}
+
+
+
+
+export const getCombineOpportunitiesAsPledgeMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>, TError,{data: BodyType<CombineOpportunitiesAsPledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>, TError,{data: BodyType<CombineOpportunitiesAsPledgeBody>}, TContext> => {
+
+const mutationKey = ['combineOpportunitiesAsPledge'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>, {data: BodyType<CombineOpportunitiesAsPledgeBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  combineOpportunitiesAsPledge(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CombineOpportunitiesAsPledgeMutationResult = NonNullable<Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>>
+    export type CombineOpportunitiesAsPledgeMutationBody = BodyType<CombineOpportunitiesAsPledgeBody>
+    export type CombineOpportunitiesAsPledgeMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary Combine multiple opportunities into one pledge with explicit expected-payment installments.
+ */
+export const useCombineOpportunitiesAsPledge = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>, TError,{data: BodyType<CombineOpportunitiesAsPledgeBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof combineOpportunitiesAsPledge>>,
+        TError,
+        {data: BodyType<CombineOpportunitiesAsPledgeBody>},
+        TContext
+      > => {
+      return useMutation(getCombineOpportunitiesAsPledgeMutationOptions(options));
     }
     /**
  * @summary Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids.

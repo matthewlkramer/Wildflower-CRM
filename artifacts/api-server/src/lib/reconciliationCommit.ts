@@ -26,6 +26,7 @@ import { recordAudit } from "./audit";
 import { APPROVABLE_STAGED_STATUSES } from "./reconciliationGate";
 import { stagedStatusIn } from "./derivedStatus";
 import { donorOf, type LinkDonor } from "./quickbooksLink";
+import { todayInChicago } from "./governingFiscalYear";
 import { isFullyRefunded } from "./stripeRefund";
 import { applySettlementSupersedeMany } from "./settlementSupersede";
 import { recordPayoutQbSettlement } from "./payoutSettlement";
@@ -221,14 +222,15 @@ export async function copyPledgeAllocationsToGift(
  * (matching approve.ts: staged → opp → charge) and AFTER a payment-unit lock
  * (no other path locks unit + opp, so unit → opp cannot deadlock).
  *
- * Eligibility mirrors the staged create_gift_from_opportunity outcome:
- * a written pledge (writtenPledge latched true), not archived, not lost or
- * dormant. Fully-paid pledges stay eligible — parity with the staged flow;
- * copyPledgeAllocationsToGift falls back to original weights when the plan is
- * consumed. Throws a res-free ReconcileAbort (404 / opportunity_archived /
- * pledge_lost / not_a_pledge) the route maps to its response.
+ * Eligibility covers both open opportunities and finalized pledges, but never
+ * archived, lost, or dormant records. The caller must pass an explicit
+ * lifecycle transition for an open opportunity after it locks the payment and
+ * knows the authoritative received amount/date. Fully-paid pledges stay
+ * eligible; copyPledgeAllocationsToGift falls back to original weights when
+ * the plan is consumed. Throws a res-free ReconcileAbort the route maps to its
+ * response.
  */
-export async function lockAndValidatePledgeForPayment(
+export async function lockAndValidateOpportunityForReceivedPayment(
   tx: Tx,
   opportunityId: string,
 ): Promise<typeof opportunitiesAndPledges.$inferSelect> {
@@ -257,10 +259,102 @@ export async function lockAndValidatePledgeForPayment(
         "This pledge is marked lost or dormant — reopen it before recording a payment against it.",
     });
   }
-  if (
-    opp.pledgeCommittedAt == null &&
-    !(opp.commitmentPath == null && opp.writtenPledge === true)
-  ) {
+  return opp;
+}
+
+function isFinalizedPledge(
+  opp: typeof opportunitiesAndPledges.$inferSelect,
+): boolean {
+  return (
+    opp.pledgeCommittedAt != null ||
+    (opp.commitmentPath == null && opp.writtenPledge === true)
+  );
+}
+
+export type OpportunityPaymentTransition = "gift" | "pledge";
+
+/**
+ * Apply the human's lifecycle choice after both the opportunity and payment
+ * evidence are locked. Existing pledges remain pledges. An open opportunity
+ * must be explicitly resolved either as the one-time gift that arrived or as
+ * a pledge whose first payment just arrived; receiving money never guesses.
+ */
+export async function applyOpportunityPaymentTransition(
+  tx: Tx,
+  opp: typeof opportunitiesAndPledges.$inferSelect,
+  transition: OpportunityPaymentTransition | null | undefined,
+  receivedDate: string | null,
+  paymentAmount: string | null,
+): Promise<typeof opportunitiesAndPledges.$inferSelect> {
+  if (isFinalizedPledge(opp)) {
+    if (transition === "gift") {
+      throw new ReconcileAbort(409, {
+        error: "pledge_cannot_become_gift",
+        message:
+          "This record is already a pledge. Record the money as a pledge payment.",
+      });
+    }
+    return opp;
+  }
+  if (!transition) {
+    throw new ReconcileAbort(409, {
+      error: "opportunity_transition_required",
+      message:
+        "Choose whether this open opportunity became a one-time gift or a pledge with a first payment.",
+    });
+  }
+
+  const amount = Number(paymentAmount ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new ReconcileAbort(409, {
+      error: "payment_amount_invalid",
+      message: "The received payment needs a positive amount.",
+    });
+  }
+  const amountText = amount.toFixed(2);
+  const commitmentDate = receivedDate ?? todayInChicago();
+  const now = new Date();
+  const patch =
+    transition === "gift"
+      ? {
+          awardedAmount: amountText,
+          updatedAt: now,
+        }
+      : {
+          awardedAmount: opp.awardedAmount ?? opp.askAmount ?? amountText,
+          commitmentPath: "verbal_pledge" as const,
+          verbalCommitmentAt: commitmentDate,
+          pledgeCommittedAt: commitmentDate,
+          writtenPledge: true,
+          updatedAt: now,
+        };
+
+  const updated = await tx
+    .update(opportunitiesAndPledges)
+    .set(patch)
+    .where(eq(opportunitiesAndPledges.id, opp.id))
+    .returning()
+    .then((rows) => rows[0]);
+  if (!updated) throw new Error("Opportunity disappeared while recording payment");
+
+  if (transition === "pledge") {
+    await tx
+      .update(pledgeAllocations)
+      .set({ status: "committed", updatedAt: now })
+      .where(eq(pledgeAllocations.pledgeOrOpportunityId, opp.id));
+  }
+  return updated;
+}
+
+export async function lockAndValidatePledgeForPayment(
+  tx: Tx,
+  opportunityId: string,
+): Promise<typeof opportunitiesAndPledges.$inferSelect> {
+  const opp = await lockAndValidateOpportunityForReceivedPayment(
+    tx,
+    opportunityId,
+  );
+  if (!isFinalizedPledge(opp)) {
     throw new ReconcileAbort(409, {
       error: "not_a_pledge",
       message:

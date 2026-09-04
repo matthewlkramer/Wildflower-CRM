@@ -647,6 +647,51 @@ export const BulkUpdateOpportunitiesAndPledgesResponse = zod.object({
 })
 
 /**
+ * @summary Archive duplicate opportunity records while preserving one authoritative survivor.
+ */
+export const deduplicateOpportunitiesAndPledgesBodyMergeIdsMax = 49;
+
+
+
+export const DeduplicateOpportunitiesAndPledgesBody = zod.object({
+  "primaryId": zod.string(),
+  "mergeIds": zod.array(zod.string()).min(1).max(deduplicateOpportunitiesAndPledgesBodyMergeIdsMax)
+}).describe('Archive true duplicate opportunities into one survivor. Donor, amount, and money model must agree; duplicate child money records are never silently combined.')
+
+export const DeduplicateOpportunitiesAndPledgesResponse = zod.object({
+  "primaryId": zod.string().describe('The surviving record id.'),
+  "mergedIds": zod.array(zod.string()).describe('Duplicate record ids that were merged into the primary and deleted.')
+})
+
+/**
+ * @summary Combine multiple opportunities into one pledge with explicit expected-payment installments.
+ */
+export const combineOpportunitiesAsPledgeBodyMergeIdsMax = 49;
+
+export const combineOpportunitiesAsPledgeBodyExpectedPaymentsItemAmountRegExp = new RegExp('^[0-9]+(\\.[0-9]{1,2})?$');
+export const combineOpportunitiesAsPledgeBodyExpectedPaymentsMin = 2;
+export const combineOpportunitiesAsPledgeBodyExpectedPaymentsMax = 50;
+
+
+
+export const CombineOpportunitiesAsPledgeBody = zod.object({
+  "primaryId": zod.string(),
+  "mergeIds": zod.array(zod.string()).min(1).max(combineOpportunitiesAsPledgeBodyMergeIdsMax),
+  "name": zod.string().nullish(),
+  "commitmentDate": zod.string().date(),
+  "expectedPayments": zod.array(zod.object({
+  "sourceOpportunityId": zod.string(),
+  "expectedDate": zod.string().date(),
+  "amount": zod.string().regex(combineOpportunitiesAsPledgeBodyExpectedPaymentsItemAmountRegExp)
+})).min(combineOpportunitiesAsPledgeBodyExpectedPaymentsMin).max(combineOpportunitiesAsPledgeBodyExpectedPaymentsMax)
+}).describe('Turn the primary opportunity into a pledge, archive the other selected opportunities, and create one explicit expected-payment row for each source opportunity.')
+
+export const CombineOpportunitiesAsPledgeResponse = zod.object({
+  "pledgeId": zod.string(),
+  "archivedOpportunityIds": zod.array(zod.string())
+})
+
+/**
  * @summary Archive (soft-delete) the given opportunities/pledges. Per-row; returns succeeded + failed ids.
  */
 export const bulkArchiveOpportunitiesAndPledgesBodyIdsMax = 1000;
@@ -1078,4 +1123,3 @@ export const FinalizePledgeResponse = zod.object({
   "paidAmount": zod.string(),
   "promptForReportingDeadlines": zod.boolean().nullish()
 })
-

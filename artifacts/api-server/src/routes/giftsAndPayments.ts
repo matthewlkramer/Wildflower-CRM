@@ -276,6 +276,7 @@ import { deriveGiftQbTieLiveExpr, type GiftQbTie } from "../lib/giftQbTie";
 import { requireFinance } from "../lib/financeGuard";
 import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
 import { absorbGiftEvidenceIntoSurvivor } from "../lib/giftCombine";
+import { repointFundraisingReferences } from "../lib/fundraisingConsolidation";
 import {
   qbLedgerExistsForGift,
   qbLedgerPaymentIdForGift,
@@ -1412,12 +1413,9 @@ function donorKeyOf(r: {
 }
 
 /**
- * Merge several gifts into one. The survivor (`primaryId`) absorbs every
- * loser's (`mergeIds`) allocation rows, its `amount` becomes the SUM of all
- * selected gifts, and the losers are permanently deleted. Exactly one donor
- * field must resolve (donor XOR) — when none is supplied the survivor's own
- * donor is kept. Blocked (409) if any LOSER is linked to a QuickBooks staged
- * payment, since deleting it would silently null that reconciliation link.
+ * Consolidate gifts. The legacy combine_amounts mode sums distinct gifts;
+ * deduplicate preserves one authoritative payment event and archives redundant
+ * headers without moving their duplicate allocations into live reporting.
  */
 router.post(
   "/gifts-and-payments/merge",
@@ -1426,6 +1424,7 @@ router.post(
     const body = parseOrBadRequest(MergeGiftsAndPaymentsBody, req.body, res);
     if (!body) return;
     const primaryId = body.primaryId;
+    const deduplicate = body.mode === "deduplicate";
 
     // De-dupe losers, drop the primary if it slipped into mergeIds.
     const seen = new Set<string>([primaryId]);
@@ -1505,13 +1504,72 @@ router.post(
         };
       }
 
+      if (deduplicate) {
+        if (new Set(rows.map(donorKeyOf)).size > 1) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "duplicate_donor_mismatch",
+              message: "Exact duplicate gifts must have the same donor.",
+            },
+          };
+        }
+        const amounts = new Set(
+          rows.map((row) => Number(row.amount ?? 0).toFixed(2)),
+        );
+        if (amounts.size > 1) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "duplicate_amount_mismatch",
+              message: "Exact duplicate gifts must have the same amount.",
+            },
+          };
+        }
+        const linkedPledges = new Set(
+          rows
+            .map((row) => row.opportunityId)
+            .filter((id): id is string => id != null),
+        );
+        if (linkedPledges.size > 1) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "duplicate_pledge_conflict",
+              message:
+                "These gifts are linked to different pledges. Resolve those links before deduplicating.",
+            },
+          };
+        }
+        const countedUnits = await tx
+          .select({ id: paymentUnits.id })
+          .from(paymentUnits)
+          .where(inArray(paymentUnits.giftId, allIds))
+          .for("update");
+        if (countedUnits.length > 1) {
+          return {
+            ok: false,
+            status: 409,
+            json: {
+              error: "duplicate_payment_evidence_conflict",
+              message:
+                "More than one received-payment record is linked to these gifts. Confirm which payment evidence is duplicate before deduplicating the CRM gifts.",
+            },
+          };
+        }
+      }
+
       // Donor XOR. When the selected gifts disagree on donor the caller MUST
       // resolve it explicitly — guessing is out of scope and a data-integrity
       // risk. Otherwise default to the survivor's own (locked) donor.
       const bodyDonorProvided =
-        body.organizationId != null ||
-        body.individualGiverPersonId != null ||
-        body.householdId != null;
+        !deduplicate &&
+        (body.organizationId != null ||
+          body.individualGiverPersonId != null ||
+          body.householdId != null);
       if (!bodyDonorProvided && new Set(rows.map(donorKeyOf)).size > 1) {
         return {
           ok: false,
@@ -1566,7 +1624,7 @@ router.post(
         };
       }
 
-      // Sum amounts from the locked rows (numeric text; null → 0).
+      // Sum amounts for legacy combine mode. Dedup keeps the primary amount.
       const sum = rows.reduce((acc, r) => acc + Number(r.amount ?? 0), 0);
       const summedAmount = sum.toFixed(2);
 
@@ -1574,31 +1632,35 @@ router.post(
       const pledges = new Set<string>();
       for (const r of rows) if (r.opportunityId) pledges.add(r.opportunityId);
 
-      // Move every loser's allocation rows onto the survivor.
-      await tx
-        .update(giftAllocations)
-        .set({ giftId: primaryId, updatedAt: new Date() })
-        .where(inArray(giftAllocations.giftId, loserIds));
+      if (!deduplicate) {
+        // Distinct payment events combine their scope on the surviving header.
+        await tx
+          .update(giftAllocations)
+          .set({ giftId: primaryId, updatedAt: new Date() })
+          .where(inArray(giftAllocations.giftId, loserIds));
+      }
+
+      const inheritedPledgeId =
+        primaryRow.opportunityId ??
+        rows.find((row) => row.opportunityId != null)?.opportunityId ??
+        null;
 
       // Survivor absorbs the summed amount and the resolved donor.
       await tx
         .update(giftsAndPayments)
         .set({
-          amount: summedAmount,
+          amount: deduplicate ? primaryRow.amount : summedAmount,
           organizationId: donor.organizationId,
           individualGiverPersonId: donor.individualGiverPersonId,
           householdId: donor.householdId,
+          opportunityId: deduplicate
+            ? inheritedPledgeId
+            : primaryRow.opportunityId,
           updatedAt: new Date(),
         })
         .where(eq(giftsAndPayments.id, primaryId));
 
-      // Clear any gift_being_matched_id that points at a loser. On the old
-      // hard-delete path the DB SET these NULL for us; losers are now archived
-      // (soft-deleted), so we must clear the self-reference ourselves.
-      await tx
-        .update(giftsAndPayments)
-        .set({ giftBeingMatchedId: null, updatedAt: new Date() })
-        .where(inArray(giftsAndPayments.giftBeingMatchedId, loserIds));
+      await repointFundraisingReferences(tx, "gift", primaryId, loserIds);
 
       // Archive the losers (soft-delete — the app-wide default) instead of
       // hard-deleting: their reconciled payment evidence now lives on the
@@ -1612,12 +1674,15 @@ router.post(
         await tx.insert(bulkOperations).values({
           id: newId(),
           actorUserId: actor.id,
-          entity: "gifts-and-payments/merge",
+          entity: deduplicate
+            ? "gifts-and-payments/deduplicate"
+            : "gifts-and-payments/merge",
           fields: [
             "amount",
             "organizationId",
             "individualGiverPersonId",
             "householdId",
+            ...(deduplicate ? ["opportunityId"] : []),
           ],
           targetIds: allIds,
           succeededIds: allIds,

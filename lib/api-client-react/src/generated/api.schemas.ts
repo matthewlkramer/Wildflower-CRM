@@ -4968,8 +4968,9 @@ export interface IncompleteGiftList {
 link_existing_gift: tie the evidence to an existing gift; no new gift.
 create_gift: mint a new gift from evidence for the chosen donor.
 create_gift_from_opportunity: record arriving money from the selected
-opportunity. It is a pledge payment only when pledgeCommittedAt was set
-before the payment arrived; otherwise it is a direct gift outcome.
+fundraising record. An existing pledge receives another payment. An open
+opportunity requires an explicit opportunityTransition choice: close it
+as a one-time gift, or convert it to a pledge and record the first payment.
 
  */
 export type ReconciliationOutcome = typeof ReconciliationOutcome[keyof typeof ReconciliationOutcome];
@@ -4982,6 +4983,17 @@ export const ReconciliationOutcome = {
 } as const;
 
 /**
+ * Required when received payment evidence is applied to an open opportunity: gift records a one-time won gift; pledge finalizes the opportunity as a pledge and records this as its first payment. Omit for an already-finalized pledge.
+ */
+export type OpportunityPaymentTransition = typeof OpportunityPaymentTransition[keyof typeof OpportunityPaymentTransition];
+
+
+export const OpportunityPaymentTransition = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
+/**
  * Approve a reconciliation card. The server re-derives and re-validates the entire graph and runs the consistency gate before committing; it never trusts UI-supplied locks.
  */
 export interface ApproveCompleteMatchBody {
@@ -4990,6 +5002,8 @@ export interface ApproveCompleteMatchBody {
   giftId?: string | null;
   /** Opportunity/pledge to generate from or link to (required for the *_opportunity / convert_* outcomes). */
   opportunityId?: string | null;
+  /** Explicit lifecycle choice when opportunityId is still open. Omit when opportunityId is already a pledge. */
+  opportunityTransition?: OpportunityPaymentTransition | null;
   /** Donor XOR — set exactly one of the three donor FKs when creating a gift and the donor isn't derivable. */
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
@@ -6478,9 +6492,11 @@ export type AddBankDepositComponentBody = {
   reassignGift?: boolean;
 } | {
   mode: 'pledge';
-  /** Written CRM pledge to receive the newly composed payment. */
+  /** Opportunity or pledge to receive the newly composed payment. */
   opportunityId: string;
   amount: string;
+  /** Required for an open opportunity; omit for an existing pledge. */
+  opportunityTransition?: OpportunityPaymentTransition | null;
 };
 
 export interface AttachDepositQboEvidenceBody {
@@ -7732,13 +7748,15 @@ export type CreateGiftFromPaymentUnitBody = MintGiftOverridesBody & ({
   householdId?: string | null;
   /** Conduit the donor gave through, propagated onto the gift. */
   paymentIntermediaryId?: string | null;
-  /** Book this payment ON A PLEDGE: the minted gift is tied to the pledge (gift.opportunityId), its donor derives from the pledge (body donor fields are ignored), and its allocations seed from the pledge's allocation plan scaled to the payment amount. Must be a live written pledge — not archived, not lost/dormant (409 otherwise). The pledge's derived status/paid totals recompute after commit. */
+  /** Apply this payment to an opportunity or pledge. The minted gift ties through gift.opportunityId, derives its donor from the selected record, and inherits its allocation plan. An open opportunity also requires opportunityTransition; an existing pledge does not. */
   opportunityId?: string | null;
+  opportunityTransition?: OpportunityPaymentTransition | null;
 });
 
 export type StripeChargeCreateGiftBody = MintGiftOverridesBody & ({
-  /** Record this charge's GROSS as a payment on a finalized pledge. The donor derives from the pledge, the gift links through gift.opportunityId, and allocations seed from its plan. The pledge must be live (not archived/lost/dormant) and finalized; convert an open opportunity to a pledge first. */
+  /** Apply this charge's GROSS to an opportunity or pledge. The donor derives from the selected record, the gift links through gift.opportunityId, and allocations seed from its plan. An open opportunity also requires opportunityTransition; an existing pledge does not. */
   opportunityId?: string | null;
+  opportunityTransition?: OpportunityPaymentTransition | null;
 });
 
 export interface PaymentUnitGiftResponse {
@@ -8860,6 +8878,8 @@ export interface GrantLead {
   dedupeKey: string;
   status: GrantLeadStatus;
   title: string;
+  /** AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending. */
+  aiSummary?: string | null;
   funderName?: string | null;
   targetOrganizationId?: string | null;
   /** Denormalized name of the matched CRM organization. */
@@ -9264,10 +9284,23 @@ export interface MergePeopleBody {
 }
 
 /**
- * Collapse `mergeIds` (losers) into `primaryId` (survivor): the survivor's amount becomes the sum of all selected gifts, every loser's allocation rows move onto the survivor, and the losers are permanently deleted. Exactly one of the donor fields must be set (donor XOR); it is applied to the survivor.
+ * combine_amounts preserves the legacy summed merge; deduplicate keeps the survivor amount and archives true duplicate records without double-counting.
+ */
+export type MergeGiftsBodyMode = typeof MergeGiftsBodyMode[keyof typeof MergeGiftsBodyMode];
+
+
+export const MergeGiftsBodyMode = {
+  combine_amounts: 'combine_amounts',
+  deduplicate: 'deduplicate',
+} as const;
+
+/**
+ * Consolidate `mergeIds` into `primaryId`. In legacy combine_amounts mode, the survivor receives the summed amount and allocations. In deduplicate mode, the survivor keeps its amount and allocations while redundant records are archived so one payment is counted once.
  */
 export interface MergeGiftsBody {
   primaryId: string;
+  /** combine_amounts preserves the legacy summed merge; deduplicate keeps the survivor amount and archives true duplicate records without double-counting. */
+  mode?: MergeGiftsBodyMode;
   /**
    * @minItems 1
    * @maxItems 49
@@ -9276,6 +9309,49 @@ export interface MergeGiftsBody {
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
+}
+
+/**
+ * Archive true duplicate opportunities into one survivor. Donor, amount, and money model must agree; duplicate child money records are never silently combined.
+ */
+export interface DeduplicateOpportunitiesBody {
+  primaryId: string;
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  mergeIds: string[];
+}
+
+export interface OpportunityExpectedPaymentInput {
+  sourceOpportunityId: string;
+  expectedDate: string;
+  /** @pattern ^[0-9]+(\.[0-9]{1,2})?$ */
+  amount: string;
+}
+
+/**
+ * Turn the primary opportunity into a pledge, archive the other selected opportunities, and create one explicit expected-payment row for each source opportunity.
+ */
+export interface CombineOpportunitiesAsPledgeBody {
+  primaryId: string;
+  /**
+   * @minItems 1
+   * @maxItems 49
+   */
+  mergeIds: string[];
+  name?: string | null;
+  commitmentDate: string;
+  /**
+   * @minItems 2
+   * @maxItems 50
+   */
+  expectedPayments: OpportunityExpectedPaymentInput[];
+}
+
+export interface CombineOpportunitiesAsPledgeResult {
+  pledgeId: string;
+  archivedOpportunityIds: string[];
 }
 
 /**
@@ -11729,4 +11805,3 @@ limit?: LimitParameter;
  */
 page?: PageParameter;
 };
-

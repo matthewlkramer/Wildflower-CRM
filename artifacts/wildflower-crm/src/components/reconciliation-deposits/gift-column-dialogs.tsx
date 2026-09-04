@@ -75,6 +75,79 @@ export function pledgePaymentBlockedReason(
   return null;
 }
 
+export function OpportunityPaymentChoiceDialog({
+  open,
+  onOpenChange,
+  opportunity,
+  recordLabel,
+  busy,
+  onSubmit,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  opportunity: OpportunityOrPledge | null;
+  recordLabel: string;
+  busy: boolean;
+  onSubmit: (transition: "gift" | "pledge") => void;
+}) {
+  const plannedAmount = opportunity?.awardedAmount ?? opportunity?.askAmount;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="max-w-lg"
+        data-testid="dialog-opportunity-payment-choice"
+      >
+        <DialogHeader>
+          <DialogTitle>How did this opportunity resolve?</DialogTitle>
+          <DialogDescription>
+            “{recordLabel}” is received money, while “
+            {opportunity?.name ?? "the selected opportunity"}” is still open.
+            Choose the fundraising outcome before the system creates its payment
+            record.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3 py-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto justify-start px-4 py-3 text-left"
+            disabled={busy}
+            onClick={() => onSubmit("gift")}
+            data-testid="button-opportunity-as-gift"
+          >
+            <span>
+              <span className="block font-medium">Record as a won gift</span>
+              <span className="block whitespace-normal text-xs font-normal text-muted-foreground">
+                Treat this payment as the full one-time award and close the
+                opportunity as cash received.
+              </span>
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto justify-start px-4 py-3 text-left"
+            disabled={busy}
+            onClick={() => onSubmit("pledge")}
+            data-testid="button-opportunity-as-pledge"
+          >
+            <span>
+              <span className="block font-medium">
+                Convert to a pledge and record the first payment
+              </span>
+              <span className="block whitespace-normal text-xs font-normal text-muted-foreground">
+                {plannedAmount
+                  ? `Keep ${formatCurrency(plannedAmount)} as the total commitment.`
+                  : "Use this payment as the initial commitment amount; the pledge can be edited afterward."}
+              </span>
+            </span>
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function CreateStandaloneGiftDialog({
   open,
   onOpenChange,
@@ -293,17 +366,14 @@ export function LinkEvidenceSearchDialog({
   open,
   onOpenChange,
   mode,
-  anchorKind,
   busy,
   onPickGift,
   onPickOpp,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** "all" — gifts + opportunities/pledges; "pledges" — pledge-only. */
-  mode: "all" | "pledges";
-  /** "deposit" — row-level column-3 search (anchor picked after the pledge). */
-  anchorKind: "charge" | "staged" | "component" | "deposit" | null;
+  /** all records, opportunity/pledge-only, or finalized pledge-only. */
+  mode: "all" | "opportunities" | "pledges";
   busy: boolean;
   onPickGift: (gift: GiftOrPayment) => void;
   onPickOpp: (opp: OpportunityOrPledge) => void;
@@ -355,12 +425,9 @@ export function LinkEvidenceSearchDialog({
     },
   });
 
-  // Per-row eligibility (label-not-hide: blocked rows stay visible WITH the
-  // reason). Charge/component/deposit anchors mint the gift directly under a
-  // pledge — only a live written pledge qualifies. Staged anchors keep the
-  // approve-with-outcome flow, where an OPEN opportunity is also bookable
-  // (one-time gift or convert-to-pledge), but dead records never take money.
-  const pledgeOnly = anchorKind !== "staged";
+  // Pledge-only is an explicit shortcut. The unified search also offers open
+  // opportunities; choosing one asks how it resolved before booking money.
+  const pledgeOnly = mode === "pledges";
   const oppRowBlockedReason = (opp: OpportunityOrPledge): string | null =>
     pledgePaymentBlockedReason(opp, pledgeOnly);
 
@@ -377,11 +444,15 @@ export function LinkEvidenceSearchDialog({
           <DialogTitle>
             {mode === "pledges"
               ? "Record as payment on pledge"
+              : mode === "opportunities"
+                ? "Apply to an opportunity or pledge"
               : "Search and link"}
           </DialogTitle>
           <DialogDescription>
             {mode === "pledges"
               ? "Pick the pledge this payment fulfills — it books a gift/payment under that pledge."
+              : mode === "opportunities"
+                ? "Pick a pledge to record a payment, or an open opportunity to record its gift-or-pledge outcome."
               : "Link this payment evidence to an existing gift, or book it against an opportunity or pledge."}
           </DialogDescription>
         </DialogHeader>
@@ -408,39 +479,57 @@ export function LinkEvidenceSearchDialog({
                   No gifts match.
                 </p>
               ) : (
-                giftRows.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onPickGift(g)}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      busy ? "cursor-not-allowed opacity-50" : "hover:bg-muted",
-                    )}
-                    data-testid={`link-evidence-gift-${g.id}`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">
-                        {giftDonorName(g)}
+                giftRows.map((g) => {
+                  const alreadyLinked = g.hasPaymentEvidence === true;
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onPickGift(g)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                        alreadyLinked &&
+                          "border-dashed bg-muted/50 text-muted-foreground",
+                        busy
+                          ? "cursor-not-allowed opacity-50"
+                          : alreadyLinked
+                            ? "hover:bg-muted"
+                            : "hover:bg-muted/70",
+                      )}
+                      data-testid={`link-evidence-gift-${g.id}`}
+                      data-already-linked={alreadyLinked ? "true" : "false"}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-medium">
+                          {giftDonorName(g)}
+                        </span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {[
+                            g.dateReceived
+                              ? formatDateShort(g.dateReceived)
+                              : null,
+                            g.type ? formatEnum(g.type) : null,
+                            g.name && g.name !== giftDonorName(g)
+                              ? g.name
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "Gift"}
+                        </span>
+                        {alreadyLinked ? (
+                          <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                            Already linked — selecting will disconnect and move
+                            it
+                          </span>
+                        ) : null}
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {[
-                          g.dateReceived
-                            ? formatDateShort(g.dateReceived)
-                            : null,
-                          g.type ? formatEnum(g.type) : null,
-                          g.name && g.name !== giftDonorName(g) ? g.name : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Gift"}
+                      <span className="shrink-0 tabular-nums text-muted-foreground">
+                        {formatCurrency(g.amount ?? "0")}
                       </span>
-                    </span>
-                    <span className="shrink-0 tabular-nums text-muted-foreground">
-                      {formatCurrency(g.amount ?? "0")}
-                    </span>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           ) : null}
@@ -448,10 +537,10 @@ export function LinkEvidenceSearchDialog({
             <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
               {mode === "pledges" ? "Pledges" : "Opportunities & pledges"}
             </p>
-            {pledgeOnly && mode === "all" ? (
+            {mode === "all" ? (
               <p className="text-[11px] text-muted-foreground">
-                Picking a pledge records this payment under it as a new
-                gift/payment.
+                Pick a pledge to record a payment, or an open opportunity to
+                record its gift-or-pledge outcome.
               </p>
             ) : null}
             {opps.isFetching && oppRows.length === 0 ? (

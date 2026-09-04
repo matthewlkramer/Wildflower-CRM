@@ -59,7 +59,10 @@ export type DepositActions = Omit<
   ) => void;
   openRemainderPledgeSearch?: (bankDepositId: string, amount: string) => void;
   /** Unified gift/opportunity/pledge search for a specific payment anchor. */
-  openLinkEvidence?: (anchor: AnchorRef, mode: "all" | "pledges") => void;
+  openLinkEvidence?: (
+    anchor: AnchorRef,
+    mode: "all" | "opportunities" | "pledges",
+  ) => void;
   /** Column-level gift search must choose among every open payment on the row. */
   openColumnGiftSearch?: (
     deposit: WorkbenchDeposit,
@@ -332,16 +335,7 @@ function Composition({
                 ),
             },
             {
-              label: "Search CRM gifts to link…",
-              onSelect: () =>
-                actions.openRemainderGiftSearch?.(
-                  deposit.anchorId,
-                  composition.unexplainedAmount,
-                  "search",
-                ),
-            },
-            {
-              label: "Search CRM pledges to link…",
+              label: "Search CRM records to link…",
               onSelect: () =>
                 actions.openRemainderPledgeSearch?.(
                   deposit.anchorId,
@@ -1381,10 +1375,13 @@ export function DepositRow({
                     : undefined,
                 },
                 {
-                  label: "Search CRM pledges to link…",
+                  label: "Search CRM opportunities or pledges…",
                   onSelect: () => {
                     if (giftColumnAnchor && !giftColumnUnitless)
-                      actions.openLinkEvidence?.(giftColumnAnchor, "pledges");
+                      actions.openLinkEvidence?.(
+                        giftColumnAnchor,
+                        "opportunities",
+                      );
                   },
                   disabled: !giftColumnAnchor || giftColumnUnitless,
                   disabledReason: !giftColumnAnchor

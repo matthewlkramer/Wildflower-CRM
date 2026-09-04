@@ -55,6 +55,14 @@ export const grantLeads = pgTable(
     url: text("url"),
     // Short excerpt from the source email body.
     snippet: text("snippet"),
+    // One-sentence, opportunity-focused headline generated from the extracted
+    // fields. The source email subject remains in `title` for provenance and
+    // conversion defaults; list UI deliberately reads this field instead.
+    aiSummary: text("ai_summary"),
+    aiModel: text("ai_model"),
+    // Also acts as the retry/lease timestamp while a summary is in flight.
+    aiSummarizedAt: timestamp("ai_summarized_at", { withTimezone: true }),
+    aiSummaryError: text("ai_summary_error"),
     // Full extractor payload (same shape as email_proposals.payload for
     // grant_opportunity). Kept for provenance and future re-processing.
     payload: jsonb("payload").notNull().default({}),

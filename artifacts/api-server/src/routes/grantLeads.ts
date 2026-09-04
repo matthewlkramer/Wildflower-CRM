@@ -60,6 +60,7 @@ function grantLeadRow(row: typeof grantLeads.$inferSelect & {
     dedupeKey: row.dedupeKey,
     status: row.status,
     title: row.title,
+    aiSummary: row.aiSummary ?? null,
     funderName: row.funderName ?? null,
     targetOrganizationId: row.targetOrganizationId ?? null,
     targetOrganizationName: row.targetOrganizationName ?? null,
@@ -187,7 +188,11 @@ router.get(
 
     if (q.search) {
       const term = `%${q.search}%`;
-      const clause = or(ilike(grantLeads.title, term), ilike(grantLeads.funderName, term));
+      const clause = or(
+        ilike(grantLeads.title, term),
+        ilike(grantLeads.aiSummary, term),
+        ilike(grantLeads.funderName, term),
+      );
       if (clause) filters.push(clause);
     }
 

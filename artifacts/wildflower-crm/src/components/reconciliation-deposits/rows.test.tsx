@@ -218,8 +218,7 @@ describe("deposit workbench rows", () => {
     expect(menu).not.toBeNull();
     for (const label of [
       "Code part of remainder as a payment…",
-      "Search CRM gifts to link…",
-      "Search CRM pledges to link…",
+      "Search CRM records to link…",
       "Browse unlinked CRM gifts…",
       "Attach an existing payment record…",
       "Flag remainder for research",
@@ -250,7 +249,7 @@ describe("deposit workbench rows", () => {
       "Search CRM gifts…",
       "Browse unlinked CRM gifts…",
       "Create new gift…",
-      "Search CRM pledges to link…",
+      "Search CRM opportunities or pledges…",
     ]) {
       const item = menuItem(menu as HTMLElement, label);
       expect(item, label).not.toBeNull();
@@ -289,13 +288,13 @@ describe("deposit workbench rows", () => {
       }),
       { isFinanceOrAdmin: true },
     );
-    const menu = openMenuContaining("Search CRM pledges to link…");
+    const menu = openMenuContaining("Search CRM opportunities or pledges…");
     expect(menu).not.toBeNull();
     for (const label of [
       "Search CRM gifts…",
       "Browse unlinked CRM gifts…",
       "Create new gift…",
-      "Search CRM pledges to link…",
+      "Search CRM opportunities or pledges…",
     ]) {
       expect(
         menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
@@ -376,7 +375,7 @@ describe("deposit workbench rows", () => {
       "Browse unlinked CRM gifts…",
       "Create new gift…",
       "Identify donor…",
-      "Search CRM pledges to link…",
+      "Search CRM opportunities or pledges…",
     ]) {
       expect(
         menuItem(menu as HTMLElement, label)?.getAttribute("data-disabled"),
@@ -498,7 +497,7 @@ describe("deposit workbench rows", () => {
     expect(
       menuItem(
         menu as HTMLElement,
-        "Search CRM pledges to link…",
+        "Search CRM opportunities or pledges…",
       )?.getAttribute("data-disabled"),
     ).toBeNull();
     act(() => {
@@ -514,7 +513,7 @@ describe("deposit workbench rows", () => {
     expect(
       menuItem(
         menu as HTMLElement,
-        "Search CRM pledges to link…",
+        "Search CRM opportunities or pledges…",
       )?.getAttribute("data-disabled"),
     ).toBeNull();
   });

@@ -59,7 +59,8 @@ import {
 } from "../lib/reconciliationBundleCommit";
 import {
   ReconcileAbort,
-  lockAndValidatePledgeForPayment,
+  applyOpportunityPaymentTransition,
+  lockAndValidateOpportunityForReceivedPayment,
   orphanStripeSourceChargeInTx,
 } from "../lib/reconciliationCommit";
 import {
@@ -873,8 +874,8 @@ router.post(
       });
       return;
     }
-    // Payment-on-pledge: the donor DERIVES from the pledge (locked in-tx
-    // below) — the charge row's resolved donor is not required on that path.
+    // Fundraising-record path: the donor DERIVES from the selected record
+    // (locked in-tx below) — the charge's resolved donor is not required.
     if (!overrides.opportunityId) {
       const preIssues = validateGiftInvariants({
         organizationId: existing.organizationId,
@@ -894,12 +895,14 @@ router.post(
     const supersedeGiftIds: string[] = [];
     try {
       await db.transaction(async (tx) => {
-        // Payment-on-pledge: lock + validate the selected pledge BEFORE the
-        // charge (opp → charge lock order). This must happen before the shared
-        // mint primitive so a non-pledge cannot create a gift or adopt its
-        // donor onto the charge.
-        const opp = overrides.opportunityId
-          ? await lockAndValidatePledgeForPayment(tx, overrides.opportunityId)
+        // Lock + validate the selected fundraising record BEFORE the charge
+        // (opp → charge lock order). Open opportunities are transitioned only
+        // after the charge supplies the authoritative amount and date.
+        let opp = overrides.opportunityId
+          ? await lockAndValidateOpportunityForReceivedPayment(
+              tx,
+              overrides.opportunityId,
+            )
           : null;
         const locked = await tx
           .select()
@@ -918,6 +921,16 @@ router.post(
           )
         ) {
           throw new Error(NOT_PENDING);
+        }
+
+        if (opp) {
+          opp = await applyOpportunityPaymentTransition(
+            tx,
+            opp,
+            overrides.opportunityTransition,
+            locked.dateReceived,
+            locked.grossAmount,
+          );
         }
 
         if (opp) {

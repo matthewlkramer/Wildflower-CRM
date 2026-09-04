@@ -319,6 +319,38 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("POST /gifts-and-payments/merge", () => {
+  it("deduplicates equal gifts without doubling amount or allocations", async () => {
+    const survivorId = await seedGiftWithAllocation("100.00");
+    const duplicateId = await seedGiftWithAllocation("100.00");
+
+    const res = await api("/api/gifts-and-payments/merge", {
+      primaryId: survivorId,
+      mergeIds: [duplicateId],
+      mode: "deduplicate",
+    });
+
+    expect(res.status).toBe(200);
+    expect(Number((await readGift(survivorId)).amount)).toBeCloseTo(100);
+    expect((await allocationsFor(survivorId)).length).toBe(1);
+    expect((await allocationsFor(duplicateId)).length).toBe(1);
+    expect((await readGift(duplicateId)).archivedAt).not.toBeNull();
+  }, 30_000);
+
+  it("rejects deduplication when amounts differ", async () => {
+    const survivorId = await seedGiftWithAllocation("100.00");
+    const otherId = await seedGiftWithAllocation("75.00");
+
+    const res = await api("/api/gifts-and-payments/merge", {
+      primaryId: survivorId,
+      mergeIds: [otherId],
+      mode: "deduplicate",
+    });
+
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("duplicate_amount_mismatch");
+    expect((await readGift(otherId)).archivedAt).toBeNull();
+  }, 30_000);
+
   it("rolls up allocations + amount onto the survivor and archives losers", async () => {
     const a = await seedGiftWithAllocation("100.00");
     const b = await seedGiftWithAllocation("50.00");

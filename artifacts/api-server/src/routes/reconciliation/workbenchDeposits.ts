@@ -66,8 +66,9 @@ import { respondInvariantFailure } from "../quickbooks/shared";
 import { giftHeaderColumns } from "../giftsAndPayments";
 import {
   ReconcileAbort,
+  applyOpportunityPaymentTransition,
   copyPledgeAllocationsToGift,
-  lockAndValidatePledgeForPayment,
+  lockAndValidateOpportunityForReceivedPayment,
 } from "../../lib/reconciliationCommit";
 import { donorOf } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
@@ -2464,9 +2465,16 @@ router.post(
           if (componentAmount > remainder + 0.005) {
             return { kind: "amount_exceeds_remainder" as const };
           }
-          const opp = await lockAndValidatePledgeForPayment(
+          let opp = await lockAndValidateOpportunityForReceivedPayment(
             tx,
             body.opportunityId,
+          );
+          opp = await applyOpportunityPaymentTransition(
+            tx,
+            opp,
+            body.opportunityTransition,
+            deposit.deposit_date,
+            componentAmount.toFixed(2),
           );
           const donor = donorOf(opp);
           createdGiftId = newId();
@@ -2746,10 +2754,9 @@ router.post(
     );
     if (!body) return;
 
-    // Payment-on-pledge: the donor DERIVES from the pledge (locked in-tx below)
-    // — body donor fields are ignored, mirroring the staged
-    // create_gift_from_opportunity outcome. Otherwise the body must carry a
-    // valid Donor XOR.
+    // Opportunity/pledge intake: the donor derives from the selected record.
+    // Open opportunities require an explicit gift-vs-pledge transition; an
+    // already-finalized pledge simply receives another payment.
     const pledgeOpportunityId = body.opportunityId ?? null;
     const bodyDonor = {
       organizationId: body.organizationId ?? null,
@@ -2814,12 +2821,23 @@ router.post(
           return { kind: "no_amount" as const };
         }
 
-        // Payment-on-pledge: lock + validate the pledge (unit → opp lock order;
-        // see lockAndValidatePledgeForPayment) and derive the donor from it —
-        // the body's donor fields are ignored on this path.
-        const opp = pledgeOpportunityId
-          ? await lockAndValidatePledgeForPayment(tx, pledgeOpportunityId)
+        // Lock the selected fundraising record after the unit, then apply the
+        // explicit lifecycle choice using this unit's authoritative money.
+        let opp = pledgeOpportunityId
+          ? await lockAndValidateOpportunityForReceivedPayment(
+              tx,
+              pledgeOpportunityId,
+            )
           : null;
+        if (opp) {
+          opp = await applyOpportunityPaymentTransition(
+            tx,
+            opp,
+            body.opportunityTransition,
+            unit.received_date,
+            unit.amount,
+          );
+        }
         const donor = opp ? donorOf(opp) : bodyDonor;
 
         const overrideName = body.name?.trim();

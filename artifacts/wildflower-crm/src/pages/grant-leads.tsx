@@ -343,7 +343,9 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
         <div className="flex-1 min-w-0 space-y-1">
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-0.5">
-              <p className="font-medium text-sm leading-snug">{lead.title}</p>
+              <p className="font-medium text-sm leading-snug">
+                {lead.aiSummary ?? "Generating opportunity summary…"}
+              </p>
               {lead.funderName && (
                 <p className="text-xs text-muted-foreground">{lead.funderName}</p>
               )}
