@@ -174,6 +174,21 @@ export function freezeMessage(
   return `This record can't be changed because ${because}. Book the correction in the current open fiscal year instead.`;
 }
 
+/** Canonical API payload for every fiscal-year freeze rejection. */
+export function freezeErrorBody(
+  decision: Extract<FreezeDecision, { frozen: true }>,
+) {
+  return {
+    error: "fiscal_year_frozen" as const,
+    message: freezeMessage(decision),
+    details: {
+      side: decision.side,
+      fiscalYearId: decision.fiscalYearId,
+      fiscalYearLabel: decision.fiscalYearLabel,
+    },
+  };
+}
+
 /**
  * Write the standard 409 "fiscal year frozen" response. Idiom mirrors
  * `notFound` / `respondInvariantFailure`: call it and `return` from the handler.
@@ -183,13 +198,5 @@ export function respondFrozen(
   res: Response,
   decision: Extract<FreezeDecision, { frozen: true }>,
 ): void {
-  res.status(409).json({
-    error: "fiscal_year_frozen",
-    message: freezeMessage(decision),
-    details: {
-      side: decision.side,
-      fiscalYearId: decision.fiscalYearId,
-      fiscalYearLabel: decision.fiscalYearLabel,
-    },
-  });
+  res.status(409).json(freezeErrorBody(decision));
 }

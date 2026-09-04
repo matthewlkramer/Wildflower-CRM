@@ -21,6 +21,10 @@ const DETACH_GIFT = `${RUN}_detach_gift`;
 const VERBAL_OPP = `${RUN}_verbal_opp`;
 const FINALIZE_CURRENT = `${RUN}_finalize_current`;
 const FINALIZE_TARGET = `${RUN}_finalize_target`;
+const DEDUP_GIFT_PRIMARY = `${RUN}_dedup_gift_primary`;
+const DEDUP_GIFT_LOSER = `${RUN}_dedup_gift_loser`;
+const DEDUP_OPP_PRIMARY = `${RUN}_dedup_opp_primary`;
+const DEDUP_OPP_LOSER = `${RUN}_dedup_opp_loser`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "admin" } as { id: string; role: string },
@@ -146,6 +150,22 @@ beforeAll(async () => {
       grantLetterUrl: "https://example.org/pledge.pdf",
       writtenPledge: false,
     },
+    {
+      id: DEDUP_OPP_PRIMARY,
+      name: `Duplicate opportunity primary ${RUN}`,
+      organizationId: ORG_ID,
+      askAmount: "100.00",
+      stage: "in_conversation",
+      actualCompletionDate: CLOSED_DATE,
+    },
+    {
+      id: DEDUP_OPP_LOSER,
+      name: `Duplicate opportunity loser ${RUN}`,
+      organizationId: ORG_ID,
+      askAmount: "100.00",
+      stage: "in_conversation",
+      actualCompletionDate: CLOSED_DATE,
+    },
   ]);
 
   await db.insert(schema.giftsAndPayments).values([
@@ -165,6 +185,20 @@ beforeAll(async () => {
       amount: "100.00",
       dateReceived: CLOSED_DATE,
     },
+    {
+      id: DEDUP_GIFT_PRIMARY,
+      name: `Duplicate gift primary ${RUN}`,
+      organizationId: ORG_ID,
+      amount: "100.00",
+      dateReceived: CLOSED_DATE,
+    },
+    {
+      id: DEDUP_GIFT_LOSER,
+      name: `Duplicate gift loser ${RUN}`,
+      organizationId: ORG_ID,
+      amount: "100.00",
+      dateReceived: CLOSED_DATE,
+    },
   ]);
   await db.insert(schema.giftAllocations).values([
     {
@@ -175,6 +209,16 @@ beforeAll(async () => {
     {
       id: `${RUN}_detach_gift_alloc`,
       giftId: DETACH_GIFT,
+      subAmount: "100.00",
+    },
+    {
+      id: `${RUN}_dedup_gift_primary_alloc`,
+      giftId: DEDUP_GIFT_PRIMARY,
+      subAmount: "100.00",
+    },
+    {
+      id: `${RUN}_dedup_gift_loser_alloc`,
+      giftId: DEDUP_GIFT_LOSER,
       subAmount: "100.00",
     },
   ]);
@@ -295,6 +339,28 @@ describe.skipIf(!HAS_DB)("fundraising action fiscal-year freeze guards", () => {
       .from(schema.giftsAndPayments)
       .where(eqFn(schema.giftsAndPayments.id, DETACH_GIFT));
     expect(gift?.opportunityId).toBe(DETACH_PLEDGE);
+  });
+
+  it("blocks deduplicating gifts from a closed fiscal year", async () => {
+    const result = await request("/api/gifts-and-payments/merge", {
+      primaryId: DEDUP_GIFT_PRIMARY,
+      mergeIds: [DEDUP_GIFT_LOSER],
+      mode: "deduplicate",
+    });
+    expect(result.status).toBe(409);
+    expect(result.json).toMatchObject({ error: "fiscal_year_frozen" });
+  });
+
+  it("blocks deduplicating opportunities from a closed fiscal year", async () => {
+    const result = await request(
+      "/api/opportunities-and-pledges/deduplicate",
+      {
+        primaryId: DEDUP_OPP_PRIMARY,
+        mergeIds: [DEDUP_OPP_LOSER],
+      },
+    );
+    expect(result.status).toBe(409);
+    expect(result.json).toMatchObject({ error: "fiscal_year_frozen" });
   });
 
   it("blocks recording a verbal commitment on a closed-year record", async () => {
