@@ -18,6 +18,7 @@ export const listMeetingNotesQueryPageDefault = 1;
 export const ListMeetingNotesQueryParams = zod.object({
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include meeting notes linked to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "creatorUserId": zod.coerce.string().optional(),
   "limit": zod.coerce.number().min(1).max(listMeetingNotesQueryLimitMax).default(listMeetingNotesQueryLimitDefault),

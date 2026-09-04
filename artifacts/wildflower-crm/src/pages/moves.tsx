@@ -76,6 +76,11 @@ export default function Moves() {
 
   const peopleParams: ListPeopleParams = {
     deceased: false,
+    // Moves is a donor-stewardship view, not a directory of everyone who has
+    // ever held an organization role. The server's canonical lifetime-giving
+    // derivation covers direct individual gifts, household gifts, and gifts
+    // from organizations the person currently owns/controls as a principal.
+    lifetimeGivingPresence: "has",
     limit: FETCH_LIMIT,
     page: 1,
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
@@ -166,7 +171,7 @@ export default function Moves() {
           <p className="text-sm text-muted-foreground mt-1">
             {isOrg
               ? "Organizations that could use a touch — ordered by oldest contact first."
-              : "People who could use a touch — ordered by oldest contact first."}
+              : "Individual, household, and principal-of-organization givers who could use a touch — ordered by oldest contact first."}
             {data && data.pagination.total > FETCH_LIMIT ? (
               <span> Showing the first {FETCH_LIMIT} of {data.pagination.total.toLocaleString()}.</span>
             ) : null}

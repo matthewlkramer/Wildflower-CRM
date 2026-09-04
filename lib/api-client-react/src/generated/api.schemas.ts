@@ -9939,6 +9939,10 @@ personId?: string;
  */
 organizationId?: string;
 /**
+ * With organizationId, also include proposals targeting people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
+/**
  * @minimum 1
  * @maximum 10000
  */
@@ -10927,6 +10931,10 @@ export type ListInteractionsParams = {
 search?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include interactions linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 ownerUserId?: string[];
 kind?: InteractionKind[];
@@ -10968,6 +10976,10 @@ export type ListMediaMentionsParams = {
 search?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include media mentions linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 /**
  * Filter to pinned (true) or unpinned (false) mentions.
  */
@@ -11030,6 +11042,10 @@ page?: PageParameter;
 export type ListMeetingNotesParams = {
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include meeting notes linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 creatorUserId?: string;
 /**
@@ -11085,6 +11101,10 @@ search?: string;
 mailboxUserId?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include email messages matched to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 /**
  * @minimum 1
@@ -11102,6 +11122,10 @@ search?: string;
 calendarUserId?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include calendar events matched to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 /**
  * Only events with startAt >= this timestamp.

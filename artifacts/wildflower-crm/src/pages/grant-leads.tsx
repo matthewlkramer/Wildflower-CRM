@@ -221,6 +221,7 @@ function sourceLabel(src: GrantLeadSourceEmail): string {
  */
 function SourceEmailLink({ sources }: { sources: GrantLeadSourceEmail[] }) {
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const usable = sources.filter((s) => s.emailMessageId || s.gmailMessageId);
   if (usable.length === 0) return null;
@@ -258,36 +259,43 @@ function SourceEmailLink({ sources }: { sources: GrantLeadSourceEmail[] }) {
   }
 
   return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="inline-flex items-center gap-1 text-primary hover:underline"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <Mail className="h-3 w-3" />
-            View source email
-            <ChevronDown className="h-3 w-3" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="max-w-xs">
+    <div className="basis-full">
+      <button
+        type="button"
+        className="inline-flex items-center gap-1 text-primary hover:underline"
+        onClick={(e) => {
+          e.stopPropagation();
+          setExpanded((v) => !v);
+        }}
+        aria-expanded={expanded}
+      >
+        <Mail className="h-3 w-3" />
+        {usable.length} source emails
+        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+      </button>
+      {expanded ? (
+        <ul className="mt-1 space-y-1 border-l pl-3" data-testid="grant-lead-source-emails">
           {usable.map((src, i) => (
-            <DropdownMenuItem
-              key={src.emailMessageId ?? src.gmailMessageId ?? i}
-              onClick={() => openSource(src)}
-            >
-              <Mail className="h-3.5 w-3.5 mr-2 shrink-0" />
-              <span className="truncate">{sourceLabel(src)}</span>
-              {!src.emailMessageId && src.gmailMessageId && (
-                <ExternalLink className="h-3 w-3 ml-2 shrink-0 text-muted-foreground" />
-              )}
-            </DropdownMenuItem>
+            <li key={src.emailMessageId ?? src.gmailMessageId ?? i}>
+              <button
+                type="button"
+                className="inline-flex max-w-full items-center gap-1 text-left text-primary hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openSource(src);
+                }}
+              >
+                <span className="truncate">{sourceLabel(src)}</span>
+                {!src.emailMessageId && src.gmailMessageId ? (
+                  <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                ) : null}
+              </button>
+            </li>
           ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+        </ul>
+      ) : null}
       {dialog}
-    </>
+    </div>
   );
 }
 
@@ -415,9 +423,9 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            {(lead.sightingCount ?? 0) > 0 && (
+            {(lead.sightingCount ?? 0) > 0 && (!lead.sourceEmails || lead.sourceEmails.length === 0) && (
               <span>
-                {lead.sightingCount === 1 ? "1 inbox" : `${lead.sightingCount} inboxes`}
+                {lead.sightingCount === 1 ? "1 source email" : `${lead.sightingCount} source emails`}
               </span>
             )}
             {lead.sourceEmails && lead.sourceEmails.length > 0 && (

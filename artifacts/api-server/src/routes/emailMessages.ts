@@ -12,10 +12,12 @@ import {
   asyncHandler,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
 import { computeTracking } from "../lib/emailTrackingEnrich";
+import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 
 /**
  * Read-only-ish surface over the synced Gmail messages. The sync
@@ -72,7 +74,13 @@ router.get(
     }
     if (q.organizationId) {
       filters.push(
-        sql`${emailMessages.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityArrayScope(
+              q.organizationId,
+              sql`${emailMessages.matchedOrganizationIds}`,
+              sql`${emailMessages.matchedPersonIds}`,
+            )
+          : sql`${emailMessages.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
       );
     }
     if (q.householdId) {
