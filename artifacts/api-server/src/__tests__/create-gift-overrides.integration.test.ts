@@ -435,7 +435,7 @@ describe.skipIf(!HAS_DB)(
       expect(charge.matchStatus).toBe("matched");
     }, 30_000);
 
-    it("refuses a non-pledge opportunity (409 not_a_pledge) and mints nothing", async () => {
+    it("requires an explicit transition for an open opportunity and mints nothing", async () => {
       const chargeId = await seedCharge();
       const { oppId } = await seedPledge({ writtenPledge: false });
 
@@ -444,7 +444,7 @@ describe.skipIf(!HAS_DB)(
         { opportunityId: oppId },
       );
       expect(res.status).toBe(409);
-      expect(res.json?.error).toBe("not_a_pledge");
+      expect(res.json?.error).toBe("opportunity_transition_required");
 
       const gifts = await db
         .select()
