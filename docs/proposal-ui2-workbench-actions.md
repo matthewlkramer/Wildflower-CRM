@@ -31,10 +31,10 @@ component; they are not independent deposit-level lists.
 
 - Stripe charges are components through the payout; checks, ACH, wires, and
   other direct payments are components through `bank_deposit_components`.
-- `payment_applications` tracks the only counted money→gift relationship:
-  one component/payment unit to zero or one gift. If evidence appears to point
-  to multiple gifts, merge the intended meaning into allocation rows on one
-  gift; do not create parallel counted gift links.
+- `payment_units.gift_id` is the only counted money→gift relationship: one
+  component/payment unit to zero or one gift. If evidence appears to point to
+  multiple gifts, merge the intended meaning into allocation rows on one gift;
+  do not create parallel counted gift links.
 - There is no tracked deposit→gift relationship.
 - Excluded components remain visible in Composition with an **Excluded** badge.
   Exclusion removes them from active counting, but gross→net→bank
@@ -61,9 +61,10 @@ component; they are not independent deposit-level lists.
 
 - Unresolved composition is an empty state, not an evidence card. Its actions
   live in a three-dot menu beside `Unresolved`: code the whole deposit (or
-  remainder) as one payment, search or browse unlinked CRM gifts to book the
-  payment against, attach an existing payment-unit record, flag the remainder
-  for research, or exclude the remainder. **LIVE.**
+  remainder) as one payment, code part of the remainder as one payment while
+  leaving the balance unresolved, search or browse unlinked CRM gifts to book
+  the payment against, attach an existing payment-unit record, flag the
+  remainder for research, or exclude the remainder. **LIVE.**
 - Exclude/re-include a charge or direct component while leaving the component
   visible and badged. Charge exclusion/re-inclusion is **LIVE**; direct
   component exclusion/re-inclusion is **GAP**.
@@ -82,6 +83,10 @@ component; they are not independent deposit-level lists.
   browse, Donorbox search, coding-form search, and new-gift creation; actions
   remain disabled with an explanation when no component/payment unit exists.
   **LIVE.**
+- Broad CRM gift search visibly labels and mutes gifts already owned through
+  `payment_units.gift_id`, but keeps them selectable for the confirmed
+  disconnect-and-move flow. Unlinked-gift browse excludes every owned gift,
+  even when its downstream QuickBooks evidence is still missing. **LIVE.**
 - On a component with no gift: search and link an existing gift, create a gift
   from evidence, or identify the donor without creating a gift. **LIVE** for
   existing staged-payment/Stripe flows.
