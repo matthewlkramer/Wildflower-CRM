@@ -14,10 +14,12 @@ import {
   normalizeArrayQuery,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
   splitBlank,
 } from "../lib/helpers";
+import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -57,7 +59,15 @@ router.get(
       filters.push(sql`${interactions.personIds} @> ARRAY[${q.personId}]::text[]`);
     }
     if (q.organizationId) {
-      filters.push(sql`${interactions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
+      filters.push(
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityArrayScope(
+              q.organizationId,
+              sql`${interactions.organizationIds}`,
+              sql`${interactions.personIds}`,
+            )
+          : sql`${interactions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`,
+      );
     }
     if (q.householdId) {
       filters.push(

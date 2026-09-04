@@ -5,6 +5,10 @@ import {
   parseAutoResponderMove,
   parseEmailSignature,
 } from "../lib/intelDetectors";
+import {
+  buildGrantLeadDedupeKey,
+  canonicalOpportunityUrl,
+} from "../lib/grantLeadIdentity";
 
 // ──────────────────────────────────────────────────────────────────
 // Grant opportunity suppression
@@ -24,7 +28,10 @@ describe("extractGrantOpportunities — suppression rules", () => {
       "grants@acme.org",
       new Date("2026-01-01T00:00:00Z"),
     );
-    expect(items.length).toBeGreaterThan(0);
+    expect(items).toHaveLength(1);
+    expect(items[0]?.deadline).toBe("December 15, 2099");
+    expect(items[0]?.amount).toBe("$25,000 to $100,000");
+    expect(items[0]?.url).toBe("https://acme.org/apply");
   });
 
   it("suppresses grant WINNER announcements (subject)", () => {
@@ -102,6 +109,126 @@ describe("extractGrantOpportunities — suppression rules", () => {
       new Date("2026-06-01T00:00:00Z"),
     );
     expect(items.length).toBeGreaterThan(0);
+  });
+
+  it("suppresses a generic shopping promotion from newsletter@", () => {
+    const items = extractGrantOpportunities(
+      "Only this weekend left: Enjoy 15% off plus free shipping!",
+      "Shop now before Maria's Birthday Week comes to an end. Save 15% on every template.",
+      null,
+      "newsletter@retail.example",
+      new Date("2026-09-01T00:00:00Z"),
+    );
+    expect(items).toHaveLength(0);
+  });
+
+  it("suppresses an informational RFP guide and template", () => {
+    const items = extractGrantOpportunities(
+      "How to Create an Investment Management RFP for Nonprofits",
+      "Download the free RFP Guide and customizable sample RFP template.",
+      null,
+      "advice@example.com",
+      new Date("2026-09-01T00:00:00Z"),
+    );
+    expect(items).toHaveLength(0);
+  });
+
+  it("suppresses an application decision and quoted reply fragments", () => {
+    expect(
+      extractGrantOpportunities(
+        "Submission Decision - 2026 Grantmakers for Education RFP",
+        "Your proposal was not selected for this year's conference.",
+        null,
+        "conference@example.org",
+        new Date("2026-09-01T00:00:00Z"),
+      ),
+    ).toHaveLength(0);
+    expect(
+      extractGrantOpportunities(
+        "Re: possible grant",
+        "On Fri, Aug 14, 2026 at 10:23 AM Erica Cantoni <erica@example.org> wrote:\n\nI've reviewed the RFP.",
+        null,
+        "external@example.org",
+        new Date("2026-09-01T00:00:00Z"),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("does not turn contextual amount/date paragraphs into extra leads", () => {
+    const items = extractGrantOpportunities(
+      "Camelback Fellowship applications are open",
+      [
+        "Applications close September 18, 2099. Apply at https://camelback.example/apply",
+        "The fellowship supports early-stage entrepreneurs working in education.",
+        "Selected Fellows receive $50,000 in capital and coaching.",
+      ].join("\n\n"),
+      null,
+      "grants@example.org",
+      new Date("2026-09-01T00:00:00Z"),
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("Camelback Fellowship applications are open");
+    expect(items[0]?.amount).toBe("$50,000");
+    expect(items[0]?.url).toBe("https://camelback.example/apply");
+  });
+});
+
+describe("grant lead opportunity identity", () => {
+  it("ignores tracking and asset URLs", () => {
+    expect(canonicalOpportunityUrl("https://click.example.org/track/abc")).toBeNull();
+    expect(canonicalOpportunityUrl("https://media.beehiiv.com/image/grant.png?t=1")).toBeNull();
+  });
+
+  it("groups reminder and open-cycle announcements for the same named program", () => {
+    const first = buildGrantLeadDedupeKey(
+      {
+        title: "CFI eNEWS - 2027 Grant Cycle Open",
+        funderName: "Cummings Foundation",
+        deadline: null,
+        amount: "$35 Million",
+        url: "https://track.hubspotlinks.com/r/first",
+        snippet: "Cummings Foundation is accepting LOIs for the Cummings $35 Million Grant Program.",
+      },
+      "news@cummings.com",
+    );
+    const reminder = buildGrantLeadDedupeKey(
+      {
+        title: "CFI eNEWS - Q&A Session Reminder",
+        funderName: "Cummings Foundation",
+        deadline: "September 16, 2099",
+        amount: "$35 Million",
+        url: "https://track.hubspotlinks.com/r/second",
+        snippet: "The LOI deadline for the Cummings $35 Million Grant Program is approaching.",
+      },
+      "news@cummings.com",
+    );
+    expect(reminder).toBe(first);
+  });
+
+  it("groups a named program even when different newsletters use different links", () => {
+    const direct = buildGrantLeadDedupeKey(
+      {
+        title: "Camelback Fellowship applications are open",
+        funderName: null,
+        deadline: null,
+        amount: null,
+        url: "https://camelback.example/apply",
+        snippet: "Applications for the Camelback Fellowship are now open.",
+      },
+      "news@camelback.example",
+    );
+    const digest = buildGrantLeadDedupeKey(
+      {
+        title: "Funding roundup for education entrepreneurs",
+        funderName: null,
+        deadline: "September 18, 2099",
+        amount: "$50,000",
+        url: "https://philanthropy.example/articles/september-roundup",
+        snippet: "The Camelback Fellowship deadline is approaching. Apply by September 18.",
+      },
+      "digest@philanthropy.example",
+    );
+    expect(digest).toBe(direct);
   });
 });
 

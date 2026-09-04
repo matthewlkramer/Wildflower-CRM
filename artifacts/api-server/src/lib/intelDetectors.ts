@@ -598,14 +598,12 @@ const GRANT_DIGEST_SENDERS: RegExp[] = [
   /@(?:candid\.org|grantstation|grantwatch|grantsforward|grants\.gov)\b/i,
   /@(?:cof|cof\.org|councilonfoundations|geofunders|tsne|edutopia)\b/i,
   /@(?:fundsforngos|grantspace|fconline|foundationcenter)\b/i,
-  /\bnewsletter@/i,
-  /\bdigest@/i,
   /\brfp@/i,
   /\bgrants?@/i,
 ];
 
 const GRANT_SUBJECT_RE =
-  /\b(request\s+for\s+proposals?|RFP|RFA|RFQ|letter\s+of\s+(?:inquiry|interest)|LOI|grant\s+(?:opportunity|opportunities|announcement|alert|cycle|deadline|round)|funding\s+(?:opportunity|opportunities|announcement|available)|(?:now\s+)?accepting\s+applications|call\s+for\s+(?:proposals|applications)|(?:open|new)\s+(?:grant|funding))\b/i;
+  /\b(request\s+for\s+proposals?|RFP|RFA|letter\s+of\s+(?:inquiry|interest)|LOI|grant\s+(?:opportunity|opportunities|announcement|alert|cycle|deadline|round)|funding\s+(?:opportunity|opportunities|announcement|available)|(?:now\s+)?accepting\s+applications|applications?\s+(?:are\s+)?(?:now\s+)?open|call\s+for\s+(?:proposals|applications)|(?:open|new)\s+(?:grant|funding))\b/i;
 
 const GRANT_BODY_HINTS_RE =
   /\b(deadline|due\s+(?:by|date)|apply\s+by|application\s+(?:deadline|due)|letter\s+of\s+(?:inquiry|interest)|LOI|request\s+for\s+proposals?|RFP|grant\s+(?:opportunity|amount|range|award|cycle))\b/i;
@@ -627,7 +625,7 @@ const NON_GRANT_EVENT_RE =
 // First-line patterns that mean the block is the tail of a quoted
 // reply / forwarded message, not a real opportunity description.
 const QUOTED_TAIL_FIRST_LINE_RE =
-  /^(?:>|_{3,}|-{3,}|={3,}|\*{3,}|#{3,}|<https?:|Forwarded\s+message|Begin\s+forwarded\s+message|On\s+.{1,80}\s+wrote:|From:\s|Sent\s+from\s+my)/i;
+  /^(?:>|_{3,}|-{3,}|={3,}|\*{3,}|#{3,}|<https?:|Forwarded\s+message|Begin\s+forwarded\s+message|On\s+.{1,240}(?:\s+wrote:|\s+<)|From:\s|Sent\s+from\s+my)/i;
 
 // Grant WINNER / recipient announcements. These celebrate awards
 // already made — not a new opportunity to apply for. We suppress them
@@ -645,7 +643,7 @@ const GRANT_WINNER_RE =
 // naturally) so that a pure "congrats to our grantees" blast can't slip past
 // just by mentioning the word "grant".
 const GRANT_OPEN_OPPORTUNITY_RE =
-  /\b(now\s+accepting|accepting\s+applications|applications?\s+(?:are\s+)?(?:now\s+)?open|now\s+open\s+for\s+applications|open\s+for\s+applications|apply\s+(?:now|today|by|here|online)|deadline\s+to\s+apply|call\s+for\s+(?:proposals?|applications?)|request\s+for\s+proposals?|RFP|letter\s+of\s+(?:inquiry|interest)|LOI|submit\s+(?:your\s+)?(?:application|proposal|LOI))\b/i;
+  /\b(now\s+accepting|accepting\s+applications|applications?\s+(?:(?:are\s+)?(?:now\s+)?open|close(?:s)?)|now\s+open\s+for\s+applications|open\s+for\s+applications|apply\s+(?:now|today|by|here|online)|deadline\s+to\s+apply|call\s+for\s+(?:proposals?|applications?)|request\s+for\s+proposals?|RFP|letter\s+of\s+(?:inquiry|interest)|LOI|submit\s+(?:your\s+)?(?:application|proposal|LOI))\b/i;
 
 // RFPs whose intent is to HIRE a vendor / contractor / consultant to
 // perform work FOR the sender — i.e. the sender is the buyer, not a
@@ -661,7 +659,25 @@ const VENDOR_RFP_RE =
 // this targets the "register / buy tickets / sponsor us" call-to-action
 // variants and pure promotional blasts).
 const PROMO_REGISTRATION_RE =
-  /\b(register\s+(?:now|today|here|online)|registration\s+(?:is\s+)?(?:now\s+)?open|reserve\s+your\s+(?:seat|spot|place)|early\s+bird|save\s+the\s+date|buy\s+(?:tickets|your\s+ticket)|tickets?\s+(?:are\s+)?(?:now\s+)?(?:available|on\s+sale)|sponsorship\s+opportunit|become\s+a\s+sponsor|exhibitor|sign\s+up\s+(?:now|today)|limited\s+(?:seats|spots))\b/i;
+  /\b(register\s+(?:now|today|here|online)|registration\s+(?:is\s+)?(?:now\s+)?open|reserve\s+your\s+(?:seat|spot|place)|early\s+bird|save\s+the\s+date|buy\s+(?:tickets|your\s+ticket)|tickets?\s+(?:are\s+)?(?:now\s+)?(?:available|on\s+sale)|sponsorship\s+opportunit|become\s+a\s+sponsor|exhibitor|sign\s+up\s+(?:now|today)|limited\s+(?:seats|spots)|shop\s+now|free\s+shipping|percent\s+off|%\s+off|sale\s+ends?)\b/i;
+
+// Educational / marketing material *about writing or running an RFP* is not
+// itself an opportunity to receive funding.  This catches the investment-
+// management template that polluted the live queue, plus the general class of
+// how-to / sample / guide lead magnets behind it.
+const RFP_RESOURCE_RE =
+  /\b(?:how\s+to|guide\s+to|best\s+practices?\s+for|sample|template|checklist|webinar\s+(?:about|on)|learn\s+how\s+to)\b[^\n]{0,100}\b(?:RFP|request\s+for\s+proposals?)\b|\b(?:RFP|request\s+for\s+proposals?)\b[^\n]{0,100}\b(?:guide|template|sample|checklist|best\s+practices?|download)\b/i;
+
+// A decision about an application already submitted is relationship activity,
+// not a newly discovered opportunity.
+const GRANT_DECISION_RE =
+  /\b(?:submission|application|proposal)\s+decision\b|\b(?:not\s+selected|declined|rejected|award\s+notification)\b/i;
+
+// Candidate blocks must say that funding is actually open/available. A bare
+// date, dollar amount, the word "investment", or a passing RFP reference is
+// deliberately insufficient.
+const GRANT_FUNDING_OFFER_RE =
+  /\b(?:funding|grants?|awards?|prizes?|fellowships?)\s+(?:is\s+|are\s+|of\s+|from\s+|up\s+to\s+|between\s+|ranging\s+from\s+)?(?:available|offered|open|awarded|provided|will\s+(?:support|fund)|\$\s?\d)|\bselected\s+(?:applicants|organizations|fellows)\s+(?:will\s+)?receive\b/i;
 
 const DEADLINE_MONTHS: Record<string, number> = {
   jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
@@ -789,6 +805,11 @@ export function extractGrantOpportunities(
     ? bodyText
     : stripHtml(bodyHtml ?? "")) ?? "";
   if (!text && !subject) return [];
+  // A body that begins with a quoted-reply marker is prior conversation, not
+  // a new external announcement. Without this whole-message guard, a later
+  // paragraph containing a passing "RFP" mention can be split out and
+  // promoted after the quote-header block itself is discarded.
+  if (QUOTED_TAIL_FIRST_LINE_RE.test(text.trim())) return [];
 
   // Reference date for "has this deadline already passed?" checks. We
   // judge against TODAY (not the email's sent date): a grant whose
@@ -827,6 +848,14 @@ export function extractGrantOpportunities(
     return [];
   }
   if (subject && VENDOR_RFP_RE.test(subject)) return [];
+  if (subject && RFP_RESOURCE_RE.test(subject)) return [];
+  if (
+    subject &&
+    GRANT_DECISION_RE.test(subject) &&
+    !GRANT_OPEN_OPPORTUNITY_RE.test(subject)
+  ) {
+    return [];
+  }
   if (
     subject &&
     PROMO_REGISTRATION_RE.test(subject) &&
@@ -844,13 +873,39 @@ export function extractGrantOpportunities(
   const items: GrantOpportunity[] = [];
   const seen = new Set<string>();
 
+  const isActionableGrantBlock = (block: string): boolean => {
+    if (QUOTED_TAIL_FIRST_LINE_RE.test(block)) return false;
+    if (GRANT_WINNER_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) return false;
+    if (GRANT_DECISION_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) return false;
+    if (VENDOR_RFP_RE.test(block) || RFP_RESOURCE_RE.test(block)) return false;
+    if (PROMO_REGISTRATION_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) return false;
+
+    const hasOpenSignal = GRANT_OPEN_OPPORTUNITY_RE.test(block);
+    const hasFundingOffer = GRANT_FUNDING_OFFER_RE.test(block);
+    const hasApplicationDetail =
+      GRANT_BODY_HINTS_RE.test(block) ||
+      DEADLINE_RE.test(block) ||
+      /\b(?:eligib(?:le|ility)|applicants?|nonprofits?\s+may\s+apply)\b/i.test(block);
+    const amountIsGrantLike =
+      AMOUNT_RE.test(block) && GRANT_AMOUNT_CONTEXT_RE.test(block);
+
+    // A real lead needs an affirmative open/apply/RFP signal, or an explicit
+    // funding offer paired with an application detail. Date-only, amount-only,
+    // and generic "investment" blocks are intentionally rejected.
+    return (
+      hasOpenSignal ||
+      (hasFundingOffer && hasApplicationDetail) ||
+      (amountIsGrantLike && /\b(?:apply|application|deadline|eligib)\w*/i.test(block))
+    );
+  };
+
   const consider = (block: string, titleOverride?: string) => {
     // Skip blocks that are obviously the tail of a quoted reply or
     // forwarded message — the "title" would be the quote marker
     // itself (e.g. "> Got time to talk before the holidays?",
     // "Forwarded message ---------", a bare "________"), not a real
     // opportunity. Only applies when titleOverride wasn't supplied.
-    if (!titleOverride && QUOTED_TAIL_FIRST_LINE_RE.test(block)) return;
+    if (QUOTED_TAIL_FIRST_LINE_RE.test(block)) return;
 
     // Per-block event filter: catches digests that legitimately mix
     // RFPs and webinars in the same email. We don't want the webinar
@@ -865,28 +920,17 @@ export function extractGrantOpportunities(
     if (GRANT_WINNER_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) {
       return;
     }
+    if (GRANT_DECISION_RE.test(block) && !GRANT_OPEN_OPPORTUNITY_RE.test(block)) {
+      return;
+    }
     // Vendor-procurement RFP block — sender is hiring, not funding.
-    if (VENDOR_RFP_RE.test(block)) return;
+    if (VENDOR_RFP_RE.test(block) || RFP_RESOURCE_RE.test(block)) return;
     // Promo / registration / sponsorship block with no real grant hint.
     if (PROMO_REGISTRATION_RE.test(block) && !GRANT_BODY_HINTS_RE.test(block)) {
       return;
     }
 
-    // A dollar amount only counts as a grant signal when it sits in
-    // grant-context language. Bare price tags ("$199", "$15/mo")
-    // would otherwise drag in newsletter / product-launch blocks.
-    const amountIsGrantLike =
-      AMOUNT_RE.test(block) && GRANT_AMOUNT_CONTEXT_RE.test(block);
-
-    // Block must look grant-shaped — either subject already qualified
-    // or the block contents do.
-    const blockHasSignal =
-      GRANT_BODY_HINTS_RE.test(block) ||
-      amountIsGrantLike ||
-      DEADLINE_RE.test(block);
-    const subjectQualified =
-      !!titleOverride && subject ? GRANT_SUBJECT_RE.test(subject) : false;
-    if (!blockHasSignal && !subjectQualified) return;
+    if (!isActionableGrantBlock(block)) return;
 
     const lines = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length === 0 && !titleOverride) return;
@@ -940,24 +984,33 @@ export function extractGrantOpportunities(
     items.push({ title, funderName, deadline, amount, url, snippet });
   };
 
-  if (blocks.length <= 1) {
+  const actionableBlocks = blocks.filter(isActionableGrantBlock);
+
+  if (actionableBlocks.length <= 1) {
     // Probably a single-opportunity announcement email (e.g. a
-    // funder directly emailing an RFP). Use subject as title.
-    const onlyBlock = blocks[0] ?? "";
+    // funder directly emailing an RFP). Use subject as title so adjacent
+    // paragraphs describing the same program don't become separate leads.
+    // For a short, explicitly grant-shaped email, fold those contextual
+    // paragraphs back into the one candidate so its deadline, amount, and
+    // application URL are retained on the grouped lead.
+    const subjectQualified = !!subject && GRANT_SUBJECT_RE.test(subject);
+    const onlyBlock =
+      subjectQualified && blocks.length <= 6
+        ? blocks
+            .filter(
+              (block) =>
+                !QUOTED_TAIL_FIRST_LINE_RE.test(block) &&
+                !RFP_RESOURCE_RE.test(block) &&
+                !(NON_GRANT_EVENT_RE.test(block) && !GRANT_BODY_HINTS_RE.test(block)),
+            )
+            .join("\n")
+        : (actionableBlocks[0] ?? "");
     consider(onlyBlock, subject?.trim() || undefined);
   } else {
-    for (const b of blocks) consider(b);
-    // If multi-block but nothing qualified yet, fall back to the
-    // subject + first qualifying block. Common in newsletter intros.
-    if (items.length === 0 && subject && GRANT_SUBJECT_RE.test(subject)) {
-      const firstQualified = blocks.find(
-        (b) =>
-          GRANT_BODY_HINTS_RE.test(b) ||
-          AMOUNT_RE.test(b) ||
-          DEADLINE_RE.test(b),
-      );
-      if (firstQualified) consider(firstQualified, subject);
-    }
+    // A digest may legitimately contain several distinct open programs.
+    // Only blocks that independently pass the strict actionable test become
+    // rows; contextual paragraphs (amount, webinar, article, date) do not.
+    for (const b of actionableBlocks) consider(b);
   }
 
   // Best-effort sender annotation for callers' use; not stored on the

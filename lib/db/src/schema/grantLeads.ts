@@ -14,8 +14,8 @@ import { grantLeadStatusEnum } from "./_enums";
 
 /**
  * Team-shared grant opportunity lead. Deduped across inboxes by a
- * per-opportunity dedupe key (URL host+path, or funder+deadline+title
- * hash). When the same grant announcement arrives in multiple team
+ * per-opportunity semantic key (named funding program first, stable
+ * destination URL second). When the same grant announcement arrives in multiple team
  * members' inboxes, it produces ONE lead row here instead of a
  * per-mailbox email_proposals row.
  *
