@@ -33,7 +33,7 @@ export function canonicalOpportunityUrl(raw: string | null): string | null {
 // "Q&A reminder" vs "2027 cycle open". This is intentionally conservative:
 // it only recognizes a capitalized proper-name phrase ending in a common
 // funding-program noun.
-function namedProgram(text: string): string | null {
+export function extractNamedGrantProgram(text: string): string | null {
   const candidates = text.match(
     /\b(?:[A-Z][\w&'’.-]*|\$?\d[\d,.]*)(?:\s+(?:[A-Z][\w&'’.-]*|and|of|for|the|\$?\d[\d,.]*)){1,9}\s+(?:Grant\s+Program|Grant\s+Fund|Fellowship|Initiative|Challenge|Prize|Fund)\b/g,
   );
@@ -76,7 +76,9 @@ export function buildGrantLeadDedupeKey(
   opportunity: GrantOpportunity,
   fromEmail: string | null,
 ): string {
-  const program = namedProgram(`${opportunity.title}\n${opportunity.snippet}`);
+  const program = extractNamedGrantProgram(
+    `${opportunity.title}\n${opportunity.snippet}`,
+  );
   if (program)
     return `grant:program:${normalizeIdentity(program)}`.slice(0, 260);
 
