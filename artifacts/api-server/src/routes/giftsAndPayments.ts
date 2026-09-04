@@ -206,6 +206,12 @@ const donorJoinSelect = {
     "derived_settled_amount",
   ),
   derivedProcessorFee: derivedProcessorFeeForGift().as("derived_processor_fee"),
+  // Canonical ownership signal for reconciliation pickers. This deliberately
+  // includes manually composed bank payment units that have no downstream QBO
+  // evidence yet.
+  hasPaymentEvidence: hasCanonicalPaymentUnitForGift().as(
+    "has_payment_evidence",
+  ),
   // Task #594 — off-books / payment-exempt is DERIVED ONLY from the gift's
   // allocation entities (off-books when it has allocations and every one sits on
   // a no-payment entity). Replaces the retired header booleans; the way to make a
@@ -284,6 +290,7 @@ import {
   derivedSettledAmountForGift,
   derivedProcessorFeeForGift,
   giftIsOffBooksExpr,
+  hasCanonicalPaymentUnitForGift,
 } from "../lib/giftPaymentSummary";
 import { deriveGiftLanes } from "../lib/reconciliationLanes";
 import { stagedStatusSql } from "../lib/derivedStatus";
@@ -427,6 +434,12 @@ async function buildGiftsListWhere(
     // Read raw — `zod.coerce.boolean()` would coerce the string "false" to true.
     if (req.query.awaitingEvidence === "true") {
       filters.push(sql<boolean>`(${deriveGiftQbTieLiveExpr()}) = 'missing'`);
+    }
+    // "Browse unlinked CRM gifts" has a stricter, separate contract: no
+    // canonical payment unit currently owns the gift. A bank-linked gift can
+    // legitimately still be waiting for its downstream QBO record.
+    if (req.query.unlinkedToPaymentUnit === "true") {
+      filters.push(sql<boolean>`NOT ${hasCanonicalPaymentUnitForGift()}`);
     }
     // Donorbox-backed filter — keeps only gifts where a counted ledger row is
     // Donorbox-sourced directly or Stripe-sourced via a Donorbox donation.

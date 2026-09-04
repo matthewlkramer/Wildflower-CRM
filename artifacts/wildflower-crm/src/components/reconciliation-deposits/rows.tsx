@@ -41,6 +41,7 @@ export type DepositActions = Omit<
     disposition: "corrected" | "accepted_historical",
   ) => void;
   openAddKnownPayment?: (bankDepositId: string, remainder: string) => void;
+  openCodePartialPayment?: (bankDepositId: string, remainder: string) => void;
   openFlagRemainder?: (bankDepositId: string, remainder: string) => void;
   openExcludeRemainder?: (bankDepositId: string, remainder: string) => void;
   removeManualComponent?: (componentId: string, label: string) => void;
@@ -241,6 +242,7 @@ const NOOP_ACTIONS: DepositActions = {
   openMergeGifts: () => undefined,
   confirmChargeProposal: () => undefined,
   openAddKnownPayment: () => undefined,
+  openCodePartialPayment: () => undefined,
   openFlagRemainder: () => undefined,
   openExcludeRemainder: () => undefined,
   removeManualComponent: () => undefined,
@@ -319,6 +321,14 @@ function Composition({
                   deposit.anchorId,
                   composition.unexplainedAmount,
                   "code",
+                ),
+            },
+            {
+              label: "Code part of remainder as a payment…",
+              onSelect: () =>
+                actions.openCodePartialPayment?.(
+                  deposit.anchorId,
+                  composition.unexplainedAmount,
                 ),
             },
             {

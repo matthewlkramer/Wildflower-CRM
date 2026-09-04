@@ -2249,6 +2249,8 @@ export interface GiftOrPayment {
   readonly derivedSettledAmount?: string | null;
   /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
   readonly derivedProcessorFee?: string | null;
+  /** True when any canonical payment unit currently points to this gift. Broad reconciliation searches keep such gifts visible and label them as already linked, while Browse unlinked CRM gifts excludes them. This is independent of whether downstream QuickBooks documentation is present. */
+  readonly hasPaymentEvidence?: boolean;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -10749,6 +10751,10 @@ quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
  * When true, list only gifts awaiting funding evidence (edge case B4): CRM-first gifts logged by a fundraiser before any funding evidence arrived. Answered entirely from the ledger-derived tie: `quickbooksTieStatus = missing` (no counted payment-application row from any source). Off-books/exempt and processor-sourced (tied) gifts are excluded.
  */
 awaitingEvidence?: boolean;
+/**
+ * When true, list only gifts with no canonical `payment_units.gift_id` owner. This powers Browse unlinked CRM gifts and is intentionally independent of QuickBooks tie status: a gift linked to bank or Stripe payment evidence but still missing downstream QBO documentation is linked and must not appear here.
+ */
+unlinkedToPaymentUnit?: boolean;
 /**
  * Donor-lifecycle worklist preset ("what hasn't been done yet"), the
 canonical definition shared with the dashboard worklist counts:

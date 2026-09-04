@@ -385,6 +385,7 @@ export default function ReconciliationDepositsPage() {
   const [knownPaymentFor, setKnownPaymentFor] = useState<{
     depositId: string;
     remainder: string;
+    intent: "attach" | "partial";
   } | null>(null);
   const [paymentReassignmentFor, setPaymentReassignmentFor] =
     useState<CandidatePaymentUnitWithClaim | null>(null);
@@ -579,6 +580,13 @@ export default function ReconciliationDepositsPage() {
     attachQboEvidence.isPending ||
     flagAccountingError.isPending ||
     componentCorrectionBusy;
+
+  const knownPaymentAmountNumber = Number(knownPaymentAmount);
+  const knownPaymentAmountIsValid =
+    knownPaymentAmount.trim() !== "" &&
+    Number.isFinite(knownPaymentAmountNumber) &&
+    knownPaymentAmountNumber > 0 &&
+    knownPaymentAmountNumber <= Number(knownPaymentFor?.remainder ?? 0) + 0.005;
 
   const invalidate = () => {
     void queryClient.invalidateQueries({
@@ -1627,7 +1635,7 @@ export default function ReconciliationDepositsPage() {
     invalidate();
   };
   const handleCreateKnownPayment = async () => {
-    if (!knownPaymentFor || !knownPaymentAmount.trim()) return;
+    if (!knownPaymentFor || !knownPaymentAmountIsValid) return;
     await addBankComponent.mutateAsync({
       bankDepositId: knownPaymentFor.depositId,
       data: {
@@ -1916,12 +1924,21 @@ export default function ReconciliationDepositsPage() {
         });
     },
     openAddKnownPayment: (depositId, remainder) => {
-      setKnownPaymentFor({ depositId, remainder });
+      setKnownPaymentFor({ depositId, remainder, intent: "attach" });
       setKnownPaymentMode("search");
       setKnownPaymentSearch("");
       setKnownPaymentFilterAmount("");
       setKnownPaymentFilterDate("");
       setKnownPaymentAmount(remainder);
+      setKnownPaymentDate("");
+    },
+    openCodePartialPayment: (depositId, remainder) => {
+      setKnownPaymentFor({ depositId, remainder, intent: "partial" });
+      setKnownPaymentMode("create");
+      setKnownPaymentSearch("");
+      setKnownPaymentFilterAmount("");
+      setKnownPaymentFilterDate("");
+      setKnownPaymentAmount("");
       setKnownPaymentDate("");
     },
     openFlagRemainder: (depositId, remainder) => {
@@ -2319,34 +2336,37 @@ export default function ReconciliationDepositsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Attach existing payment record</AlertDialogTitle>
+            <AlertDialogTitle>
+              {knownPaymentFor?.intent === "partial"
+                ? "Code part of the remainder as a payment"
+                : "Attach existing payment record"}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Resolve{" "}
-              {knownPaymentFor
-                ? formatCurrency(knownPaymentFor.remainder)
-                : "the"}{" "}
-              unexplained remainder by attaching, moving, or creating a payment
-              unit.
+              {knownPaymentFor?.intent === "partial"
+                ? `Create one payment for part of the ${formatCurrency(knownPaymentFor.remainder)} unresolved remainder. Anything left over will stay unresolved for another gift, reimbursement, or other disposition.`
+                : `Resolve ${knownPaymentFor ? formatCurrency(knownPaymentFor.remainder) : "the"} unexplained remainder by attaching, moving, or creating a payment unit.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant={knownPaymentMode === "search" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setKnownPaymentMode("search")}
-            >
-              Search existing
-            </Button>
-            <Button
-              type="button"
-              variant={knownPaymentMode === "create" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setKnownPaymentMode("create")}
-            >
-              Create new
-            </Button>
-          </div>
+          {knownPaymentFor?.intent === "attach" ? (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={knownPaymentMode === "search" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setKnownPaymentMode("search")}
+              >
+                Search existing
+              </Button>
+              <Button
+                type="button"
+                variant={knownPaymentMode === "create" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setKnownPaymentMode("create")}
+              >
+                Create new
+              </Button>
+            </div>
+          ) : null}
           {knownPaymentMode === "search" ? (
             <div className="space-y-3">
               <Input
@@ -2494,6 +2514,19 @@ export default function ReconciliationDepositsPage() {
                     setKnownPaymentAmount(event.target.value)
                   }
                 />
+                {knownPaymentFor?.intent === "partial" ? (
+                  <p
+                    className={`text-xs ${
+                      knownPaymentAmount.trim() && !knownPaymentAmountIsValid
+                        ? "text-destructive"
+                        : "text-muted-foreground"
+                    }`}
+                  >
+                    Enter an amount greater than $0 and no more than{" "}
+                    {formatCurrency(knownPaymentFor.remainder)}. The rest will
+                    remain unresolved.
+                  </p>
+                ) : null}
               </div>
               <div className="space-y-1">
                 <label
@@ -2515,10 +2548,12 @@ export default function ReconciliationDepositsPage() {
             <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
             {knownPaymentMode === "create" ? (
               <AlertDialogAction
-                disabled={busy || !knownPaymentAmount.trim()}
+                disabled={busy || !knownPaymentAmountIsValid}
                 onClick={() => void handleCreateKnownPayment()}
               >
-                Create payment
+                {knownPaymentFor?.intent === "partial"
+                  ? "Code payment"
+                  : "Create payment"}
               </AlertDialogAction>
             ) : null}
           </AlertDialogFooter>
@@ -2688,7 +2723,7 @@ export default function ReconciliationDepositsPage() {
         }}
         busy={busy}
         onPick={(gift) => void handleColumnGiftPick(gift)}
-        awaitingEvidence={columnGiftFor?.mode === "browse_unlinked"}
+        unlinkedOnly={columnGiftFor?.mode === "browse_unlinked"}
         title={
           columnGiftFor?.mode === "browse_unlinked"
             ? "Browse unlinked CRM gifts"
@@ -2718,7 +2753,7 @@ export default function ReconciliationDepositsPage() {
         }}
         onPick={(gift) => void handleSinglePaymentPick(gift)}
         busy={busy}
-        awaitingEvidence={singlePaymentFor?.mode === "browse_unlinked"}
+        unlinkedOnly={singlePaymentFor?.mode === "browse_unlinked"}
         title={
           singlePaymentFor?.mode === "browse_unlinked"
             ? "Browse unlinked CRM gifts"

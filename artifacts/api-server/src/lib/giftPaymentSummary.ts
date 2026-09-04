@@ -138,6 +138,23 @@ export function hasLinkedPaymentForGift(
 }
 
 /**
+ * Whether any canonical payment unit currently points at this gift.
+ *
+ * This is intentionally broader than `hasLinkedPaymentForGift`: manually
+ * composed bank payments may not yet have QuickBooks, Stripe, or Donorbox
+ * source evidence, but they still own the gift and must not appear in an
+ * "unlinked gifts" picker.
+ */
+export function hasCanonicalPaymentUnitForGift(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1 FROM payment_units pu_owner
+    WHERE pu_owner.gift_id = ${giftIdSql}
+  )`;
+}
+
+/**
  * Read-model projection of the settled gross: the settled amount when ANY
  * payment is linked, else NULL (so the UI can distinguish "nothing landed yet"
  * from "settled $0"). Matches GiftOrPayment.derivedSettledAmount (nullable).

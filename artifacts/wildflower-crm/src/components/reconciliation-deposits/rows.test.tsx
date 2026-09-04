@@ -1,6 +1,6 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkbenchDeposit } from "@workspace/api-client-react";
 import {
   DEPOSIT_LENSES,
@@ -212,10 +212,12 @@ describe("deposit workbench rows", () => {
   }
 
   it("puts unresolved-composition work in a three-dot menu with distinct evidence and CRM actions", () => {
-    render(makeDeposit(), { isFinanceOrAdmin: true });
+    const openCodePartialPayment = vi.fn();
+    render(makeDeposit(), { isFinanceOrAdmin: true, openCodePartialPayment });
     const menu = openMenuContaining("Code entire deposit as a single payment…");
     expect(menu).not.toBeNull();
     for (const label of [
+      "Code part of remainder as a payment…",
       "Search CRM gifts to link…",
       "Search CRM pledges to link…",
       "Browse unlinked CRM gifts…",
@@ -225,6 +227,19 @@ describe("deposit workbench rows", () => {
     ]) {
       expect(menuItem(menu as HTMLElement, label), label).not.toBeNull();
     }
+    const labels = Array.from(
+      (menu as HTMLElement).querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).map((item) => item.textContent ?? "");
+    expect(labels.indexOf("Code part of remainder as a payment…")).toBe(
+      labels.indexOf("Code entire deposit as a single payment…") + 1,
+    );
+    act(() =>
+      menuItem(
+        menu as HTMLElement,
+        "Code part of remainder as a payment…",
+      )?.click(),
+    );
+    expect(openCodePartialPayment).toHaveBeenCalledWith("test", "100.00");
   });
 
   it("labels (never hides) blocked gifts-column actions when no evidence anchor exists", () => {
