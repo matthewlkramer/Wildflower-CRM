@@ -22,6 +22,7 @@ export const ListEmailProposalsQueryParams = zod.object({
   "allMailboxes": zod.coerce.boolean().optional().describe('Admin-only: when true, list proposals across ALL synced mailboxes (each row carries mailboxUserName). Ignored for non-admins — they only ever see their own mailbox.'),
   "personId": zod.coerce.string().optional().describe('Filter to proposals targeting this person.'),
   "organizationId": zod.coerce.string().optional().describe('Filter to proposals targeting this funder.'),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include proposals targeting people who hold a current role at that organization.'),
   "limit": zod.coerce.number().min(1).max(listEmailProposalsQueryLimitMax).default(listEmailProposalsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listEmailProposalsQueryPageDefault)
 })

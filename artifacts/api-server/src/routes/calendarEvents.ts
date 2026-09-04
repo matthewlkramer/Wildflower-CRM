@@ -12,9 +12,11 @@ import {
   asyncHandler,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 
 /**
  * Read-only surface over the synced Google Calendar events. Same
@@ -63,7 +65,13 @@ router.get(
     }
     if (q.organizationId) {
       filters.push(
-        sql`${calendarEvents.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityArrayScope(
+              q.organizationId,
+              sql`${calendarEvents.matchedOrganizationIds}`,
+              sql`${calendarEvents.matchedPersonIds}`,
+            )
+          : sql`${calendarEvents.matchedOrganizationIds} @> ARRAY[${q.organizationId}]::text[]`,
       );
     }
     if (q.householdId) {

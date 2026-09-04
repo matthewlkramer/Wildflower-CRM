@@ -45,7 +45,7 @@ export function GiftSearchDialog({
   title = "Search for a gift",
   description = "Find any existing gift by donor, amount, or date.",
   busy = false,
-  awaitingEvidence = false,
+  unlinkedOnly = false,
   footnote,
   extraAction,
 }: {
@@ -58,8 +58,8 @@ export function GiftSearchDialog({
   description?: string;
   /** Disable picking while a mutation from a prior pick is in flight. */
   busy?: boolean;
-  /** Limit results to CRM gifts that do not yet have funding evidence. */
-  awaitingEvidence?: boolean;
+  /** Limit results to CRM gifts with no canonical payment-unit link. */
+  unlinkedOnly?: boolean;
   /** Optional helper line under the results (e.g. an action reminder). */
   footnote?: ReactNode;
   /** Optional alternative to picking a gift (e.g. "record without a gift"). */
@@ -100,11 +100,11 @@ export function GiftSearchDialog({
       ...(debouncedAmount.trim() ? { amount: debouncedAmount.trim() } : {}),
       ...(dateAfter ? { dateAfter } : {}),
       ...(dateBefore ? { dateBefore } : {}),
-      ...(awaitingEvidence ? { awaitingEvidence: true } : {}),
+      ...(unlinkedOnly ? { unlinkedToPaymentUnit: true } : {}),
       sort: "date_desc",
       limit: 25,
     }),
-    [awaitingEvidence, debouncedText, debouncedAmount, dateAfter, dateBefore],
+    [unlinkedOnly, debouncedText, debouncedAmount, dateAfter, dateBefore],
   );
 
   const { data, isFetching } = useListGiftsAndPayments(params, {
@@ -174,36 +174,57 @@ export function GiftSearchDialog({
               No gifts match — adjust the search above.
             </p>
           ) : (
-            rows.map((g) => (
-              <button
-                key={g.id}
-                type="button"
-                disabled={busy}
-                onClick={() => onPick(g)}
-                className={cn(
-                  "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                  busy ? "cursor-not-allowed opacity-50" : "hover:bg-muted",
-                )}
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">
-                    {giftDonorName(g)}
+            rows.map((g) => {
+              const alreadyLinked = g.hasPaymentEvidence === true;
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onPick(g)}
+                  data-testid={`gift-search-result-${g.id}`}
+                  data-already-linked={alreadyLinked ? "true" : "false"}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                    alreadyLinked &&
+                      "border-dashed bg-muted/50 text-muted-foreground",
+                    busy
+                      ? "cursor-not-allowed opacity-50"
+                      : alreadyLinked
+                        ? "hover:bg-muted"
+                        : "hover:bg-muted/70",
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span
+                      className={cn(
+                        "block truncate font-medium",
+                        alreadyLinked && "text-muted-foreground",
+                      )}
+                    >
+                      {giftDonorName(g)}
+                    </span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {[
+                        g.dateReceived ? formatDateShort(g.dateReceived) : null,
+                        g.type ? formatEnum(g.type) : null,
+                        g.name && g.name !== giftDonorName(g) ? g.name : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ") || "Gift"}
+                    </span>
+                    {alreadyLinked ? (
+                      <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                        Already linked — selecting will disconnect and move it
+                      </span>
+                    ) : null}
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {[
-                      g.dateReceived ? formatDateShort(g.dateReceived) : null,
-                      g.type ? formatEnum(g.type) : null,
-                      g.name && g.name !== giftDonorName(g) ? g.name : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "Gift"}
+                  <span className="shrink-0 tabular-nums text-muted-foreground">
+                    {formatCurrency(g.amount ?? "0")}
                   </span>
-                </span>
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {formatCurrency(g.amount ?? "0")}
-                </span>
-              </button>
-            ))
+                </button>
+              );
+            })
           )}
         </div>
         {extraAction && (

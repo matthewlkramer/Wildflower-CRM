@@ -66,6 +66,9 @@ unverified and confirm against code before relying on it.
 - [`integrations/data-sources.md`](integrations/data-sources.md) — data
   provenance, sync ownership, and operational resync procedures (Copper import
   is closed; schools mirror; QuickBooks/Stripe/Donorbox/Gmail/Flodesk syncs).
+- [`grant-leads.md`](grant-leads.md) — **ratified** inclusion, grouping, and
+  source-email provenance rules for the external grant-opportunity discovery
+  queue.
 
 ## Rules
 

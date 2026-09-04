@@ -20,6 +20,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  EMPTY_LINKS,
+  EntityLinksEditor,
+  type EntityLinks,
+} from "@/components/entity-links-editor";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,7 +43,7 @@ const KIND_OPTIONS: { value: InteractionKind; label: string }[] = [
 interface Props {
   // Pre-fill exactly one of these so the dialog can be triggered from a
   // detail page and the interaction is automatically linked to that
-  // entity. Leaving them all undefined gives an unattached interaction.
+  // entity. A global trigger requires the user to choose at least one link.
   prefillPersonId?: string;
   prefillFunderId?: string;
   prefillHouseholdId?: string;
@@ -71,6 +76,7 @@ export function LogInteractionDialog({
   const [notes, setNotes] = useState("");
   const [duration, setDuration] = useState("");
   const [location, setLocation] = useState("");
+  const [links, setLinks] = useState<EntityLinks>({ ...EMPTY_LINKS });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const create = useCreateInteraction({
@@ -85,6 +91,7 @@ export function LogInteractionDialog({
         setNotes("");
         setDuration("");
         setLocation("");
+        setLinks({ ...EMPTY_LINKS });
         setOccurredAt(nowForDatetimeLocal());
       },
       onError: (err: unknown) => {
@@ -97,13 +104,29 @@ export function LogInteractionDialog({
     },
   });
 
-  const canSubmit = summary.trim().length > 0 && occurredAt.length > 0;
+  const pinned: Partial<EntityLinks> = {
+    personIds: prefillPersonId ? [prefillPersonId] : [],
+    organizationIds: prefillFunderId ? [prefillFunderId] : [],
+    householdIds: prefillHouseholdId ? [prefillHouseholdId] : [],
+  };
+  const hasRelationship =
+    !!prefillPersonId ||
+    !!prefillFunderId ||
+    !!prefillHouseholdId ||
+    links.personIds.length > 0 ||
+    links.organizationIds.length > 0 ||
+    links.householdIds.length > 0;
+  const canSubmit =
+    summary.trim().length > 0 && occurredAt.length > 0 && hasRelationship;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!create.isPending) setOpen(v);
+        if (!create.isPending) {
+          if (v) setLinks({ ...EMPTY_LINKS });
+          setOpen(v);
+        }
       }}
     >
       <DialogTrigger asChild>
@@ -141,11 +164,18 @@ export function LogInteractionDialog({
                 durationMinutes: trimmedDuration
                   ? Number(trimmedDuration)
                   : undefined,
-                personIds: prefillPersonId ? [prefillPersonId] : undefined,
-                organizationIds: prefillFunderId ? [prefillFunderId] : undefined,
-                householdIds: prefillHouseholdId
-                  ? [prefillHouseholdId]
-                  : undefined,
+                personIds: [
+                  ...(prefillPersonId ? [prefillPersonId] : []),
+                  ...links.personIds,
+                ],
+                organizationIds: [
+                  ...(prefillFunderId ? [prefillFunderId] : []),
+                  ...links.organizationIds,
+                ],
+                householdIds: [
+                  ...(prefillHouseholdId ? [prefillHouseholdId] : []),
+                  ...links.householdIds,
+                ],
               },
             });
           }}
@@ -223,6 +253,20 @@ export function LogInteractionDialog({
               rows={4}
               data-testid="input-interaction-notes"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Linked records</Label>
+            <EntityLinksEditor
+              value={links}
+              onChange={setLinks}
+              pinned={pinned}
+              allowedTypes={["person", "organization", "household"]}
+            />
+            {!hasRelationship ? (
+              <p className="text-xs text-muted-foreground">
+                Link at least one person, organization, or household so the interaction appears in its activity feed.
+              </p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button

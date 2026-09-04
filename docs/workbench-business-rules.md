@@ -79,6 +79,20 @@ belong on the individual accounting card rather than acting on the first record
 through a column-level menu. Exclusion remains a component-level decision in
 Composition, not an accounting-card action.
 
+Broad CRM gift search keeps already-linked gifts selectable because a reviewer
+may intentionally move a gift to the current payment. Those results must be
+visibly muted and labeled as already linked before selection; selection then
+uses the existing disconnect-and-move confirmation. “Browse unlinked CRM
+gifts” is the stricter subset: it returns only gifts for which no
+`payment_units.gift_id` pointer exists. Missing downstream QuickBooks evidence
+does not make an already-owned gift unlinked.
+
+An unresolved remainder can be decomposed incrementally. In addition to coding
+the whole remainder as one payment, a reviewer may code a positive amount less
+than or equal to the remainder as a new payment component. Any balance stays
+unresolved so another gift, reimbursement, research flag, or exclusion can be
+recorded separately.
+
 QBO is downstream documentation. Typed `source_links` claims and
 `deposit_qbo_components` remain the authorities for QBO ties; gift/allocation
 ↔ QBO is derived transitively through a component. No direct gift↔QBO link or

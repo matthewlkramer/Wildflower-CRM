@@ -2249,6 +2249,8 @@ export interface GiftOrPayment {
   readonly derivedSettledAmount?: string | null;
   /** Total processor fees withheld across the gift's linked payments (Stripe + Donorbox; QuickBooks carries none). Donor is credited the GROSS `amount`; net = derivedSettledAmount − derivedProcessorFee. Null when no fee-bearing payment is linked. */
   readonly derivedProcessorFee?: string | null;
+  /** True when any canonical payment unit currently points to this gift. Broad reconciliation searches keep such gifts visible and label them as already linked, while Browse unlinked CRM gifts excludes them. This is independent of whether downstream QuickBooks documentation is present. */
+  readonly hasPaymentEvidence?: boolean;
   organizationId?: string | null;
   individualGiverPersonId?: string | null;
   householdId?: string | null;
@@ -9937,6 +9939,10 @@ personId?: string;
  */
 organizationId?: string;
 /**
+ * With organizationId, also include proposals targeting people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
+/**
  * @minimum 1
  * @maximum 10000
  */
@@ -10750,6 +10756,10 @@ quickbooksTie?: ListGiftsAndPaymentsQuickbooksTieItem[];
  */
 awaitingEvidence?: boolean;
 /**
+ * When true, list only gifts with no canonical `payment_units.gift_id` owner. This powers Browse unlinked CRM gifts and is intentionally independent of QuickBooks tie status: a gift linked to bank or Stripe payment evidence but still missing downstream QBO documentation is linked and must not appear here.
+ */
+unlinkedToPaymentUnit?: boolean;
+/**
  * Donor-lifecycle worklist preset ("what hasn't been done yet"), the
 canonical definition shared with the dashboard worklist counts:
   missing_allocations — gift headers with no gift_allocations rows
@@ -10921,6 +10931,10 @@ export type ListInteractionsParams = {
 search?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include interactions linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 ownerUserId?: string[];
 kind?: InteractionKind[];
@@ -10962,6 +10976,10 @@ export type ListMediaMentionsParams = {
 search?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include media mentions linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 /**
  * Filter to pinned (true) or unpinned (false) mentions.
  */
@@ -11024,6 +11042,10 @@ page?: PageParameter;
 export type ListMeetingNotesParams = {
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include meeting notes linked to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 creatorUserId?: string;
 /**
@@ -11079,6 +11101,10 @@ search?: string;
 mailboxUserId?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include email messages matched to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 /**
  * @minimum 1
@@ -11096,6 +11122,10 @@ search?: string;
 calendarUserId?: string;
 personId?: string;
 organizationId?: string;
+/**
+ * With organizationId, also include calendar events matched to people who hold a current role at that organization.
+ */
+includeLinkedPeople?: boolean;
 householdId?: string;
 /**
  * Only events with startAt >= this timestamp.

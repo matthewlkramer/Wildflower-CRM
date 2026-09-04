@@ -19,6 +19,7 @@ export const ListMediaMentionsQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include media mentions linked to people who hold a current role at that organization.'),
   "pinned": zod.coerce.boolean().optional().describe('Filter to pinned (true) or unpinned (false) mentions.'),
   "limit": zod.coerce.number().min(1).max(listMediaMentionsQueryLimitMax).default(listMediaMentionsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listMediaMentionsQueryPageDefault)

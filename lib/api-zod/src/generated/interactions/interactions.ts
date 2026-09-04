@@ -19,6 +19,7 @@ export const ListInteractionsQueryParams = zod.object({
   "search": zod.coerce.string().optional(),
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include interactions linked to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "ownerUserId": zod.array(zod.coerce.string()).optional(),
   "kind": zod.array(zod.enum(['meeting', 'phone_call', 'video_call', 'conference', 'other'])).optional(),

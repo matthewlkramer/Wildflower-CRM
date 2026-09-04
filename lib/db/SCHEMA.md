@@ -437,7 +437,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   (`signal_type`, `review_phase`); partial uniques enforce at most one
   `active` and one `draft` per pair. The action-proposing core prompt is
   hard-coded in the API server and never stored or exposed here.
-- `grant_leads` — team-shared grant-opportunity queue extracted from email.
+- `grant_leads` — team-shared, semantically grouped queue of open external
+  grant opportunities extracted from email; `grant_lead_sightings` retains
+  every contributing source email.
 - `tasks`, `task_proposals`, `task_suggestion_state` — tasks and AI
   next-step suggestions.
 - `media_mentions`, `media_ingest_state` — GDELT press coverage.

@@ -252,13 +252,23 @@ export function EntityLinksEditor({
   value,
   onChange,
   pinned,
+  allowedTypes,
 }: {
   value: EntityLinks;
   onChange: (next: EntityLinks) => void;
   /** IDs that came from page context — shown but not removable. */
   pinned?: Partial<EntityLinks>;
+  /** Restrict the picker when the target record supports only some link kinds. */
+  allowedTypes?: ReadonlyArray<EntityType>;
 }) {
-  const types: EntityType[] = ["person", "organization", "household", "opportunity", "gift", "grant-lead"];
+  const types: ReadonlyArray<EntityType> = allowedTypes ?? [
+    "person",
+    "organization",
+    "household",
+    "opportunity",
+    "gift",
+    "grant-lead",
+  ];
   const pin = pinned ?? {};
   function add(type: EntityType, id: string) {
     const field = FieldOf(type);

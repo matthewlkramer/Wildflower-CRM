@@ -37,6 +37,7 @@ import {
   parseBounce,
   parseEmailSignature,
 } from "./intelDetectors";
+import { buildGrantLeadDedupeKey } from "./grantLeadIdentity";
 
 /**
  * Orchestrates the per-message email-intelligence pass. Pure detectors
@@ -324,62 +325,7 @@ async function handleGrants(args: {
   if (items.length === 0) return;
 
   for (const it of items) {
-    // Dedupe by (funder + deadline + title-prefix). Same RFP showing
-    // up in multiple newsletters or successive weekly digests will
-    // collide on this key and only land once in the pending queue.
-    // Title is normalized to lowercase + first 60 chars to absorb
-    // small wording drift between digest sources.
-    //
-    // When funder AND deadline both fail to parse, the key would
-    // otherwise be `grant:?:?:<title>` for every such item and
-    // unrelated opportunities sharing a generic title prefix (e.g.
-    // "Request for proposals") would silently collide. Mix in the
-    // URL host+path (or a snippet hash) as a discriminator to keep
-    // distinct opportunities distinct.
-    // Dedupe strategy: when the opportunity has a URL, the URL's
-    // host+path is the most stable cross-message identifier (titles
-    // and funder names drift between weekly newsletter copies and
-    // between digest sources, but the application link almost never
-    // does). Otherwise fall back to funderName+deadline+title, with
-    // a snippet hash for the low-confidence case where none of those
-    // parse out and a generic title would otherwise collide unrelated
-    // opportunities.
-    let dedupeKey: string;
-    if (it.url) {
-      let urlKey = it.url.toLowerCase().slice(0, 120);
-      try {
-        const u = new URL(it.url);
-        // Drop tracking query params — the same RFP can show up with
-        // different utm_* / mc_eid / safelinks wrappers and we want
-        // those to collide on one proposal.
-        urlKey = `${u.host}${u.pathname}`.toLowerCase().slice(0, 120);
-      } catch {
-        // Bad URL — fall back to the raw string we already have.
-      }
-      dedupeKey = `grant:url:${urlKey}`;
-    } else {
-      const titleKey = it.title.toLowerCase().replace(/\s+/g, " ").slice(0, 60);
-      const lowConfidence = !it.funderName && !it.deadline;
-      let discriminator = "";
-      if (lowConfidence) {
-        // Snippet hash — stable across digest reruns, distinct
-        // across unrelated opportunities. Cheap FNV-1a.
-        let h = 2166136261;
-        const src = it.snippet.toLowerCase();
-        for (let i = 0; i < src.length; i++) {
-          h ^= src.charCodeAt(i);
-          h = Math.imul(h, 16777619);
-        }
-        discriminator = `s${(h >>> 0).toString(36)}`;
-      }
-      dedupeKey = [
-        "grant",
-        it.funderName?.toLowerCase() ?? "?",
-        it.deadline ?? "?",
-        titleKey,
-        discriminator,
-      ].join(":");
-    }
+    const dedupeKey = buildGrantLeadDedupeKey(it, args.fromEmail);
 
     // Try to attach to a CRM organization if the parsed funder name matches
     // one we already know. Soft match — accept either direction of
@@ -424,7 +370,19 @@ async function handleGrants(args: {
          })}::jsonb,
          ${now}, ${now})
       ON CONFLICT (dedupe_key) WHERE status NOT IN ('archived', 'converted')
-      DO UPDATE SET updated_at = EXCLUDED.updated_at
+      DO UPDATE SET
+        updated_at = EXCLUDED.updated_at,
+        funder_name = COALESCE(grant_leads.funder_name, EXCLUDED.funder_name),
+        target_organization_id = COALESCE(grant_leads.target_organization_id, EXCLUDED.target_organization_id),
+        deadline = COALESCE(EXCLUDED.deadline, grant_leads.deadline),
+        amount = COALESCE(EXCLUDED.amount, grant_leads.amount),
+        url = COALESCE(EXCLUDED.url, grant_leads.url),
+        snippet = CASE
+          WHEN length(COALESCE(EXCLUDED.snippet, '')) > length(COALESCE(grant_leads.snippet, ''))
+          THEN EXCLUDED.snippet
+          ELSE grant_leads.snippet
+        END,
+        payload = grant_leads.payload || EXCLUDED.payload
       RETURNING id
     `);
 

@@ -15,9 +15,11 @@ import {
   newId,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -49,8 +51,17 @@ router.get(
     }
     if (q.personId)
       filters.push(sql`${mediaMentions.personIds} @> ARRAY[${q.personId}]::text[]`);
-    if (q.organizationId)
-      filters.push(sql`${mediaMentions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`);
+    if (q.organizationId) {
+      filters.push(
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityArrayScope(
+              q.organizationId,
+              sql`${mediaMentions.organizationIds}`,
+              sql`${mediaMentions.personIds}`,
+            )
+          : sql`${mediaMentions.organizationIds} @> ARRAY[${q.organizationId}]::text[]`,
+      );
+    }
     if (q.pinned !== undefined) filters.push(eq(mediaMentions.pinned, q.pinned));
     const where = and(...filters);
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([

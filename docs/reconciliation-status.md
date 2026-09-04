@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-09-03
+last_verified: 2026-09-04
 verification_basis: >
   Bank-spine landing and relationship-authority claims verified against code
   on 2026-07-23; unit→gift pointer cutover status re-verified against code on
@@ -36,7 +36,12 @@ canonical boundary first (see `replit.md`).
 The current workbench presentation reserves cards for evidence records.
 Unresolved composition and missing gifts render as plain text with column
 action menus; record-specific QuickBooks detail, relationship, exclusion, and
-correction actions render on the individual accounting card.
+correction actions render on the individual accounting card. Broad gift search
+marks already-owned gifts but leaves them selectable for confirmed
+reassignment; “Browse unlinked CRM gifts” filters on the canonical
+`payment_units.gift_id` pointer rather than the downstream QBO tie. Composition
+can code either the entire unresolved remainder or a partial payment component,
+leaving any balance unresolved.
 
 ## Bank-spine cutover — landed
 

@@ -107,6 +107,8 @@ interface Props {
   personId?: string;
   organizationId?: string;
   householdId?: string;
+  /** On organization pages, include relationship activity for current linked people. */
+  includeLinkedPeople?: boolean;
   // Scope for notes & tasks. Defaults to the relationship scope, but pages
   // like opportunity/gift override it: their activity is the donor's, while
   // notes/tasks link to the opportunity/gift itself. API list filters AND
@@ -257,6 +259,7 @@ export function UnifiedActivityFeed({
   personId,
   organizationId,
   householdId,
+  includeLinkedPeople = false,
   notesContext,
   hideTasks = false,
 }: Props) {
@@ -274,7 +277,13 @@ export function UnifiedActivityFeed({
   // person, funder, or household — never to an opportunity or gift. Gate
   // those queries so opportunity/gift pages don't fetch global lists.
   const relationScoped = !!(personId || organizationId || householdId);
-  const relParams = { personId, organizationId, householdId, limit };
+  const relParams = {
+    personId,
+    organizationId,
+    householdId,
+    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    limit,
+  };
 
   const ints = useListInteractions(relParams, {
     query: {
@@ -306,6 +315,7 @@ export function UnifiedActivityFeed({
   const proposalParams = {
     personId,
     organizationId,
+    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
     limit,
     status: "pending" as const,
   };
@@ -337,7 +347,12 @@ export function UnifiedActivityFeed({
 
   // Media mentions only ever link to a person or funder.
   const mediaEnabled = !!(personId || organizationId);
-  const mediaParams = { personId, organizationId, limit };
+  const mediaParams = {
+    personId,
+    organizationId,
+    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    limit,
+  };
   const media = useListMediaMentions(mediaParams, {
     query: {
       enabled: mediaEnabled,

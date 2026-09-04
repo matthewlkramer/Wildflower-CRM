@@ -31,6 +31,7 @@ import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
 import { invalidateWildflowerUpdateNoteCache } from "../lib/wildflowerUpdatesNote";
 import { emailMessages, giftsAndPayments } from "@workspace/db/schema";
 import { proposeActionsForProposal } from "../lib/proposeActions";
+import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
 
 /**
  * Email-intelligence proposal queue.
@@ -163,7 +164,17 @@ router.get(
     // are linked to a single target person OR funder (households aren't
     // a target type in the schema), so these filters are independent.
     if (q.personId) filters.push(eq(emailProposals.targetPersonId, q.personId));
-    if (q.organizationId) filters.push(eq(emailProposals.targetOrganizationId, q.organizationId));
+    if (q.organizationId) {
+      filters.push(
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityScalarScope(
+              q.organizationId,
+              sql`${emailProposals.targetOrganizationId}`,
+              sql`${emailProposals.targetPersonId}`,
+            )
+          : eq(emailProposals.targetOrganizationId, q.organizationId),
+      );
+    }
     const where = and(...filters);
 
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([

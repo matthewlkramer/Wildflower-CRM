@@ -21,6 +21,7 @@ export const ListCalendarEventsQueryParams = zod.object({
   "calendarUserId": zod.coerce.string().optional(),
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include calendar events matched to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "startAfter": zod.coerce.string().datetime({}).optional().describe('Only events with startAt >= this timestamp.'),
   "startBefore": zod.coerce.string().datetime({}).optional().describe('Only events with startAt < this timestamp.'),

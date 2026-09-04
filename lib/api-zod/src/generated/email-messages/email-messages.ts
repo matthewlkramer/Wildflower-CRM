@@ -20,6 +20,7 @@ export const ListEmailMessagesQueryParams = zod.object({
   "mailboxUserId": zod.coerce.string().optional(),
   "personId": zod.coerce.string().optional(),
   "organizationId": zod.coerce.string().optional(),
+  "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include email messages matched to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "limit": zod.coerce.number().min(1).max(listEmailMessagesQueryLimitMax).default(listEmailMessagesQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listEmailMessagesQueryPageDefault)

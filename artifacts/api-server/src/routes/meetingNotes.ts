@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { meetingNotes, tasks, users } from "@workspace/db/schema";
 import type { MeetingActionItem } from "@workspace/db/schema";
-import { and, desc, count, eq, type SQL } from "drizzle-orm";
+import { and, desc, count, eq, sql, type SQL } from "drizzle-orm";
 import {
   ListMeetingNotesQueryParams,
   CreateMeetingNoteBodyRefined,
@@ -18,10 +18,12 @@ import {
   newId,
   notFound,
   paramId,
+  parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
 import { summarizeMeeting } from "../lib/summarizeMeeting";
+import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -34,7 +36,17 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
     if (q.personId) filters.push(eq(meetingNotes.personId, q.personId));
-    if (q.organizationId) filters.push(eq(meetingNotes.organizationId, q.organizationId));
+    if (q.organizationId) {
+      filters.push(
+        parseBoolQuery(req, "includeLinkedPeople") === true
+          ? organizationActivityScalarScope(
+              q.organizationId,
+              sql`${meetingNotes.organizationId}`,
+              sql`${meetingNotes.personId}`,
+            )
+          : eq(meetingNotes.organizationId, q.organizationId),
+      );
+    }
     if (q.householdId) filters.push(eq(meetingNotes.householdId, q.householdId));
     if (q.creatorUserId) filters.push(eq(meetingNotes.creatorUserId, q.creatorUserId));
     const where = filters.length ? and(...filters) : undefined;

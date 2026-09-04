@@ -1046,6 +1046,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             />
             <UnifiedActivityFeed
               organizationId={org.id}
+              includeLinkedPeople
               notesContext={{
                 organizationId: org.id,
                 defaultLinks: funderDefaultLinks,

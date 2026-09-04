@@ -25,6 +25,8 @@ const RUN = `giftsearchtok_${Date.now()}`;
 const ADMIN_ID = `${RUN}_admin`;
 const HH_ID = `${RUN}_hh`;
 const GIFT_ID = `${RUN}_gift`;
+const LINKED_GIFT_ID = `${RUN}_linked_gift`;
+const PAYMENT_UNIT_ID = `${RUN}_payment_unit`;
 const OPP_ID = `${RUN}_opp`;
 // The connector word "and" is exactly what the typed search omits.
 const HH_NAME = `Alicia ${RUN} and Roberto Cul${RUN}`;
@@ -53,6 +55,7 @@ let schema: {
   users: Db["users"];
   households: Db["households"];
   giftsAndPayments: Db["giftsAndPayments"];
+  paymentUnits: Db["paymentUnits"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
@@ -62,6 +65,17 @@ let baseUrl = "";
 async function search(term: string): Promise<Array<Record<string, unknown>>> {
   const res = await fetch(
     `${baseUrl}/api/gifts-and-payments?search=${encodeURIComponent(term)}&limit=25`,
+  );
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { data: Array<Record<string, unknown>> };
+  return body.data;
+}
+
+async function searchUnlinked(
+  term: string,
+): Promise<Array<Record<string, unknown>>> {
+  const res = await fetch(
+    `${baseUrl}/api/gifts-and-payments?search=${encodeURIComponent(term)}&unlinkedToPaymentUnit=true&limit=25`,
   );
   expect(res.status).toBe(200);
   const body = (await res.json()) as { data: Array<Record<string, unknown>> };
@@ -88,6 +102,7 @@ beforeAll(async () => {
     users: dbMod.users,
     households: dbMod.households,
     giftsAndPayments: dbMod.giftsAndPayments,
+    paymentUnits: dbMod.paymentUnits,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
   };
   eqFn = drizzle.eq;
@@ -106,6 +121,23 @@ beforeAll(async () => {
     householdId: HH_ID,
     amount: "100.00",
     dateReceived: "2099-01-08",
+  });
+  await db.insert(schema.giftsAndPayments).values({
+    id: LINKED_GIFT_ID,
+    name: `Canonical-linked gift ${RUN}`,
+    householdId: HH_ID,
+    amount: "200.00",
+    dateReceived: "2099-01-09",
+  });
+  // Deliberately no QBO / Stripe / Donorbox source pointer. A manually
+  // composed bank payment still owns this gift and therefore makes it linked.
+  await db.insert(schema.paymentUnits).values({
+    id: PAYMENT_UNIT_ID,
+    kind: "other",
+    giftId: LINKED_GIFT_ID,
+    grossAmount: "200.00",
+    netAmount: "200.00",
+    receivedDate: "2099-01-09",
   });
   await db.insert(schema.opportunitiesAndPledges).values({
     id: OPP_ID,
@@ -127,8 +159,14 @@ afterAll(async () => {
   if (server)
     await new Promise<void>((resolve) => server.close(() => resolve()));
   await db
+    .delete(schema.paymentUnits)
+    .where(eqFn(schema.paymentUnits.id, PAYMENT_UNIT_ID));
+  await db
     .delete(schema.giftsAndPayments)
     .where(eqFn(schema.giftsAndPayments.id, GIFT_ID));
+  await db
+    .delete(schema.giftsAndPayments)
+    .where(eqFn(schema.giftsAndPayments.id, LINKED_GIFT_ID));
   await db
     .delete(schema.opportunitiesAndPledges)
     .where(eqFn(schema.opportunitiesAndPledges.id, OPP_ID));
@@ -162,6 +200,18 @@ describe.skipIf(!HAS_DB)("tokenized gift search", () => {
   it("a word may match the gift name while another matches the donor", async () => {
     const rows = await search(`Tokenized-search Roberto`);
     expect(rows.map((r) => r.id)).toContain(GIFT_ID);
+  });
+
+  it("marks an already-owned gift in broad search without hiding it", async () => {
+    const rows = await search(`Canonical-linked ${RUN}`);
+    const linked = rows.find((row) => row.id === LINKED_GIFT_ID);
+    expect(linked).toMatchObject({ hasPaymentEvidence: true });
+  });
+
+  it("Browse unlinked excludes any gift owned by a payment unit, even without QBO evidence", async () => {
+    const rows = await searchUnlinked(RUN);
+    expect(rows.map((row) => row.id)).toContain(GIFT_ID);
+    expect(rows.map((row) => row.id)).not.toContain(LINKED_GIFT_ID);
   });
 });
 

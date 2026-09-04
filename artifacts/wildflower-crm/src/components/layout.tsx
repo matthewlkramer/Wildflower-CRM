@@ -42,6 +42,7 @@ import { SidebarCollapsedContext } from "@/components/sidebar-collapsed-context"
 import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
 import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
 import { FeedbackDialog } from "@/components/feedback-dialog";
+import { LogInteractionDialog } from "@/components/log-interaction-dialog";
 
 type NavLink = {
   href: string;
@@ -69,11 +70,10 @@ const navItems: NavEntry[] = [
   { href: "/gifts", label: "Gifts", icon: Gift },
   { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
-  { href: "/grants-calendar", label: "Grants Calendar", icon: CalendarDays },
+  { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
 
   { section: "Engagement" },
   { href: "/moves", label: "Moves", icon: Activity },
-  { href: "/interactions", label: "Interactions", icon: MessageSquare },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
@@ -307,6 +307,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {/* Right: action buttons */}
           <div className="flex items-center gap-2">
             <FeedbackDialog />
+            <LogInteractionDialog compact />
             <AddMeetingNoteDialog unpinned />
             <CommandPaletteTrigger />
             <HeaderEntityFilter />
