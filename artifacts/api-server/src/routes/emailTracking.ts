@@ -33,6 +33,7 @@ import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
 import { GMAIL_SEND_SCOPE } from "../lib/googleOauth";
 import { buildRawMessage } from "../lib/mime";
 import { sendRawMessage, GmailSendError } from "../lib/gmailSend";
+import { shouldSuppressInboundTrackingMessage } from "../lib/emailTrackingSuppression";
 
 /**
  * Self-hosted backend for the vendored Magio email-tracking extension
@@ -899,6 +900,9 @@ router.get(
         matchedPersonIds: emailMessages.matchedPersonIds,
         matchedOrganizationIds: emailMessages.matchedOrganizationIds,
         matchedHouseholdIds: emailMessages.matchedHouseholdIds,
+        bodyText: emailMessages.bodyText,
+        bodyHtml: emailMessages.bodyHtml,
+        aiSummary: emailMessages.aiSummary,
       })
       .from(emailMessages)
       .innerJoin(users, eq(users.id, emailMessages.mailboxUserId))
@@ -922,11 +926,22 @@ router.get(
       .orderBy(desc(emailMessages.sentAt), asc(emailMessages.id));
 
     res.json({
-      data: rows.map((r) => ({
-        ...r,
-        receivedAt: r.receivedAt.toISOString(),
-        mailboxUserName: allMailboxes ? r.mailboxUserName : null,
-      })),
+      data: rows
+        .filter((row) => !shouldSuppressInboundTrackingMessage(row))
+        .map((r) => ({
+          id: r.id,
+          subject: r.subject,
+          snippet: r.snippet,
+          fromEmail: r.fromEmail,
+          receivedAt: r.receivedAt.toISOString(),
+          gmailThreadId: r.gmailThreadId,
+          mailboxUserId: r.mailboxUserId,
+          mailboxUserName: allMailboxes ? r.mailboxUserName : null,
+          isPrivate: r.isPrivate,
+          matchedPersonIds: r.matchedPersonIds,
+          matchedOrganizationIds: r.matchedOrganizationIds,
+          matchedHouseholdIds: r.matchedHouseholdIds,
+        })),
     });
   }),
 );
