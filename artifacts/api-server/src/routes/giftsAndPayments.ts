@@ -246,6 +246,7 @@ import {
   splitBlank,
 } from "../lib/helpers";
 import {
+  freezeErrorBody,
   resolveGiftFreeze,
   resolveGiftFreezeById,
   respondFrozen,
@@ -1502,6 +1503,17 @@ router.post(
             message: `gift(s) already archived, cannot merge: ${archived.join(", ")}`,
           },
         };
+      }
+
+      for (const row of rows) {
+        const freeze = await resolveGiftFreeze(row.dateReceived);
+        if (freeze.frozen) {
+          return {
+            ok: false,
+            status: 409,
+            json: freezeErrorBody(freeze),
+          };
+        }
       }
 
       if (deduplicate) {
