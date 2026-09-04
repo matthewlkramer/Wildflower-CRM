@@ -1,8 +1,11 @@
 import { db } from "@workspace/db";
 import { grantLeads } from "@workspace/db/schema";
-import { and, asc, eq, inArray, isNull, lt, or } from "drizzle-orm";
+import { and, asc, inArray, isNotNull, isNull, lt, ne, or } from "drizzle-orm";
 import { logger } from "./logger";
-import { summarizeGrantLeadById } from "./summarizeGrantLead";
+import {
+  GRANT_LEAD_SUMMARY_PROVENANCE,
+  summarizeGrantLeadById,
+} from "./summarizeGrantLead";
 
 const INTERVAL_MS = 15 * 60 * 1000;
 const RETRY_AFTER_MS = 60 * 60 * 1000;
@@ -16,10 +19,21 @@ async function summarizePendingGrantLeads(): Promise<void> {
     .where(
       and(
         inArray(grantLeads.status, ["new", "claimed"]),
-        isNull(grantLeads.aiSummary),
         or(
-          isNull(grantLeads.aiSummarizedAt),
-          lt(grantLeads.aiSummarizedAt, retryBefore),
+          and(
+            isNull(grantLeads.aiSummary),
+            or(
+              isNull(grantLeads.aiSummarizedAt),
+              lt(grantLeads.aiSummarizedAt, retryBefore),
+            ),
+          ),
+          and(
+            isNotNull(grantLeads.aiSummary),
+            or(
+              isNull(grantLeads.aiModel),
+              ne(grantLeads.aiModel, GRANT_LEAD_SUMMARY_PROVENANCE),
+            ),
+          ),
         ),
       ),
     )

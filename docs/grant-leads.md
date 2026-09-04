@@ -46,7 +46,10 @@ The source subject/extracted title remains stored as provenance and as the
 default name when a reviewer converts a lead. The headline beside the
 lightbulb is instead `grant_leads.ai_summary`: a one-sentence AI summary of the
 opportunity's purpose, eligibility, amount, and deadline using only facts that
-the extractor captured. New leads are summarized asynchronously. A bounded
+the extractor captured. It explicitly names the known funder and named program
+(or whichever of those is available), so a generic phrase such as "a funding
+opportunity" never replaces the opportunity's identity. New leads are
+summarized asynchronously. A versioned, bounded
 background sweep fills older or temporarily failed rows; while it is pending,
 the list says that the opportunity summary is being generated rather than
 falling back to an email subject.
