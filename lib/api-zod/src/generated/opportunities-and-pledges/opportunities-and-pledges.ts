@@ -1123,3 +1123,4 @@ export const FinalizePledgeResponse = zod.object({
   "paidAmount": zod.string(),
   "promptForReportingDeadlines": zod.boolean().nullish()
 })
+

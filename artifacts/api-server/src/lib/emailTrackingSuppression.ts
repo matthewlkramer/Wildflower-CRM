@@ -23,6 +23,18 @@ const MASS_MAIL_SIGNALS = [
   /\bemail preferences\b/i,
 ];
 
+const UNSUBSCRIBE_CONTROL_RE =
+  /(?:<a\b[^>]*href=["'][^"']*(?:unsubscrib|opt[-_]?out|email[-_]?preferences)[^"']*["'][^>]*>|<(?:a|button)\b[^>]*>[\s\S]{0,240}\b(?:unsubscribe|opt[- ]out|manage (?:email )?preferences)\b[\s\S]{0,80}<\/(?:a|button)>)/i;
+
+const UNSUBSCRIBE_URL_RE =
+  /\bhttps?:\/\/\S*(?:unsubscrib|opt[-_]?out|email[-_]?preferences)\S*/i;
+
+const MEETING_INVITE_SUBJECT_RE =
+  /^\s*(?:updated\s+)?(?:meeting|event|calendar)?\s*(?:invitation|invite):|^\s*(?:cancell?ed|accepted|declined|tentative):|\binvited you to (?:a |an )?(?:meeting|event)\b/i;
+
+const MEETING_INVITE_BODY_RE =
+  /\b(?:join (?:the )?(?:zoom|microsoft teams|google meet|webex) meeting|respond to this invitation|yes\s*[-–—]\s*maybe\s*[-–—]\s*no)\b/i;
+
 function stripQuotedText(text: string): string {
   const unquoted = text.split(
     /\n(?:on .{0,240} wrote:|from:\s.*\n|[-_]{2,}\s*original message\s*[-_]{2,})/i,
@@ -34,15 +46,14 @@ function stripQuotedText(text: string): string {
     .trim();
 }
 
-function currentHtmlText(html: string | null): string {
+function stripQuotedHtml(html: string | null): string {
   if (!html) return "";
-  const withoutQuotedThread = html
+  return html
     .replace(
       /<div[^>]*class=["'][^"']*gmail_quote[^"']*["'][^>]*>[\s\S]*$/i,
       "",
     )
     .replace(/<blockquote\b[^>]*>[\s\S]*$/i, "");
-  return stripQuotedText(stripHtml(withoutQuotedThread));
 }
 
 /**
@@ -53,9 +64,10 @@ function currentHtmlText(html: string | null): string {
 export function shouldSuppressInboundTrackingMessage(
   message: InboundTrackingMessage,
 ): boolean {
+  const currentHtml = stripQuotedHtml(message.bodyHtml);
   const readableBody =
     stripQuotedText(message.bodyText ?? "") ||
-    currentHtmlText(message.bodyHtml) ||
+    stripQuotedText(stripHtml(currentHtml)) ||
     stripQuotedText(message.snippet ?? "") ||
     message.aiSummary?.trim() ||
     "";
@@ -66,6 +78,14 @@ export function shouldSuppressInboundTrackingMessage(
   if (message.subject && MACHINE_SUBJECT_RE.test(message.subject)) return true;
 
   if (readableBody && MACHINE_BODY_RE.test(readableBody)) return true;
+  if (currentHtml && UNSUBSCRIBE_CONTROL_RE.test(currentHtml)) return true;
+  if (readableBody && UNSUBSCRIBE_URL_RE.test(readableBody)) return true;
+  if (
+    (message.subject && MEETING_INVITE_SUBJECT_RE.test(message.subject)) ||
+    (readableBody && MEETING_INVITE_BODY_RE.test(readableBody))
+  ) {
+    return true;
+  }
 
   // Requiring two footer signals avoids hiding a real person whose short
   // reply happens to contain a word such as "unsubscribe".

@@ -36,6 +36,7 @@ const IN_MAILBOX_OWNER = `${RUN}_in_mailbox_owner`;
 const IN_AUTO_REPLY = `${RUN}_in_auto_reply`;
 const IN_BULK_MESSAGE = `${RUN}_in_bulk_message`;
 const IN_MACHINE_MESSAGE = `${RUN}_in_machine_message`;
+const IN_MEETING_INVITE = `${RUN}_in_meeting_invite`;
 
 const auth = vi.hoisted(() => ({
   current: { id: "", role: "", email: "" } as {
@@ -109,6 +110,7 @@ beforeAll(async () => {
   await db.insert(dbMod.people).values({
     id: CRM_PERSON_ID,
     fullName: "Tracking Queue Contact",
+    priority: "top",
   });
   await db.insert(dbMod.emails).values([
     {
@@ -257,6 +259,9 @@ beforeAll(async () => {
       bodyText:
         "This is an automatically generated message. Please do not reply to this email.",
     }),
+    received(IN_MEETING_INVITE, OWNER_ID, `${RUN}_thread_in_meeting_invite`, 42, {
+      subject: "Invitation: Donor meeting",
+    }),
   ]);
 
   const { default: app } = await import("../app");
@@ -302,6 +307,7 @@ afterAll(async () => {
         IN_AUTO_REPLY,
         IN_BULK_MESSAGE,
         IN_MACHINE_MESSAGE,
+        IN_MEETING_INVITE,
       ]),
     );
   await db
@@ -360,6 +366,10 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     expect(inboundIds).not.toContain(IN_AUTO_REPLY);
     expect(inboundIds).not.toContain(IN_BULK_MESSAGE);
     expect(inboundIds).not.toContain(IN_MACHINE_MESSAGE);
+    expect(inboundIds).not.toContain(IN_MEETING_INVITE);
+    expect(
+      inbound.json.data.find((row) => row.id === IN_OWNER_WAIT)?.senderPriority,
+    ).toBe("top");
   }, 30_000);
 
   it("lets admins review non-private rows across mailboxes without exposing private source email", async () => {

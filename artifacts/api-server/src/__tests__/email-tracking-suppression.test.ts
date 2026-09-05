@@ -58,6 +58,59 @@ describe("shouldSuppressInboundTrackingMessage", () => {
     ).toBe(true);
   });
 
+  it("suppresses a single unsubscribe link even without other footer text", () => {
+    expect(
+      shouldSuppressInboundTrackingMessage({
+        ...directMessage,
+        bodyText: null,
+        bodyHtml:
+          '<p>September update</p><a href="https://mailer.example/unsubscribe/123">Unsubscribe</a>',
+      }),
+    ).toBe(true);
+  });
+
+  it("suppresses a plain-text unsubscribe link", () => {
+    expect(
+      shouldSuppressInboundTrackingMessage({
+        ...directMessage,
+        bodyText:
+          "September update\nhttps://mailer.example/preferences/unsubscribe/123",
+      }),
+    ).toBe(true);
+  });
+
+  it.each([
+    "Invitation: Donor meeting",
+    "Updated invitation: Site visit",
+    "Canceled: Weekly check-in",
+    "Accepted: Lunch",
+  ])("suppresses meeting notice %s", (subject) => {
+    expect(
+      shouldSuppressInboundTrackingMessage({ ...directMessage, subject }),
+    ).toBe(true);
+  });
+
+  it("suppresses a meeting invite identified from its body", () => {
+    expect(
+      shouldSuppressInboundTrackingMessage({
+        ...directMessage,
+        subject: "Thursday conversation",
+        bodyText: "Join the Zoom meeting at 2:00 p.m.",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not suppress a human reply because the quoted invitation remains below it", () => {
+    expect(
+      shouldSuppressInboundTrackingMessage({
+        ...directMessage,
+        subject: "Re: Thursday conversation",
+        bodyText:
+          "Yes, that works for me.\n\nOn Tuesday, Pat wrote:\nJoin the Zoom meeting at 2:00 p.m.",
+      }),
+    ).toBe(false);
+  });
+
   it("suppresses unmistakable computer-generated content", () => {
     expect(
       shouldSuppressInboundTrackingMessage({

@@ -94,6 +94,7 @@ export const ListTrackedInboundQueueResponse = zod.object({
   "gmailThreadId": zod.string().nullish(),
   "mailboxUserId": zod.string(),
   "mailboxUserName": zod.string().nullish(),
+  "senderPriority": zod.enum(['top', 'high', 'medium', 'low']).nullable(),
   "isPrivate": zod.boolean().optional(),
   "matchedPersonIds": zod.array(zod.string()).nullish(),
   "matchedOrganizationIds": zod.array(zod.string()).nullish(),
