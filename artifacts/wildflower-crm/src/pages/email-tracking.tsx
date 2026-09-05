@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetTrackedEmail,
@@ -9,6 +9,7 @@ import {
   useListTrackedInboundQueue,
   getListTrackedInboundQueueQueryKey,
   useResolveEmailTrackingQueueItem,
+  type Priority,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,6 +46,17 @@ import {
   Send,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import {
+  BLANK_VALUE,
+  MultiFilterSelect,
+} from "@/components/multi-filter-select";
+
+const PRIORITY_OPTIONS: readonly Priority[] = [
+  "top",
+  "high",
+  "medium",
+  "low",
+];
 
 /**
  * Lightweight UA parser — we don't enrich server-side (no ipinfo
@@ -196,6 +208,7 @@ export default function EmailTrackingPage() {
   const { toast } = useToast();
   const { data: me } = useGetCurrentUser();
   const [allMailboxes, setAllMailboxes] = useState(false);
+  const [inboundPriorities, setInboundPriorities] = useState<string[]>([]);
   const [openTrackedId, setOpenTrackedId] = useState<string | null>(null);
   const [openMessageId, setOpenMessageId] = useState<string | null>(null);
   const params = { allMailboxes };
@@ -232,7 +245,16 @@ export default function EmailTrackingPage() {
     },
   });
   const outboundRows = outbound.data?.data ?? [];
-  const inboundRows = inbound.data?.data ?? [];
+  const allInboundRows = inbound.data?.data ?? [];
+  const inboundRows = useMemo(
+    () =>
+      inboundPriorities.length === 0
+        ? allInboundRows
+        : allInboundRows.filter((row) =>
+            inboundPriorities.includes(row.senderPriority ?? BLANK_VALUE),
+          ),
+    [allInboundRows, inboundPriorities],
+  );
   const isAdmin = me?.role === "admin";
   const showMailbox = isAdmin && allMailboxes;
 
@@ -284,7 +306,11 @@ export default function EmailTrackingPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-semibold">{inboundRows.length}</div>
-            <p className="text-xs text-muted-foreground">at least 24 hours old</p>
+            <p className="text-xs text-muted-foreground">
+              {inboundPriorities.length > 0
+                ? `of ${allInboundRows.length} waiting · priority filtered`
+                : "at least 24 hours old"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -418,8 +444,25 @@ export default function EmailTrackingPage() {
           <p className="text-sm text-muted-foreground">
             Messages from an email address on a CRM contact, at least 24 hours
             old without a later sent reply in the same Gmail thread. Automatic
-            replies and bulk or computer-generated messages are excluded.
+            replies, meeting invitations, and bulk or computer-generated
+            messages are excluded.
           </p>
+          <div className="flex flex-wrap items-end gap-3 pt-2">
+            <MultiFilterSelect
+              label="Priority level"
+              selected={inboundPriorities}
+              onChange={setInboundPriorities}
+              options={PRIORITY_OPTIONS}
+              includeBlank
+              testId="select-email-tracking-priority"
+              width="w-[180px]"
+            />
+            {inboundPriorities.length > 0 ? (
+              <span className="pb-2 text-xs text-muted-foreground">
+                Showing {inboundRows.length} of {allInboundRows.length}
+              </span>
+            ) : null}
+          </div>
         </CardHeader>
         <CardContent>
           {inbound.isLoading ? (
@@ -430,7 +473,9 @@ export default function EmailTrackingPage() {
             </div>
           ) : inboundRows.length === 0 ? (
             <div className="text-sm text-muted-foreground">
-              No unresolved incoming messages are waiting for a reply.
+              {inboundPriorities.length > 0
+                ? "No unresolved incoming messages match this priority filter."
+                : "No unresolved incoming messages are waiting for a reply."}
             </div>
           ) : (
             <Table>

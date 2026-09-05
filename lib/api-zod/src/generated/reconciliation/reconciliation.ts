@@ -2239,3 +2239,4 @@ export const ConfirmReconciliationBundleResponse = zod.object({
   "donorsCreated": zod.number(),
   "alreadyConfirmed": zod.boolean().optional().describe('True when the draft was already confirmed at this revision (idempotent replay).')
 }).describe('Outcome of an atomic bundle confirm.')
+
