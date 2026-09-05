@@ -356,3 +356,4 @@ export const ConvertGrantLeadBody = zod.object({
   "askAmount": zod.string().optional().describe('Ask amount in decimal string form.'),
   "applicationDeadline": zod.string().date().optional().describe('Application deadline (defaults to lead deadline).')
 })
+
