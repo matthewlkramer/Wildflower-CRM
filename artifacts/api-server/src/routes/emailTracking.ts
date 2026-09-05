@@ -900,6 +900,16 @@ router.get(
         matchedPersonIds: emailMessages.matchedPersonIds,
         matchedOrganizationIds: emailMessages.matchedOrganizationIds,
         matchedHouseholdIds: emailMessages.matchedHouseholdIds,
+        senderPriority: sql<"top" | "high" | "medium" | "low" | null>`(
+          SELECT COALESCE(sender_person.priority, sender_organization.priority)
+          FROM emails AS sender_email
+          LEFT JOIN people AS sender_person
+            ON sender_person.id = sender_email.person_id
+          LEFT JOIN organizations AS sender_organization
+            ON sender_organization.id = sender_email.organization_id
+          WHERE lower(sender_email.email) = lower(${emailMessages.fromEmail})
+          LIMIT 1
+        )`.as("sender_priority"),
         bodyText: emailMessages.bodyText,
         bodyHtml: emailMessages.bodyHtml,
         aiSummary: emailMessages.aiSummary,
@@ -941,6 +951,7 @@ router.get(
           matchedPersonIds: r.matchedPersonIds,
           matchedOrganizationIds: r.matchedOrganizationIds,
           matchedHouseholdIds: r.matchedHouseholdIds,
+          senderPriority: r.senderPriority,
         })),
     });
   }),

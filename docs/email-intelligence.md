@@ -181,10 +181,11 @@ while a domain-only organization match may retain the full message for CRM
 timelines. The Email Tracking inbound queue is narrower: it shows a message
 only when the actual sender address exactly matches a person, organization, or
 household email in the CRM. The synced mailbox owner's address and configured
-internal staff domains never qualify it. Automatic replies, mailing-list mail,
+internal staff domains never qualify it. Automatic replies, meeting
+invitations, mailing-list mail (including messages with an unsubscribe control),
 and messages with strong computer-generated signals are also retained outside
-the action queue so they can remain available as timeline or intelligence
-context without being presented as messages that need a human reply.
+the action queue so they can remain available as timeline or intelligence context
+without being presented as messages that need a human reply.
 
 *(Code: `artifacts/api-server/src/lib/emailMatcher.ts`.)*
 

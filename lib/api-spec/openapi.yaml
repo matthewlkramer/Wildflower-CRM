@@ -24808,7 +24808,8 @@ components:
           }
     EmailTrackingInboundQueueRow:
       type: object
-      required: [id, subject, fromEmail, receivedAt, mailboxUserId]
+      required:
+        [id, subject, fromEmail, receivedAt, mailboxUserId, senderPriority]
       properties:
         id: { type: string }
         subject: { type: string, nullable: true }
@@ -24818,6 +24819,8 @@ components:
         gmailThreadId: { type: string, nullable: true }
         mailboxUserId: { type: string }
         mailboxUserName: { type: string, nullable: true }
+        senderPriority:
+          { allOf: [{ $ref: "#/components/schemas/Priority" }], nullable: true }
         isPrivate: { type: boolean }
         matchedPersonIds:
           { type: array, items: { type: string }, nullable: true }

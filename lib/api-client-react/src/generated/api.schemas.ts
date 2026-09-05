@@ -9156,6 +9156,7 @@ export interface EmailTrackingInboundQueueRow {
   gmailThreadId?: string | null;
   mailboxUserId: string;
   mailboxUserName?: string | null;
+  senderPriority: Priority | null;
   isPrivate?: boolean;
   matchedPersonIds?: string[] | null;
   matchedOrganizationIds?: string[] | null;
