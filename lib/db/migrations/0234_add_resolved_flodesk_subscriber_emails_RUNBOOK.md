@@ -5,7 +5,7 @@
 Migration 0234 adds 29 resolved or owner-confirmed Flodesk current-subscriber
 addresses to existing CRM people, links the corresponding
 `newsletter_contacts` and `newsletter_engagement` evidence, and applies the
-owner-approved rule that current Flodesk subscribers are subscribed in the CRM.
+owner-approved rule that current Flodesk subscribers are subscribed in the CRM,\nexcept for the confirmed deceased person.
 
 It preserves all existing email preferences. A new address becomes preferred
 only when its person has no other CRM email.
@@ -25,7 +25,7 @@ psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0234_add_re
 Expected 0234 success notice:
 
 ```text
-NOTICE:  0234: verified 29 resolved emails, contacts, engagement links, and subscribed people
+NOTICE:  0234: verified 29 resolved emails, contacts, engagement links, and newsletter states
 ```
 
 ## Reviewed automatic matches
