@@ -82,7 +82,7 @@ The migration aborts unless:
 - all 22 reviewed people are still active;
 - all 22 current-subscriber contacts exist;
 - none of the addresses belongs to an unexpected CRM record;
-- the first-run state still has exactly five newsletter-status changes;
+- after 0233, the first-run state still has exactly four newsletter-status changes;
 - migration 0233 has already completed.
 
 It uses deterministic IDs and verifies all email, contact, engagement,

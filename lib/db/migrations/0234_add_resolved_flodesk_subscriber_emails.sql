@@ -142,9 +142,9 @@ BEGIN
   END IF;
 
   IF v_audit_count = 0 THEN
-    IF v_existing_email_rows <> 0 OR v_status_updates <> 5 THEN
+    IF v_existing_email_rows <> 0 OR v_status_updates <> 4 THEN
       RAISE EXCEPTION
-        '0234 preflight: expected first-run state (emails=0 status updates=5); found emails=% status updates=%',
+        '0234 preflight: expected first-run state (emails=0 status updates=4); found emails=% status updates=%',
         v_existing_email_rows, v_status_updates;
     END IF;
   ELSIF v_audit_count = 1 THEN
@@ -216,7 +216,7 @@ VALUES (
     'migration', '0234_add_resolved_flodesk_subscriber_emails',
     'source', 'imported_flodesk_evidence',
     'matchCount', 22,
-    'newsletterStatusUpdates', 5,
+    'newsletterStatusUpdates', 4,
     'matchRule', 'unique first-name agreement plus distinctive email-local-part or corroborated message history',
     'preservedAmbiguousMatches', true,
     'linkedNewsletterContacts', true,
