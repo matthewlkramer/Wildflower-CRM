@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Migration 0234 adds 28 resolved or owner-confirmed Flodesk current-subscriber
+Migration 0234 adds 29 resolved or owner-confirmed Flodesk current-subscriber
 addresses to existing CRM people, links the corresponding
 `newsletter_contacts` and `newsletter_engagement` evidence, and applies the
 owner-approved rule that current Flodesk subscribers are subscribed in the CRM.
@@ -25,30 +25,30 @@ psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0234_add_re
 Expected 0234 success notice:
 
 ```text
-NOTICE:  0234: verified 28 resolved emails, contacts, engagement links, and subscribed people
+NOTICE:  0234: verified 29 resolved emails, contacts, engagement links, and subscribed people
 ```
 
 ## Reviewed automatic matches
 
 | Flodesk email | CRM person | Type | Validity |
 |---|---|---|---|
-| abeckner@imaginablefutures.com | Ashley Beckner | Work | Unknown |
+| abeckner@imaginablefutures.com | Ashley Beckner | Work | Invalid |
 | amy.gips@wildflowerschools.org | Amy Gips | Work | Unknown |
-| aplancher@socialfinance.org | Annie Knickman Plancher | Work | Unknown |
+| aplancher@socialfinance.org | Annie Knickman Plancher | Work | Invalid |
 | ccodellalow@bipartisanpolicy.org | Caitlin Codella Low | Work | Unknown |
 | daniela.vasan@wildflowerschools.org | Daniela Vasan | Work | Unknown |
 | erica.cantoni@wildflowerschools.org | Erica Cantoni | Work | Unknown |
 | gregklein411@gmail.com | Greg Klein | Personal | Unknown |
-| jmccormick@fmcg.com | Jim McCormick | Work | Unknown |
+| jmccormick@fmcg.com | Jim McCormick | Work | Invalid |
 | jparadis@chappellculper.org | Jennifer Paradis | Work | Unknown |
-| kgarg@schmidtfutures.com | Kumar Garg | Work | Unknown |
+| kgarg@schmidtfutures.com | Kumar Garg | Work | Invalid |
 | maia.blankenship@wildflowerschools.org | Maia Blankenship | Work | Unknown |
 | mbazan@arnoldfoundation.org | Marissa Bazan | Work | Unknown |
 | mchun@hewlett.org | Marc Chun | Work | Unknown |
 | mdukes@overdeck.org | Melanie Dukes | Work | Unknown |
 | paul.keys@teachforamerica.org | Paul Keys | Work | Unknown |
 | rachel.kelley-cohn@wildflowerschools.org | Rachel Kelley-Cohn | Work | Unknown |
-| rjohnson@citybridge.org | Rena Johnson | Work | Unknown |
+| rjohnson@citybridge.org | Rena Johnson | Work | Invalid |
 | sunny.greenberg@wildflowerschools.org | Sunny Greenberg | Work | Unknown |
 | ted.quinn@covariantgroup.com | Ted Quinn | Work | Unknown |
 | tiffany.needham@teachforamerica.org | Tiffany Cuellar Needham | Work | Unknown |
@@ -67,21 +67,23 @@ all point to Jim.
 |---|---|---|---|---|
 | hassan@4pt0.org | Hassan Hassan | Work | Invalid | Owner confirmed the old-role address is no longer active. |
 | scullyr@gmail.com | Bob Scully | Personal | Unknown | Owner confirmed identity. |
-| brooke@chanzuckerberg.com | Brooke Stafford-Brizard | Work | Unknown | Owner confirmed identity; former role. |
-| shavar@dfer.org | Shavar Jeffries | Work | Unknown | Owner confirmed identity; former role, now at KIPP. |
+| brooke@chanzuckerberg.com | Brooke Stafford-Brizard | Work | Invalid | Owner confirmed identity; former role. |
+| shavar@dfer.org | Shavar Jeffries | Work | Invalid | Owner confirmed identity; former role, now at KIPP. |
 | john@arnoldfoundation.org | John Arnold | Work | Unknown | Owner confirmed identity. |
 | lesrinivasan@gmail.com | LaVerne Srinivasan | Personal | Unknown | Owner confirmed identity; personal email remains independent of former Rockefeller role. |
+| mjdorer@gmail.com | Michael Dorer | Personal | Invalid | Linked for history; owner confirmed he is deceased, so the migration marks him deceased and unsubscribed. |
 
-The CRM supports `valid`, `invalid`, and `unknown` email validity. A past
-organization role does not by itself prove an address is undeliverable, so only
-Hassan's address is marked invalid based on the owner's explicit statement.
+The CRM supports `valid`, `invalid`, and `unknown` email validity. Per the
+owner's instruction, former-role work addresses are marked invalid. Bob
+Scully's and LaVerne Srinivasan's Gmail addresses are personal/unknown. Michael
+Dorer's historical personal address is invalid, and his person record is marked
+deceased and unsubscribed despite the stale Flodesk subscriber record.
 
 ## Still held for human review
 
 | Flodesk email | Possible CRM person | Reason held back |
 |---|---|---|
 | cooperbarbarajeannie68@gmail.com | Barbara Cooper | First name and surname appear, but “jeannie68” may indicate a shared or differently owned address. |
-| mjdorer@gmail.com | Michael Dorer | First initial and surname match, but the unexplained “j” and non-unique historical-message associations leave uncertainty. |
 
 No archived CRM person reached the two-signal review threshold.
 
@@ -89,11 +91,11 @@ No archived CRM person reached the two-signal review threshold.
 
 The migration aborts unless:
 
-- all 28 reviewed people are still active;
-- all 28 current-subscriber contacts exist;
+- all 29 reviewed people are still active;
+- all 29 current-subscriber contacts exist;
 - none of the addresses belongs to an unexpected CRM record;
 - migration 0233 has already completed.
 
 It uses deterministic IDs and verifies all email, contact, engagement,
-subscription, and audit state before commit. After a successful run, re-running
+newsletter, deceased-status, and audit state before commit. After a successful run, re-running
 the exact command is a no-op that re-verifies the completed state.
