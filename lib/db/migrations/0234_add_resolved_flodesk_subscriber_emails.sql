@@ -214,7 +214,7 @@ VALUES (
   'bulk_update',
   'newsletter_reconciliation',
   'flodesk-name-and-email-resolution',
-  'Added and linked 28 high-confidence Flodesk subscriber emails to existing CRM people',
+  'Added and linked 28 resolved or owner-confirmed Flodesk subscriber emails to existing CRM people',
   NULL,
   jsonb_build_object(
     'migration', '0234_add_resolved_flodesk_subscriber_emails',
@@ -274,7 +274,7 @@ BEGIN
    WHERE id = 'audit_0234_resolved_flodesk_subscriber_emails'
      AND entity_type = 'newsletter_reconciliation'
      AND metadata ->> 'migration' = '0234_add_resolved_flodesk_subscriber_emails'
-     AND metadata ->> 'matchCount' = '22';
+     AND metadata ->> 'matchCount' = '28';
 
   IF v_correct_emails <> 28
      OR v_linked_contacts <> 28
