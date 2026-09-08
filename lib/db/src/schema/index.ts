@@ -79,3 +79,4 @@ export * from "./unitGroups";
 export * from "./sourceLinks";
 export * from "./wildflowerUpdates";
 export * from "./fundraisingCampaigns";
+export * from "./newsletterHistory";

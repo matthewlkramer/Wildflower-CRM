@@ -1,7 +1,20 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { calendarEvents } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, gte, ilike, lt, or, sql, type SQL } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   ListCalendarEventsQueryParams,
   UpdateCalendarEventPrivacyBody,
@@ -32,6 +45,47 @@ function visibleToCaller(callerId: string): SQL {
     eq(calendarEvents.isPrivate, false),
     eq(calendarEvents.calendarUserId, callerId),
   )!;
+}
+
+function eventSelection() {
+  return {
+    ...getTableColumns(calendarEvents),
+    meetingNoteId: sql<string | null>`(
+      select mn.id
+      from meeting_notes mn
+      join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
+      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+      order by mn.meeting_date desc
+      limit 1
+    )`,
+    linkedNoteCount: sql<number>`(
+      select count(*)::int
+      from notes n
+      join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
+      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+    )`,
+    hasMeetingNotes: sql<boolean>`(
+      exists (
+        select 1
+        from meeting_notes mn
+        join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
+        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+      ) or exists (
+        select 1
+        from notes n
+        join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
+        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+      )
+    )`,
+    hasNextSteps: sql<boolean>`exists (
+      select 1
+      from meeting_notes mn
+      join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
+      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+        and jsonb_typeof(mn.action_items) = 'array'
+        and jsonb_array_length(mn.action_items) > 0
+    )`,
+  };
 }
 
 router.get(
@@ -94,7 +148,7 @@ router.get(
     // keeps one row per physical event; calendarUserId provides a deterministic
     // tiebreak.
     const deduped = db
-      .selectDistinctOn([calendarEvents.gcalEventId])
+      .selectDistinctOn([calendarEvents.gcalEventId], eventSelection())
       .from(calendarEvents)
       .where(where)
       .orderBy(calendarEvents.gcalEventId, calendarEvents.calendarUserId)
@@ -129,11 +183,9 @@ router.get(
       return;
     }
     const row = await db
-      .select()
+      .select(eventSelection())
       .from(calendarEvents)
-      .where(
-        and(eq(calendarEvents.id, paramId(req)), visibleToCaller(user.id)),
-      )
+      .where(and(eq(calendarEvents.id, paramId(req)), visibleToCaller(user.id)))
       .then((r) => r[0]);
     if (!row) return notFound(res, "calendar event");
     res.json(row);
@@ -148,7 +200,11 @@ router.patch(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const body = parseOrBadRequest(UpdateCalendarEventPrivacyBody, req.body, res);
+    const body = parseOrBadRequest(
+      UpdateCalendarEventPrivacyBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     const [row] = await db
       .update(calendarEvents)

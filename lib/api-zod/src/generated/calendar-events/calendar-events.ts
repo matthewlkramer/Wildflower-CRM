@@ -49,7 +49,11 @@ export const ListCalendarEventsResponse = zod.object({
   "privateSetByUserId": zod.string().nullish(),
   "matchedPersonIds": zod.array(zod.string()).nullish(),
   "matchedOrganizationIds": zod.array(zod.string()).nullish(),
-  "matchedHouseholdIds": zod.array(zod.string()).nullish()
+  "matchedHouseholdIds": zod.array(zod.string()).nullish(),
+  "meetingNoteId": zod.string().nullable().describe('The note linked to this physical Google Calendar event, if one exists.'),
+  "linkedNoteCount": zod.number().describe('Number of free-form CRM notes linked to this physical Google Calendar event.'),
+  "hasMeetingNotes": zod.boolean().describe('True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.'),
+  "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
 })),
   "pagination": zod.object({
   "page": zod.number(),
@@ -80,7 +84,11 @@ export const GetCalendarEventResponse = zod.object({
   "privateSetByUserId": zod.string().nullish(),
   "matchedPersonIds": zod.array(zod.string()).nullish(),
   "matchedOrganizationIds": zod.array(zod.string()).nullish(),
-  "matchedHouseholdIds": zod.array(zod.string()).nullish()
+  "matchedHouseholdIds": zod.array(zod.string()).nullish(),
+  "meetingNoteId": zod.string().nullable().describe('The note linked to this physical Google Calendar event, if one exists.'),
+  "linkedNoteCount": zod.number().describe('Number of free-form CRM notes linked to this physical Google Calendar event.'),
+  "hasMeetingNotes": zod.boolean().describe('True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.'),
+  "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
 })
 
 export const UpdateCalendarEventPrivacyParams = zod.object({
@@ -109,6 +117,10 @@ export const UpdateCalendarEventPrivacyResponse = zod.object({
   "privateSetByUserId": zod.string().nullish(),
   "matchedPersonIds": zod.array(zod.string()).nullish(),
   "matchedOrganizationIds": zod.array(zod.string()).nullish(),
-  "matchedHouseholdIds": zod.array(zod.string()).nullish()
+  "matchedHouseholdIds": zod.array(zod.string()).nullish(),
+  "meetingNoteId": zod.string().nullable().describe('The note linked to this physical Google Calendar event, if one exists.'),
+  "linkedNoteCount": zod.number().describe('Number of free-form CRM notes linked to this physical Google Calendar event.'),
+  "hasMeetingNotes": zod.boolean().describe('True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.'),
+  "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
 })
 

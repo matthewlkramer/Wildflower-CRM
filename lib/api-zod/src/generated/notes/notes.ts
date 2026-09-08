@@ -24,6 +24,7 @@ export const ListNotesQueryParams = zod.object({
   "giftId": zod.coerce.string().optional(),
   "mentionUserId": zod.coerce.string().optional().describe('Filter to notes mentioning this user.'),
   "authorUserId": zod.coerce.string().optional(),
+  "calendarEventId": zod.coerce.string().optional().describe('Filter to free-form notes linked to this physical calendar meeting.'),
   "limit": zod.coerce.number().min(1).max(listNotesQueryLimitMax).default(listNotesQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listNotesQueryPageDefault)
 })
@@ -39,6 +40,7 @@ export const ListNotesResponse = zod.object({
   "opportunityIds": zod.array(zod.string()).nullish(),
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
+  "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
@@ -56,7 +58,8 @@ export const CreateNoteBody = zod.object({
   "householdIds": zod.array(zod.string()).optional(),
   "opportunityIds": zod.array(zod.string()).optional(),
   "giftIds": zod.array(zod.string()).optional(),
-  "mentionUserIds": zod.array(zod.string()).optional()
+  "mentionUserIds": zod.array(zod.string()).optional(),
+  "calendarEventId": zod.string().optional().describe('Optional synced calendar meeting this note documents.')
 })
 
 export const GetNoteParams = zod.object({
@@ -73,6 +76,7 @@ export const GetNoteResponse = zod.object({
   "opportunityIds": zod.array(zod.string()).nullish(),
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
+  "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -88,7 +92,8 @@ export const UpdateNoteBody = zod.object({
   "householdIds": zod.array(zod.string()).nullish(),
   "opportunityIds": zod.array(zod.string()).nullish(),
   "giftIds": zod.array(zod.string()).nullish(),
-  "mentionUserIds": zod.array(zod.string()).nullish()
+  "mentionUserIds": zod.array(zod.string()).nullish(),
+  "calendarEventId": zod.string().nullish()
 })
 
 export const UpdateNoteResponse = zod.object({
@@ -101,6 +106,7 @@ export const UpdateNoteResponse = zod.object({
   "opportunityIds": zod.array(zod.string()).nullish(),
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
+  "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })

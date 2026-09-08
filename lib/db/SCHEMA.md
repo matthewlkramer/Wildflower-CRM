@@ -41,7 +41,7 @@ Sync ownership and operational resync commands:
 | Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions` | Imported evidence that money moved |
 | Reconciliation relationships | `payment_units.gift_id`, `stripe_payouts.bank_deposit_id`, `source_links` | Authoritative links among evidence and CRM records |
 | Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
-| Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, tracking/sync-state tables | Synced and manual touches |
+| Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, `newsletter_contacts`, `newsletter_campaigns`, `newsletter_engagement`, tracking/sync-state tables | Synced and manual touches plus imported source evidence |
 | AI / workflow | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue` | Proposals, tasks, review queues |
 | App plumbing | `users`, `saved_views`, `bulk_operations`, `audit_log`, OAuth/sync-state tables | Auth, UI persistence, operations |
 
@@ -430,7 +430,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `person_suppression_windows`, `calendar_meeting_filters` — suppression and
   matching controls. `internal_email_domains` — staff-domain singleton.
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
-  `notes`.
+  `notes`. Structured meeting notes and free-form CRM notes can both point to
+  a synced calendar event; the free-form note link is optional and many notes
+  may document one meeting.
 - `email_proposals` — one actionable AI signal per row (job change, bounce,
   signature update, grant opportunity, thank-you acknowledgment, …).
 - `email_intel_prompts` — versioned, admin-editable review prompts per

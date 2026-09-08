@@ -39,6 +39,9 @@ run but goes through the same lock + `flodesk_sync_state` singleton, so it can't
 collide with the scheduled run.
 
 ## Scope intentionally excluded
-No campaign/open/click analytics — Flodesk's API exposes none. No bulk backfill
-wired up, but `syncPersonToFlodesk` is bulk-safe (never throws; returns a result)
+Flodesk's API exposes no campaign/open/click analytics. Historical evidence is
+therefore imported from the reviewed Flodesk workbook through `/newsletter`;
+the import is idempotent, preserves unmatched addresses without creating CRM
+people, and leaves the workbook itself out of git. No API-driven bulk backfill
+is wired up, but `syncPersonToFlodesk` is bulk-safe (never throws; returns a result)
 so a backfill is a thin loop over eligible people.

@@ -41,7 +41,10 @@ import {
   MeetingNoteRow,
   type MeetingContext,
 } from "@/components/meeting-notes-panel";
-import { AddNoteDialog } from "@/components/notes-panel";
+import {
+  AddNoteDialog,
+  NoteMeetingLinkDialog,
+} from "@/components/notes-panel";
 import { AddTaskDialog } from "@/components/tasks-panel";
 import { type EntityLinks } from "@/components/entity-links-editor";
 import { MediaMentionRow } from "@/components/media-mentions-panel";
@@ -754,20 +757,28 @@ export function UnifiedActivityFeed({
                           {fmtWhen(r.createdAt)}
                         </span>
                       </div>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                        onClick={() => deleteNote.mutate({ id: r.id })}
-                        disabled={deleteNote.isPending}
-                        aria-label="Delete note"
-                        data-testid={`button-delete-note-${r.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
+                      <div className="flex items-center gap-0.5">
+                        <NoteMeetingLinkDialog note={r} ctx={nt} />
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteNote.mutate({ id: r.id })}
+                          disabled={deleteNote.isPending}
+                          aria-label="Delete note"
+                          data-testid={`button-delete-note-${r.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
                     </div>
                     <p className="whitespace-pre-wrap">{r.body}</p>
+                    {r.calendarEventId ? (
+                      <Badge variant="outline" className="gap-1">
+                        <CalendarIcon className="h-3 w-3" /> Linked to meeting
+                      </Badge>
+                    ) : null}
                     {r.mentionUserIds && r.mentionUserIds.length > 0 ? (
                       <div className="text-xs text-muted-foreground">
                         Mentions:{" "}

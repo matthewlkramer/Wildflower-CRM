@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   useListNotes,
   useCreateNote,
   useDeleteNote,
+  useUpdateNote,
+  useListCalendarEvents,
   getListNotesQueryKey,
+  getListCalendarEventsQueryKey,
   type Note,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,8 +18,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +37,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Trash2 } from "lucide-react";
+import { CalendarDays, Trash2 } from "lucide-react";
 import {
   EntityLinksEditor,
   EMPTY_LINKS,
@@ -101,20 +112,28 @@ export function NotesPanel(ctx: PanelContext) {
                     {userMap.get(n.authorUserId) ?? n.authorUserId} ·{" "}
                     {formatWhen(n.createdAt)}
                   </div>
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                    onClick={() => del.mutate({ id: n.id })}
-                    disabled={del.isPending}
-                    aria-label="Delete note"
-                    data-testid={`button-delete-note-${n.id}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <NoteMeetingLinkDialog note={n} ctx={ctx} />
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      onClick={() => del.mutate({ id: n.id })}
+                      disabled={del.isPending}
+                      aria-label="Delete note"
+                      data-testid={`button-delete-note-${n.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </div>
                 <p className="whitespace-pre-wrap">{n.body}</p>
+                {n.calendarEventId ? (
+                  <Badge variant="outline" className="gap-1">
+                    <CalendarDays className="h-3 w-3" /> Linked to meeting
+                  </Badge>
+                ) : null}
                 {n.mentionUserIds && n.mentionUserIds.length > 0 ? (
                   <div className="text-xs text-muted-foreground">
                     Mentions:{" "}
@@ -132,26 +151,63 @@ export function NotesPanel(ctx: PanelContext) {
   );
 }
 
-export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
+export function NoteMeetingLinkDialog({
+  note,
+  ctx,
+}: {
+  note: Note;
+  ctx: PanelContext;
+}) {
   const [open, setOpen] = useState(false);
-  const [body, setBody] = useState("");
-  const [links, setLinks] = useState<EntityLinks>(() => linksFromDefault(ctx.defaultLinks));
-  const [mentions, setMentions] = useState<string[]>([]);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const { data: users } = useListUsers({
-    query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
+  const [calendarEventId, setCalendarEventId] = useState(
+    note.calendarEventId ?? "none",
+  );
+  const personId = ctx.personId ?? note.personIds?.[0];
+  const organizationId = personId
+    ? undefined
+    : ctx.organizationId ?? note.organizationIds?.[0];
+  const householdId = personId || organizationId
+    ? undefined
+    : ctx.householdId ?? note.householdIds?.[0];
+  const params = {
+    personId,
+    organizationId,
+    includeLinkedPeople: organizationId ? true : undefined,
+    householdId,
+    order: "desc" as const,
+    limit: 50,
+  };
+  const hasScope = Boolean(personId || organizationId || householdId);
+  const meetings = useListCalendarEvents(params, {
+    query: {
+      enabled: open && hasScope,
+      queryKey: getListCalendarEventsQueryKey(params),
+    },
   });
-  const userOpts = (users ?? []).map((u) => ({ id: u.id, label: userDisplayName(u) }));
-  const create = useCreateNote({
+  const options = useMemo(
+    () =>
+      (meetings.data?.data ?? []).filter(
+        (event) => event.status !== "cancelled" && !event.isPrivate,
+      ),
+    [meetings.data?.data],
+  );
+  const currentIsOutsideOptions = Boolean(
+    note.calendarEventId &&
+      !options.some((event) => event.id === note.calendarEventId),
+  );
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const update = useUpdateNote({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({ queryKey: getListNotesQueryKey() });
-        toast({ title: "Note saved" });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListNotesQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getListCalendarEventsQueryKey(),
+          }),
+        ]);
+        toast({ title: "Meeting link updated" });
         setOpen(false);
-        setBody("");
-        setLinks(linksFromDefault(ctx.defaultLinks));
-        setMentions([]);
       },
       onError: (err: unknown) => {
         toast({
@@ -162,14 +218,185 @@ export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
       },
     },
   });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (update.isPending) return;
+        if (nextOpen) setCalendarEventId(note.calendarEventId ?? "none");
+        setOpen(nextOpen);
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6 text-muted-foreground hover:text-primary"
+          aria-label={note.calendarEventId ? "Change linked meeting" : "Link note to meeting"}
+          data-testid={`button-link-note-meeting-${note.id}`}
+        >
+          <CalendarDays className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Link note to meeting</DialogTitle>
+          <DialogDescription>
+            Optionally associate this note with one specific synced meeting.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1.5">
+          <Label htmlFor={`note-meeting-${note.id}`}>Meeting</Label>
+          <Select
+            value={calendarEventId}
+            onValueChange={setCalendarEventId}
+            disabled={meetings.isLoading}
+          >
+            <SelectTrigger
+              id={`note-meeting-${note.id}`}
+              data-testid={`select-note-meeting-${note.id}`}
+            >
+              <SelectValue placeholder="No meeting selected" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No meeting</SelectItem>
+              {currentIsOutsideOptions && note.calendarEventId ? (
+                <SelectItem value={note.calendarEventId}>
+                  Current linked meeting
+                </SelectItem>
+              ) : null}
+              {options.map((event) => (
+                <SelectItem key={event.id} value={event.id}>
+                  {(event.summary?.trim() || "Untitled meeting") +
+                    ` · ${formatWhen(event.startAt)}`}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!hasScope ? (
+            <p className="text-xs text-muted-foreground">
+              This note needs a linked person, funder, or household before a
+              meeting can be selected.
+            </p>
+          ) : null}
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => setOpen(false)}
+            disabled={update.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={() =>
+              update.mutate({
+                id: note.id,
+                data: {
+                  calendarEventId:
+                    calendarEventId === "none" ? null : calendarEventId,
+                },
+              })
+            }
+            disabled={update.isPending}
+            data-testid={`button-save-note-meeting-${note.id}`}
+          >
+            {update.isPending ? "Saving…" : "Save link"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState("");
+  const [links, setLinks] = useState<EntityLinks>(() => linksFromDefault(ctx.defaultLinks));
+  const [mentions, setMentions] = useState<string[]>([]);
+  const [calendarEventId, setCalendarEventId] = useState("none");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: users } = useListUsers({
+    query: { queryKey: getListUsersQueryKey(), staleTime: 60_000 },
+  });
+  const userOpts = (users ?? []).map((u) => ({ id: u.id, label: userDisplayName(u) }));
   const pinned = pinnedFromCtx(ctx);
+  const meetingPersonId =
+    pinned.personIds[0] ?? links.personIds[0] ?? ctx.defaultLinks?.personIds?.[0];
+  const meetingOrganizationId = meetingPersonId
+    ? undefined
+    : pinned.organizationIds[0] ??
+      links.organizationIds[0] ??
+      ctx.defaultLinks?.organizationIds?.[0];
+  const meetingHouseholdId = meetingPersonId || meetingOrganizationId
+    ? undefined
+    : pinned.householdIds[0] ??
+      links.householdIds[0] ??
+      ctx.defaultLinks?.householdIds?.[0];
+  const meetingParams = {
+    personId: meetingPersonId,
+    organizationId: meetingOrganizationId,
+    includeLinkedPeople: meetingOrganizationId ? true : undefined,
+    householdId: meetingHouseholdId,
+    order: "desc" as const,
+    limit: 50,
+  };
+  const meetingScopePresent = Boolean(
+    meetingPersonId || meetingOrganizationId || meetingHouseholdId,
+  );
+  const meetings = useListCalendarEvents(meetingParams, {
+    query: {
+      enabled: open && meetingScopePresent,
+      queryKey: getListCalendarEventsQueryKey(meetingParams),
+    },
+  });
+  const meetingOptions = useMemo(
+    () =>
+      (meetings.data?.data ?? []).filter(
+        (event) => event.status !== "cancelled" && !event.isPrivate,
+      ),
+    [meetings.data?.data],
+  );
+  const create = useCreateNote({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListNotesQueryKey() }),
+          queryClient.invalidateQueries({
+            queryKey: getListCalendarEventsQueryKey(),
+          }),
+        ]);
+        toast({ title: "Note saved" });
+        setOpen(false);
+        setBody("");
+        setLinks(linksFromDefault(ctx.defaultLinks));
+        setMentions([]);
+        setCalendarEventId("none");
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Save failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const canSubmit = body.trim().length > 0;
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
         if (!create.isPending) {
-          if (v) setLinks(linksFromDefault(ctx.defaultLinks));
+          if (v) {
+            setLinks(linksFromDefault(ctx.defaultLinks));
+            setCalendarEventId("none");
+          }
           setOpen(v);
         }
       }}
@@ -200,6 +427,8 @@ export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
                 opportunityIds: mergeLinks(pinned.opportunityIds, links.opportunityIds),
                 giftIds: mergeLinks(pinned.giftIds, links.giftIds),
                 mentionUserIds: mentions.length > 0 ? mentions : undefined,
+                calendarEventId:
+                  calendarEventId === "none" ? undefined : calendarEventId,
               },
             });
           }}
@@ -219,6 +448,41 @@ export function AddNoteDialog({ ctx }: { ctx: PanelContext }) {
           <div className="space-y-1.5">
             <Label>Linked records</Label>
             <EntityLinksEditor value={links} onChange={setLinks} pinned={pinned} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="note-meeting">Meeting (optional)</Label>
+            <Select
+              value={calendarEventId}
+              onValueChange={setCalendarEventId}
+              disabled={!meetingScopePresent || meetings.isLoading}
+            >
+              <SelectTrigger id="note-meeting" data-testid="select-note-meeting">
+                <SelectValue placeholder="No meeting selected" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No meeting</SelectItem>
+                {meetingOptions.map((event) => (
+                  <SelectItem key={event.id} value={event.id}>
+                    {(event.summary?.trim() || "Untitled meeting") +
+                      ` · ${formatWhen(event.startAt)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!meetingScopePresent ? (
+              <p className="text-xs text-muted-foreground">
+                Link a person, funder, or household to choose one of their
+                meetings.
+              </p>
+            ) : !meetings.isLoading && meetingOptions.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No synced meetings found for the linked record.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Choose a meeting only when this note documents that meeting.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Mentions</Label>

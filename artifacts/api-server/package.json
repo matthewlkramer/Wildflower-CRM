@@ -53,6 +53,7 @@
     "pino": "^9",
     "pino-http": "^10",
     "stripe": "^22.2.1",
+    "xlsx": "0.18.5",
     "zod": "catalog:"
   },
   "devDependencies": {

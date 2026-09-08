@@ -42,6 +42,14 @@ for rel in \
   [ -f "$file" ] && sed -i 's/[[:space:]]*$//' "$file"
 done
 
+# Newsletter operations include a binary upload shape that Orval formats very
+# unevenly. Keep the targeted generated files deterministic and diff-clean.
+for file in \
+  "$tmp/lib/api-client-react/src/generated/newsletter/newsletter.ts" \
+  "$tmp/lib/api-zod/src/generated/newsletter/newsletter.ts"; do
+  [ -f "$file" ] && "$root/node_modules/.bin/prettier" --write "$file" >/dev/null
+done
+
 swap_in() {
   local rel="$1"
   local src="$tmp/$rel"
