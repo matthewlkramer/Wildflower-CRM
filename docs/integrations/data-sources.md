@@ -1,6 +1,6 @@
 ---
 status: runbook
-last_verified: 2026-07-22
+last_verified: 2026-09-08
 ---
 
 # Data sources: provenance, sync ownership, and resync procedures
@@ -74,7 +74,11 @@ document set (see [`../README.md`](../README.md)).
   canonical Flodesk workbook on `/newsletter`. Imports upsert
   `newsletter_contacts`, `newsletter_campaigns`, and `newsletter_engagement`
   by stable email/campaign keys, link exact CRM email matches, and never create
-  people from unmatched addresses. The workbook contains contact data and must
-  not be committed to the repository.
+  people from unmatched addresses. Workbook imports never change operational
+  CRM subscription flags, email addresses, or email validity. Their result
+  reports exact-email subscription-status differences and conservative possible
+  email differences where an unmatched Flodesk address has one unambiguous
+  exact-name CRM person match for human review. The workbook contains contact
+  data and must not be committed to the repository.
 - **GDELT** — press coverage into `media_mentions`; cursor in
   `media_ingest_state`.

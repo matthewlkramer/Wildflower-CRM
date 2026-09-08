@@ -41,6 +41,34 @@ import {
 
 const EMPTY_CAMPAIGNS: NewsletterCampaign[] = [];
 
+type NewsletterImportReviewResult = NewsletterImportResult & {
+  operationalRecordsChanged: boolean;
+  subscriptionDifferences: {
+    total: number;
+    examples: Array<{
+      personId: string;
+      personName: string;
+      email: string;
+      flodeskStatus: "subscribed" | "unsubscribed";
+      crmStatus: "subscribed" | "unsubscribed" | "not_subscribed";
+    }>;
+  };
+  emailDifferences: {
+    total: number;
+    examples: Array<{
+      personId: string;
+      personName: string;
+      flodeskEmail: string;
+      crmEmails: string[];
+      matchBasis: "exact_name";
+    }>;
+  };
+};
+
+function statusLabel(value: string): string {
+  return value.replaceAll("_", " ");
+}
+
 function percent(value: number | null | undefined): string {
   return value === null || value === undefined
     ? "—"
@@ -104,6 +132,8 @@ export default function NewsletterPage() {
   const [engagementFilter, setEngagementFilter] = useState("all");
   const [linkFilter, setLinkFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [lastImport, setLastImport] =
+    useState<NewsletterImportReviewResult | null>(null);
 
   const overview = useGetNewsletterOverview();
   const campaigns = overview.data?.campaigns ?? EMPTY_CAMPAIGNS;
@@ -185,7 +215,7 @@ export default function NewsletterPage() {
         body: file,
       });
       const body = (await response.json()) as
-        | NewsletterImportResult
+        | NewsletterImportReviewResult
         | { message?: string };
       if (!response.ok) {
         throw new Error(
@@ -194,7 +224,8 @@ export default function NewsletterPage() {
             : "The workbook could not be imported.",
         );
       }
-      const result = body as NewsletterImportResult;
+      const result = body as NewsletterImportReviewResult;
+      setLastImport(result);
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: getGetNewsletterOverviewQueryKey(),
@@ -204,8 +235,8 @@ export default function NewsletterPage() {
         }),
       ]);
       toast({
-        title: "Newsletter history imported",
-        description: `${result.audienceRecords.toLocaleString()} audience records and ${result.engagementRecords.toLocaleString()} engagement records are now available.`,
+        title: "Newsletter engagement history imported",
+        description: `${result.engagementRecords.toLocaleString()} engagement records are now available. CRM subscription and email fields were not changed.`,
       });
     } catch (error) {
       toast({
@@ -294,6 +325,114 @@ export default function NewsletterPage() {
           />
         </div>
       )}
+
+      {lastImport ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Review CRM differences</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              The engagement history was imported. No CRM subscription status,
+              email address, or email validity was changed.
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-6 xl:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <h2 className="font-medium">Subscription status differences</h2>
+                <p className="text-sm text-muted-foreground">
+                  {lastImport.subscriptionDifferences.total.toLocaleString()}{" "}
+                  exact email matches have different Flodesk and CRM statuses.
+                </p>
+              </div>
+              {lastImport.subscriptionDifferences.examples.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No differences found.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Person</TableHead>
+                        <TableHead>Flodesk</TableHead>
+                        <TableHead>CRM</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lastImport.subscriptionDifferences.examples.map(
+                        (row) => (
+                          <TableRow key={`${row.personId}-${row.email}`}>
+                            <TableCell>
+                              <Link
+                                href={`/individuals/${row.personId}`}
+                                className="font-medium text-primary hover:underline"
+                              >
+                                {row.personName}
+                              </Link>
+                              <div className="text-xs text-muted-foreground">
+                                {row.email}
+                              </div>
+                            </TableCell>
+                            <TableCell className="capitalize">
+                              {statusLabel(row.flodeskStatus)}
+                            </TableCell>
+                            <TableCell className="capitalize">
+                              {statusLabel(row.crmStatus)}
+                            </TableCell>
+                          </TableRow>
+                        ),
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <h2 className="font-medium">Possible email differences</h2>
+                <p className="text-sm text-muted-foreground">
+                  {lastImport.emailDifferences.total.toLocaleString()} unmatched
+                  Flodesk addresses have one unambiguous exact-name CRM match.
+                </p>
+              </div>
+              {lastImport.emailDifferences.examples.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No likely differences found.
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Person</TableHead>
+                        <TableHead>Flodesk email</TableHead>
+                        <TableHead>CRM email</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lastImport.emailDifferences.examples.map((row) => (
+                        <TableRow key={`${row.personId}-${row.flodeskEmail}`}>
+                          <TableCell>
+                            <Link
+                              href={`/individuals/${row.personId}`}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {row.personName}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{row.flodeskEmail}</TableCell>
+                          <TableCell>{row.crmEmails.join(", ")}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-5 xl:grid-cols-[330px_minmax(0,1fr)]">
         <Card>
