@@ -98,6 +98,7 @@ import { ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { NeedsResearchBadge } from "@/components/needs-research-badge";
+import { accountingPostingLabel } from "@/lib/payment-evidence";
 
 const PAYMENT_METHOD_OPTIONS = [
   { value: "ach", label: "ACH" },
@@ -1327,13 +1328,14 @@ const QB_LINK_TYPE_LABELS: Record<
 };
 
 // One consolidated "Payments & reconciliation" card: over-payment / audit-close
-// links and the QuickBooks record(s) the gift appears in — split into COUNTED
-// cash-application evidence (the money trail) and CORROBORATING audit-only rows
+// links and the payment record(s) the gift appears in — split into COUNTED
+// cash-application evidence (the money trail, including bank-only evidence that
+// has not reached QuickBooks) and CORROBORATING audit-only rows
 // (e.g. a coarse QB deposit line that corroborates a Stripe-settled gift; never
 // summed). The sub-tables are the single source of truth for match state here:
 // records present = matched, empty = not matched (the derived tie/lane statuses
 // still power the workbench and list filters, just not this card). Off-books
-// gifts legitimately carry no QuickBooks records — they get a muted empty
+// gifts legitimately carry no payment records — they get a muted empty
 // message, not an error.
 function GiftPaymentsReconciliationCard({
   gift,
@@ -1432,14 +1434,14 @@ function GiftPaymentsReconciliationCard({
 
           <div className="space-y-2">
             <div className="text-xs font-medium text-muted-foreground">
-              Counted QuickBooks payments
+              Counted payments
             </div>
             {counted.length === 0 ? (
               <p
                 className="text-sm text-muted-foreground"
                 data-testid="gift-qb-payments-empty"
               >
-                No linked QuickBooks payments
+                No linked payments
               </p>
             ) : (
               <div className="space-y-2" data-testid="gift-qb-payments-list">
@@ -1508,15 +1510,27 @@ function QbRecordRow({
   onUnlink?: () => Promise<unknown>;
 }) {
   const isCreated = record.linkType === "created";
+  const postingLabel = corroborating ? null : accountingPostingLabel(record);
   return (
     <div
       className="rounded-md border px-3 py-2"
       data-testid={`gift-qb-payment-${record.stagedPaymentId ?? record.paymentUnitId}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <Badge variant="secondary">
-          {QB_LINK_TYPE_LABELS[record.linkType]}
-        </Badge>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Badge variant="secondary">
+            {QB_LINK_TYPE_LABELS[record.linkType]}
+          </Badge>
+          {postingLabel ? (
+            <Badge
+              variant="outline"
+              className="border-amber-500 text-amber-700 dark:text-amber-300"
+              data-testid="payment-evidence-posting-status"
+            >
+              {postingLabel}
+            </Badge>
+          ) : null}
+        </div>
         {corroborating || record.amount == null ? (
           <span className="text-xs text-muted-foreground">Audit only</span>
         ) : (
