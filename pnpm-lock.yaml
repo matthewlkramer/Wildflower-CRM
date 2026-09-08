@@ -226,6 +226,9 @@ importers:
       stripe:
         specifier: ^22.2.1
         version: 22.2.1(@types/node@25.3.5)
+      xlsx:
+        specifier: 0.18.5
+        version: 0.18.5
       zod:
         specifier: 'catalog:'
         version: 3.25.76

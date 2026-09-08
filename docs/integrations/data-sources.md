@@ -18,7 +18,7 @@ per-table schema map is [`../../lib/db/SCHEMA.md`](../../lib/db/SCHEMA.md).
 | Stripe                                             | Payment-processor evidence | Ongoing pull-only sync                     |
 | Donorbox                                           | Donor/purpose evidence     | Ongoing pull-only sync                     |
 | Gmail / Google Calendar                            | Communications             | Ongoing per-user sync                      |
-| Flodesk                                            | Newsletter audience        | Ongoing push of eligible people            |
+| Flodesk                                            | Newsletter audience + campaign evidence | Ongoing audience sync; reviewed workbook imports |
 | GDELT                                              | Media mentions             | Ongoing pull                               |
 
 ## Closed source: Copper / Airtable CRM Files
@@ -69,6 +69,12 @@ document set (see [`../README.md`](../README.md)).
 - **Gmail / Calendar** — per-user Google OAuth (`google_oauth_tokens`);
   cursors in `email_sync_state` / `calendar_sync_state`.
 - **Flodesk** — newsletter-eligible people (driven by the `people.newsletter`
-  flags) are pushed to Flodesk; state in `flodesk_sync_state`.
+  flags) are pushed to Flodesk; state in `flodesk_sync_state`. Historical
+  audience, campaign, open, and click evidence can also be imported from the
+  canonical Flodesk workbook on `/newsletter`. Imports upsert
+  `newsletter_contacts`, `newsletter_campaigns`, and `newsletter_engagement`
+  by stable email/campaign keys, link exact CRM email matches, and never create
+  people from unmatched addresses. The workbook contains contact data and must
+  not be committed to the repository.
 - **GDELT** — press coverage into `media_mentions`; cursor in
   `media_ingest_state`.

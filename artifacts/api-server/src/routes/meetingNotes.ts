@@ -1,8 +1,13 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { meetingNotes, tasks, users } from "@workspace/db/schema";
+import {
+  calendarEvents,
+  meetingNotes,
+  tasks,
+  users,
+} from "@workspace/db/schema";
 import type { MeetingActionItem } from "@workspace/db/schema";
-import { and, desc, count, eq, sql, type SQL } from "drizzle-orm";
+import { and, desc, count, eq, or, sql, type SQL } from "drizzle-orm";
 import {
   ListMeetingNotesQueryParams,
   CreateMeetingNoteBodyRefined,
@@ -47,8 +52,12 @@ router.get(
           : eq(meetingNotes.organizationId, q.organizationId),
       );
     }
-    if (q.householdId) filters.push(eq(meetingNotes.householdId, q.householdId));
-    if (q.creatorUserId) filters.push(eq(meetingNotes.creatorUserId, q.creatorUserId));
+    if (q.householdId)
+      filters.push(eq(meetingNotes.householdId, q.householdId));
+    if (q.creatorUserId)
+      filters.push(eq(meetingNotes.creatorUserId, q.creatorUserId));
+    if (q.calendarEventId)
+      filters.push(eq(meetingNotes.calendarEventId, q.calendarEventId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
@@ -85,6 +94,59 @@ router.post(
     const user = getAppUser(req);
     if (!user) return notFound(res, "user");
 
+    if (body.calendarEventId) {
+      const event = await db
+        .select()
+        .from(calendarEvents)
+        .where(
+          and(
+            eq(calendarEvents.id, body.calendarEventId),
+            or(
+              eq(calendarEvents.isPrivate, false),
+              eq(calendarEvents.calendarUserId, user.id),
+            ),
+          ),
+        )
+        .then((rows) => rows[0]);
+      if (!event) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "The linked calendar event was not found or is private.",
+        });
+        return;
+      }
+      const contactMatches =
+        (!!body.personId && event.matchedPersonIds?.includes(body.personId)) ||
+        (!!body.organizationId &&
+          event.matchedOrganizationIds?.includes(body.organizationId)) ||
+        (!!body.householdId &&
+          event.matchedHouseholdIds?.includes(body.householdId));
+      if (!contactMatches) {
+        res.status(400).json({
+          error: "validation_error",
+          message: "Choose a contact that is linked to this calendar event.",
+        });
+        return;
+      }
+      const existingNote = await db
+        .select({ id: meetingNotes.id })
+        .from(meetingNotes)
+        .innerJoin(
+          calendarEvents,
+          eq(calendarEvents.id, meetingNotes.calendarEventId),
+        )
+        .where(eq(calendarEvents.gcalEventId, event.gcalEventId))
+        .then((rows) => rows[0]);
+      if (existingNote) {
+        res.status(409).json({
+          error: "conflict",
+          message: "A note is already linked to this meeting.",
+          details: { meetingNoteId: existingNote.id },
+        });
+        return;
+      }
+    }
+
     // Per-request privacy lookup: snapshot the creator's current
     // email_sync_mode and use that to decide whether to persist the
     // raw transcript. We use email_sync_mode as the project-wide
@@ -102,10 +164,14 @@ router.post(
     // summary + action items) vs hand-typed notes (`summary`, stored
     // verbatim with no AI processing and no rawTranscript). Refined
     // body validation has already enforced that exactly one is set.
-    const isTranscriptPath = typeof body.transcript === "string" && body.transcript.trim().length > 0;
+    const isTranscriptPath =
+      typeof body.transcript === "string" && body.transcript.trim().length > 0;
     const ai = isTranscriptPath
       ? await summarizeMeeting(body.transcript!)
-      : { summary: body.summary!.trim(), actionItems: [] as MeetingActionItem[] };
+      : {
+          summary: body.summary!.trim(),
+          actionItems: [] as MeetingActionItem[],
+        };
 
     const [row] = await db
       .insert(meetingNotes)
@@ -118,7 +184,8 @@ router.post(
         // mode we drop the transcript here, BEFORE the insert, so the
         // raw bytes never reach postgres in the first place. The
         // hand-typed-notes path never has a transcript to begin with.
-        rawTranscript: !isTranscriptPath || summaryOnly ? null : body.transcript!,
+        rawTranscript:
+          !isTranscriptPath || summaryOnly ? null : body.transcript!,
         summaryOnly,
         aiSummary: ai.summary,
         actionItems: ai.actionItems as unknown as MeetingActionItem[],
@@ -126,6 +193,7 @@ router.post(
         personId: body.personId ?? null,
         organizationId: body.organizationId ?? null,
         householdId: body.householdId ?? null,
+        calendarEventId: body.calendarEventId ?? null,
       })
       .returning();
     res.status(201).json(row);
@@ -146,9 +214,14 @@ router.patch(
     // Merge-then-validate so a partial PATCH can't bypass the contact xor.
     const merged = {
       personId: body.personId !== undefined ? body.personId : existing.personId,
-      organizationId: body.organizationId !== undefined ? body.organizationId : existing.organizationId,
+      organizationId:
+        body.organizationId !== undefined
+          ? body.organizationId
+          : existing.organizationId,
       householdId:
-        body.householdId !== undefined ? body.householdId : existing.householdId,
+        body.householdId !== undefined
+          ? body.householdId
+          : existing.householdId,
     };
     const issues = validateMeetingContactInvariants(merged);
     if (issues.length > 0) {
@@ -161,12 +234,14 @@ router.patch(
     }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (body.title !== undefined) patch.title = body.title;
-    if (body.meetingDate !== undefined) patch.meetingDate = new Date(body.meetingDate);
+    if (body.meetingDate !== undefined)
+      patch.meetingDate = new Date(body.meetingDate);
     if (body.attendees !== undefined) patch.attendees = body.attendees;
     if (body.aiSummary !== undefined) patch.aiSummary = body.aiSummary;
     if (body.actionItems !== undefined) patch.actionItems = body.actionItems;
     if (body.personId !== undefined) patch.personId = body.personId;
-    if (body.organizationId !== undefined) patch.organizationId = body.organizationId;
+    if (body.organizationId !== undefined)
+      patch.organizationId = body.organizationId;
     if (body.householdId !== undefined) patch.householdId = body.householdId;
     const [row] = await db
       .update(meetingNotes)
@@ -247,7 +322,9 @@ router.post(
           assigneeUserId: body.assigneeUserId ?? null,
           createdByUserId: user.id,
           personIds: existing.personId ? [existing.personId] : null,
-          organizationIds: existing.organizationId ? [existing.organizationId] : null,
+          organizationIds: existing.organizationId
+            ? [existing.organizationId]
+            : null,
           householdIds: existing.householdId ? [existing.householdId] : null,
         })
         .returning();

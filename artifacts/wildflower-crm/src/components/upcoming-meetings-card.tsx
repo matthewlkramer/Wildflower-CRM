@@ -240,6 +240,7 @@ function UpcomingMeetingRow({
       title,
       meetingDate,
       attendees: (ev.attendeeEmails ?? []).join(", "),
+      calendarEventId: ev.id,
     };
   }, [ev.startAt, ev.attendeeEmails, title]);
 

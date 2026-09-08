@@ -141,7 +141,7 @@ export const createMeetingNote = async (createMeetingNoteBody: CreateMeetingNote
 
 
 
-export const getCreateMeetingNoteMutationOptions = <TError = ErrorType<BadRequestResponse>,
+export const getCreateMeetingNoteMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeetingNote>>, TError,{data: BodyType<CreateMeetingNoteBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createMeetingNote>>, TError,{data: BodyType<CreateMeetingNoteBody>}, TContext> => {
 
@@ -170,9 +170,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateMeetingNoteMutationResult = NonNullable<Awaited<ReturnType<typeof createMeetingNote>>>
     export type CreateMeetingNoteMutationBody = BodyType<CreateMeetingNoteBody>
-    export type CreateMeetingNoteMutationError = ErrorType<BadRequestResponse>
+    export type CreateMeetingNoteMutationError = ErrorType<BadRequestResponse | void>
 
-    export const useCreateMeetingNote = <TError = ErrorType<BadRequestResponse>,
+    export const useCreateMeetingNote = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createMeetingNote>>, TError,{data: BodyType<CreateMeetingNoteBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createMeetingNote>>,

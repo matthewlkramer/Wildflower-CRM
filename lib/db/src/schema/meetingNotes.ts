@@ -6,12 +6,14 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./users";
 import { organizations } from "./organizations";
 import { people } from "./people";
 import { households } from "./households";
+import { calendarEvents } from "./calendarEvents";
 
 /**
  * Meeting notes captured via the paste-transcript flow. The user pastes
@@ -63,6 +65,10 @@ export const meetingNotes = pgTable(
     householdId: text("household_id").references(() => households.id, {
       onDelete: "restrict",
     }),
+    calendarEventId: text("calendar_event_id").references(
+      () => calendarEvents.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -76,6 +82,9 @@ export const meetingNotes = pgTable(
     index("meeting_notes_person_id_idx").on(t.personId),
     index("meeting_notes_organization_id_idx").on(t.organizationId),
     index("meeting_notes_household_id_idx").on(t.householdId),
+    uniqueIndex("meeting_notes_calendar_event_id_uq")
+      .on(t.calendarEventId)
+      .where(sql`${t.calendarEventId} is not null`),
     check(
       "meeting_notes_contact_xor",
       sql`num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) = 1`,

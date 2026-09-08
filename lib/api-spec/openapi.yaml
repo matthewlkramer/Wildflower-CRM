@@ -5367,6 +5367,7 @@ paths:
           }
         - { name: householdId, in: query, schema: { type: string } }
         - { name: creatorUserId, in: query, schema: { type: string } }
+        - { name: calendarEventId, in: query, schema: { type: string } }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -5405,6 +5406,8 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "409":
+          description: A note is already linked to this physical calendar event.
   /meeting-notes/{id}:
     get:
       operationId: getMeetingNote
@@ -11830,6 +11833,58 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           description: Pledge finalization requirements are incomplete.
+
+  # ─── Newsletter history (Flodesk spreadsheet import + engagement) ────────
+  /newsletter-overview:
+    get:
+      operationId: getNewsletterOverview
+      tags: [newsletter]
+      responses:
+        "200":
+          description: Current imported audience counts and campaign history.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsletterOverview" }
+
+  /newsletter-campaigns/{id}/engagement:
+    get:
+      operationId: listNewsletterEngagement
+      tags: [newsletter]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: opened, in: query, schema: { type: boolean } }
+        - { name: clicked, in: query, schema: { type: boolean } }
+        - { name: linked, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200":
+          description: Recipient-level evidence imported for one campaign.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsletterEngagementList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /newsletter-imports/spreadsheet:
+    post:
+      operationId: importNewsletterSpreadsheet
+      tags: [newsletter]
+      summary: Import the canonical Flodesk history workbook (admin only).
+      requestBody:
+        required: true
+        content:
+          application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+            schema: { type: string, format: binary }
+      responses:
+        "200":
+          description: Idempotent import summary.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsletterImportResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403":
+          description: Admin role required.
 components:
   parameters:
     Limit:
@@ -23433,7 +23488,7 @@ components:
     CalendarEvent:
       type: object
       required:
-        [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate]
+        [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate, meetingNoteId, hasMeetingNotes, hasNextSteps]
       properties:
         id: { type: string }
         calendarUserId: { type: string }
@@ -23456,6 +23511,25 @@ components:
           { type: array, items: { type: string }, nullable: true }
         matchedHouseholdIds:
           { type: array, items: { type: string }, nullable: true }
+        meetingNoteId:
+          {
+            type: string,
+            nullable: true,
+            readOnly: true,
+            description: "The note linked to this physical Google Calendar event, if one exists.",
+          }
+        hasMeetingNotes:
+          {
+            type: boolean,
+            readOnly: true,
+            description: "True when a meeting note is linked to this physical Google Calendar event.",
+          }
+        hasNextSteps:
+          {
+            type: boolean,
+            readOnly: true,
+            description: "True when the linked meeting note contains at least one action item.",
+          }
     CalendarEventList:
       type: object
       required: [data, pagination]
@@ -24572,6 +24646,12 @@ components:
         personId: { type: string, nullable: true }
         organizationId: { type: string, nullable: true }
         householdId: { type: string, nullable: true }
+        calendarEventId:
+          {
+            type: string,
+            nullable: true,
+            description: "Direct pointer to the synced calendar event this note documents.",
+          }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     MeetingNoteList:
@@ -24606,6 +24686,7 @@ components:
         personId: { type: string }
         organizationId: { type: string }
         householdId: { type: string }
+        calendarEventId: { type: string }
     UpdateMeetingNoteBody:
       type: object
       properties:
@@ -25603,3 +25684,77 @@ components:
             type: boolean,
             description: "True if the source user was archived as part of this call.",
           }
+
+    # ─── Newsletter history ──────────────────────────────────────────────────
+    NewsletterAudienceSummary:
+      type: object
+      required: [currentSubscribers, linkedCurrentSubscribers, unmatchedCurrentSubscribers, unsubscribeEvidence, bounceEvidence]
+      properties:
+        currentSubscribers: { type: integer }
+        linkedCurrentSubscribers: { type: integer }
+        unmatchedCurrentSubscribers: { type: integer }
+        unsubscribeEvidence: { type: integer }
+        bounceEvidence: { type: integer }
+    NewsletterCampaign:
+      type: object
+      required: [id, subject, sentAt, trackedRecipientCount, openedCount, clickedCount, linkedCount]
+      properties:
+        id: { type: string }
+        subject: { type: string }
+        sentAt: { type: string, format: date-time }
+        sentTimeText: { type: string, nullable: true }
+        previewUrl: { type: string, nullable: true }
+        openRate: { type: number, nullable: true }
+        clickRate: { type: number, nullable: true }
+        trackedRecipientCount: { type: integer }
+        openedCount: { type: integer }
+        clickedCount: { type: integer }
+        linkedCount: { type: integer }
+    NewsletterOverview:
+      type: object
+      required: [audience, campaigns]
+      properties:
+        audience: { $ref: "#/components/schemas/NewsletterAudienceSummary" }
+        campaigns:
+          type: array
+          items: { $ref: "#/components/schemas/NewsletterCampaign" }
+    NewsletterEngagement:
+      type: object
+      required: [campaignId, email, opened, totalOpens, clicked, totalClicks, clickedLinks]
+      properties:
+        campaignId: { type: string }
+        email: { type: string, format: email }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        opened: { type: boolean }
+        lastOpenedAt: { type: string, format: date-time, nullable: true }
+        totalOpens: { type: integer }
+        clicked: { type: boolean }
+        lastClickedAt: { type: string, format: date-time, nullable: true }
+        totalClicks: { type: integer }
+        clickedLinks: { type: array, items: { type: string } }
+        linkedRecordType:
+          { type: string, enum: [person, organization, household, payment_intermediary], nullable: true }
+        linkedRecordId: { type: string, nullable: true }
+        linkedRecordName: { type: string, nullable: true }
+    NewsletterEngagementList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/NewsletterEngagement" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    NewsletterImportResult:
+      type: object
+      required: [campaigns, audienceRecords, engagementRecords, linkedAudienceRecords, unmatchedAudienceRecords, peopleSubscribed, peopleUnsubscribed, bouncedEmailsInvalidated]
+      properties:
+        campaigns: { type: integer }
+        audienceRecords: { type: integer }
+        engagementRecords: { type: integer }
+        linkedAudienceRecords: { type: integer }
+        unmatchedAudienceRecords: { type: integer }
+        peopleSubscribed: { type: integer }
+        peopleUnsubscribed: { type: integer }
+        bouncedEmailsInvalidated: { type: integer }

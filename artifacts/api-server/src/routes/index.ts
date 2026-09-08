@@ -67,6 +67,7 @@ import restrictionTextReviewRouter from "./restrictionTextReview";
 import adminReassignRouter from "./adminReassign";
 import reconciliationRouter from "./reconciliation";
 import codingFormRowsRouter from "./codingFormRows";
+import newsletterRouter from "./newsletter";
 
 const router: IRouter = Router();
 
@@ -148,5 +149,6 @@ router.use(restrictionTextReviewRouter);
 router.use(adminReassignRouter);
 router.use(reconciliationRouter);
 router.use(codingFormRowsRouter);
+router.use(newsletterRouter);
 
 export default router;

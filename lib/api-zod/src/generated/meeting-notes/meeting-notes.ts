@@ -21,6 +21,7 @@ export const ListMeetingNotesQueryParams = zod.object({
   "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include meeting notes linked to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "creatorUserId": zod.coerce.string().optional(),
+  "calendarEventId": zod.coerce.string().optional(),
   "limit": zod.coerce.number().min(1).max(listMeetingNotesQueryLimitMax).default(listMeetingNotesQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listMeetingNotesQueryPageDefault)
 })
@@ -44,6 +45,7 @@ export const ListMeetingNotesResponse = zod.object({
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
+  "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
@@ -62,7 +64,8 @@ export const CreateMeetingNoteBody = zod.object({
   "attendees": zod.array(zod.string()).optional(),
   "personId": zod.string().optional(),
   "organizationId": zod.string().optional(),
-  "householdId": zod.string().optional()
+  "householdId": zod.string().optional(),
+  "calendarEventId": zod.string().optional()
 }).describe('Exactly one of personId \/ funderId \/ householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow).')
 
 export const GetMeetingNoteParams = zod.object({
@@ -87,6 +90,7 @@ export const GetMeetingNoteResponse = zod.object({
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
+  "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -129,6 +133,7 @@ export const UpdateMeetingNoteResponse = zod.object({
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
+  "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })

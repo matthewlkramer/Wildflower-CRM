@@ -10,21 +10,18 @@ import {
   useListOrganizations,
   useListHouseholds,
   getListMeetingNotesQueryKey,
+  getGetMeetingNoteQueryKey,
   getListPeopleQueryKey,
   getListOrganizationsQueryKey,
   getListHouseholdsQueryKey,
   getListTasksQueryKey,
+  getListCalendarEventsQueryKey,
   type MeetingNote,
   type MeetingActionItem,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -101,8 +98,8 @@ export function MeetingNotesPanel(ctx: MeetingContext) {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : rows.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No meeting notes yet. Paste a transcript and we'll summarize it
-            and extract action items.
+            No meeting notes yet. Paste a transcript and we'll summarize it and
+            extract action items.
           </p>
         ) : (
           <ul className="space-y-3">
@@ -135,9 +132,17 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
   const del = useDeleteMeetingNote({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: getListMeetingNotesQueryKey(),
-        });
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getListMeetingNotesQueryKey(),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getGetMeetingNoteQueryKey(note.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListCalendarEventsQueryKey(),
+          }),
+        ]);
         toast({ title: "Meeting note deleted" });
       },
     },
@@ -145,9 +150,17 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
   const update = useUpdateMeetingNote({
     mutation: {
       onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: getListMeetingNotesQueryKey(),
-        });
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getListMeetingNotesQueryKey(),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getGetMeetingNoteQueryKey(note.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListCalendarEventsQueryKey(),
+          }),
+        ]);
         toast({ title: "Meeting note updated" });
         setEditing(false);
       },
@@ -182,7 +195,8 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
       },
     },
   });
-  const items: MeetingActionItem[] = (note.actionItems ?? []) as MeetingActionItem[];
+  const items: MeetingActionItem[] = (note.actionItems ??
+    []) as MeetingActionItem[];
 
   if (editing) {
     return (
@@ -247,7 +261,8 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
             variant="ghost"
             className="h-7 w-7 text-muted-foreground hover:text-destructive"
             onClick={() => {
-              if (confirm("Delete this meeting note?")) del.mutate({ id: note.id });
+              if (confirm("Delete this meeting note?"))
+                del.mutate({ id: note.id });
             }}
             disabled={del.isPending}
             aria-label="Delete meeting note"
@@ -363,7 +378,9 @@ function MeetingNoteEditor({
   );
 
   function setItem(i: number, patch: Partial<MeetingActionItem>) {
-    setItems((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
+    setItems((arr) =>
+      arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)),
+    );
   }
   function addItem() {
     setItems((arr) => [...arr, { title: "" }]);
@@ -527,7 +544,12 @@ export function AddMeetingNoteDialog({
    * (comma-separated). Used by the dashboard "upcoming meetings" widget to
    * seed the form from a calendar event. Applied whenever the dialog opens.
    */
-  prefill?: { title?: string; meetingDate?: string; attendees?: string };
+  prefill?: {
+    title?: string;
+    meetingDate?: string;
+    attendees?: string;
+    calendarEventId?: string;
+  };
   /** Optional controlled open state for external triggers (e.g. dashboard widget). */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -578,6 +600,9 @@ export function AddMeetingNoteDialog({
         await queryClient.invalidateQueries({
           queryKey: getListMeetingNotesQueryKey(),
         });
+        await queryClient.invalidateQueries({
+          queryKey: getListCalendarEventsQueryKey(),
+        });
         toast({ title: "Meeting note saved" });
         setOpen(false);
         setTitle("");
@@ -600,9 +625,13 @@ export function AddMeetingNoteDialog({
 
   // Pinned ctx wins over the in-dialog picker. The picker is only shown
   // (and only matters) in unpinned mode.
-  const effectivePerson = ctx?.personId ?? (picked?.kind === "person" ? picked.id : undefined);
-  const effectiveFunder = ctx?.organizationId ?? (picked?.kind === "organization" ? picked.id : undefined);
-  const effectiveHousehold = ctx?.householdId ?? (picked?.kind === "household" ? picked.id : undefined);
+  const effectivePerson =
+    ctx?.personId ?? (picked?.kind === "person" ? picked.id : undefined);
+  const effectiveFunder =
+    ctx?.organizationId ??
+    (picked?.kind === "organization" ? picked.id : undefined);
+  const effectiveHousehold =
+    ctx?.householdId ?? (picked?.kind === "household" ? picked.id : undefined);
   const contactCount =
     (effectivePerson ? 1 : 0) +
     (effectiveFunder ? 1 : 0) +
@@ -709,6 +738,7 @@ export function AddMeetingNoteDialog({
                 personId: effectivePerson,
                 organizationId: effectiveFunder,
                 householdId: effectiveHousehold,
+                calendarEventId: prefill?.calendarEventId,
               },
             });
           }}

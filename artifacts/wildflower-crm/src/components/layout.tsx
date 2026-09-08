@@ -32,6 +32,8 @@ import {
   ListChecks,
   FileSpreadsheet,
   Megaphone,
+  Newspaper,
+  CalendarCheck2,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -74,6 +76,8 @@ const navItems: NavEntry[] = [
 
   { section: "Engagement" },
   { href: "/moves", label: "Moves", icon: Activity },
+  { href: "/meetings", label: "Meetings", icon: CalendarCheck2 },
+  { href: "/newsletter", label: "Newsletter", icon: Newspaper },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },

@@ -64,3 +64,4 @@ export * from './generated/revenue-extractor/revenue-extractor';
 export * from './generated/fundraising-campaigns/fundraising-campaigns';
 export * from './generated/pledge-expected-payments/pledge-expected-payments';
 export * from './generated/donor-routing/donor-routing';
+export * from './generated/newsletter/newsletter';

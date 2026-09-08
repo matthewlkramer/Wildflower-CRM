@@ -8131,6 +8131,12 @@ export interface CalendarEvent {
   matchedPersonIds?: string[] | null;
   matchedOrganizationIds?: string[] | null;
   matchedHouseholdIds?: string[] | null;
+  /** The note linked to this physical Google Calendar event, if one exists. */
+  readonly meetingNoteId: string | null;
+  /** True when a meeting note is linked to this physical Google Calendar event. */
+  readonly hasMeetingNotes: boolean;
+  /** True when the linked meeting note contains at least one action item. */
+  readonly hasNextSteps: boolean;
 }
 
 export interface CalendarEventList {
@@ -8985,6 +8991,8 @@ export interface MeetingNote {
   personId?: string | null;
   organizationId?: string | null;
   householdId?: string | null;
+  /** Direct pointer to the synced calendar event this note documents. */
+  calendarEventId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -9009,6 +9017,7 @@ export interface CreateMeetingNoteBody {
   personId?: string;
   organizationId?: string;
   householdId?: string;
+  calendarEventId?: string;
 }
 
 export interface UpdateMeetingNoteBody {
@@ -9855,6 +9864,77 @@ export interface ReassignOwnerResult {
   reassigned: OwnedRecordCounts;
   /** True if the source user was archived as part of this call. */
   archivedSource: boolean;
+}
+
+export interface NewsletterAudienceSummary {
+  currentSubscribers: number;
+  linkedCurrentSubscribers: number;
+  unmatchedCurrentSubscribers: number;
+  unsubscribeEvidence: number;
+  bounceEvidence: number;
+}
+
+export interface NewsletterCampaign {
+  id: string;
+  subject: string;
+  sentAt: string;
+  sentTimeText?: string | null;
+  previewUrl?: string | null;
+  openRate?: number | null;
+  clickRate?: number | null;
+  trackedRecipientCount: number;
+  openedCount: number;
+  clickedCount: number;
+  linkedCount: number;
+}
+
+export interface NewsletterOverview {
+  audience: NewsletterAudienceSummary;
+  campaigns: NewsletterCampaign[];
+}
+
+export type NewsletterEngagementLinkedRecordType = typeof NewsletterEngagementLinkedRecordType[keyof typeof NewsletterEngagementLinkedRecordType] | null;
+
+
+export const NewsletterEngagementLinkedRecordType = {
+  person: 'person',
+  organization: 'organization',
+  household: 'household',
+  payment_intermediary: 'payment_intermediary',
+} as const;
+
+export interface NewsletterEngagement {
+  campaignId: string;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  deliveredAt?: string | null;
+  opened: boolean;
+  lastOpenedAt?: string | null;
+  totalOpens: number;
+  clicked: boolean;
+  lastClickedAt?: string | null;
+  totalClicks: number;
+  clickedLinks: string[];
+  linkedRecordType?: NewsletterEngagementLinkedRecordType;
+  linkedRecordId?: string | null;
+  linkedRecordName?: string | null;
+}
+
+export interface NewsletterEngagementList {
+  data: NewsletterEngagement[];
+  pagination: Pagination;
+}
+
+export interface NewsletterImportResult {
+  campaigns: number;
+  audienceRecords: number;
+  engagementRecords: number;
+  linkedAudienceRecords: number;
+  unmatchedAudienceRecords: number;
+  peopleSubscribed: number;
+  peopleUnsubscribed: number;
+  bouncedEmailsInvalidated: number;
 }
 
 /**
@@ -11125,6 +11205,7 @@ organizationId?: string;
 includeLinkedPeople?: boolean;
 householdId?: string;
 creatorUserId?: string;
+calendarEventId?: string;
 /**
  * @minimum 1
  * @maximum 10000
@@ -11796,6 +11877,22 @@ lens?: WorkbenchDepositLens;
  * Free-text over bank memo/reference/account, payment-unit ids and linked gift names.
  */
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListNewsletterEngagementParams = {
+search?: string;
+opened?: boolean;
+clicked?: boolean;
+linked?: boolean;
 /**
  * @minimum 1
  * @maximum 10000

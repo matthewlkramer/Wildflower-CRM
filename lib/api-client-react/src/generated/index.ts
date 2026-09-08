@@ -35,6 +35,7 @@ export * from "./interactions/interactions";
 export * from "./internal-email-domains/internal-email-domains";
 export * from "./media-mentions/media-mentions";
 export * from "./meeting-notes/meeting-notes";
+export * from "./newsletter/newsletter";
 export * from "./notes/notes";
 export * from "./opportunities-and-pledges/opportunities-and-pledges";
 export * from "./organizations/organizations";
