@@ -1,8 +1,9 @@
 # Runbook — newsletter history and meeting links
 
 This release adds source-evidence tables for the reviewed Flodesk workbook and
-a direct calendar-event pointer on meeting notes. The workbook contains contact
-data and is intentionally **not** committed to git.
+direct calendar-event pointers on structured meeting notes and optional
+free-form CRM notes. The workbook contains contact data and is intentionally
+**not** committed to git.
 
 ## 1. Apply the idempotent schema migration
 
@@ -43,4 +44,5 @@ SELECT count(*) FROM newsletter_campaigns;
 SELECT count(*) FROM newsletter_contacts;
 SELECT count(*) FROM newsletter_engagement;
 SELECT count(*) FROM meeting_notes WHERE calendar_event_id IS NOT NULL;
+SELECT count(*) FROM notes WHERE calendar_event_id IS NOT NULL;
 ```

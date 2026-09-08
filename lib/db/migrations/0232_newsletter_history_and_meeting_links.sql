@@ -111,3 +111,24 @@ WHERE mn.id = safe.meeting_note_id
 CREATE UNIQUE INDEX IF NOT EXISTS meeting_notes_calendar_event_id_uq
   ON meeting_notes(calendar_event_id)
   WHERE calendar_event_id IS NOT NULL;
+
+-- Free-form CRM notes may optionally point to a synced meeting. Unlike
+-- meeting_notes, multiple free-form notes may document the same meeting.
+ALTER TABLE notes
+  ADD COLUMN IF NOT EXISTS calendar_event_id text;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'notes_calendar_event_id_fkey'
+  ) THEN
+    ALTER TABLE notes
+      ADD CONSTRAINT notes_calendar_event_id_fkey
+      FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(id)
+      ON DELETE SET NULL;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS notes_calendar_event_id_idx
+  ON notes(calendar_event_id);

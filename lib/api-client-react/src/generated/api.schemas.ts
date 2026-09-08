@@ -8133,7 +8133,9 @@ export interface CalendarEvent {
   matchedHouseholdIds?: string[] | null;
   /** The note linked to this physical Google Calendar event, if one exists. */
   readonly meetingNoteId: string | null;
-  /** True when a meeting note is linked to this physical Google Calendar event. */
+  /** Number of free-form CRM notes linked to this physical Google Calendar event. */
+  readonly linkedNoteCount: number;
+  /** True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event. */
   readonly hasMeetingNotes: boolean;
   /** True when the linked meeting note contains at least one action item. */
   readonly hasNextSteps: boolean;
@@ -8725,6 +8727,8 @@ export interface Note {
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
   mentionUserIds?: string[] | null;
+  /** Optional synced calendar meeting this free-form note documents. */
+  calendarEventId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -8742,6 +8746,8 @@ export interface CreateNoteBody {
   opportunityIds?: string[];
   giftIds?: string[];
   mentionUserIds?: string[];
+  /** Optional synced calendar meeting this note documents. */
+  calendarEventId?: string;
 }
 
 export interface UpdateNoteBody {
@@ -8752,6 +8758,7 @@ export interface UpdateNoteBody {
   opportunityIds?: string[] | null;
   giftIds?: string[] | null;
   mentionUserIds?: string[] | null;
+  calendarEventId?: string | null;
 }
 
 export interface MediaMention {
@@ -11118,6 +11125,10 @@ giftId?: string;
  */
 mentionUserId?: string;
 authorUserId?: string;
+/**
+ * Filter to free-form notes linked to this physical calendar meeting.
+ */
+calendarEventId?: string;
 /**
  * @minimum 1
  * @maximum 10000

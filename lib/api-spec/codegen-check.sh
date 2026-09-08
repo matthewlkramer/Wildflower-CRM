@@ -37,6 +37,14 @@ for rel in \
   [ -f "$file" ] && sed -i 's/[[:space:]]*$//' "$file"
 done
 
+
+# Match the targeted normalization performed by codegen.sh.
+for file in \
+  "$tmp/lib/api-client-react/src/generated/newsletter/newsletter.ts" \
+  "$tmp/lib/api-zod/src/generated/newsletter/newsletter.ts"; do
+  [ -f "$file" ] && "$root/node_modules/.bin/prettier" --write "$file" >/dev/null
+done
+
 status=0
 diff -ru "$root/lib/api-client-react/src/generated" \
          "$tmp/lib/api-client-react/src/generated" || status=1

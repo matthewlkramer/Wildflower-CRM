@@ -58,11 +58,24 @@ function eventSelection() {
       order by mn.meeting_date desc
       limit 1
     )`,
-    hasMeetingNotes: sql<boolean>`exists (
-      select 1
-      from meeting_notes mn
-      join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
+    linkedNoteCount: sql<number>`(
+      select count(*)::int
+      from notes n
+      join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
       where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+    )`,
+    hasMeetingNotes: sql<boolean>`(
+      exists (
+        select 1
+        from meeting_notes mn
+        join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
+        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+      ) or exists (
+        select 1
+        from notes n
+        join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
+        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
+      )
     )`,
     hasNextSteps: sql<boolean>`exists (
       select 1

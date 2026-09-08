@@ -430,7 +430,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `person_suppression_windows`, `calendar_meeting_filters` — suppression and
   matching controls. `internal_email_domains` — staff-domain singleton.
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
-  `notes`.
+  `notes`. Structured meeting notes and free-form CRM notes can both point to
+  a synced calendar event; the free-form note link is optional and many notes
+  may document one meeting.
 - `email_proposals` — one actionable AI signal per row (job change, bounce,
   signature update, grant opportunity, thank-you acknowledgment, …).
 - `email_intel_prompts` — versioned, admin-editable review prompts per

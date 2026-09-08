@@ -5,6 +5,7 @@ import {
   timestamp,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
+import { calendarEvents } from "./calendarEvents";
 
 /**
  * Free-form note attached to one or more CRM entities. Mirrors the
@@ -34,6 +35,10 @@ export const notes = pgTable(
     opportunityIds: text("opportunity_ids").array(),
     giftIds: text("gift_ids").array(),
     mentionUserIds: text("mention_user_ids").array(),
+    calendarEventId: text("calendar_event_id").references(
+      () => calendarEvents.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -50,6 +55,7 @@ export const notes = pgTable(
     index("notes_opportunity_ids_gin_idx").using("gin", t.opportunityIds),
     index("notes_gift_ids_gin_idx").using("gin", t.giftIds),
     index("notes_mention_user_ids_gin_idx").using("gin", t.mentionUserIds),
+    index("notes_calendar_event_id_idx").on(t.calendarEventId),
   ],
 );
 

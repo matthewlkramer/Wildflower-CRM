@@ -5026,6 +5026,12 @@ paths:
             description: "Filter to notes mentioning this user.",
           }
         - { name: authorUserId, in: query, schema: { type: string } }
+        - {
+            name: calendarEventId,
+            in: query,
+            schema: { type: string },
+            description: "Filter to free-form notes linked to this physical calendar meeting.",
+          }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -23488,7 +23494,7 @@ components:
     CalendarEvent:
       type: object
       required:
-        [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate, meetingNoteId, hasMeetingNotes, hasNextSteps]
+        [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate, meetingNoteId, linkedNoteCount, hasMeetingNotes, hasNextSteps]
       properties:
         id: { type: string }
         calendarUserId: { type: string }
@@ -23518,11 +23524,17 @@ components:
             readOnly: true,
             description: "The note linked to this physical Google Calendar event, if one exists.",
           }
+        linkedNoteCount:
+          {
+            type: integer,
+            readOnly: true,
+            description: "Number of free-form CRM notes linked to this physical Google Calendar event.",
+          }
         hasMeetingNotes:
           {
             type: boolean,
             readOnly: true,
-            description: "True when a meeting note is linked to this physical Google Calendar event.",
+            description: "True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.",
           }
         hasNextSteps:
           {
@@ -24246,6 +24258,12 @@ components:
         opportunityIds: { type: array, items: { type: string }, nullable: true }
         giftIds: { type: array, items: { type: string }, nullable: true }
         mentionUserIds: { type: array, items: { type: string }, nullable: true }
+        calendarEventId:
+          {
+            type: string,
+            nullable: true,
+            description: "Optional synced calendar meeting this free-form note documents.",
+          }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     NoteList:
@@ -24265,6 +24283,11 @@ components:
         opportunityIds: { type: array, items: { type: string } }
         giftIds: { type: array, items: { type: string } }
         mentionUserIds: { type: array, items: { type: string } }
+        calendarEventId:
+          {
+            type: string,
+            description: "Optional synced calendar meeting this note documents.",
+          }
     UpdateNoteBody:
       type: object
       properties:
@@ -24276,6 +24299,7 @@ components:
         opportunityIds: { type: array, items: { type: string }, nullable: true }
         giftIds: { type: array, items: { type: string }, nullable: true }
         mentionUserIds: { type: array, items: { type: string }, nullable: true }
+        calendarEventId: { type: string, nullable: true }
 
     # ─── Media mentions ────────────────────────────────────────────────────────
     MediaMention:

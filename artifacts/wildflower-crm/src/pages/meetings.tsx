@@ -2,8 +2,10 @@ import { useMemo, useState } from "react";
 import {
   getListCalendarEventsQueryKey,
   getGetMeetingNoteQueryKey,
+  getListNotesQueryKey,
   useGetMeetingNote,
   useListCalendarEvents,
+  useListNotes,
   useListUsers,
   type CalendarEvent,
 } from "@workspace/api-client-react";
@@ -11,7 +13,7 @@ import {
   AddMeetingNoteDialog,
   MeetingNoteRow,
 } from "@/components/meeting-notes-panel";
-import { userDisplayName } from "@/components/user-picker";
+import { userDisplayName, useUserNameMap } from "@/components/user-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -37,6 +39,7 @@ import {
   CheckCircle2,
   ExternalLink,
   NotebookPen,
+  StickyNote,
 } from "lucide-react";
 
 function localInputDate(value: string): string {
@@ -98,35 +101,70 @@ function StatusBadge({
 }
 
 function ExistingNoteDialog({
+  eventId,
   noteId,
   open,
   onOpenChange,
 }: {
-  noteId: string;
+  eventId: string;
+  noteId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const note = useGetMeetingNote(noteId, {
+  const userMap = useUserNameMap();
+  const note = useGetMeetingNote(noteId ?? "", {
     query: {
-      enabled: open,
-      queryKey: getGetMeetingNoteQueryKey(noteId),
+      enabled: open && Boolean(noteId),
+      queryKey: getGetMeetingNoteQueryKey(noteId ?? ""),
     },
   });
+  const linkedNotes = useListNotes(
+    { calendarEventId: eventId, limit: 100 },
+    {
+      query: {
+        enabled: open,
+        queryKey: getListNotesQueryKey({ calendarEventId: eventId, limit: 100 }),
+      },
+    },
+  );
+  const loading = (Boolean(noteId) && note.isLoading) || linkedNotes.isLoading;
+  const freeFormNotes = linkedNotes.data?.data ?? [];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Meeting notes and next steps</DialogTitle>
           <DialogDescription>
-            Review the notes or edit the action items for this meeting.
+            Review structured meeting notes, next steps, and free-form CRM notes
+            linked to this meeting.
           </DialogDescription>
         </DialogHeader>
-        {note.isLoading ? (
+        {loading ? (
           <p className="text-sm text-muted-foreground">Loading notes…</p>
-        ) : note.data ? (
-          <ul>
-            <MeetingNoteRow note={note.data} />
-          </ul>
+        ) : note.data || freeFormNotes.length > 0 ? (
+          <div className="space-y-3">
+            {note.data ? (
+              <ul>
+                <MeetingNoteRow note={note.data} />
+              </ul>
+            ) : null}
+            {freeFormNotes.map((linkedNote) => (
+              <div
+                key={linkedNote.id}
+                className="space-y-2 rounded-md border p-3 text-sm"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <StickyNote className="h-3.5 w-3.5 text-primary" />
+                  <Badge variant="secondary">CRM note</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {userMap.get(linkedNote.authorUserId) ??
+                      linkedNote.authorUserId} · {meetingDateFromIso(linkedNote.createdAt)}
+                  </span>
+                </div>
+                <p className="whitespace-pre-wrap">{linkedNote.body}</p>
+              </div>
+            ))}
+          </div>
         ) : (
           <p className="text-sm text-destructive">
             The linked meeting note could not be loaded.
@@ -135,6 +173,13 @@ function ExistingNoteDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+function meetingDateFromIso(value: string): string {
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
 function MeetingRow({
@@ -200,8 +245,9 @@ function MeetingRow({
         prefill={prefill}
         trigger={<span className="hidden" />}
       />
-      {event.meetingNoteId ? (
+      {event.hasMeetingNotes ? (
         <ExistingNoteDialog
+          eventId={event.id}
           noteId={event.meetingNoteId}
           open={reviewOpen}
           onOpenChange={setReviewOpen}
