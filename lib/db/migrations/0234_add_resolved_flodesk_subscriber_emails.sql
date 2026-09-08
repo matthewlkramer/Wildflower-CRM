@@ -13,7 +13,8 @@
 --     one immutable audit entry;
 --   * preserves existing preferred-email choices and makes the new address
 --     preferred only when the person previously had no email;
---   * applies current Flodesk subscriber status except for the owner-confirmed\n--     deceased person, who remains unsubscribed;
+--   * applies current Flodesk subscriber status except for the owner-confirmed
+--     deceased person, who remains unsubscribed;
 --   * accepts only the fully completed post-state on re-run.
 --
 -- Production is human-applied from the repository root:
