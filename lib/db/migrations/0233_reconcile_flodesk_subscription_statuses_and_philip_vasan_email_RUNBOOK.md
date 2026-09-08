@@ -137,7 +137,7 @@ ORDER BY is_preferred DESC, lower(email);
 
 SELECT
   (SELECT email_id
-   FROM newsletter_contacts
+   FROL newsletter_contacts
    WHERE normalized_email = 'philip.vasan@blackrock.com') AS contact_email_id,
   count(*) AS blackrock_engagement_rows,
   count(*) FILTER (WHERE email_id = 'em_0233_philip_vasan_blackrock')
