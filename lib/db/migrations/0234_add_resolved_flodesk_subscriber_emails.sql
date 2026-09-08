@@ -1,13 +1,13 @@
--- 0234: Add and link 22 conservatively resolved Flodesk subscriber emails.
+-- 0234: Add and link 28 conservatively resolved Flodesk subscriber emails.
 --
 -- WHY: These imported current-subscriber addresses did not exactly match an
--- existing CRM email. A read-only identity-resolution review found 22 unique
+-- existing CRM email. A read-only identity-resolution review found 28 unique
 -- people using first-name agreement plus a distinctive first+last,
 -- first-initial+last, surname, or corroborated historical-message pattern.
 --
 -- SAFE / IDEMPOTENT:
 --   * requires migration 0233 to have been applied first;
---   * aborts unless all 22 reviewed people and Flodesk contacts are present;
+--   * aborts unless all 28 reviewed people and Flodesk contacts are present;
 --   * aborts if any address is already owned by an unexpected CRM record;
 --   * inserts deterministic email ids, links all imported evidence, and records
 --     one immutable audit entry;
@@ -26,33 +26,43 @@ CREATE TEMP TABLE m0234_targets (
   email_id text PRIMARY KEY,
   email text NOT NULL UNIQUE,
   person_id text NOT NULL UNIQUE,
-  person_name text NOT NULL
+  person_name text NOT NULL,
+  email_type email_type NOT NULL,
+  email_validity contact_validity NOT NULL
 ) ON COMMIT DROP;
 
-INSERT INTO m0234_targets (email_id, email, person_id, person_name)
+INSERT INTO m0234_targets (
+  email_id, email, person_id, person_name, email_type, email_validity
+)
 VALUES
-  ('em_0234_ashley_beckner', 'abeckner@imaginablefutures.com', 'reccW5M97FrvY4t1C', 'Ashley Beckner'),
-  ('em_0234_amy_gips', 'amy.gips@wildflowerschools.org', 'recV86TdJUORXwIXo', 'Amy Gips'),
-  ('em_0234_annie_knickman_plancher', 'aplancher@socialfinance.org', 'recW7o5L76aVKfkO3', 'Annie Knickman Plancher'),
-  ('em_0234_caitlin_codella_low', 'ccodellalow@bipartisanpolicy.org', 'rec2wm588EbXYcaQZ', 'Caitlin Codella Low'),
-  ('em_0234_daniela_vasan', 'daniela.vasan@wildflowerschools.org', 'recy3Qtsjxrwg6lwc', 'Daniela Vasan'),
-  ('em_0234_erica_cantoni', 'erica.cantoni@wildflowerschools.org', 'reczTuMKDMJjQpg5z', 'Erica Cantoni'),
-  ('em_0234_greg_klein', 'gregklein411@gmail.com', 'rectjlyODZwwxxZ55', 'Greg Klein'),
-  ('em_0234_jim_mccormick', 'jmccormick@fmcg.com', 'recrhfXZW2EZTEgmx', 'Jim McCormick'),
-  ('em_0234_jennifer_paradis', 'jparadis@chappellculper.org', 'recXLCZUJo018UsbY', 'Jennifer Paradis'),
-  ('em_0234_kumar_garg', 'kgarg@schmidtfutures.com', 'rec7dv71iAMQMH2OA', 'Kumar Garg'),
-  ('em_0234_maia_blankenship', 'maia.blankenship@wildflowerschools.org', 'recUdeGVQKlHczo79', 'Maia Blankenship'),
-  ('em_0234_marissa_bazan', 'mbazan@arnoldfoundation.org', 'recD0ZKWfhBdkwVZw', 'Marissa Bazan'),
-  ('em_0234_marc_chun', 'mchun@hewlett.org', 'reczhZTtV2PIhW8oh', 'Marc Chun'),
-  ('em_0234_melanie_dukes', 'mdukes@overdeck.org', 'recVNldVoMfPM6Guc', 'Melanie Dukes'),
-  ('em_0234_paul_keys', 'paul.keys@teachforamerica.org', 'reciVVVohw6twAfbl', 'Paul Keys'),
-  ('em_0234_rachel_kelley_cohn', 'rachel.kelley-cohn@wildflowerschools.org', 'recOv0gHw668eE3hO', 'Rachel Kelley-Cohn'),
-  ('em_0234_rena_johnson', 'rjohnson@citybridge.org', 'recKfF2acoPhmFA0q', 'Rena Johnson'),
-  ('em_0234_sunny_greenberg', 'sunny.greenberg@wildflowerschools.org', 'recbbWOl6Xz2t2jM0', 'Sunny Greenberg'),
-  ('em_0234_ted_quinn', 'ted.quinn@covariantgroup.com', 'rec5rOo1sEIAUBLd3', 'Ted Quinn'),
-  ('em_0234_tiffany_cuellar_needham', 'tiffany.needham@teachforamerica.org', 'rec6YLMdIXlxGhCsu', 'Tiffany Cuellar Needham'),
-  ('em_0234_ericca_maas', 'maas@closegapsby5.org', 'recPnOdczEygtkC0b', 'Ericca Maas'),
-  ('em_0234_jim_frey', 'jim@freyfoundationmn.org', 'rec9wltZqjbw86ABv', 'Jim Frey');
+  ('em_0234_ashley_beckner', 'abeckner@imaginablefutures.com', 'reccW5M97FrvY4t1C', 'Ashley Beckner', 'work', 'unknown'),
+  ('em_0234_amy_gips', 'amy.gips@wildflowerschools.org', 'recV86TdJUORXwIXo', 'Amy Gips', 'work', 'unknown'),
+  ('em_0234_annie_knickman_plancher', 'aplancher@socialfinance.org', 'recW7o5L76aVKfkO3', 'Annie Knickman Plancher', 'work', 'unknown'),
+  ('em_0234_caitlin_codella_low', 'ccodellalow@bipartisanpolicy.org', 'rec2wm588EbXYcaQZ', 'Caitlin Codella Low', 'work', 'unknown'),
+  ('em_0234_daniela_vasan', 'daniela.vasan@wildflowerschools.org', 'recy3Qtsjxrwg6lwc', 'Daniela Vasan', 'work', 'unknown'),
+  ('em_0234_erica_cantoni', 'erica.cantoni@wildflowerschools.org', 'reczTuMKDMJjQpg5z', 'Erica Cantoni', 'work', 'unknown'),
+  ('em_0234_greg_klein', 'gregklein411@gmail.com', 'rectjlyODZwwxxZ55', 'Greg Klein', 'personal', 'unknown'),
+  ('em_0234_jim_mccormick', 'jmccormick@fmcg.com', 'recrhfXZW2EZTEgmx', 'Jim McCormick', 'work', 'unknown'),
+  ('em_0234_jennifer_paradis', 'jparadis@chappellculper.org', 'recXLCZUJo018UsbY', 'Jennifer Paradis', 'work', 'unknown'),
+  ('em_0234_kumar_garg', 'kgarg@schmidtfutures.com', 'rec7dv71iAMQMH2OA', 'Kumar Garg', 'work', 'unknown'),
+  ('em_0234_maia_blankenship', 'maia.blankenship@wildflowerschools.org', 'recUdeGVQKlHczo79', 'Maia Blankenship', 'work', 'unknown'),
+  ('em_0234_marissa_bazan', 'mbazan@arnoldfoundation.org', 'recD0ZKWfhBdkwVZw', 'Marissa Bazan', 'work', 'unknown'),
+  ('em_0234_marc_chun', 'mchun@hewlett.org', 'reczhZTtV2PIhW8oh', 'Marc Chun', 'work', 'unknown'),
+  ('em_0234_melanie_dukes', 'mdukes@overdeck.org', 'recVNldVoMfPM6Guc', 'Melanie Dukes', 'work', 'unknown'),
+  ('em_0234_paul_keys', 'paul.keys@teachforamerica.org', 'reciVVVohw6twAfbl', 'Paul Keys', 'work', 'unknown'),
+  ('em_0234_rachel_kelley_cohn', 'rachel.kelley-cohn@wildflowerschools.org', 'recOv0gHw668eE3hO', 'Rachel Kelley-Cohn', 'work', 'unknown'),
+  ('em_0234_rena_johnson', 'rjohnson@citybridge.org', 'recKfF2acoPhmFA0q', 'Rena Johnson', 'work', 'unknown'),
+  ('em_0234_sunny_greenberg', 'sunny.greenberg@wildflowerschools.org', 'recbbWOl6Xz2t2jM0', 'Sunny Greenberg', 'work', 'unknown'),
+  ('em_0234_ted_quinn', 'ted.quinn@covariantgroup.com', 'rec5rOo1sEIAUBLd3', 'Ted Quinn', 'work', 'unknown'),
+  ('em_0234_tiffany_cuellar_needham', 'tiffany.needham@teachforamerica.org', 'rec6YLMdIXlxGhCsu', 'Tiffany Cuellar Needham', 'work', 'unknown'),
+  ('em_0234_ericca_maas', 'maas@closegapsby5.org', 'recPnOdczEygtkC0b', 'Ericca Maas', 'work', 'unknown'),
+  ('em_0234_jim_frey', 'jim@freyfoundationmn.org', 'rec9wltZqjbw86ABv', 'Jim Frey', 'work', 'unknown'),
+  ('em_0234_hassan_hassan', 'hassan@4pt0.org', 'recl5ZY8ZcdBflDzU', 'Hassan Hassan', 'work', 'invalid'),
+  ('em_0234_bob_scully', 'scullyr@gmail.com', 'recwTfTiygjGC8lyw', 'Bob Scully', 'personal', 'unknown'),
+  ('em_0234_brooke_stafford_brizard', 'brooke@chanzuckerberg.com', 'recXlZX81Ehuq2Rad', 'Brooke Stafford-Brizard', 'work', 'unknown'),
+  ('em_0234_shavar_jeffries', 'shavar@dfer.org', 'rec71PKNRdoOSWokB', 'Shavar Jeffries', 'work', 'unknown'),
+  ('em_0234_john_arnold', 'john@arnoldfoundation.org', 'rec8IAStTAcJRKNWU', 'John Arnold', 'work', 'unknown'),
+  ('em_0234_laverne_srinivasan', 'lesrinivasan@gmail.com', 'recG7cld4F9uZKm0W', 'LaVerne Srinivasan', 'personal', 'unknown');
 
 DO $$
 DECLARE
@@ -63,7 +73,6 @@ DECLARE
   v_wrong_contact_links integer;
   v_existing_email_rows integer;
   v_correct_email_rows integer;
-  v_status_updates integer;
   v_audit_count integer;
 BEGIN
   SELECT count(*)::integer INTO v_target_count FROM m0234_targets;
@@ -103,18 +112,12 @@ BEGIN
   JOIN emails e ON lower(btrim(e.email)) = t.email;
 
   SELECT count(*)::integer
-    INTO v_status_updates
-    FROM m0234_targets t
-    JOIN people p ON p.id = t.person_id
-   WHERE NOT p.newsletter OR p.unsubscribed_to_newsletter;
-
-  SELECT count(*)::integer
     INTO v_audit_count
     FROM audit_log
    WHERE id = 'audit_0234_resolved_flodesk_subscriber_emails';
 
-  IF v_target_count <> 22 THEN
-    RAISE EXCEPTION '0234 preflight: expected 22 target rows, found %', v_target_count;
+  IF v_target_count <> 28 THEN
+    RAISE EXCEPTION '0234 preflight: expected 28 target rows, found %', v_target_count;
   END IF;
 
   IF v_dependency_count <> 1 THEN
@@ -123,13 +126,13 @@ BEGIN
       v_dependency_count;
   END IF;
 
-  IF v_active_people <> 22 THEN
+  IF v_active_people <> 28 THEN
     RAISE EXCEPTION
-      '0234 preflight: expected 22 active reviewed people, found %',
+      '0234 preflight: expected 28 active reviewed people, found %',
       v_active_people;
   END IF;
 
-  IF v_contact_count <> 22 OR v_wrong_contact_links <> 0 THEN
+  IF v_contact_count <> 28 OR v_wrong_contact_links <> 0 THEN
     RAISE EXCEPTION
       '0234 preflight: Flodesk contact state invalid (current contacts=% wrong links=%)',
       v_contact_count, v_wrong_contact_links;
@@ -142,16 +145,16 @@ BEGIN
   END IF;
 
   IF v_audit_count = 0 THEN
-    IF v_existing_email_rows <> 0 OR v_status_updates <> 4 THEN
+    IF v_existing_email_rows <> 0 THEN
       RAISE EXCEPTION
-        '0234 preflight: expected first-run state (emails=0 status updates=4); found emails=% status updates=%',
-        v_existing_email_rows, v_status_updates;
+        '0234 preflight: expected no target email rows before first run; found %',
+        v_existing_email_rows;
     END IF;
   ELSIF v_audit_count = 1 THEN
-    IF v_correct_email_rows <> 22 OR v_status_updates <> 0 THEN
+    IF v_correct_email_rows <> 28 THEN
       RAISE EXCEPTION
-        '0234 preflight: audit exists but post-state is incomplete (emails=% status updates=%)',
-        v_correct_email_rows, v_status_updates;
+        '0234 preflight: audit exists but only % of 28 target emails are complete',
+        v_correct_email_rows;
     END IF;
   ELSE
     RAISE EXCEPTION
@@ -161,13 +164,14 @@ BEGIN
 END $$;
 
 INSERT INTO emails (
-  id, email, person_id, validity, is_preferred, created_at, updated_at
+  id, email, person_id, type, validity, is_preferred, created_at, updated_at
 )
 SELECT
   t.email_id,
   t.email,
   t.person_id,
-  'unknown',
+  t.email_type,
+  t.email_validity,
   NOT EXISTS (
     SELECT 1 FROM emails current_email WHERE current_email.person_id = t.person_id
   ),
@@ -210,14 +214,14 @@ VALUES (
   'bulk_update',
   'newsletter_reconciliation',
   'flodesk-name-and-email-resolution',
-  'Added and linked 22 high-confidence Flodesk subscriber emails to existing CRM people',
+  'Added and linked 28 high-confidence Flodesk subscriber emails to existing CRM people',
   NULL,
   jsonb_build_object(
     'migration', '0234_add_resolved_flodesk_subscriber_emails',
     'source', 'imported_flodesk_evidence',
-    'matchCount', 22,
-    'newsletterStatusUpdates', 4,
-    'matchRule', 'unique first-name agreement plus distinctive email-local-part or corroborated message history',
+    'matchCount', 28,
+    'newsletterPeopleReconciled', 28,
+    'matchRule', 'conservative identity resolution plus owner-confirmed historical addresses',
     'preservedAmbiguousMatches', true,
     'linkedNewsletterContacts', true,
     'linkedNewsletterEngagementEvidence', true
@@ -272,9 +276,9 @@ BEGIN
      AND metadata ->> 'migration' = '0234_add_resolved_flodesk_subscriber_emails'
      AND metadata ->> 'matchCount' = '22';
 
-  IF v_correct_emails <> 22
-     OR v_linked_contacts <> 22
-     OR v_status_ok <> 22
+  IF v_correct_emails <> 28
+     OR v_linked_contacts <> 28
+     OR v_status_ok <> 28
      OR v_engagement_rows <> v_linked_engagement_rows
      OR v_audit_count <> 1 THEN
     RAISE EXCEPTION
@@ -284,5 +288,5 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    '0234: verified 22 resolved emails, contacts, engagement links, and subscribed people';
+    '0234: verified 28 resolved emails, contacts, engagement links, and subscribed people';
 END $$;
