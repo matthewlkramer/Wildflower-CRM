@@ -9933,6 +9933,56 @@ export interface NewsletterEngagementList {
   pagination: Pagination;
 }
 
+export type NewsletterSubscriptionDifferenceFlodeskStatus = typeof NewsletterSubscriptionDifferenceFlodeskStatus[keyof typeof NewsletterSubscriptionDifferenceFlodeskStatus];
+
+
+export const NewsletterSubscriptionDifferenceFlodeskStatus = {
+  subscribed: 'subscribed',
+  unsubscribed: 'unsubscribed',
+} as const;
+
+export type NewsletterSubscriptionDifferenceCrmStatus = typeof NewsletterSubscriptionDifferenceCrmStatus[keyof typeof NewsletterSubscriptionDifferenceCrmStatus];
+
+
+export const NewsletterSubscriptionDifferenceCrmStatus = {
+  subscribed: 'subscribed',
+  unsubscribed: 'unsubscribed',
+  not_subscribed: 'not_subscribed',
+} as const;
+
+export interface NewsletterSubscriptionDifference {
+  personId: string;
+  personName: string;
+  email: string;
+  flodeskStatus: NewsletterSubscriptionDifferenceFlodeskStatus;
+  crmStatus: NewsletterSubscriptionDifferenceCrmStatus;
+}
+
+export interface NewsletterSubscriptionDifferenceSummary {
+  total: number;
+  examples: NewsletterSubscriptionDifference[];
+}
+
+export type NewsletterEmailDifferenceMatchBasis = typeof NewsletterEmailDifferenceMatchBasis[keyof typeof NewsletterEmailDifferenceMatchBasis];
+
+
+export const NewsletterEmailDifferenceMatchBasis = {
+  exact_name: 'exact_name',
+} as const;
+
+export interface NewsletterEmailDifference {
+  personId: string;
+  personName: string;
+  flodeskEmail: string;
+  crmEmails: string[];
+  matchBasis: NewsletterEmailDifferenceMatchBasis;
+}
+
+export interface NewsletterEmailDifferenceSummary {
+  total: number;
+  examples: NewsletterEmailDifference[];
+}
+
 export interface NewsletterImportResult {
   campaigns: number;
   audienceRecords: number;
@@ -9942,6 +9992,10 @@ export interface NewsletterImportResult {
   peopleSubscribed: number;
   peopleUnsubscribed: number;
   bouncedEmailsInvalidated: number;
+  /** Always false. Workbook imports preserve source evidence without changing CRM subscription or email fields. */
+  operationalRecordsChanged: boolean;
+  subscriptionDifferences: NewsletterSubscriptionDifferenceSummary;
+  emailDifferences: NewsletterEmailDifferenceSummary;
 }
 
 /**

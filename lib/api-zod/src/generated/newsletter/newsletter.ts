@@ -98,4 +98,33 @@ export const ImportNewsletterSpreadsheetResponse = zod.object({
   peopleSubscribed: zod.number(),
   peopleUnsubscribed: zod.number(),
   bouncedEmailsInvalidated: zod.number(),
+  operationalRecordsChanged: zod
+    .boolean()
+    .describe(
+      "Always false. Workbook imports preserve source evidence without changing CRM subscription or email fields.",
+    ),
+  subscriptionDifferences: zod.object({
+    total: zod.number(),
+    examples: zod.array(
+      zod.object({
+        personId: zod.string(),
+        personName: zod.string(),
+        email: zod.string().email(),
+        flodeskStatus: zod.enum(["subscribed", "unsubscribed"]),
+        crmStatus: zod.enum(["subscribed", "unsubscribed", "not_subscribed"]),
+      }),
+    ),
+  }),
+  emailDifferences: zod.object({
+    total: zod.number(),
+    examples: zod.array(
+      zod.object({
+        personId: zod.string(),
+        personName: zod.string(),
+        flodeskEmail: zod.string().email(),
+        crmEmails: zod.array(zod.string().email()),
+        matchBasis: zod.enum(["exact_name"]),
+      }),
+    ),
+  }),
 });
