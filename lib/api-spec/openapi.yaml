@@ -25772,7 +25772,20 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     NewsletterImportResult:
       type: object
-      required: [campaigns, audienceRecords, engagementRecords, linkedAudienceRecords, unmatchedAudienceRecords, peopleSubscribed, peopleUnsubscribed, bouncedEmailsInvalidated]
+      required:
+        [
+          campaigns,
+          audienceRecords,
+          engagementRecords,
+          linkedAudienceRecords,
+          unmatchedAudienceRecords,
+          peopleSubscribed,
+          peopleUnsubscribed,
+          bouncedEmailsInvalidated,
+          operationalRecordsChanged,
+          subscriptionDifferences,
+          emailDifferences,
+        ]
       properties:
         campaigns: { type: integer }
         audienceRecords: { type: integer }
@@ -25782,3 +25795,48 @@ components:
         peopleSubscribed: { type: integer }
         peopleUnsubscribed: { type: integer }
         bouncedEmailsInvalidated: { type: integer }
+        operationalRecordsChanged:
+          type: boolean
+          description: Always false. Workbook imports preserve source evidence without changing CRM subscription or email fields.
+        subscriptionDifferences:
+          $ref: "#/components/schemas/NewsletterSubscriptionDifferenceSummary"
+        emailDifferences:
+          $ref: "#/components/schemas/NewsletterEmailDifferenceSummary"
+    NewsletterSubscriptionDifference:
+      type: object
+      required: [personId, personName, email, flodeskStatus, crmStatus]
+      properties:
+        personId: { type: string }
+        personName: { type: string }
+        email: { type: string, format: email }
+        flodeskStatus: { type: string, enum: [subscribed, unsubscribed] }
+        crmStatus:
+          { type: string, enum: [subscribed, unsubscribed, not_subscribed] }
+    NewsletterSubscriptionDifferenceSummary:
+      type: object
+      required: [total, examples]
+      properties:
+        total: { type: integer }
+        examples:
+          type: array
+          items:
+            { $ref: "#/components/schemas/NewsletterSubscriptionDifference" }
+    NewsletterEmailDifference:
+      type: object
+      required: [personId, personName, flodeskEmail, crmEmails, matchBasis]
+      properties:
+        personId: { type: string }
+        personName: { type: string }
+        flodeskEmail: { type: string, format: email }
+        crmEmails:
+          type: array
+          items: { type: string, format: email }
+        matchBasis: { type: string, enum: [exact_name] }
+    NewsletterEmailDifferenceSummary:
+      type: object
+      required: [total, examples]
+      properties:
+        total: { type: integer }
+        examples:
+          type: array
+          items: { $ref: "#/components/schemas/NewsletterEmailDifference" }

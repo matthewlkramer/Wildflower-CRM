@@ -17,7 +17,6 @@ import {
   desc,
   eq,
   ilike,
-  inArray,
   isNotNull,
   isNull,
   or,
@@ -37,6 +36,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { parseNewsletterWorkbook } from "../lib/newsletterWorkbook";
+import { compareNewsletterWorkbookToCrm } from "../lib/newsletterImportComparison";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -254,9 +254,32 @@ router.post(
     }
 
     const result = await db.transaction(async (tx) => {
-      const crmEmails = await tx.select().from(emailsTable);
+      const [crmEmails, crmPeople] = await Promise.all([
+        tx
+          .select({
+            id: emailsTable.id,
+            email: emailsTable.email,
+            personId: emailsTable.personId,
+          })
+          .from(emailsTable),
+        tx
+          .select({
+            id: people.id,
+            firstName: people.firstName,
+            lastName: people.lastName,
+            fullName: people.fullName,
+            newsletter: people.newsletter,
+            unsubscribedToNewsletter: people.unsubscribedToNewsletter,
+          })
+          .from(people),
+      ]);
       const emailByAddress = new Map(
         crmEmails.map((row) => [row.email.trim().toLowerCase(), row]),
+      );
+      const comparison = compareNewsletterWorkbookToCrm(
+        parsed.contacts,
+        crmEmails,
+        crmPeople,
       );
 
       await tx.update(newsletterContacts).set({
@@ -359,52 +382,6 @@ router.post(
           });
       }
 
-      const activeSet = new Set(parsed.currentActiveEmails);
-      const activePersonIds = new Set<string>();
-      for (const address of activeSet) {
-        const personId = emailByAddress.get(address)?.personId;
-        if (personId) activePersonIds.add(personId);
-      }
-      const unsubscribePersonIds = new Set<string>();
-      for (const address of parsed.currentUnsubscribedEmails) {
-        const personId = emailByAddress.get(address)?.personId;
-        if (personId && !activePersonIds.has(personId))
-          unsubscribePersonIds.add(personId);
-      }
-      const bounceEmailIds = parsed.bouncedEmailsToInvalidate
-        .map((address) => emailByAddress.get(address)?.id)
-        .filter((id): id is string => !!id);
-
-      const peopleUnsubscribed = unsubscribePersonIds.size
-        ? await tx
-            .update(people)
-            .set({
-              newsletter: false,
-              unsubscribedToNewsletter: true,
-              updatedAt: new Date(),
-            })
-            .where(inArray(people.id, [...unsubscribePersonIds]))
-            .returning({ id: people.id })
-        : [];
-      const peopleSubscribed = activePersonIds.size
-        ? await tx
-            .update(people)
-            .set({
-              newsletter: true,
-              unsubscribedToNewsletter: false,
-              updatedAt: new Date(),
-            })
-            .where(inArray(people.id, [...activePersonIds]))
-            .returning({ id: people.id })
-        : [];
-      const bouncedEmailsInvalidated = bounceEmailIds.length
-        ? await tx
-            .update(emailsTable)
-            .set({ validity: "invalid", updatedAt: new Date() })
-            .where(inArray(emailsTable.id, bounceEmailIds))
-            .returning({ id: emailsTable.id })
-        : [];
-
       const linkedAudienceRecords = parsed.contacts.filter((row) =>
         emailByAddress.has(row.normalizedEmail),
       ).length;
@@ -415,16 +392,35 @@ router.post(
         linkedAudienceRecords,
         unmatchedAudienceRecords:
           parsed.contacts.length - linkedAudienceRecords,
-        peopleSubscribed: peopleSubscribed.length,
-        peopleUnsubscribed: peopleUnsubscribed.length,
-        bouncedEmailsInvalidated: bouncedEmailsInvalidated.length,
+        peopleSubscribed: 0,
+        peopleUnsubscribed: 0,
+        bouncedEmailsInvalidated: 0,
+        operationalRecordsChanged: false,
+        subscriptionDifferences: {
+          total: comparison.subscriptionDifferences.length,
+          examples: comparison.subscriptionDifferences.slice(0, 25),
+        },
+        emailDifferences: {
+          total: comparison.emailDifferences.length,
+          examples: comparison.emailDifferences.slice(0, 25),
+        },
       };
       await recordAudit(tx, req, {
         action: "bulk_update",
         entityType: "newsletter_import",
         entityId: "flodesk-workbook",
-        summary: "Imported Flodesk newsletter history workbook",
-        metadata: summary,
+        summary:
+          "Imported Flodesk newsletter evidence without changing CRM subscription or email fields",
+        metadata: {
+          campaigns: summary.campaigns,
+          audienceRecords: summary.audienceRecords,
+          engagementRecords: summary.engagementRecords,
+          linkedAudienceRecords: summary.linkedAudienceRecords,
+          unmatchedAudienceRecords: summary.unmatchedAudienceRecords,
+          subscriptionDifferences: summary.subscriptionDifferences.total,
+          emailDifferences: summary.emailDifferences.total,
+          operationalRecordsChanged: false,
+        },
       });
       return summary;
     });
