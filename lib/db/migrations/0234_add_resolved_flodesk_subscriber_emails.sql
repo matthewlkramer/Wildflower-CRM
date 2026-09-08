@@ -288,7 +288,7 @@ BEGIN
    WHERE id = 'audit_0234_resolved_flodesk_subscriber_emails'
      AND entity_type = 'newsletter_reconciliation'
      AND metadata ->> 'migration' = '0234_add_resolved_flodesk_subscriber_emails'
-     AND metadata ->> 'matchCount' = '28';
+     AND metadata ->> 'matchCount' = '29';
 
   IF v_correct_emails <> 29
      OR v_linked_contacts <> 29
@@ -302,5 +302,5 @@ BEGIN
   END IF;
 
   RAISE NOTICE
-    '0234: verified 29 resolved emails, contacts, engagement links, and subscribed people';
+    '0234: verified 29 resolved emails, contacts, engagement links, and newsletter states';
 END $$;
