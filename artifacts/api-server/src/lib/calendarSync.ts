@@ -2,9 +2,10 @@ import { db } from "@workspace/db";
 import {
   calendarEvents,
   calendarSyncState,
+  tripPlans,
   type CalendarSyncState,
 } from "@workspace/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, not, or, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import { enqueueMatchedSignal } from "./taskSuggestionQueue";
@@ -18,6 +19,12 @@ import {
 import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
 import { matchEmails, isMatchEmpty } from "./emailMatcher";
 import { shouldSuppressMeeting, loadMeetingFilterConfig, type MeetingFilterConfig } from "./calendarMeetingFilter";
+import {
+  eventOverlapsTripWindows,
+  mergeTripWindows,
+  shouldAutoPrivateCalendarEvent,
+  type TripWindow,
+} from "./tripCalendarWindows";
 
 /**
  * Per-user Google Calendar sync orchestrator.
@@ -46,14 +53,15 @@ import { shouldSuppressMeeting, loadMeetingFilterConfig, type MeetingFilterConfi
  *      deduped). Drop owner + internal domains @wildflowerschools.org
  *      / @blackwildflowers.org via the shared `matchEmails` matcher.
  *   b. If unmatched → silently skip. Calendar doesn't need a skip
- *      table — `syncToken` only re-emits a given event when Google
- *      thinks it changed.
- *   c. If matched → upsert into `calendar_events` via ON CONFLICT
+ *      table unless the event overlaps an active CRM trip. Trip-window
+ *      events are retained with complete schedule details and default
+ *      private when they have no CRM match.
+ *   c. If matched or inside a trip window → upsert into `calendar_events` via ON CONFLICT
  *      DO UPDATE on the (calendar_user_id, gcal_calendar_id,
  *      gcal_event_id) unique index. Update touches mutable fields
- *      (summary/description/start/end/status/attendees/matches);
- *      privacy + audit columns are NOT overwritten so a manual
- *      privacy flip survives a sync.
+ *      (summary/description/start/end/status/attendees/matches). Automatic
+ *      privacy follows Google/match facts while the owner has made no manual
+ *      choice; a manual privacy choice always survives later syncs.
  *
  * Failure semantics match Gmail's: a per-event error increments
  * `report.errors`, the failing page's token is stashed, and the
@@ -73,6 +81,8 @@ export interface CalendarSyncReport {
   updated: number;
   skipped: number;
   errors: number;
+  tripWindows: number;
+  tripWindowEvents: number;
   bootstrapCompleted: boolean;
   hasSyncToken: boolean;
 }
@@ -112,6 +122,8 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
       updated: 0,
       skipped: 0,
       errors: 0,
+      tripWindows: 0,
+      tripWindowEvents: 0,
       bootstrapCompleted: !!state.bootstrapCompletedAt,
       hasSyncToken: !!state.syncToken,
     };
@@ -129,11 +141,29 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
       };
     }
 
+    const { allTripWindows, tripWindowsToSync } = await loadTripWindows(
+      userId,
+      state.lastSyncedAt,
+    );
+    report.tripWindows = tripWindowsToSync.length;
+
     if (!state.bootstrapCompletedAt) {
-      await runBootstrapPass(grant, state, report, meetingFilterConfig);
+      await runBootstrapPass(
+        grant,
+        state,
+        report,
+        meetingFilterConfig,
+        allTripWindows,
+      );
     } else if (state.syncToken) {
       try {
-        await runIncrementalPass(grant, state, report, meetingFilterConfig);
+        await runIncrementalPass(
+          grant,
+          state,
+          report,
+          meetingFilterConfig,
+          allTripWindows,
+        );
       } catch (e) {
         if (e instanceof CalendarSyncTokenGoneError) {
           report.mode = "rebootstrap";
@@ -149,6 +179,17 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
               updatedAt: new Date(),
             })
             .where(eq(calendarSyncState.calendarUserId, userId));
+          await runTripWindowPass(
+            grant,
+            state.gcalCalendarId,
+            tripWindowsToSync,
+            report,
+            meetingFilterConfig,
+          );
+          await cleanupUnmatchedEventsOutsideTripWindows(
+            userId,
+            allTripWindows,
+          );
           return { ok: true, report };
         }
         throw e;
@@ -167,7 +208,15 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
         })
         .where(eq(calendarSyncState.calendarUserId, userId));
     }
-    void meetingFilterConfig; // used above, referenced to avoid unused-var lint
+
+    await runTripWindowPass(
+      grant,
+      state.gcalCalendarId,
+      tripWindowsToSync,
+      report,
+      meetingFilterConfig,
+    );
+    await cleanupUnmatchedEventsOutsideTripWindows(userId, allTripWindows);
 
     await db
       .update(calendarSyncState)
@@ -201,6 +250,7 @@ async function runBootstrapPass(
   state: CalendarSyncState,
   report: CalendarSyncReport,
   meetingFilterConfig: MeetingFilterConfig,
+  tripWindows: TripWindow[],
 ): Promise<void> {
   // Anchor at the Unix epoch so we fetch the entire calendar history.
   // We can't simply omit `timeMin` — with `singleEvents=true` (which
@@ -228,7 +278,14 @@ async function runBootstrapPass(
     let pageErrors = 0;
     report.candidates += page.items.length;
     for (const ev of page.items) {
-      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report, meetingFilterConfig);
+      const ok = await processOneEvent(
+        grant,
+        state.gcalCalendarId,
+        ev,
+        report,
+        meetingFilterConfig,
+        tripWindows,
+      );
       if (!ok) pageErrors++;
     }
     report.errors += pageErrors;
@@ -285,6 +342,7 @@ async function runIncrementalPass(
   state: CalendarSyncState,
   report: CalendarSyncReport,
   meetingFilterConfig: MeetingFilterConfig,
+  tripWindows: TripWindow[],
 ): Promise<void> {
   const startSyncToken = state.syncToken!;
   let pageToken: string | null = state.incrementalPageToken ?? null;
@@ -312,7 +370,14 @@ async function runIncrementalPass(
     let pageErrors = 0;
     report.candidates += page.items.length;
     for (const ev of page.items) {
-      const ok = await processOneEvent(grant, state.gcalCalendarId, ev, report, meetingFilterConfig);
+      const ok = await processOneEvent(
+        grant,
+        state.gcalCalendarId,
+        ev,
+        report,
+        meetingFilterConfig,
+        tripWindows,
+      );
       if (!ok) pageErrors++;
     }
     report.errors += pageErrors;
@@ -370,6 +435,116 @@ async function runIncrementalPass(
   }
 }
 
+async function loadTripWindows(
+  userId: string,
+  lastSyncedAt: Date | null,
+): Promise<{
+  allTripWindows: TripWindow[];
+  tripWindowsToSync: TripWindow[];
+}> {
+  const rows = await db
+    .select({
+      startAt: tripPlans.travelStartsAt,
+      endAt: tripPlans.travelEndsAt,
+      updatedAt: tripPlans.updatedAt,
+    })
+    .from(tripPlans)
+    .where(
+      and(
+        eq(tripPlans.travelerUserId, userId),
+        isNull(tripPlans.archivedAt),
+      ),
+    );
+  const allTripWindows = rows.map(({ startAt, endAt }) => ({ startAt, endAt }));
+  const recentCutoff = Date.now() - 86_400_000;
+  const tripWindowsToSync = rows
+    .filter(
+      (row) =>
+        row.endAt.getTime() >= recentCutoff ||
+        !lastSyncedAt ||
+        row.updatedAt > lastSyncedAt,
+    )
+    .map(({ startAt, endAt }) => ({ startAt, endAt }));
+  return { allTripWindows, tripWindowsToSync };
+}
+
+/**
+ * A sync token only returns events Google says changed. This bounded sweep is
+ * what backfills already-existing events when a CRM trip is created later.
+ */
+async function runTripWindowPass(
+  grant: ActiveGoogleGrant,
+  calendarId: string,
+  tripWindows: TripWindow[],
+  report: CalendarSyncReport,
+  meetingFilterConfig: MeetingFilterConfig,
+): Promise<void> {
+  for (const window of mergeTripWindows(tripWindows)) {
+    let pageToken: string | null = null;
+    do {
+      const page = await listEvents(grant.accessToken, calendarId, {
+        timeMin: window.startAt.toISOString(),
+        timeMax: window.endAt.toISOString(),
+        pageToken,
+        maxResults: BOOTSTRAP_PAGE_SIZE,
+      });
+      report.tripWindowEvents += page.items.length;
+      let pageErrors = 0;
+      for (const event of page.items) {
+        const ok = await processOneEvent(
+          grant,
+          calendarId,
+          event,
+          report,
+          meetingFilterConfig,
+          tripWindows,
+        );
+        if (!ok) pageErrors++;
+      }
+      report.errors += pageErrors;
+      pageToken = page.nextPageToken ?? null;
+    } while (pageToken);
+  }
+}
+
+/** Remove raw unmatched schedule rows once no active trip authorizes capture. */
+async function cleanupUnmatchedEventsOutsideTripWindows(
+  userId: string,
+  tripWindows: TripWindow[],
+): Promise<void> {
+  const unmatched = sql`coalesce(cardinality(${calendarEvents.matchedPersonIds}), 0) = 0
+    and coalesce(cardinality(${calendarEvents.matchedOrganizationIds}), 0) = 0
+    and coalesce(cardinality(${calendarEvents.matchedHouseholdIds}), 0) = 0`;
+  const noLinkedNotes = sql`not exists (
+      select 1 from meeting_notes mn where mn.calendar_event_id = ${calendarEvents.id}
+    ) and not exists (
+      select 1 from notes n where n.calendar_event_id = ${calendarEvents.id}
+    )`;
+  const overlap = tripWindows.length
+    ? or(
+        ...tripWindows.map((window) =>
+          and(
+            lt(calendarEvents.startAt, window.endAt),
+            gt(
+              sql`coalesce(${calendarEvents.endAt}, ${calendarEvents.startAt} + interval '1 millisecond')`,
+              window.startAt,
+            ),
+          ),
+        ),
+      )
+    : undefined;
+  await db
+    .delete(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.calendarUserId, userId),
+        unmatched,
+        noLinkedNotes,
+        overlap ? not(overlap) : undefined,
+      ),
+    );
+}
+
 /**
  * Returns true on successful processing (matched + upserted, or
  * unmatched + silently skipped). Returns false on a per-event
@@ -382,6 +557,7 @@ async function processOneEvent(
   event: GCalEvent,
   report: CalendarSyncReport,
   meetingFilterConfig: MeetingFilterConfig,
+  tripWindows: TripWindow[],
 ): Promise<boolean> {
   const { startAt, endAt } = eventTimes(event);
   if (!startAt) {
@@ -391,12 +567,17 @@ async function processOneEvent(
     report.skipped++;
     return true;
   }
+  const inTripWindow = eventOverlapsTripWindows(
+    startAt,
+    endAt,
+    tripWindows,
+  );
 
   // Group-meeting suppression: skip large internal meetings
   // (by title keyword or attendee count) before any CRM matching.
   // Also delete any existing stored row — the filter config may have
   // been updated after the event was first synced.
-  if (shouldSuppressMeeting(event, meetingFilterConfig)) {
+  if (shouldSuppressMeeting(event, meetingFilterConfig) && !inTripWindow) {
     await db
       .delete(calendarEvents)
       .where(
@@ -422,19 +603,32 @@ async function processOneEvent(
     return false;
   }
 
-  if (isMatchEmpty(match)) {
-    // Unmatched — silently skip. Calendar's syncToken won't replay
-    // this unless Google decides it changed, so no skip table is
-    // needed (unlike Gmail).
+  const matchEmpty = isMatchEmpty(match);
+  if (matchEmpty && !inTripWindow) {
+    // If a once-captured event moved outside every trip window and still has
+    // no CRM relationship, remove the raw schedule details immediately.
+    await db
+      .delete(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.calendarUserId, grant.userId),
+          eq(calendarEvents.gcalCalendarId, calendarId),
+          eq(calendarEvents.gcalEventId, event.id),
+        ),
+      );
     report.skipped++;
     return true;
   }
 
   try {
+    const autoPrivate = shouldAutoPrivateCalendarEvent(
+      !matchEmpty,
+      event.visibility,
+    );
     // ON CONFLICT DO UPDATE — calendars update events in place
-    // (start moves, attendees join/leave). Privacy + audit
-    // columns are explicitly NOT in the set list so a user's
-    // manual privacy flip survives the next sync.
+    // (start moves, attendees join/leave). Automatic privacy follows the
+    // provider/match facts only until the owner explicitly chooses a privacy
+    // value; `private_set_by_user_id` makes that manual choice authoritative.
     const upserted = await db
       .insert(calendarEvents)
       .values({
@@ -450,7 +644,10 @@ async function processOneEvent(
         attendeeEmails,
         organizerEmail: event.organizer?.email?.toLowerCase() ?? null,
         status: event.status ?? null,
+        transparency: event.transparency ?? null,
+        googleVisibility: event.visibility ?? null,
         htmlLink: event.htmlLink ?? null,
+        isPrivate: autoPrivate,
         matchedPersonIds: match.personIds,
         matchedOrganizationIds: match.organizationIds,
         matchedHouseholdIds: match.householdIds,
@@ -470,7 +667,13 @@ async function processOneEvent(
           attendeeEmails,
           organizerEmail: event.organizer?.email?.toLowerCase() ?? null,
           status: event.status ?? null,
+          transparency: event.transparency ?? null,
+          googleVisibility: event.visibility ?? null,
           htmlLink: event.htmlLink ?? null,
+          isPrivate: sql`case
+            when ${calendarEvents.privateSetByUserId} is null then ${autoPrivate}
+            else ${calendarEvents.isPrivate}
+          end`,
           matchedPersonIds: match.personIds,
           matchedOrganizationIds: match.organizationIds,
           matchedHouseholdIds: match.householdIds,
@@ -491,13 +694,15 @@ async function processOneEvent(
     const row = upserted[0];
     if (row) {
       if (row.wasInsert) {
-        report.matched++;
-        // New matched meeting is a fresh relationship signal — refresh the
-        // matched entities' cached next-step suggestions (debounced).
-        enqueueMatchedSignal({
-          personIds: match.personIds,
-          organizationIds: match.organizationIds,
-        });
+        if (!matchEmpty) {
+          report.matched++;
+          // New matched meeting is a fresh relationship signal — refresh the
+          // matched entities' cached next-step suggestions (debounced).
+          enqueueMatchedSignal({
+            personIds: match.personIds,
+            organizationIds: match.organizationIds,
+          });
+        }
       } else report.updated++;
     }
     return true;

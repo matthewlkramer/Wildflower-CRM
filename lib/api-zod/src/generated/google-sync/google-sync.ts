@@ -73,6 +73,8 @@ export const RunCalendarSyncResponse = zod.object({
   "updated": zod.number().optional(),
   "skipped": zod.number().optional(),
   "errors": zod.number().optional(),
+  "tripWindows": zod.number().optional(),
+  "tripWindowEvents": zod.number().optional(),
   "bootstrapCompleted": zod.boolean().optional(),
   "hasSyncToken": zod.boolean().optional()
 }).optional()

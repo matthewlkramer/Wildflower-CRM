@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { calendarEvents } from "@workspace/db/schema";
-import { getTableColumns } from "drizzle-orm";
 import {
   and,
   asc,
@@ -30,6 +29,10 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
+import {
+  calendarEventSelection,
+  calendarEventVisibleToCaller,
+} from "../lib/calendarEventSelect";
 
 /**
  * Read-only surface over the synced Google Calendar events. Same
@@ -39,54 +42,6 @@ import { organizationActivityArrayScope } from "../lib/organizationActivityScope
  */
 const router: IRouter = Router();
 router.use(requireAuth);
-
-function visibleToCaller(callerId: string): SQL {
-  return or(
-    eq(calendarEvents.isPrivate, false),
-    eq(calendarEvents.calendarUserId, callerId),
-  )!;
-}
-
-function eventSelection() {
-  return {
-    ...getTableColumns(calendarEvents),
-    meetingNoteId: sql<string | null>`(
-      select mn.id
-      from meeting_notes mn
-      join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
-      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
-      order by mn.meeting_date desc
-      limit 1
-    )`.as("meetingNoteId"),
-    linkedNoteCount: sql<number>`(
-      select count(*)::int
-      from notes n
-      join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
-      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
-    )`.as("linkedNoteCount"),
-    hasMeetingNotes: sql<boolean>`(
-      exists (
-        select 1
-        from meeting_notes mn
-        join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
-        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
-      ) or exists (
-        select 1
-        from notes n
-        join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
-        where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
-      )
-    )`.as("hasMeetingNotes"),
-    hasNextSteps: sql<boolean>`exists (
-      select 1
-      from meeting_notes mn
-      join calendar_events linked_ce on linked_ce.id = mn.calendar_event_id
-      where linked_ce.gcal_event_id = ${calendarEvents.gcalEventId}
-        and jsonb_typeof(mn.action_items) = 'array'
-        and jsonb_array_length(mn.action_items) > 0
-    )`.as("hasNextSteps"),
-  };
-}
 
 router.get(
   "/calendar-events",
@@ -99,7 +54,7 @@ router.get(
     const q = parseOrBadRequest(ListCalendarEventsQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [visibleToCaller(user.id)];
+    const filters: SQL[] = [calendarEventVisibleToCaller(user.id)];
     if (q.search) {
       const term = `%${q.search}%`;
       const orClause = or(
@@ -148,7 +103,7 @@ router.get(
     // keeps one row per physical event; calendarUserId provides a deterministic
     // tiebreak.
     const deduped = db
-      .selectDistinctOn([calendarEvents.gcalEventId], eventSelection())
+      .selectDistinctOn([calendarEvents.gcalEventId], calendarEventSelection())
       .from(calendarEvents)
       .where(where)
       .orderBy(calendarEvents.gcalEventId, calendarEvents.calendarUserId)
@@ -183,9 +138,14 @@ router.get(
       return;
     }
     const row = await db
-      .select(eventSelection())
+      .select(calendarEventSelection())
       .from(calendarEvents)
-      .where(and(eq(calendarEvents.id, paramId(req)), visibleToCaller(user.id)))
+      .where(
+        and(
+          eq(calendarEvents.id, paramId(req)),
+          calendarEventVisibleToCaller(user.id),
+        ),
+      )
       .then((r) => r[0]);
     if (!row) return notFound(res, "calendar event");
     res.json(row);

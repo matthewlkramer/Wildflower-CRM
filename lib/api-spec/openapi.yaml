@@ -5990,6 +5990,145 @@ paths:
               schema: { type: string, format: binary }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Trip planning ────────────────────────────────────────────────────────
+  /trips:
+    get:
+      operationId: listTripPlans
+      tags: [trip-plans]
+      parameters:
+        - { name: travelerUserId, in: query, schema: { type: string } }
+        - {
+            name: startAfter,
+            in: query,
+            schema: { type: string, format: date-time },
+          }
+        - {
+            name: startBefore,
+            in: query,
+            schema: { type: string, format: date-time },
+          }
+        - { $ref: "#/components/parameters/IncludeArchivedQuery" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanList" }
+    post:
+      operationId: createTripPlan
+      tags: [trip-plans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTripPlanBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /trips/{id}:
+    get:
+      operationId: getTripPlan
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateTripPlan
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTripPlanBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanSummary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /trips/{id}/archive:
+    post:
+      operationId: archiveTripPlan
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /trips/{id}/draft-visits:
+    post:
+      operationId: draftTripVisits
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: System-drafted visit candidates
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanDetail" }
+        "409": { description: Destination city is required }
+  /trips/{id}/visits:
+    post:
+      operationId: addTripVisit
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AddTripVisitBody" }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripVisit" }
+        "409": { description: Person is already on the trip }
+  /trips/{id}/visits/{visitId}:
+    patch:
+      operationId: updateTripVisit
+      tags: [trip-plans]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: visitId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTripVisitBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripVisit" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /trips/{id}/visits/{visitId}/archive:
+    post:
+      operationId: archiveTripVisit
+      tags: [trip-plans]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: visitId, in: path, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Archived }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ─── Calendar events (synced Google Calendar, read-only + privacy) ────────
   /calendar-events:
     get:
@@ -23407,6 +23546,176 @@ components:
           { type: array, items: { type: string }, nullable: true }
         householdIds: { type: array, items: { type: string }, nullable: true }
 
+    # ─── Trip planning ────────────────────────────────────────────────────────
+    TripPlanSummary:
+      type: object
+      required:
+        [
+          id,
+          travelerUserId,
+          createdByUserId,
+          travelStartsAt,
+          travelEndsAt,
+          meetingWindowMinutes,
+          scheduledMinutes,
+          availableMinutes,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string }
+        travelerUserId: { type: string }
+        createdByUserId: { type: string }
+        title: { type: string, nullable: true }
+        destinationCity: { type: string, nullable: true }
+        destinationState: { type: string, nullable: true }
+        travelStartsAt: { type: string, format: date-time }
+        travelEndsAt: { type: string, format: date-time }
+        meetingWindowStartsAt:
+          { type: string, format: date-time, nullable: true }
+        meetingWindowEndsAt: { type: string, format: date-time, nullable: true }
+        outboundTravelMinutes: { type: integer, nullable: true }
+        returnTravelMinutes: { type: integer, nullable: true }
+        notes: { type: string, nullable: true }
+        travelMinutes:
+          {
+            type: integer,
+            nullable: true,
+            readOnly: true,
+            description: "Sum of entered outbound and return travel minutes; null until either is entered.",
+          }
+        meetingWindowMinutes:
+          {
+            type: integer,
+            readOnly: true,
+            description: "Minutes in the explicit meeting window, or the whole trip window when none is entered.",
+          }
+        scheduledMinutes:
+          {
+            type: integer,
+            readOnly: true,
+            description: "Union of overlapping non-cancelled, non-transparent events currently held by the CRM calendar sync.",
+          }
+        availableMinutes:
+          {
+            type: integer,
+            readOnly: true,
+            description: "Meeting-window minutes minus scheduled minutes. This is an estimate based on synced CRM calendar events.",
+          }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TripPlanList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/TripPlanSummary" },
+          }
+    TripOutreachStatus:
+      type: string
+      enum: [not_invited, invited, responded]
+    TripVisitSource:
+      type: string
+      enum: [system_draft, manual]
+    TripVisit:
+      type: object
+      required:
+        [
+          id,
+          tripId,
+          personId,
+          personName,
+          rank,
+          source,
+          outreachStatus,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string }
+        tripId: { type: string }
+        personId: { type: string }
+        personName: { type: string }
+        primaryEmail: { type: string, nullable: true }
+        location: { type: string, nullable: true }
+        priority:
+          { allOf: [{ $ref: "#/components/schemas/Priority" }], nullable: true }
+        rank: { type: integer }
+        rationale: { type: string, nullable: true }
+        source: { $ref: "#/components/schemas/TripVisitSource" }
+        notes: { type: string, nullable: true }
+        outreachStatus: { $ref: "#/components/schemas/TripOutreachStatus" }
+        invitationSentAt: { type: string, format: date-time, nullable: true }
+        invitationMessageId: { type: string, nullable: true }
+        respondedAt: { type: string, format: date-time, nullable: true }
+        responseMessageId: { type: string, nullable: true }
+        scheduledEventId: { type: string, nullable: true }
+        scheduledAt: { type: string, format: date-time, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    TripPlanDetail:
+      allOf:
+        - { $ref: "#/components/schemas/TripPlanSummary" }
+        - type: object
+          required: [visits, calendarEvents]
+          properties:
+            visits:
+              { type: array, items: { $ref: "#/components/schemas/TripVisit" } }
+            calendarEvents:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/CalendarEvent" },
+              }
+    CreateTripPlanBody:
+      type: object
+      required: [travelerUserId, travelStartsAt, travelEndsAt]
+      properties:
+        travelerUserId: { type: string }
+        title: { type: string, nullable: true }
+        destinationCity: { type: string, nullable: true }
+        destinationState: { type: string, nullable: true }
+        travelStartsAt: { type: string, format: date-time }
+        travelEndsAt: { type: string, format: date-time }
+        meetingWindowStartsAt:
+          { type: string, format: date-time, nullable: true }
+        meetingWindowEndsAt: { type: string, format: date-time, nullable: true }
+        outboundTravelMinutes: { type: integer, minimum: 0, nullable: true }
+        returnTravelMinutes: { type: integer, minimum: 0, nullable: true }
+        notes: { type: string, nullable: true }
+    UpdateTripPlanBody:
+      type: object
+      properties:
+        travelerUserId: { type: string }
+        title: { type: string, nullable: true }
+        destinationCity: { type: string, nullable: true }
+        destinationState: { type: string, nullable: true }
+        travelStartsAt: { type: string, format: date-time }
+        travelEndsAt: { type: string, format: date-time }
+        meetingWindowStartsAt:
+          { type: string, format: date-time, nullable: true }
+        meetingWindowEndsAt: { type: string, format: date-time, nullable: true }
+        outboundTravelMinutes: { type: integer, minimum: 0, nullable: true }
+        returnTravelMinutes: { type: integer, minimum: 0, nullable: true }
+        notes: { type: string, nullable: true }
+    AddTripVisitBody:
+      type: object
+      required: [personId]
+      properties:
+        personId: { type: string }
+        rank: { type: integer, minimum: 1 }
+        rationale: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+    UpdateTripVisitBody:
+      type: object
+      properties:
+        rank: { type: integer, minimum: 1 }
+        rationale: { type: string, nullable: true }
+        notes: { type: string, nullable: true }
+
     # ─── Email messages + attachments + calendar events ──────────────────────
     EmailMessage:
       type: object
@@ -23508,6 +23817,18 @@ components:
         attendeeEmails: { type: array, items: { type: string }, nullable: true }
         organizerEmail: { type: string, nullable: true }
         status: { type: string, nullable: true }
+        transparency:
+          {
+            type: string,
+            nullable: true,
+            description: "Google Calendar transparency. `transparent` events do not reduce trip availability.",
+          }
+        googleVisibility:
+          {
+            type: string,
+            nullable: true,
+            description: "Google Calendar visibility (`default`, `public`, `private`, or `confidential`).",
+          }
         htmlLink: { type: string, nullable: true }
         isPrivate: { type: boolean }
         privateSetByUserId: { type: string, nullable: true }
@@ -23805,6 +24126,8 @@ components:
             updated: { type: integer }
             skipped: { type: integer }
             errors: { type: integer }
+            tripWindows: { type: integer }
+            tripWindowEvents: { type: integer }
             bootstrapCompleted: { type: boolean }
             hasSyncToken: { type: boolean }
 

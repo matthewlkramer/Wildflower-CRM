@@ -10,9 +10,10 @@ import { sql } from "drizzle-orm";
 import { users } from "./users";
 
 /**
- * A Google Calendar event that the sync worker decided was worth
- * keeping — i.e. at least one non-internal attendee matched a
- * person / funder / household in the CRM.
+ * A Google Calendar event that the sync worker decided was worth keeping:
+ * either a non-internal attendee matched a CRM entity, or the event overlaps
+ * an active trip window for the calendar owner. Unmatched trip-window events
+ * default private and are removed when no active trip requires them.
  *
  * Parallels `email_messages`:
  *
@@ -53,6 +54,10 @@ export const calendarEvents = pgTable(
     attendeeEmails: text("attendee_emails").array(),
     organizerEmail: text("organizer_email"),
     status: text("status"),
+    // Google-owned scheduling/privacy facts. `transparent` events remain in
+    // the travel-day calendar but do not reduce available meeting time.
+    transparency: text("transparency"),
+    googleVisibility: text("google_visibility"),
     htmlLink: text("html_link"),
     isPrivate: boolean("is_private").default(false).notNull(),
     privateSetByUserId: text("private_set_by_user_id").references(

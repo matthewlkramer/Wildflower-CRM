@@ -8052,6 +8052,163 @@ export interface UpdateInteractionBody {
   householdIds?: string[] | null;
 }
 
+export interface TripPlanSummary {
+  id: string;
+  travelerUserId: string;
+  createdByUserId: string;
+  title?: string | null;
+  destinationCity?: string | null;
+  destinationState?: string | null;
+  travelStartsAt: string;
+  travelEndsAt: string;
+  meetingWindowStartsAt?: string | null;
+  meetingWindowEndsAt?: string | null;
+  outboundTravelMinutes?: number | null;
+  returnTravelMinutes?: number | null;
+  notes?: string | null;
+  /** Sum of entered outbound and return travel minutes; null until either is entered. */
+  readonly travelMinutes?: number | null;
+  /** Minutes in the explicit meeting window, or the whole trip window when none is entered. */
+  readonly meetingWindowMinutes: number;
+  /** Union of overlapping non-cancelled, non-transparent events currently held by the CRM calendar sync. */
+  readonly scheduledMinutes: number;
+  /** Meeting-window minutes minus scheduled minutes. This is an estimate based on synced CRM calendar events. */
+  readonly availableMinutes: number;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TripPlanList {
+  data: TripPlanSummary[];
+}
+
+export type TripOutreachStatus = typeof TripOutreachStatus[keyof typeof TripOutreachStatus];
+
+
+export const TripOutreachStatus = {
+  not_invited: 'not_invited',
+  invited: 'invited',
+  responded: 'responded',
+} as const;
+
+export type TripVisitSource = typeof TripVisitSource[keyof typeof TripVisitSource];
+
+
+export const TripVisitSource = {
+  system_draft: 'system_draft',
+  manual: 'manual',
+} as const;
+
+export interface TripVisit {
+  id: string;
+  tripId: string;
+  personId: string;
+  personName: string;
+  primaryEmail?: string | null;
+  location?: string | null;
+  priority?: Priority | null;
+  rank: number;
+  rationale?: string | null;
+  source: TripVisitSource;
+  notes?: string | null;
+  outreachStatus: TripOutreachStatus;
+  invitationSentAt?: string | null;
+  invitationMessageId?: string | null;
+  respondedAt?: string | null;
+  responseMessageId?: string | null;
+  scheduledEventId?: string | null;
+  scheduledAt?: string | null;
+  archivedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  calendarUserId: string;
+  gcalCalendarId: string;
+  gcalEventId: string;
+  startAt: string;
+  endAt?: string | null;
+  summary?: string | null;
+  description?: string | null;
+  location?: string | null;
+  attendeeEmails?: string[] | null;
+  organizerEmail?: string | null;
+  status?: string | null;
+  /** Google Calendar transparency. `transparent` events do not reduce trip availability. */
+  transparency?: string | null;
+  /** Google Calendar visibility (`default`, `public`, `private`, or `confidential`). */
+  googleVisibility?: string | null;
+  htmlLink?: string | null;
+  isPrivate: boolean;
+  privateSetByUserId?: string | null;
+  matchedPersonIds?: string[] | null;
+  matchedOrganizationIds?: string[] | null;
+  matchedHouseholdIds?: string[] | null;
+  /** The note linked to this physical Google Calendar event, if one exists. */
+  readonly meetingNoteId: string | null;
+  /** Number of free-form CRM notes linked to this physical Google Calendar event. */
+  readonly linkedNoteCount: number;
+  /** True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event. */
+  readonly hasMeetingNotes: boolean;
+  /** True when the linked meeting note contains at least one action item. */
+  readonly hasNextSteps: boolean;
+}
+
+export type TripPlanDetail = TripPlanSummary & {
+  visits: TripVisit[];
+  calendarEvents: CalendarEvent[];
+};
+
+export interface CreateTripPlanBody {
+  travelerUserId: string;
+  title?: string | null;
+  destinationCity?: string | null;
+  destinationState?: string | null;
+  travelStartsAt: string;
+  travelEndsAt: string;
+  meetingWindowStartsAt?: string | null;
+  meetingWindowEndsAt?: string | null;
+  /** @minimum 0 */
+  outboundTravelMinutes?: number | null;
+  /** @minimum 0 */
+  returnTravelMinutes?: number | null;
+  notes?: string | null;
+}
+
+export interface UpdateTripPlanBody {
+  travelerUserId?: string;
+  title?: string | null;
+  destinationCity?: string | null;
+  destinationState?: string | null;
+  travelStartsAt?: string;
+  travelEndsAt?: string;
+  meetingWindowStartsAt?: string | null;
+  meetingWindowEndsAt?: string | null;
+  /** @minimum 0 */
+  outboundTravelMinutes?: number | null;
+  /** @minimum 0 */
+  returnTravelMinutes?: number | null;
+  notes?: string | null;
+}
+
+export interface AddTripVisitBody {
+  personId: string;
+  /** @minimum 1 */
+  rank?: number;
+  rationale?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateTripVisitBody {
+  /** @minimum 1 */
+  rank?: number;
+  rationale?: string | null;
+  notes?: string | null;
+}
+
 export type EmailMessageDirection = typeof EmailMessageDirection[keyof typeof EmailMessageDirection];
 
 
@@ -8110,35 +8267,6 @@ export interface EmailMessageList {
 
 export interface UpdateEmailMessagePrivacyBody {
   isPrivate: boolean;
-}
-
-export interface CalendarEvent {
-  id: string;
-  calendarUserId: string;
-  gcalCalendarId: string;
-  gcalEventId: string;
-  startAt: string;
-  endAt?: string | null;
-  summary?: string | null;
-  description?: string | null;
-  location?: string | null;
-  attendeeEmails?: string[] | null;
-  organizerEmail?: string | null;
-  status?: string | null;
-  htmlLink?: string | null;
-  isPrivate: boolean;
-  privateSetByUserId?: string | null;
-  matchedPersonIds?: string[] | null;
-  matchedOrganizationIds?: string[] | null;
-  matchedHouseholdIds?: string[] | null;
-  /** The note linked to this physical Google Calendar event, if one exists. */
-  readonly meetingNoteId: string | null;
-  /** Number of free-form CRM notes linked to this physical Google Calendar event. */
-  readonly linkedNoteCount: number;
-  /** True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event. */
-  readonly hasMeetingNotes: boolean;
-  /** True when the linked meeting note contains at least one action item. */
-  readonly hasNextSteps: boolean;
 }
 
 export interface CalendarEventList {
@@ -8345,6 +8473,8 @@ export type CalendarSyncRunResponseReport = {
   updated?: number;
   skipped?: number;
   errors?: number;
+  tripWindows?: number;
+  tripWindowEvents?: number;
   bootstrapCompleted?: boolean;
   hasSyncToken?: boolean;
 };
@@ -11338,6 +11468,16 @@ limit?: LimitParameter;
  * @minimum 1
  */
 page?: PageParameter;
+};
+
+export type ListTripPlansParams = {
+travelerUserId?: string;
+startAfter?: string;
+startBefore?: string;
+/**
+ * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
+ */
+includeArchived?: IncludeArchivedQueryParameter;
 };
 
 export type ListCalendarEventsParams = {

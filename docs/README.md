@@ -69,6 +69,9 @@ unverified and confirm against code before relying on it.
 - [`grant-leads.md`](grant-leads.md) — **ratified** inclusion, grouping, and
   source-email provenance rules for the external grant-opportunity discovery
   queue.
+- [`trip-planner.md`](trip-planner.md) — **ratified** travel planning,
+  visit-list drafting, and Gmail/Calendar-derived outreach and availability
+  rules.
 
 ## Rules
 

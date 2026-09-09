@@ -432,7 +432,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
   `notes`. Structured meeting notes and free-form CRM notes can both point to
   a synced calendar event; the free-form note link is optional and many notes
-  may document one meeting.
+  may document one meeting. Calendar rows also retain Google `transparency` and
+  visibility; active trip windows temporarily broaden capture to unmatched
+  events, which default private.
 - `email_proposals` — one actionable AI signal per row (job change, bounce,
   signature update, grant opportunity, thank-you acknowledgment, …).
 - `email_intel_prompts` — versioned, admin-editable review prompts per
@@ -444,6 +446,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   every contributing source email.
 - `tasks`, `task_proposals`, `task_suggestion_state` — tasks and AI
   next-step suggestions.
+- `trip_plans`, `trip_visit_candidates` — CRM-owned team travel intent and an
+  editable priority list. Travel/meeting totals, outreach status, replies, and
+  scheduled meetings are derived from these rows plus synced Gmail/Calendar
+  evidence; they are not stored on the trip tables.
 - `media_mentions`, `media_ingest_state` — GDELT press coverage.
 - `saved_views`, `bulk_operations`, `connection_enthusiasm_history`,
   `flodesk_sync_state`, `audit_log`, `cleanup_queue`, `duplicate_dismissals`,

@@ -68,6 +68,8 @@ export interface GCalEvent {
   end?: { dateTime?: string; date?: string; timeZone?: string };
   attendees?: GCalAttendee[];
   organizer?: { email?: string; self?: boolean };
+  transparency?: string;
+  visibility?: string;
 }
 
 export interface GCalEventsListResponse {
@@ -80,6 +82,7 @@ export interface ListEventsOpts {
   syncToken?: string | null;
   pageToken?: string | null;
   timeMin?: string | null; // ISO; ignored if syncToken provided
+  timeMax?: string | null; // ISO; ignored if syncToken provided
   maxResults?: number;
 }
 
@@ -104,6 +107,7 @@ export async function listEvents(
     params.set("syncToken", opts.syncToken);
   } else if (opts.timeMin) {
     params.set("timeMin", opts.timeMin);
+    if (opts.timeMax) params.set("timeMax", opts.timeMax);
     // orderBy is only allowed in non-syncToken mode.
     params.set("orderBy", "startTime");
   }

@@ -68,6 +68,7 @@ import adminReassignRouter from "./adminReassign";
 import reconciliationRouter from "./reconciliation";
 import codingFormRowsRouter from "./codingFormRows";
 import newsletterRouter from "./newsletter";
+import tripPlansRouter from "./tripPlans";
 
 const router: IRouter = Router();
 
@@ -150,5 +151,6 @@ router.use(adminReassignRouter);
 router.use(reconciliationRouter);
 router.use(codingFormRowsRouter);
 router.use(newsletterRouter);
+router.use(tripPlansRouter);
 
 export default router;
