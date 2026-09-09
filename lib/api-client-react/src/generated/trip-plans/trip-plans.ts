@@ -444,6 +444,9 @@ export const useArchiveTripPlan = <
 > => {
   return useMutation(getArchiveTripPlanMutationOptions(options));
 };
+/**
+ * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
+ */
 export const getDraftTripVisitsUrl = (id: string) => {
   return `/api/trips/${id}/draft-visits`;
 };

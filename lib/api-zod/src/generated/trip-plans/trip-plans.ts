@@ -328,6 +328,9 @@ export const ArchiveTripPlanResponse = zod.object({
   updatedAt: zod.string().datetime({}),
 });
 
+/**
+ * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
+ */
 export const DraftTripVisitsParams = zod.object({
   id: zod.coerce.string(),
 });
