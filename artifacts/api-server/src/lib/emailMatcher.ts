@@ -97,6 +97,23 @@ export async function loadInternalDomains(): Promise<Set<string>> {
   return value;
 }
 
+/**
+ * True when an address belongs to one of the configured internal staff
+ * domains. Keep this derivation next to the domain loader so API/UI callers do
+ * not grow their own hardcoded copies of the staff-domain list.
+ */
+export function isInternalEmailAddress(
+  address: string | null | undefined,
+  internalDomains: ReadonlySet<string>,
+): boolean {
+  if (!address) return false;
+  const normalized = address.trim().toLowerCase();
+  const at = normalized.lastIndexOf("@");
+  if (at < 0) return false;
+  const domain = normalized.slice(at + 1).trim();
+  return domain.length > 0 && internalDomains.has(domain);
+}
+
 // ── Staff-default permanent suppression ──────────────────────────────────────
 //
 // A PERSON who owns an internal-domain email on their CRM record (a current OR

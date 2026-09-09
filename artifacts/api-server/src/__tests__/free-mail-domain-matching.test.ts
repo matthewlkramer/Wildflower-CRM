@@ -50,7 +50,10 @@ vi.mock("@workspace/db", () => ({
 }));
 
 // Imported after the mock is declared (vi.mock is hoisted regardless).
-import { matchEmails } from "../lib/emailMatcher";
+import {
+  isInternalEmailAddress,
+  matchEmails,
+} from "../lib/emailMatcher";
 
 beforeEach(() => {
   state.emailsRows = [];
@@ -163,4 +166,25 @@ describe("matchEmails — internal domains are dropped before matching", () => {
     expect(result.organizationIds).toEqual(["org-real"]);
     expect(state.orgQueried).toBe(true);
   });
+});
+
+describe("isInternalEmailAddress", () => {
+  const internalDomains = new Set([
+    "wildflowerschools.org",
+    "blackwildflowers.org",
+  ]);
+
+  it.each([
+    "matt@wildflowerschools.org",
+    " Staff@BlackWildflowers.org ",
+  ])("recognizes configured staff address %s", (address) => {
+    expect(isInternalEmailAddress(address, internalDomains)).toBe(true);
+  });
+
+  it.each(["donor@example.org", "not-an-email", null, undefined])(
+    "does not classify external or missing address %s as internal",
+    (address) => {
+      expect(isInternalEmailAddress(address, internalDomains)).toBe(false);
+    },
+  );
 });

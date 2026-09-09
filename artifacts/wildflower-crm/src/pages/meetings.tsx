@@ -54,6 +54,12 @@ export function meetingHistoryStart(now: Date) {
   ).toISOString();
 }
 
+export function shouldShowNoNotesAction(
+  event: Pick<CalendarEvent, "hasMeetingNotes">,
+): boolean {
+  return !event.hasMeetingNotes;
+}
+
 function localInputDate(value: string): string {
   const date = new Date(value);
   const pad = (number: number) => String(number).padStart(2, "0");
@@ -244,13 +250,14 @@ function MeetingRow({
             </a>
           </Button>
         ) : null}
-        {!event.hasMeetingNotes ? (
+        {shouldShowNoNotesAction(event) ? (
           <>
             <Button
               variant="outline"
               size="sm"
               onClick={onNoNotes}
               disabled={dismissing}
+              data-testid={`button-no-notes-${event.id}`}
             >
               <MessageSquareOff className="mr-1 h-3.5 w-3.5" />
               {dismissing ? "Removing…" : "No notes"}
