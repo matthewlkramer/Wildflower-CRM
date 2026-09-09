@@ -18,6 +18,10 @@ import {
 } from "../lib/helpers";
 import { computeTracking } from "../lib/emailTrackingEnrich";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
+import {
+  isInternalEmailAddress,
+  loadInternalDomains,
+} from "../lib/emailMatcher";
 
 /**
  * Read-only-ish surface over the synced Gmail messages. The sync
@@ -137,17 +141,25 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(deduped),
     ]);
-    const trackingMap = await computeTracking(rows, {
-      personId: q.personId,
-      organizationId: q.organizationId,
-      householdId: q.householdId,
-    });
+    const [trackingMap, internalDomains] = await Promise.all([
+      computeTracking(rows, {
+        personId: q.personId,
+        organizationId: q.organizationId,
+        householdId: q.householdId,
+      }),
+      loadInternalDomains(),
+    ]);
     const data = rows.map((r) => {
       const t = trackingMap.get(r.id);
+      const isInternalSender = isInternalEmailAddress(
+        r.fromEmail,
+        internalDomains,
+      );
       return t
-        ? { ...r, ...t }
+        ? { ...r, ...t, isInternalSender }
         : {
             ...r,
+            isInternalSender,
             isTracked: false,
             trackingTotalViews: null,
             trackingLastOpenedAt: null,
@@ -173,6 +185,7 @@ router.get(
       )
       .then((r) => r[0]);
     if (!row) return notFound(res, "email message");
+    const internalDomains = await loadInternalDomains();
     const atts = await db
       .select({
         id: emailAttachments.id,
@@ -183,7 +196,11 @@ router.get(
       })
       .from(emailAttachments)
       .where(eq(emailAttachments.emailMessageId, row.id));
-    res.json({ ...row, attachments: atts });
+    res.json({
+      ...row,
+      isInternalSender: isInternalEmailAddress(row.fromEmail, internalDomains),
+      attachments: atts,
+    });
   }),
 );
 
@@ -217,7 +234,11 @@ router.patch(
       )
       .returning();
     if (!row) return notFound(res, "email message");
-    res.json(row);
+    const internalDomains = await loadInternalDomains();
+    res.json({
+      ...row,
+      isInternalSender: isInternalEmailAddress(row.fromEmail, internalDomains),
+    });
   }),
 );
 

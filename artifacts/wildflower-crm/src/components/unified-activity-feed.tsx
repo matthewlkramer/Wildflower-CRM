@@ -258,6 +258,16 @@ function fmtDate(iso?: string | null) {
 
 const PAGE_SIZE = 50;
 
+export function shouldOfferAddSender(
+  message: Pick<EmailMessage, "direction" | "fromEmail" | "isInternalSender">,
+): boolean {
+  return (
+    message.direction === "received" &&
+    Boolean(message.fromEmail) &&
+    !message.isInternalSender
+  );
+}
+
 export function UnifiedActivityFeed({
   personId,
   organizationId,
@@ -972,7 +982,7 @@ export function UnifiedActivityFeed({
                       <span className="text-xs text-muted-foreground">
                         {fmtWhen(r.sentAt)}
                       </span>
-                      {r.direction === "received" && r.fromEmail ? (
+                      {shouldOfferAddSender(r) ? (
                         <Button
                           type="button"
                           size="sm"

@@ -23740,7 +23740,8 @@ components:
     # ─── Email messages + attachments + calendar events ──────────────────────
     EmailMessage:
       type: object
-      required: [id, mailboxUserId, direction, sentAt, isPrivate]
+      required:
+        [id, mailboxUserId, direction, sentAt, isPrivate, isInternalSender]
       properties:
         id: { type: string }
         gmailMessageId: { type: string }
@@ -23751,6 +23752,12 @@ components:
         subject: { type: string, nullable: true }
         snippet: { type: string, nullable: true }
         fromEmail: { type: string, nullable: true }
+        isInternalSender:
+          {
+            type: boolean,
+            readOnly: true,
+            description: "True when fromEmail belongs to an admin-configured internal staff domain. Clients use this server-derived fact to suppress donor/contact creation actions for staff senders.",
+          }
         toEmails: { type: array, items: { type: string }, nullable: true }
         ccEmails: { type: array, items: { type: string }, nullable: true }
         bccEmails: { type: array, items: { type: string }, nullable: true }
