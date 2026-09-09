@@ -24,11 +24,9 @@ import {
 } from "@workspace/api-client-react";
 import {
   CalendarDays,
-  Clock3,
   Eye,
   EyeOff,
   ExternalLink,
-  MailCheck,
   MapPin,
   Pencil,
   Plane,
@@ -71,14 +69,6 @@ function toLocalInput(value?: string | null) {
 
 function toIso(value: string) {
   return new Date(value).toISOString();
-}
-
-function minutesLabel(minutes?: number | null) {
-  if (minutes == null) return "Not entered";
-  const hours = Math.floor(minutes / 60);
-  const rest = minutes % 60;
-  if (!hours) return `${rest} min`;
-  return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
 }
 
 type CalendarDisplayEvent = Pick<
@@ -913,33 +903,6 @@ function TripDetailPanel({
           ) : null}
         </CardContent>
       </Card>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Card>
-          <CardContent className="p-4">
-            <p className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
-              <Clock3 className="h-4 w-4" />
-              Available window
-            </p>
-            <p className="mt-1 text-xl font-semibold">
-              {minutesLabel(trip.meetingWindowMinutes)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
-              <MailCheck className="h-4 w-4" />
-              Estimated available
-            </p>
-            <p className="mt-1 text-xl font-semibold text-primary">
-              {minutesLabel(trip.availableMinutes)}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              after {minutesLabel(trip.scheduledMinutes)} scheduled
-            </p>
-          </CardContent>
-        </Card>
-      </div>
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
