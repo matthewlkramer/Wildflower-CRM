@@ -8227,6 +8227,8 @@ export interface EmailMessage {
   subject?: string | null;
   snippet?: string | null;
   fromEmail?: string | null;
+  /** True when fromEmail belongs to an admin-configured internal staff domain. Clients use this server-derived fact to suppress donor/contact creation actions for staff senders. */
+  readonly isInternalSender: boolean;
   toEmails?: string[] | null;
   ccEmails?: string[] | null;
   bccEmails?: string[] | null;
