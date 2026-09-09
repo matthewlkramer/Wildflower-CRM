@@ -6,7 +6,9 @@ import {
   calendarSyncState,
   emailMessages,
   emails,
+  organizations,
   people,
+  peopleEntityRoles,
   tripPlans,
   tripVisitCandidates,
   users,
@@ -453,10 +455,7 @@ router.patch(
       .set({ ...values, updatedAt: new Date() })
       .where(eq(tripPlans.id, current.id))
       .returning();
-    await requestCalendarRefresh([
-      current.travelerUserId,
-      row.travelerUserId,
-    ]);
+    await requestCalendarRefresh([current.travelerUserId, row.travelerUserId]);
     res.json(await tripSummary(row, user.id));
   }),
 );
@@ -500,10 +499,34 @@ router.post(
         sql`lower(trim(${addresses.stateCode})) = lower(trim(${trip.destinationState}))`,
       );
     }
+    const affiliatedOrganizationPriority = sql<string | null>`(
+      select ${organizations.priority}::text
+      from ${peopleEntityRoles}
+      inner join ${organizations}
+        on ${organizations.id} = ${peopleEntityRoles.organizationId}
+      where ${peopleEntityRoles.personId} = ${people.id}
+        and ${peopleEntityRoles.current} = 'current'
+        and ${organizations.archivedAt} is null
+        and ${organizations.priority} in ('top', 'high', 'medium')
+      order by case ${organizations.priority}
+        when 'top' then 0
+        when 'high' then 1
+        when 'medium' then 2
+        else 3
+      end
+      limit 1
+    )`;
+    locationFilters.push(
+      or(
+        inArray(people.priority, ["top", "high", "medium"]),
+        sql`${affiliatedOrganizationPriority} is not null`,
+      )!,
+    );
     const matches = await db
       .selectDistinctOn([people.id], {
         personId: people.id,
-        priority: people.priority,
+        personPriority: people.priority,
+        organizationPriority: affiliatedOrganizationPriority,
         ownerUserId: people.ownerUserId,
       })
       .from(people)
@@ -514,12 +537,19 @@ router.post(
       top: 0,
       high: 1,
       medium: 2,
-      low: 3,
     };
+    const effectivePriority = (match: (typeof matches)[number]) =>
+      [match.personPriority, match.organizationPriority]
+        .filter((value): value is string => !!value && value !== "low")
+        .sort(
+          (a, b) =>
+            (priorityOrder[a] ?? Number.MAX_SAFE_INTEGER) -
+            (priorityOrder[b] ?? Number.MAX_SAFE_INTEGER),
+        )[0];
     matches.sort(
       (a, b) =>
-        (priorityOrder[a.priority ?? ""] ?? 4) -
-          (priorityOrder[b.priority ?? ""] ?? 4) ||
+        (priorityOrder[effectivePriority(a) ?? ""] ?? 3) -
+          (priorityOrder[effectivePriority(b) ?? ""] ?? 3) ||
         Number(b.ownerUserId === trip.travelerUserId) -
           Number(a.ownerUserId === trip.travelerUserId),
     );
@@ -533,7 +563,7 @@ router.post(
       personId: match.personId,
       rank: Number(maxRank ?? 0) + index + 1,
       source: "system_draft",
-      rationale: `${match.priority ? `${match.priority} priority; ` : ""}address matches ${trip.destinationCity}${trip.destinationState ? `, ${trip.destinationState}` : ""}.`,
+      rationale: `${effectivePriority(match)} priority; address matches ${trip.destinationCity}${trip.destinationState ? `, ${trip.destinationState}` : ""}.`,
     }));
     if (candidates.length) {
       await db

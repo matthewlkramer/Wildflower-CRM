@@ -18,8 +18,12 @@ last_verified: 2026-09-09
 - The visit list is editable CRM planning state. A team member can add, remove,
   reorder, and annotate people. The system-draft action adds up to 25 active,
   living CRM people whose address city (and state, when entered) exactly matches
-  the destination, ordered by solicitation priority and traveler ownership. It
-  never overwrites a team's existing refinements.
+  the destination and whose own solicitation priority, or a current affiliated
+  organization's solicitation priority, is `medium`, `high`, or `top`. It orders
+  eligible people by the highest applicable priority and then traveler ownership.
+  Low-priority and unprioritized people and organizations are never system-drafted.
+  The action never overwrites a team's existing refinements; manual additions
+  remain available regardless of priority.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
   fields are derived at read time. They are never stored as a second status.
 
