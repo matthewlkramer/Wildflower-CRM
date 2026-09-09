@@ -25,6 +25,8 @@ import {
 import {
   CalendarDays,
   Clock3,
+  Eye,
+  EyeOff,
   ExternalLink,
   MailCheck,
   MapPin,
@@ -77,6 +79,49 @@ function minutesLabel(minutes?: number | null) {
   const rest = minutes % 60;
   if (!hours) return `${rest} min`;
   return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
+}
+
+type CalendarDisplayEvent = Pick<
+  TripPlanDetail["calendarEvents"][number],
+  "id" | "status" | "summary" | "description" | "gcalCalendarId"
+>;
+
+export function isBirthdayCalendarEvent(event: CalendarDisplayEvent) {
+  const calendarId = event.gcalCalendarId.toLowerCase();
+  const searchableText = [event.summary, event.description]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    calendarId.includes("#contacts@group.v.calendar.google.com") ||
+    /\bbirthdays?\b/i.test(searchableText)
+  );
+}
+
+export function getTripCalendarDisplay<T extends CalendarDisplayEvent>(
+  events: readonly T[],
+  manuallyHiddenEventIds: readonly string[],
+  showHidden: boolean,
+) {
+  const manuallyHidden = new Set(manuallyHiddenEventIds);
+  const displayEvents = events
+    .filter((event) => event.status !== "cancelled")
+    .map((event) => {
+      const birthday = isBirthdayCalendarEvent(event);
+      return {
+        event,
+        birthday,
+        manuallyHidden: manuallyHidden.has(event.id),
+        hidden: birthday || manuallyHidden.has(event.id),
+      };
+    });
+
+  return {
+    hiddenCount: displayEvents.filter((item) => item.hidden).length,
+    events: showHidden
+      ? displayEvents
+      : displayEvents.filter((item) => !item.hidden),
+  };
 }
 
 function whenLabel(start: string, end?: string | null) {
@@ -535,9 +580,7 @@ function VisitRow({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">
-              {visit.rank}. {visit.personName}
-            </span>
+            <span className="font-semibold">{visit.personName}</span>
             {visit.priority ? (
               <Badge variant="outline">{visit.priority} priority</Badge>
             ) : null}
@@ -610,42 +653,94 @@ function VisitRow({
 }
 
 function Schedule({ trip }: { trip: TripPlanDetail }) {
+  const hiddenStorageKey = `wildflower.trip-planner.${trip.id}.hidden-events`;
+  const [manuallyHiddenEventIds, setManuallyHiddenEventIds] = useState<
+    string[]
+  >(() => {
+    try {
+      const stored = window.localStorage.getItem(hiddenStorageKey);
+      return stored ? (JSON.parse(stored) as string[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [showHidden, setShowHidden] = useState(false);
+  const calendarDisplay = useMemo(
+    () =>
+      getTripCalendarDisplay(
+        trip.calendarEvents,
+        manuallyHiddenEventIds,
+        showHidden,
+      ),
+    [manuallyHiddenEventIds, showHidden, trip.calendarEvents],
+  );
   const grouped = useMemo(() => {
-    const groups = new Map<string, TripPlanDetail["calendarEvents"]>();
-    for (const event of trip.calendarEvents.filter(
-      (item) => item.status !== "cancelled",
-    )) {
+    const groups = new Map<string, (typeof calendarDisplay.events)[number][]>();
+    for (const item of calendarDisplay.events) {
+      const { event } = item;
       const key = new Intl.DateTimeFormat(undefined, {
         weekday: "long",
         month: "long",
         day: "numeric",
       }).format(new Date(event.startAt));
-      groups.set(key, [...(groups.get(key) ?? []), event]);
+      groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     return [...groups.entries()];
-  }, [trip.calendarEvents]);
+  }, [calendarDisplay.events]);
+  const setEventHidden = (eventId: string, hidden: boolean) => {
+    setManuallyHiddenEventIds((current) => {
+      const next = hidden
+        ? [...new Set([...current, eventId])]
+        : current.filter((id) => id !== eventId);
+      window.localStorage.setItem(hiddenStorageKey, JSON.stringify(next));
+      return next;
+    });
+  };
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <CalendarDays className="h-5 w-5" />
-          Travel-day calendar
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <CalendarDays className="h-5 w-5" />
+            Travel-day calendar
+          </CardTitle>
+          {calendarDisplay.hiddenCount > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowHidden((current) => !current)}
+            >
+              {showHidden ? (
+                <EyeOff className="mr-2 h-4 w-4" />
+              ) : (
+                <Eye className="mr-2 h-4 w-4" />
+              )}
+              {showHidden
+                ? "Hide hidden events"
+                : `Show hidden (${calendarDisplay.hiddenCount})`}
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="space-y-5">
         {grouped.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No synced CRM calendar events fall inside the travel dates yet.
+            {calendarDisplay.hiddenCount > 0
+              ? "All calendar events in these travel dates are hidden from this view."
+              : "No synced CRM calendar events fall inside the travel dates yet."}
           </p>
         ) : (
           grouped.map(([day, events]) => (
             <div key={day}>
               <h3 className="mb-2 text-sm font-semibold">{day}</h3>
               <div className="space-y-2 border-l-2 border-primary/30 pl-4">
-                {events.map((event) => (
+                {events.map(({ event, birthday, manuallyHidden, hidden }) => (
                   <div
                     key={event.id}
-                    className="rounded-md border bg-background p-3"
+                    className={`rounded-md border bg-background p-3 ${
+                      hidden ? "opacity-60" : ""
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
@@ -656,24 +751,50 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
                               Free
                             </Badge>
                           ) : null}
+                          {birthday ? (
+                            <Badge variant="secondary" className="ml-2">
+                              Birthday · hidden automatically
+                            </Badge>
+                          ) : manuallyHidden ? (
+                            <Badge variant="secondary" className="ml-2">
+                              Hidden
+                            </Badge>
+                          ) : null}
                         </p>
                         <p className="text-xs text-muted-foreground">
                           {whenLabel(event.startAt, event.endAt)}
                           {event.location ? ` · ${event.location}` : ""}
                         </p>
                       </div>
-                      {event.htmlLink ? (
-                        <Button asChild variant="ghost" size="icon">
-                          <a
-                            href={event.htmlLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            aria-label="Open in Google Calendar"
+                      <div className="flex items-center gap-1">
+                        {!birthday ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEventHidden(event.id, !hidden)}
                           >
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
-                      ) : null}
+                            {hidden ? (
+                              <Eye className="mr-2 h-4 w-4" />
+                            ) : (
+                              <EyeOff className="mr-2 h-4 w-4" />
+                            )}
+                            {hidden ? "Show" : "Hide"}
+                          </Button>
+                        ) : null}
+                        {event.htmlLink ? (
+                          <Button asChild variant="ghost" size="icon">
+                            <a
+                              href={event.htmlLink}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="Open in Google Calendar"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -684,7 +805,9 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
         <p className="text-xs text-muted-foreground">
           Trip-date sync includes events from the traveler’s primary calendar.
           Unmatched personal events default to private, and events marked free
-          do not reduce estimated availability.
+          do not reduce estimated availability. Hiding an event only cleans up
+          this trip view; it does not change Google Calendar or the availability
+          estimate. Birthday events are hidden automatically.
         </p>
       </CardContent>
     </Card>
@@ -859,7 +982,7 @@ function TripDetailPanel({
           )}
         </CardContent>
       </Card>
-      <Schedule trip={trip} />
+      <Schedule key={trip.id} trip={trip} />
       <TripFormDialog
         open={editOpen}
         onOpenChange={setEditOpen}

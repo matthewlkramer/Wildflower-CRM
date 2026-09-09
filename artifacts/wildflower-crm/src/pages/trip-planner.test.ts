@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildTripData, type TripFormState } from "./trip-planner";
+import {
+  buildTripData,
+  getTripCalendarDisplay,
+  isBirthdayCalendarEvent,
+  type TripFormState,
+} from "./trip-planner";
 
 describe("trip planner form", () => {
   it("stores one availability window and clears legacy timing fields", () => {
@@ -26,5 +31,62 @@ describe("trip planner form", () => {
       returnTravelMinutes: null,
       notes: "Priority meetings",
     });
+  });
+});
+
+describe("trip planner calendar display", () => {
+  const event = (
+    id: string,
+    summary: string,
+    overrides: Partial<{
+      status: string | null;
+      description: string | null;
+      gcalCalendarId: string;
+    }> = {},
+  ) => ({
+    id,
+    summary,
+    status: "confirmed",
+    description: null,
+    gcalCalendarId: "primary",
+    ...overrides,
+  });
+
+  it("recognizes birthday events from their calendar or text", () => {
+    expect(
+      isBirthdayCalendarEvent(
+        event("calendar", "Alex", {
+          gcalCalendarId: "addressbook#contacts@group.v.calendar.google.com",
+        }),
+      ),
+    ).toBe(true);
+    expect(isBirthdayCalendarEvent(event("summary", "Alex's Birthday"))).toBe(
+      true,
+    );
+    expect(isBirthdayCalendarEvent(event("meeting", "Lunch with Alex"))).toBe(
+      false,
+    );
+  });
+
+  it("hides birthdays and manually hidden events but can reveal them", () => {
+    const events = [
+      event("visible", "Donor meeting"),
+      event("manual", "Internal hold"),
+      event("birthday", "Alex's birthday"),
+      event("cancelled", "Cancelled meeting", { status: "cancelled" }),
+    ];
+
+    const hidden = getTripCalendarDisplay(events, ["manual"], false);
+    expect(hidden.hiddenCount).toBe(2);
+    expect(hidden.events.map(({ event: item }) => item.id)).toEqual([
+      "visible",
+    ]);
+
+    const revealed = getTripCalendarDisplay(events, ["manual"], true);
+    expect(revealed.events.map(({ event: item }) => item.id)).toEqual([
+      "visible",
+      "manual",
+      "birthday",
+    ]);
   });
 });

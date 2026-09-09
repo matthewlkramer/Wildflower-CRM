@@ -55,6 +55,10 @@ last_verified: 2026-09-09
   simultaneous events are not double-counted. The traveler sees the full
   primary-calendar schedule captured for their trip dates; another team member
   may see a partial estimate when the traveler has private events.
+- The trip calendar hides birthday events by default. A viewer can also hide
+  any other event for that trip and later reveal or restore hidden events. This
+  browser-persisted choice changes only the trip calendar presentation: it does
+  not alter Google Calendar, shared synced evidence, or availability math.
 
 ## Data model
 
