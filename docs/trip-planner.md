@@ -24,6 +24,8 @@ last_verified: 2026-09-09
   Low-priority and unprioritized people and organizations are never system-drafted.
   The action never overwrites a team's existing refinements; manual additions
   remain available regardless of priority.
+- The trip index can be filtered to one team traveler. Each trip card identifies
+  its traveler, travel dates, and destination city when one has been entered.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
   fields are derived at read time. They are never stored as a second status.
 

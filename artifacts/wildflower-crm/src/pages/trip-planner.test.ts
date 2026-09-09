@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { TripPlanSummary } from "@workspace/api-client-react";
 import {
   buildTripData,
+  filterTripsByTraveler,
   getTripCalendarDisplay,
   isBirthdayCalendarEvent,
   type TripFormState,
@@ -88,5 +90,24 @@ describe("trip planner calendar display", () => {
       "manual",
       "birthday",
     ]);
+  });
+});
+
+describe("trip planner list", () => {
+  it("filters trips to one traveler while preserving the all view", () => {
+    const trips = [
+      { id: "trip_1", travelerUserId: "user_1" },
+      { id: "trip_2", travelerUserId: "user_2" },
+      { id: "trip_3", travelerUserId: "user_1" },
+    ] as TripPlanSummary[];
+
+    expect(filterTripsByTraveler(trips, "all").map((trip) => trip.id)).toEqual([
+      "trip_1",
+      "trip_2",
+      "trip_3",
+    ]);
+    expect(
+      filterTripsByTraveler(trips, "user_1").map((trip) => trip.id),
+    ).toEqual(["trip_1", "trip_3"]);
   });
 });

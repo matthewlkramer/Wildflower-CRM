@@ -140,6 +140,15 @@ function tripLabel(trip: TripPlanSummary) {
   );
 }
 
+export function filterTripsByTraveler(
+  trips: readonly TripPlanSummary[],
+  travelerUserId: string,
+) {
+  return travelerUserId === "all"
+    ? [...trips]
+    : trips.filter((trip) => trip.travelerUserId === travelerUserId);
+}
+
 export type TripFormState = {
   travelerUserId: string;
   title: string;
@@ -1006,6 +1015,7 @@ export default function TripPlannerPage() {
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [travelerFilter, setTravelerFilter] = useState("all");
   const { data: users } = useListUsers();
   const usersById = useMemo(
     () =>
@@ -1013,12 +1023,19 @@ export default function TripPlannerPage() {
     [users],
   );
   const trips = useListTripPlans();
+  const filteredTrips = useMemo(
+    () => filterTripsByTraveler(trips.data?.data ?? [], travelerFilter),
+    [travelerFilter, trips.data?.data],
+  );
   useEffect(() => {
-    if (!selectedId && trips.data?.data[0])
-      setSelectedId(trips.data.data[0].id);
-  }, [selectedId, trips.data?.data]);
+    if (selectedId && filteredTrips.some((trip) => trip.id === selectedId)) {
+      return;
+    }
+    setSelectedId(filteredTrips[0]?.id ?? null);
+  }, [filteredTrips, selectedId]);
   const onSaved = (trip: TripPlanSummary) => {
     setCreateOpen(false);
+    setTravelerFilter(trip.travelerUserId);
     setSelectedId(trip.id);
     queryClient.invalidateQueries({ queryKey: getListTripPlansQueryKey() });
   };
@@ -1042,14 +1059,27 @@ export default function TripPlannerPage() {
       </div>
       <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
         <Card className="h-fit">
-          <CardHeader>
+          <CardHeader className="space-y-3">
             <CardTitle className="text-base">Trips</CardTitle>
+            <Select value={travelerFilter} onValueChange={setTravelerFilter}>
+              <SelectTrigger aria-label="Filter trips by team member">
+                <SelectValue placeholder="All team members" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All team members</SelectItem>
+                {(users ?? []).map((user) => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {userDisplayName(user)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </CardHeader>
           <CardContent className="space-y-2">
             {trips.isLoading ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : null}
-            {(trips.data?.data ?? []).map((trip) => (
+            {filteredTrips.map((trip) => (
               <button
                 key={trip.id}
                 type="button"
@@ -1060,14 +1090,26 @@ export default function TripPlannerPage() {
                 <p className="mt-1 text-xs text-muted-foreground">
                   {usersById.get(trip.travelerUserId) ?? "Team member"}
                 </p>
+                {trip.destinationCity ? (
+                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    {[trip.destinationCity, trip.destinationState]
+                      .filter(Boolean)
+                      .join(", ")}
+                  </p>
+                ) : null}
                 <p className="text-xs text-muted-foreground">
                   {new Date(trip.travelStartsAt).toLocaleDateString()} –{" "}
                   {new Date(trip.travelEndsAt).toLocaleDateString()}
                 </p>
               </button>
             ))}
-            {!trips.isLoading && (trips.data?.data.length ?? 0) === 0 ? (
-              <p className="text-sm text-muted-foreground">No trips yet.</p>
+            {!trips.isLoading && filteredTrips.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {(trips.data?.data.length ?? 0) === 0
+                  ? "No trips yet."
+                  : "No trips for this team member."}
+              </p>
             ) : null}
           </CardContent>
         </Card>
@@ -1080,7 +1122,11 @@ export default function TripPlannerPage() {
           <Card>
             <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-center">
               <Plane className="h-10 w-10 text-muted-foreground" />
-              <p className="font-medium">Add a trip to start planning.</p>
+              <p className="font-medium">
+                {(trips.data?.data.length ?? 0) > 0
+                  ? "No trips match this team member."
+                  : "Add a trip to start planning."}
+              </p>
               <Button onClick={() => setCreateOpen(true)}>Add trip</Button>
             </CardContent>
           </Card>
