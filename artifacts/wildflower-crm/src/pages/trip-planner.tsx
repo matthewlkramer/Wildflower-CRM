@@ -95,17 +95,13 @@ function tripLabel(trip: TripPlanSummary) {
   );
 }
 
-type TripFormState = {
+export type TripFormState = {
   travelerUserId: string;
   title: string;
   destinationCity: string;
   destinationState: string;
-  travelStartsAt: string;
-  travelEndsAt: string;
-  meetingWindowStartsAt: string;
-  meetingWindowEndsAt: string;
-  outboundTravelMinutes: string;
-  returnTravelMinutes: string;
+  availableStartsAt: string;
+  availableEndsAt: string;
   notes: string;
 };
 
@@ -120,17 +116,44 @@ function initialTripForm(trip?: TripPlanSummary): TripFormState {
     title: trip?.title ?? "",
     destinationCity: trip?.destinationCity ?? "",
     destinationState: trip?.destinationState ?? "",
-    travelStartsAt: trip
-      ? toLocalInput(trip.travelStartsAt)
+    availableStartsAt: trip
+      ? toLocalInput(trip.meetingWindowStartsAt ?? trip.travelStartsAt)
       : toLocalInput(tomorrow.toISOString()),
-    travelEndsAt: trip
-      ? toLocalInput(trip.travelEndsAt)
+    availableEndsAt: trip
+      ? toLocalInput(trip.meetingWindowEndsAt ?? trip.travelEndsAt)
       : toLocalInput(nextDay.toISOString()),
-    meetingWindowStartsAt: toLocalInput(trip?.meetingWindowStartsAt),
-    meetingWindowEndsAt: toLocalInput(trip?.meetingWindowEndsAt),
-    outboundTravelMinutes: trip?.outboundTravelMinutes?.toString() ?? "",
-    returnTravelMinutes: trip?.returnTravelMinutes?.toString() ?? "",
     notes: trip?.notes ?? "",
+  };
+}
+
+function tripErrorDescription(error: unknown) {
+  if (error && typeof error === "object" && "data" in error) {
+    const data = (error as { data?: unknown }).data;
+    if (data && typeof data === "object" && "message" in data) {
+      const message = (data as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  }
+  return error instanceof Error ? error.message : "Please try again.";
+}
+
+export function buildTripData(
+  form: TripFormState,
+): CreateTripPlanBody | UpdateTripPlanBody {
+  return {
+    travelerUserId: form.travelerUserId,
+    title: form.title.trim() || null,
+    destinationCity: form.destinationCity.trim() || null,
+    destinationState: form.destinationState.trim() || null,
+    // The API retains these field names for compatibility, but the product has
+    // one authoritative window: the time the traveler is available.
+    travelStartsAt: toIso(form.availableStartsAt),
+    travelEndsAt: toIso(form.availableEndsAt),
+    meetingWindowStartsAt: null,
+    meetingWindowEndsAt: null,
+    outboundTravelMinutes: null,
+    returnTravelMinutes: null,
+    notes: form.notes.trim() || null,
   };
 }
 
@@ -154,53 +177,45 @@ function TripFormDialog({
   const create = useCreateTripPlan({
     mutation: {
       onSuccess: onSaved,
-      onError: () =>
-        toast({ title: "Trip could not be created", variant: "destructive" }),
+      onError: (error: unknown) =>
+        toast({
+          title: "Trip could not be created",
+          description: tripErrorDescription(error),
+          variant: "destructive",
+        }),
     },
   });
   const update = useUpdateTripPlan({
     mutation: {
       onSuccess: onSaved,
-      onError: () =>
-        toast({ title: "Trip could not be updated", variant: "destructive" }),
+      onError: (error: unknown) =>
+        toast({
+          title: "Trip could not be updated",
+          description: tripErrorDescription(error),
+          variant: "destructive",
+        }),
     },
   });
   const save = () => {
-    if (!form.travelerUserId || !form.travelStartsAt || !form.travelEndsAt) {
+    if (
+      !form.travelerUserId ||
+      !form.availableStartsAt ||
+      !form.availableEndsAt
+    ) {
       toast({
-        title: "Choose a traveler and enter the trip start and end.",
+        title: "Choose a traveler and enter the available time window.",
         variant: "destructive",
       });
       return;
     }
-    if (!!form.meetingWindowStartsAt !== !!form.meetingWindowEndsAt) {
+    if (new Date(form.availableEndsAt) <= new Date(form.availableStartsAt)) {
       toast({
-        title: "Enter both meeting-window times or leave both blank.",
+        title: "Available until must be after available from.",
         variant: "destructive",
       });
       return;
     }
-    const data: CreateTripPlanBody | UpdateTripPlanBody = {
-      travelerUserId: form.travelerUserId,
-      title: form.title.trim() || null,
-      destinationCity: form.destinationCity.trim() || null,
-      destinationState: form.destinationState.trim() || null,
-      travelStartsAt: toIso(form.travelStartsAt),
-      travelEndsAt: toIso(form.travelEndsAt),
-      meetingWindowStartsAt: form.meetingWindowStartsAt
-        ? toIso(form.meetingWindowStartsAt)
-        : null,
-      meetingWindowEndsAt: form.meetingWindowEndsAt
-        ? toIso(form.meetingWindowEndsAt)
-        : null,
-      outboundTravelMinutes: form.outboundTravelMinutes
-        ? Number(form.outboundTravelMinutes)
-        : null,
-      returnTravelMinutes: form.returnTravelMinutes
-        ? Number(form.returnTravelMinutes)
-        : null,
-      notes: form.notes.trim() || null,
-    };
+    const data = buildTripData(form);
     if (trip) update.mutate({ id: trip.id, data });
     else create.mutate({ data: data as CreateTripPlanBody });
   };
@@ -211,8 +226,8 @@ function TripFormDialog({
         <DialogHeader>
           <DialogTitle>{trip ? "Edit trip" : "Add a trip"}</DialogTitle>
           <DialogDescription>
-            A destination is optional. Add a meeting window when only part of
-            the trip is available for visits.
+            A destination is optional. Enter the one window when the traveler is
+            available for meetings.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2 sm:grid-cols-2">
@@ -268,70 +283,24 @@ function TripFormDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="trip-start">Travel starts</Label>
+            <Label htmlFor="trip-start">Available from</Label>
             <Input
               id="trip-start"
               type="datetime-local"
-              value={form.travelStartsAt}
+              value={form.availableStartsAt}
               onChange={(e) =>
-                setForm({ ...form, travelStartsAt: e.target.value })
+                setForm({ ...form, availableStartsAt: e.target.value })
               }
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="trip-end">Travel ends</Label>
+            <Label htmlFor="trip-end">Available until</Label>
             <Input
               id="trip-end"
               type="datetime-local"
-              value={form.travelEndsAt}
+              value={form.availableEndsAt}
               onChange={(e) =>
-                setForm({ ...form, travelEndsAt: e.target.value })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="meeting-start">Available for meetings from</Label>
-            <Input
-              id="meeting-start"
-              type="datetime-local"
-              value={form.meetingWindowStartsAt}
-              onChange={(e) =>
-                setForm({ ...form, meetingWindowStartsAt: e.target.value })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="meeting-end">Available for meetings until</Label>
-            <Input
-              id="meeting-end"
-              type="datetime-local"
-              value={form.meetingWindowEndsAt}
-              onChange={(e) =>
-                setForm({ ...form, meetingWindowEndsAt: e.target.value })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="outbound-minutes">Outbound travel minutes</Label>
-            <Input
-              id="outbound-minutes"
-              type="number"
-              min={0}
-              value={form.outboundTravelMinutes}
-              onChange={(e) =>
-                setForm({ ...form, outboundTravelMinutes: e.target.value })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="return-minutes">Return travel minutes</Label>
-            <Input
-              id="return-minutes"
-              type="number"
-              min={0}
-              value={form.returnTravelMinutes}
-              onChange={(e) =>
-                setForm({ ...form, returnTravelMinutes: e.target.value })
+                setForm({ ...form, availableEndsAt: e.target.value })
               }
             />
           </div>
@@ -812,23 +781,12 @@ function TripDetailPanel({
           ) : null}
         </CardContent>
       </Card>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
-              <Plane className="h-4 w-4" />
-              Travel time
-            </p>
-            <p className="mt-1 text-xl font-semibold">
-              {minutesLabel(trip.travelMinutes)}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 sm:grid-cols-2">
         <Card>
           <CardContent className="p-4">
             <p className="flex items-center gap-1 text-xs uppercase text-muted-foreground">
               <Clock3 className="h-4 w-4" />
-              Meeting window
+              Available window
             </p>
             <p className="mt-1 text-xl font-semibold">
               {minutesLabel(trip.meetingWindowMinutes)}

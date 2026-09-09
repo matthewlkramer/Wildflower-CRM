@@ -7,12 +7,14 @@ last_verified: 2026-09-09
 
 ## Product behavior
 
-- A trip belongs to one active CRM team user and has a required start and end.
-  Its destination is optional so tentative travel can be recorded before a city
-  is chosen.
-- An optional meeting window narrows the portion of the travel window available
-  for relationship meetings. Outbound and return travel minutes are entered
-  itinerary facts; the API derives total travel time.
+- A trip belongs to one active CRM team user and has one required availability
+  window. Its destination is optional so tentative travel can be recorded
+  before a city is chosen. The interface does not ask for separate travel dates,
+  meeting dates, or outbound and return travel time.
+- The compatibility fields `travel_starts_at` and `travel_ends_at` store that
+  availability window. The older optional meeting-window and travel-minute
+  columns remain nullable for compatibility, are cleared whenever a trip is
+  saved in the CRM, and are not separate planning authorities.
 - The visit list is editable CRM planning state. A team member can add, remove,
   reorder, and annotate people. The system-draft action adds up to 25 active,
   living CRM people whose address city (and state, when entered) exactly matches
@@ -41,14 +43,14 @@ last_verified: 2026-09-09
   later syncs. Unmatched rows are removed after they no longer overlap an active
   trip, unless a CRM note is linked to the event.
 - A candidate is scheduled when a visible event matches the person. Only busy,
-  non-cancelled event overlap inside the meeting window is subtracted from
+  non-cancelled event overlap inside the availability window is subtracted from
   estimated availability; Google events marked `transparent` remain visible
   but do not consume available time.
-- The availability estimate is viewer-scoped: it is the meeting-window duration
-  minus the union of overlapping events visible to the caller, so simultaneous
-  events are not double-counted. The traveler sees the full primary-calendar
-  schedule captured for their trip dates; another team member may see a partial
-  estimate when the traveler has private events.
+- The availability estimate is viewer-scoped: it is the availability-window
+  duration minus the union of overlapping events visible to the caller, so
+  simultaneous events are not double-counted. The traveler sees the full
+  primary-calendar schedule captured for their trip dates; another team member
+  may see a partial estimate when the traveler has private events.
 
 ## Data model
 
