@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  useDismissCalendarEventNotes,
   getListCalendarEventsQueryKey,
   getGetMeetingNoteQueryKey,
   getListNotesQueryKey,
@@ -39,8 +41,18 @@ import {
   CheckCircle2,
   ExternalLink,
   NotebookPen,
+  MessageSquareOff,
   StickyNote,
 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+export const MEETING_HISTORY_DAYS = 60;
+
+export function meetingHistoryStart(now: Date) {
+  return new Date(
+    now.getTime() - MEETING_HISTORY_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
 
 function localInputDate(value: string): string {
   const date = new Date(value);
@@ -186,10 +198,14 @@ function MeetingRow({
   event,
   future,
   ownerName,
+  dismissing,
+  onNoNotes,
 }: {
   event: CalendarEvent;
   future: boolean;
   ownerName: string;
+  dismissing: boolean;
+  onNoNotes: () => void;
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -229,9 +245,20 @@ function MeetingRow({
           </Button>
         ) : null}
         {!event.hasMeetingNotes ? (
-          <Button size="sm" onClick={() => setNotesOpen(true)}>
-            <NotebookPen className="mr-1 h-3.5 w-3.5" /> Add notes
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onNoNotes}
+              disabled={dismissing}
+            >
+              <MessageSquareOff className="mr-1 h-3.5 w-3.5" />
+              {dismissing ? "Removing…" : "No notes"}
+            </Button>
+            <Button size="sm" onClick={() => setNotesOpen(true)}>
+              <NotebookPen className="mr-1 h-3.5 w-3.5" /> Add notes
+            </Button>
+          </>
         ) : (
           <Button size="sm" onClick={() => setReviewOpen(true)}>
             <NotebookPen className="mr-1 h-3.5 w-3.5" /> Review notes
@@ -258,10 +285,14 @@ function MeetingRow({
 }
 
 export default function MeetingsPage() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [tab, setTab] = useState("history");
   const [search, setSearch] = useState("");
   const [ownerId, setOwnerId] = useState("all");
-  const now = useMemo(() => new Date().toISOString(), []);
+  const now = useMemo(() => new Date(), []);
+  const nowIso = now.toISOString();
+  const historyStart = meetingHistoryStart(now);
   const { data: users } = useListUsers();
   const userNames = useMemo(
     () =>
@@ -271,32 +302,55 @@ export default function MeetingsPage() {
   const shared = {
     search: search.trim() || undefined,
     calendarUserId: ownerId === "all" ? undefined : ownerId,
+    excludeNotesNotNeeded: true,
     limit: 500,
   };
   const future = useListCalendarEvents(
-    { ...shared, startAfter: now, order: "asc" },
+    { ...shared, startAfter: nowIso, order: "asc" },
     {
       query: {
         queryKey: getListCalendarEventsQueryKey({
           ...shared,
-          startAfter: now,
+          startAfter: nowIso,
           order: "asc",
         }),
       },
     },
   );
   const history = useListCalendarEvents(
-    { ...shared, startBefore: now, order: "desc" },
+    {
+      ...shared,
+      startAfter: historyStart,
+      startBefore: nowIso,
+      order: "desc",
+    },
     {
       query: {
         queryKey: getListCalendarEventsQueryKey({
           ...shared,
-          startBefore: now,
+          startAfter: historyStart,
+          startBefore: nowIso,
           order: "desc",
         }),
       },
     },
   );
+  const dismissNotes = useDismissCalendarEventNotes({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: getListCalendarEventsQueryKey(),
+        });
+      },
+      onError: () => {
+        toast({
+          title: "Meeting could not be removed",
+          description: "Please try the No notes action again.",
+          variant: "destructive",
+        });
+      },
+    },
+  });
   const futureRows = (future.data?.data ?? []).filter(
     (event) => event.status !== "cancelled",
   );
@@ -340,7 +394,7 @@ export default function MeetingsPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-xs uppercase text-muted-foreground">
-              Past meetings missing notes
+              Past 60 days missing notes
             </div>
             <div className="mt-1 text-2xl font-semibold text-destructive">
               {missingNotes}
@@ -350,7 +404,7 @@ export default function MeetingsPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-xs uppercase text-muted-foreground">
-              Missing next steps
+              Past 60 days missing next steps
             </div>
             <div className="mt-1 text-2xl font-semibold text-amber-700 dark:text-amber-300">
               {missingNextSteps}
@@ -386,7 +440,7 @@ export default function MeetingsPage() {
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="history">Meeting history</TabsTrigger>
+          <TabsTrigger value="history">Meeting history · 60 days</TabsTrigger>
           <TabsTrigger value="future">Future meetings</TabsTrigger>
         </TabsList>
         {(["history", "future"] as const).map((value) => (
@@ -415,6 +469,11 @@ export default function MeetingsPage() {
                         userNames.get(event.calendarUserId) ??
                         "Unknown team member"
                       }
+                      dismissing={
+                        dismissNotes.isPending &&
+                        dismissNotes.variables?.id === event.id
+                      }
+                      onNoNotes={() => dismissNotes.mutate({ id: event.id })}
                     />
                   ))
                 )}

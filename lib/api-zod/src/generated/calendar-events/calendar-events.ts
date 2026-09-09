@@ -23,6 +23,7 @@ export const ListCalendarEventsQueryParams = zod.object({
   "organizationId": zod.coerce.string().optional(),
   "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include calendar events matched to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
+  "excludeNotesNotNeeded": zod.coerce.boolean().optional().describe('Exclude physical meetings a CRM user marked as not needing notes.'),
   "startAfter": zod.coerce.string().datetime({}).optional().describe('Only events with startAt >= this timestamp.'),
   "startBefore": zod.coerce.string().datetime({}).optional().describe('Only events with startAt < this timestamp.'),
   "order": zod.enum(['asc', 'desc']).default(listCalendarEventsQueryOrderDefault).describe('Sort by startAt. Default desc (most recent first).'),
@@ -128,5 +129,9 @@ export const UpdateCalendarEventPrivacyResponse = zod.object({
   "linkedNoteCount": zod.number().describe('Number of free-form CRM notes linked to this physical Google Calendar event.'),
   "hasMeetingNotes": zod.boolean().describe('True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.'),
   "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
+})
+
+export const DismissCalendarEventNotesParams = zod.object({
+  "id": zod.coerce.string()
 })
 

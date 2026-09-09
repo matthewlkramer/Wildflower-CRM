@@ -6151,6 +6151,12 @@ paths:
           }
         - { name: householdId, in: query, schema: { type: string } }
         - {
+            name: excludeNotesNotNeeded,
+            in: query,
+            schema: { type: boolean },
+            description: "Exclude physical meetings a CRM user marked as not needing notes.",
+          }
+        - {
             name: startAfter,
             in: query,
             schema: { type: string, format: date-time },
@@ -6228,6 +6234,17 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /calendar-events/{id}/no-notes:
+    post:
+      operationId: dismissCalendarEventNotes
+      tags: [calendar-events]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204":
+          {
+            description: "The physical meeting is dismissed from the meeting-notes queue.",
+          }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Admin: per-user sync health + manual resync ──────────────────────────

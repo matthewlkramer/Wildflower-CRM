@@ -35,6 +35,7 @@ CODEGEN_OUT_ROOT="$tmp" node ./gen-index.mjs
 # historical reconciliation file, while leaving unrelated generated files
 # byte-identical to the existing baseline.
 for rel in \
+  calendar-events/calendar-events.ts \
   reconciliation/reconciliation.ts \
   gifts-and-payments/gifts-and-payments.ts \
   opportunities-and-pledges/opportunities-and-pledges.ts; do

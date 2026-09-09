@@ -430,11 +430,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `person_suppression_windows`, `calendar_meeting_filters` — suppression and
   matching controls. `internal_email_domains` — staff-domain singleton.
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
-  `notes`. Structured meeting notes and free-form CRM notes can both point to
-  a synced calendar event; the free-form note link is optional and many notes
-  may document one meeting. Calendar rows also retain Google `transparency` and
-  visibility; active trip windows temporarily broaden capture to unmatched
-  events, which default private.
+  `meeting_note_dismissals`, `notes`. Structured meeting notes and free-form CRM
+  notes can both point to a synced calendar event; the free-form note link is
+  optional and many notes may document one meeting. A meeting-note dismissal is
+  keyed to the physical Google event id, so it removes every synced copy from
+  the notes queue without deleting calendar evidence. Calendar rows also retain
+  Google `transparency` and visibility; active trip windows temporarily broaden
+  capture to unmatched events, which default private.
 - `email_proposals` — one actionable AI signal per row (job change, bounce,
   signature update, grant opportunity, thank-you acknowledgment, …).
 - `email_intel_prompts` — versioned, admin-editable review prompts per

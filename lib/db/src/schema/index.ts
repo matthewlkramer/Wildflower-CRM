@@ -44,6 +44,7 @@ export * from "./taskSuggestionState";
 export * from "./tasks";
 export * from "./taskProposals";
 export * from "./meetingNotes";
+export * from "./meetingNoteDismissals";
 export * from "./bulkOperations";
 export * from "./savedViews";
 export * from "./trackedEmails";

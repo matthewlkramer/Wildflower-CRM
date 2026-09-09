@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { calendarEvents } from "@workspace/db/schema";
+import { calendarEvents, meetingNoteDismissals } from "@workspace/db/schema";
 import {
   and,
   asc,
@@ -10,6 +10,7 @@ import {
   gte,
   ilike,
   lt,
+  notExists,
   or,
   sql,
   type SQL,
@@ -23,11 +24,13 @@ import { getAppUser } from "../lib/appRequest";
 import {
   asyncHandler,
   notFound,
+  newId,
   paramId,
   parseBoolQuery,
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
+import { recordAudit } from "../lib/audit";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 import {
   calendarEventSelection,
@@ -86,6 +89,18 @@ router.get(
     if (q.householdId) {
       filters.push(
         sql`${calendarEvents.matchedHouseholdIds} @> ARRAY[${q.householdId}]::text[]`,
+      );
+    }
+    if (parseBoolQuery(req, "excludeNotesNotNeeded") === true) {
+      filters.push(
+        notExists(
+          db
+            .select({ id: meetingNoteDismissals.id })
+            .from(meetingNoteDismissals)
+            .where(
+              eq(meetingNoteDismissals.gcalEventId, calendarEvents.gcalEventId),
+            ),
+        ),
       );
     }
     if (q.startAfter) {
@@ -182,6 +197,61 @@ router.patch(
       .returning();
     if (!row) return notFound(res, "calendar event");
     res.json(row);
+  }),
+);
+
+router.post(
+  "/calendar-events/:id/no-notes",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const event = await db
+      .select({
+        id: calendarEvents.id,
+        gcalEventId: calendarEvents.gcalEventId,
+        summary: calendarEvents.summary,
+      })
+      .from(calendarEvents)
+      .where(
+        and(
+          eq(calendarEvents.id, paramId(req)),
+          calendarEventVisibleToCaller(user.id),
+        ),
+      )
+      .then((rows) => rows[0]);
+    if (!event) return notFound(res, "calendar event");
+
+    await db.transaction(async (tx) => {
+      const dismissalId = newId();
+      const [inserted] = await tx
+        .insert(meetingNoteDismissals)
+        .values({
+          id: dismissalId,
+          gcalEventId: event.gcalEventId,
+          dismissedByUserId: user.id,
+        })
+        .onConflictDoNothing({
+          target: meetingNoteDismissals.gcalEventId,
+        })
+        .returning({ id: meetingNoteDismissals.id });
+      if (!inserted) return;
+
+      await recordAudit(tx, req, {
+        action: "create",
+        entityType: "meeting_note_dismissal",
+        entityId: dismissalId,
+        summary: `Marked ${event.summary?.trim() || "calendar event"} as not needing notes`,
+        metadata: {
+          calendarEventId: event.id,
+          gcalEventId: event.gcalEventId,
+        },
+      });
+    });
+
+    res.status(204).end();
   }),
 );
 

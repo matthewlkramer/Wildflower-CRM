@@ -11491,6 +11491,10 @@ organizationId?: string;
 includeLinkedPeople?: boolean;
 householdId?: string;
 /**
+ * Exclude physical meetings a CRM user marked as not needing notes.
+ */
+excludeNotesNotNeeded?: boolean;
+/**
  * Only events with startAt >= this timestamp.
  */
 startAfter?: string;
