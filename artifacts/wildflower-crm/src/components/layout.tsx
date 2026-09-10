@@ -128,12 +128,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div
               key={`section-${item.section}`}
               role="separator"
-              className="mx-auto my-2 h-px w-6 bg-border"
+              className="mx-auto my-3 h-px w-6 bg-sidebar-border"
             />
           ) : (
             <div
               key={`section-${item.section}`}
-              className={`pb-1 pt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground ${item.indent ? "pl-6 pr-3" : "px-3"}`}
+              className={`pb-1 pt-5 text-[11px] font-bold uppercase tracking-widest text-sidebar-foreground/50 ${item.indent ? "pl-6 pr-3" : "px-3"}`}
             >
               {item.section}
             </div>
@@ -148,9 +148,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             href={item.href}
             title={collapsed ? item.label : undefined}
             onClick={onNavigate}
-            className={`flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-colors ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-primary/10 text-primary' : 'text-sidebar-foreground hover:bg-muted'}`}
+            className={`group flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-all duration-150 ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
             {collapsed ? null : item.label}
           </Link>
         );
@@ -164,17 +164,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-background">
       {/* Desktop Sidebar (collapsible to an icon-only rail). */}
       <aside
-        className={`hidden flex-col border-r bg-sidebar transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-64"}`}
+        className={`hidden flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-64"}`}
         data-testid="desktop-sidebar"
         data-collapsed={collapsed ? "true" : "false"}
       >
-        <div className={`flex h-14 items-center border-b ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
+        <div className={`flex h-14 items-center border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
           {collapsed ? null : (
-            <div className="flex items-center gap-2 font-serif font-semibold text-primary">
-              <svg viewBox="0 0 100 100" className="h-6 w-6" fill="none">
+            <div className="flex items-center gap-2 font-serif font-medium text-sidebar-foreground text-lg tracking-tight">
+              <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
                 <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                <path d="M50 85 C50 85 45 60 50 40" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="currentColor"/>
+                <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
+                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
                 <circle cx="50" cy="40" r="6" fill="#F4A261"/>
                 <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
               </svg>
@@ -184,57 +184,57 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="h-8 w-8 shrink-0 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground"
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             data-testid="button-toggle-sidebar"
           >
             {collapsed ? (
-              <PanelLeftOpen className="h-4 w-4 text-muted-foreground" />
+              <PanelLeftOpen className="h-4 w-4" />
             ) : (
-              <PanelLeftClose className="h-4 w-4 text-muted-foreground" />
+              <PanelLeftClose className="h-4 w-4" />
             )}
           </Button>
         </div>
         <div className={`flex-1 overflow-y-auto ${collapsed ? "p-2" : "p-4"}`}>
           <NavLinks collapsed={collapsed} />
         </div>
-        <div className={`border-t ${collapsed ? "p-2" : "p-4"}`}>
+        <div className={`border-t border-sidebar-border ${collapsed ? "p-2" : "p-4"}`}>
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
-              <Avatar className="h-8 w-8">
+              <Avatar className="h-8 w-8 border border-sidebar-border">
                 <AvatarImage src={user?.imageUrl} />
-                <AvatarFallback>{user?.firstName?.[0] || "U"}</AvatarFallback>
+                <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">{user?.firstName?.[0] || "U"}</AvatarFallback>
               </Avatar>
-              <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+              <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings" className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
                 <Link href="/settings">
-                  <Settings className="h-4 w-4 text-muted-foreground" />
+                  <Settings className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
-                <LogOut className="h-4 w-4 text-muted-foreground" />
+              <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out" className="text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
+                <LogOut className="h-4 w-4" />
               </Button>
             </div>
           ) : (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <Avatar className="h-8 w-8">
+                <Avatar className="h-8 w-8 border border-sidebar-border">
                   <AvatarImage src={user?.imageUrl} />
-                  <AvatarFallback>{user?.firstName?.[0] || "U"}</AvatarFallback>
+                  <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">{user?.firstName?.[0] || "U"}</AvatarFallback>
                 </Avatar>
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium leading-none">{user?.fullName}</span>
+                  <span className="text-sm font-medium leading-none text-sidebar-foreground">{user?.fullName}</span>
                 </div>
               </div>
-              <div className="flex items-center">
-                <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+              <div className="flex items-center gap-1">
+                <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings" className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
                   <Link href="/settings">
-                    <Settings className="h-4 w-4 text-muted-foreground" />
+                    <Settings className="h-4 w-4" />
                   </Link>
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
-                  <LogOut className="h-4 w-4 text-muted-foreground" />
+                <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out" className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
+                  <LogOut className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3">
+        <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3 shadow-sm z-10">
           {/* Left: hamburger (mobile) + logo */}
           <div className="flex items-center gap-2">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -257,12 +257,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0">
-                <div className="flex h-14 shrink-0 items-center border-b px-4 gap-2 font-serif font-semibold text-primary">
-                  <svg viewBox="0 0 100 100" className="h-6 w-6" fill="none">
+              <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0 bg-sidebar border-r-sidebar-border text-sidebar-foreground">
+                <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4 gap-2 font-serif font-medium text-lg tracking-tight text-sidebar-foreground">
+                  <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
                     <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                    <path d="M50 85 C50 85 45 60 50 40" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-                    <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="currentColor"/>
+                    <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
+                    <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
                     <circle cx="50" cy="40" r="6" fill="#F4A261"/>
                     <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
                   </svg>
@@ -271,23 +271,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   <NavLinks onNavigate={() => setMobileOpen(false)} />
                 </div>
-                <div className="shrink-0 border-t p-4">
+                <div className="shrink-0 border-t border-sidebar-border p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="h-8 w-8 border border-sidebar-border">
                         <AvatarImage src={user?.imageUrl} />
-                        <AvatarFallback>{user?.firstName?.[0] || "U"}</AvatarFallback>
+                        <AvatarFallback className="bg-sidebar-accent text-sidebar-foreground">{user?.firstName?.[0] || "U"}</AvatarFallback>
                       </Avatar>
-                      <span className="text-sm font-medium leading-none">{user?.fullName}</span>
+                      <span className="text-sm font-medium leading-none text-sidebar-foreground">{user?.fullName}</span>
                     </div>
-                    <div className="flex items-center">
-                      <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings">
+                    <div className="flex items-center gap-1">
+                      <Button asChild variant="ghost" size="icon" title="Settings" aria-label="Settings" className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
                         <Link href="/settings" onClick={() => setMobileOpen(false)}>
-                          <Settings className="h-4 w-4 text-muted-foreground" />
+                          <Settings className="h-4 w-4" />
                         </Link>
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out">
-                        <LogOut className="h-4 w-4 text-muted-foreground" />
+                      <Button variant="ghost" size="icon" onClick={() => signOut()} title="Sign out" aria-label="Sign out" className="h-8 w-8 text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground">
+                        <LogOut className="h-4 w-4" />
                       </Button>
                     </div>
                   </div>
@@ -295,11 +295,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center gap-2 font-serif font-semibold text-primary md:hidden">
-              <svg viewBox="0 0 100 100" className="h-6 w-6" fill="none">
+            <div className="flex items-center gap-2 font-serif font-medium tracking-tight text-primary md:hidden text-lg">
+              <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
                 <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                <path d="M50 85 C50 85 45 60 50 40" stroke="currentColor" strokeWidth="4" strokeLinecap="round"/>
-                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="currentColor"/>
+                <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
+                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
                 <circle cx="50" cy="40" r="6" fill="#F4A261"/>
                 <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
               </svg>
