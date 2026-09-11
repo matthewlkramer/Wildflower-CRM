@@ -22,19 +22,23 @@ The migration does **not** update any of these accounting/history tables:
 - `bank_deposits`;
 - `bank_transactions`;
 - `staged_payments` (the QuickBooks mirror);
-- `qbo_accounting_checks`;
-- `source_links`.
+- `qbo_accounting_checks`.
 
 The historical bank event remains the single **$326,500 Wells Fargo deposit on
 2018-09-06** (`bdep_0600314fc0e164a1f15604c2`). It contains the SGP receipt plus
-an existing excluded $1,500 component. The existing QuickBooks source record
-remains **$300,000** (`eYUufuwn1mea0hs80eKzK`).
+an existing excluded $1,500 component. The two existing QuickBooks source rows
+remain **$300,000** (`eYUufuwn1mea0hs80eKzK`) and **$25,000**
+(`3BKPGN7dLcb_pvliqNtRk`). Migration 0200 had preserved both rows while merging
+their CRM gift/payment-unit representation into one $325,000 gift and unit.
 
 Only CRM donor-credit and reconciliation composition change:
 
 - existing SGP payment unit/component: $325,000 → $300,000, with its QBO link
   preserved;
-- new manual $25,000 payment unit/component in the same historical deposit;
+- the previously absorbed QBO-backed $25,000 payment unit is restored and a
+  $25,000 component is added within the same historical deposit;
+- the existing $25,000 QBO-register `source_links` pointer is reattached from
+  the merged unit to the restored $25,000 unit;
 - existing $25,000 allocation moved intact to a new stand-alone direct gift;
 - existing FY19 pledge-payment gift reduced to $300,000;
 - pledge `paid` recomputed from its three active payments to $800,000.
@@ -48,8 +52,9 @@ receipt date (`2018-09-06`).
 - `psql -1` applies the file atomically; any failed assertion rolls back every
   change.
 - First-run preflight requires the exact reviewed opportunity, three gifts,
-  $300,000 + $25,000 allocation split, payment unit, component, QBO mirror row,
-  deposit amount/date, and excluded $1,500 component.
+  $300,000 + $25,000 allocation split, merged payment unit, component, both QBO
+  mirror rows, their allocation/register evidence, deposit amount/date, and
+  excluded $1,500 component.
 - The migration aborts if any reviewed amount, relationship, or count drifted.
 - Deterministic ids and `audit_0245_sgp_bundled_gift_split` make a successful
   re-run a verified no-op.
@@ -87,7 +92,7 @@ SELECT id, kind, gift_id, gross_amount, net_amount, received_date,
 FROM payment_units
 WHERE id IN (
   'pu_eYUufuwn1mea0hs80eKzK',
-  'pu_manual_0245_sgp_direct_25'
+  'pu_3BKPGN7dLcb_pvliqNtRk'
 )
 ORDER BY id;
 
@@ -104,7 +109,27 @@ WHERE id = 'bdep_0600314fc0e164a1f15604c2';
 SELECT id, amount, date_received, qb_entity_type, qb_entity_id,
        qb_doc_number, qb_deposit_to_account_name
 FROM staged_payments
-WHERE id = 'eYUufuwn1mea0hs80eKzK';
+WHERE id IN ('eYUufuwn1mea0hs80eKzK', '3BKPGN7dLcb_pvliqNtRk')
+ORDER BY amount DESC;
+
+SELECT id, link_type, qb_staged_payment_id, bank_transaction_id,
+       payment_unit_id, gift_allocation_id, lifecycle, provenance
+FROM source_links
+WHERE id IN (
+  'srcl_qla_eYUufuwn1mea0hs80eKzK_synth-ga-recaKMBM7D9Bxv662',
+  'srcl_qla_3BKPGN7dLcb_pvliqNtRk_synth-ga-recuRLvecG7IgHgY6',
+  'srcl_qru_bnk_00131128bdef8fd2c7bee604',
+  'srcl_qru_bnk_2c81a4c08fe3508073012685'
+)
+ORDER BY id;
+
+SELECT id, txn_date, payee, deposit
+FROM bank_transactions
+WHERE id IN (
+  'bnk_00131128bdef8fd2c7bee604',
+  'bnk_2c81a4c08fe3508073012685'
+)
+ORDER BY deposit DESC;
 "
 ```
 
@@ -113,8 +138,10 @@ Before first application, expect:
 - pledge awarded/paid: `$800,000 / $800,000`;
 - active pledge gifts: `$400,000`, `$100,000`, `$325,000`;
 - the `$325,000` gift has exactly `$300,000` and `$25,000` FY2019 allocations;
-- `pu_eYUufuwn1mea0hs80eKzK` and its component are `$325,000` but point to the
-  unchanged `$300,000` QBO row;
+- `pu_eYUufuwn1mea0hs80eKzK` has `$325,000` gross and `$300,000` net, while its
+  component is `$325,000`; this is the reviewed merge state from migration 0200;
+- the untouched QBO source rows and register evidence remain `$300,000` and
+  `$25,000`, with both register claims temporarily pointing to the merged unit;
 - deposit `bdep_0600314fc0e164a1f15604c2` is `$326,500`, composed of the
   `$325,000` SGP component and an excluded `$1,500` component;
 - none of the deterministic `0245` target ids exists yet.
@@ -131,7 +158,7 @@ psql "$PROD_DATABASE_URL" -1 -v ON_ERROR_STOP=1 -f lib/db/migrations/0245_split_
 Expected successful output includes:
 
 ```text
-NOTICE:  0245: SGP verified — $800,000 pledge paid $400,000 + $100,000 + $300,000; separate $25,000 direct gift; $326,500 deposit and $300,000 QBO record preserved
+NOTICE:  0245: SGP verified — $800,000 pledge paid $400,000 + $100,000 + $300,000; separate $25,000 direct gift; $326,500 deposit and $300,000 + $25,000 QBO records preserved
 ```
 
 ## Postflight verification
@@ -146,7 +173,9 @@ Re-run the read-only preflight query. The expected final state is:
   existing Massachusetts/restriction coding;
 - the deposit still totals `$326,500`, now composed of `$300,000`, `$25,000`,
   and the existing excluded `$1,500`;
-- the QBO mirror record remains `$300,000` and dated `2018-09-06`;
+- the QBO mirror rows remain `$300,000` and `$25,000`, both dated `2018-09-06`;
+- the `$25,000` allocation and register evidence point to the restored
+  `pu_3BKPGN7dLcb_pvliqNtRk` payment unit;
 - exactly one audit row exists:
   `audit_0245_sgp_bundled_gift_split`.
 
