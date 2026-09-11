@@ -46,7 +46,7 @@ export function extractNamedGrantProgram(text: string): string | null {
   );
 }
 
-function normalizeIdentity(value: string): string {
+export function normalizeGrantLeadIdentity(value: string): string {
   return value
     .toLowerCase()
     .replace(/^(?:re|fwd):\s*/g, "")
@@ -80,13 +80,13 @@ export function buildGrantLeadDedupeKey(
     `${opportunity.title}\n${opportunity.snippet}`,
   );
   if (program)
-    return `grant:program:${normalizeIdentity(program)}`.slice(0, 260);
+    return `grant:program:${normalizeGrantLeadIdentity(program)}`.slice(0, 260);
 
   const canonicalUrl = canonicalOpportunityUrl(opportunity.url);
   if (canonicalUrl) return `grant:url:${canonicalUrl.slice(0, 180)}`;
 
-  const titleKey = normalizeIdentity(opportunity.title);
-  const funderKey = normalizeIdentity(opportunity.funderName ?? "");
+  const titleKey = normalizeGrantLeadIdentity(opportunity.title);
+  const funderKey = normalizeGrantLeadIdentity(opportunity.funderName ?? "");
   const senderDomain = fromEmail?.split("@").pop()?.toLowerCase() ?? "";
   const discriminator = funderKey || senderDomain || "unknown-source";
   return `grant:announcement:${discriminator}:${titleKey || "unnamed"}`.slice(

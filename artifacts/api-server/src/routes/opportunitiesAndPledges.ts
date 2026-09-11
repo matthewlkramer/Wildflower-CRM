@@ -146,6 +146,7 @@ import {
   CloseAwardBody,
   DeduplicateOpportunitiesAndPledgesBody,
   CombineOpportunitiesAsPledgeBody,
+  ReduceOpportunityPlanProportionallyBody,
   validateOppInvariants,
   validateOppCloseTransition,
   type InvariantIssue,
@@ -158,6 +159,7 @@ import {
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
+import { scalePlannedAmounts } from "../lib/proportionalPlan";
 import { getAppUser } from "../lib/appRequest";
 import {
   asyncHandler,
@@ -1570,6 +1572,143 @@ router.post(
       );
     }
     res.status(201).json(gift);
+  }),
+);
+
+router.post(
+  "/opportunities-and-pledges/:id/reduce-plan-proportionally",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(
+      ReduceOpportunityPlanProportionallyBody,
+      req.body,
+      res,
+    );
+    if (!body) return;
+    const id = paramId(req);
+    const existing = await db
+      .select()
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((rows) => rows[0]);
+    if (!existing) return notFound(res, "opportunity");
+    const freeze = await resolvePledgeFreeze(existing.actualCompletionDate);
+    if (freeze.frozen) return respondFrozen(res, freeze);
+
+    const oldTarget = Number(existing.awardedAmount ?? existing.askAmount ?? 0);
+    const newTarget = Number(body.awardedAmount ?? body.askAmount ?? 0);
+    if (
+      !Number.isFinite(oldTarget) ||
+      !Number.isFinite(newTarget) ||
+      oldTarget <= 0 ||
+      newTarget < 0 ||
+      newTarget >= oldTarget
+    ) {
+      return res.status(400).json({
+        error: "invalid_plan_reduction",
+        message: "The new ask or award must be lower than the current amount.",
+      });
+    }
+
+    const adjusted = await db.transaction(async (tx) => {
+      const locked = await tx
+        .select()
+        .from(opportunitiesAndPledges)
+        .where(eq(opportunitiesAndPledges.id, id))
+        .for("update")
+        .then((rows) => rows[0]);
+      const lockedOldTarget = Number(
+        locked?.awardedAmount ?? locked?.askAmount ?? 0,
+      );
+      if (
+        !locked ||
+        !Number.isFinite(lockedOldTarget) ||
+        lockedOldTarget <= 0 ||
+        newTarget >= lockedOldTarget
+      ) {
+        return { conflict: true as const };
+      }
+      const [allocations, installments] = await Promise.all([
+        tx
+          .select({ id: pledgeAllocations.id, amount: pledgeAllocations.subAmount })
+          .from(pledgeAllocations)
+          .where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
+        tx
+          .select({ id: pledgeExpectedPayments.id, amount: pledgeExpectedPayments.amount })
+          .from(pledgeExpectedPayments)
+          .where(eq(pledgeExpectedPayments.pledgeOrOpportunityId, id)),
+      ]);
+      const scaledAllocations = scalePlannedAmounts(
+        allocations,
+        lockedOldTarget,
+        newTarget,
+      );
+      const scaledInstallments = scalePlannedAmounts(
+        installments,
+        lockedOldTarget,
+        newTarget,
+      );
+      for (const allocation of scaledAllocations) {
+        if (allocation.amount == null) continue;
+        await tx
+          .update(pledgeAllocations)
+          .set({ subAmount: allocation.amount, updatedAt: new Date() })
+          .where(eq(pledgeAllocations.id, allocation.id));
+      }
+      for (const installment of scaledInstallments) {
+        if (installment.amount == null) continue;
+        await tx
+          .update(pledgeExpectedPayments)
+          .set({ amount: installment.amount, updatedAt: new Date() })
+          .where(eq(pledgeExpectedPayments.id, installment.id));
+      }
+      const [row] = await tx
+        .update(opportunitiesAndPledges)
+        .set({
+          askAmount: body.askAmount,
+          awardedAmount: body.awardedAmount,
+          updatedAt: new Date(),
+        })
+        .where(eq(opportunitiesAndPledges.id, id))
+        .returning(oppHeaderColumns);
+      return {
+        conflict: false as const,
+        row: row!,
+        oldTarget: lockedOldTarget,
+        allocationsAdjusted: scaledAllocations.filter((item) => item.amount != null).length,
+        installmentsAdjusted: scaledInstallments.filter((item) => item.amount != null).length,
+      };
+    });
+
+    if (adjusted.conflict) {
+      return res.status(409).json({
+        error: "plan_amount_changed",
+        message: "The amount changed while this reduction was being saved. Reload and try again.",
+      });
+    }
+
+    await applyDerivedOppFields(id);
+    const final = await db
+      .select(oppHeaderColumns)
+      .from(opportunitiesAndPledges)
+      .where(eq(opportunitiesAndPledges.id, id))
+      .then((rows) => rows[0] ?? adjusted.row);
+    await auditUpdate(
+      req,
+      "opportunity",
+      id,
+      existing as Record<string, unknown>,
+      final as Record<string, unknown>,
+      ["askAmount", "awardedAmount"],
+      "Reduced opportunity plan proportionally",
+    );
+    res.json({
+      opportunity: final,
+      oldTarget: adjusted.oldTarget.toFixed(2),
+      newTarget: newTarget.toFixed(2),
+      allocationsAdjusted: adjusted.allocationsAdjusted,
+      installmentsAdjusted: adjusted.installmentsAdjusted,
+      postedPaymentsAdjusted: 0,
+    });
   }),
 );
 

@@ -94,6 +94,14 @@ export const tripVisitCandidates = pgTable(
     rationale: text("rationale"),
     source: text("source").notNull(),
     notes: text("notes"),
+    nextStep: text("next_step"),
+    planningUpdatedByUserId: text("planning_updated_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    planningUpdatedAt: timestamp("planning_updated_at", {
+      withTimezone: true,
+    }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -117,7 +125,34 @@ export const tripVisitCandidates = pgTable(
   ],
 );
 
+/** Append-only team discussion for a trip. */
+export const tripPlanComments = pgTable(
+  "trip_plan_comments",
+  {
+    id: text("id").primaryKey(),
+    tripId: text("trip_id")
+      .notNull()
+      .references(() => tripPlans.id, { onDelete: "cascade" }),
+    authorUserId: text("author_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    index("trip_plan_comments_trip_created_idx").on(t.tripId, t.createdAt),
+    check(
+      "trip_plan_comments_body_nonblank",
+      sql`length(trim(${t.body})) > 0`,
+    ),
+  ],
+);
+
 export type TripPlan = typeof tripPlans.$inferSelect;
 export type NewTripPlan = typeof tripPlans.$inferInsert;
 export type TripVisitCandidate = typeof tripVisitCandidates.$inferSelect;
 export type NewTripVisitCandidate = typeof tripVisitCandidates.$inferInsert;
+export type TripPlanComment = typeof tripPlanComments.$inferSelect;
+export type NewTripPlanComment = typeof tripPlanComments.$inferInsert;

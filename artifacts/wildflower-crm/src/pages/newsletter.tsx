@@ -3,9 +3,12 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetNewsletterOverviewQueryKey,
+  getListNewsletterContactsQueryKey,
   getListNewsletterEngagementQueryKey,
   useGetNewsletterOverview,
+  useListNewsletterContacts,
   useListNewsletterEngagement,
+  type ListNewsletterContactsAudience,
   type NewsletterImportResult,
   type NewsletterCampaign,
 } from "@workspace/api-client-react";
@@ -33,10 +36,12 @@ import { useToast } from "@/hooks/use-toast";
 import {
   BarChart3,
   Check,
+  CircleAlert,
   Link2,
   Mail,
   MousePointerClick,
   Upload,
+  X,
 } from "lucide-react";
 
 const EMPTY_CAMPAIGNS: NewsletterCampaign[] = [];
@@ -99,27 +104,52 @@ function MetricCard({
   label,
   value,
   icon: Icon,
+  selected,
+  onSelect,
 }: {
   label: string;
   value: number;
   icon: typeof Mail;
+  selected: boolean;
+  onSelect: () => void;
 }) {
   return (
-    <Card>
-      <CardContent className="flex items-center justify-between p-5">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {label}
-          </p>
-          <p className="mt-1 text-2xl font-semibold">
-            {value.toLocaleString()}
-          </p>
-        </div>
-        <Icon className="h-5 w-5 text-primary" />
-      </CardContent>
-    </Card>
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className="rounded-xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Card
+        className={
+          selected
+            ? "h-full border-primary bg-primary/5"
+            : "h-full transition-colors hover:bg-muted/40"
+        }
+      >
+        <CardContent className="flex items-center justify-between p-5">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {label}
+            </p>
+            <p className="mt-1 text-2xl font-semibold">
+              {value.toLocaleString()}
+            </p>
+          </div>
+          <Icon className="h-5 w-5 text-primary" />
+        </CardContent>
+      </Card>
+    </button>
   );
 }
+
+const AUDIENCE_LABELS: Record<ListNewsletterContactsAudience, string> = {
+  current_subscribers: "Current subscribers",
+  linked_current_subscribers: "Linked current subscribers",
+  unmatched_current_subscribers: "Unmatched current subscribers",
+  unsubscribe_evidence: "Unsubscribe evidence",
+  bounce_evidence: "Bounce evidence",
+};
 
 export default function NewsletterPage() {
   const isAdmin = useIsAdmin();
@@ -132,6 +162,11 @@ export default function NewsletterPage() {
   const [engagementFilter, setEngagementFilter] = useState("all");
   const [linkFilter, setLinkFilter] = useState("all");
   const [page, setPage] = useState(1);
+  const [selectedAudience, setSelectedAudience] =
+    useState<ListNewsletterContactsAudience | null>(null);
+  const [audienceSearch, setAudienceSearch] = useState("");
+  const deferredAudienceSearch = useDeferredValue(audienceSearch);
+  const [audiencePage, setAudiencePage] = useState(1);
   const [lastImport, setLastImport] =
     useState<NewsletterImportReviewResult | null>(null);
 
@@ -188,6 +223,18 @@ export default function NewsletterPage() {
       },
     },
   );
+  const audienceParams = {
+    audience: selectedAudience ?? "current_subscribers",
+    search: deferredAudienceSearch.trim() || undefined,
+    limit: 100,
+    page: audiencePage,
+  };
+  const audienceContacts = useListNewsletterContacts(audienceParams, {
+    query: {
+      enabled: selectedAudience !== null,
+      queryKey: getListNewsletterContactsQueryKey(audienceParams),
+    },
+  });
 
   async function uploadWorkbook(file: File | null | undefined) {
     if (!file) return;
@@ -302,29 +349,196 @@ export default function NewsletterPage() {
           </CardContent>
         </Card>
       ) : !audience ? null : (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard
             label="Current subscribers"
             value={audience.currentSubscribers}
             icon={Mail}
+            selected={selectedAudience === "current_subscribers"}
+            onSelect={() => {
+              setSelectedAudience("current_subscribers");
+              setAudiencePage(1);
+            }}
           />
           <MetricCard
             label="Linked to CRM"
             value={audience.linkedCurrentSubscribers}
             icon={Link2}
+            selected={selectedAudience === "linked_current_subscribers"}
+            onSelect={() => {
+              setSelectedAudience("linked_current_subscribers");
+              setAudiencePage(1);
+            }}
           />
           <MetricCard
             label="Unmatched subscribers"
             value={audience.unmatchedCurrentSubscribers}
             icon={BarChart3}
+            selected={selectedAudience === "unmatched_current_subscribers"}
+            onSelect={() => {
+              setSelectedAudience("unmatched_current_subscribers");
+              setAudiencePage(1);
+            }}
           />
           <MetricCard
             label="Unsubscribe evidence"
             value={audience.unsubscribeEvidence}
             icon={MousePointerClick}
+            selected={selectedAudience === "unsubscribe_evidence"}
+            onSelect={() => {
+              setSelectedAudience("unsubscribe_evidence");
+              setAudiencePage(1);
+            }}
+          />
+          <MetricCard
+            label="Bounce evidence"
+            value={audience.bounceEvidence}
+            icon={CircleAlert}
+            selected={selectedAudience === "bounce_evidence"}
+            onSelect={() => {
+              setSelectedAudience("bounce_evidence");
+              setAudiencePage(1);
+            }}
           />
         </div>
       )}
+
+      {selectedAudience ? (
+        <Card data-testid="newsletter-audience-drilldown">
+          <CardHeader className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-lg">
+                  {AUDIENCE_LABELS[selectedAudience]}
+                </CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The people and addresses behind this metric.
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedAudience(null)}
+                aria-label="Close audience list"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <Input
+              value={audienceSearch}
+              onChange={(event) => {
+                setAudienceSearch(event.target.value);
+                setAudiencePage(1);
+              }}
+              placeholder="Search name or email…"
+              className="max-w-md"
+            />
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {audienceContacts.isLoading ? (
+              <p className="text-sm text-muted-foreground">Loading audience…</p>
+            ) : audienceContacts.isError ? (
+              <p className="text-sm text-destructive">
+                The audience list could not be loaded.
+              </p>
+            ) : (audienceContacts.data?.data.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No audience records match this filter.
+              </p>
+            ) : (
+              <div className="overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Subscriber</TableHead>
+                      <TableHead>Source evidence</TableHead>
+                      <TableHead>CRM match</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {audienceContacts.data?.data.map((row) => {
+                      const href = recordHref(
+                        row.linkedRecordType,
+                        row.linkedRecordId,
+                      );
+                      return (
+                        <TableRow key={row.email}>
+                          <TableCell>
+                            <div className="font-medium">
+                              {[row.firstName, row.lastName]
+                                .filter(Boolean)
+                                .join(" ") || "—"}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {row.email}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {row.sourceCurrentSubscriber ? (
+                                <Badge>Current</Badge>
+                              ) : null}
+                              {row.sourceUnsubscribed ? (
+                                <Badge variant="secondary">Unsubscribed</Badge>
+                              ) : null}
+                              {row.sourceBounced ? (
+                                <Badge variant="outline">Bounced</Badge>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {href ? (
+                              <Link
+                                href={href}
+                                className="text-sm text-primary hover:underline"
+                              >
+                                {row.linkedRecordName || "Open CRM record"}
+                              </Link>
+                            ) : (
+                              <Badge variant="outline">Unmatched</Badge>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+            {(audienceContacts.data?.pagination.total ?? 0) > 100 ? (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">
+                  Page {audiencePage} of{" "}
+                  {Math.ceil(
+                    (audienceContacts.data?.pagination.total ?? 0) / 100,
+                  )}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAudiencePage((current) => current - 1)}
+                    disabled={audiencePage <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAudiencePage((current) => current + 1)}
+                    disabled={
+                      audiencePage * 100 >=
+                      (audienceContacts.data?.pagination.total ?? 0)
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       {lastImport ? (
         <Card>

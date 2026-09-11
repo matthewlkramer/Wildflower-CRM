@@ -10,6 +10,7 @@ import {
   people,
   peopleEntityRoles,
   tripPlans,
+  tripPlanComments,
   tripVisitCandidates,
   users,
   type TripPlan,
@@ -17,6 +18,7 @@ import {
 import {
   AddTripVisitBody,
   CreateTripPlanBody,
+  CreateTripCommentBody,
   ListTripPlansQueryParams,
   UpdateTripPlanBody,
   UpdateTripVisitBody,
@@ -247,6 +249,14 @@ async function loadTripDetail(
       rationale: tripVisitCandidates.rationale,
       source: tripVisitCandidates.source,
       notes: tripVisitCandidates.notes,
+      nextStep: tripVisitCandidates.nextStep,
+      planningUpdatedByUserId: tripVisitCandidates.planningUpdatedByUserId,
+      planningUpdatedAt: tripVisitCandidates.planningUpdatedAt,
+      planningUpdatedByUserName: sql<string | null>`(
+        select coalesce(nullif(u.display_name, ''), nullif(concat_ws(' ', u.first_name, u.last_name), ''), u.email)
+        from ${users} u
+        where u.id = ${tripVisitCandidates.planningUpdatedByUserId}
+      )`,
       archivedAt: tripVisitCandidates.archivedAt,
       createdAt: tripVisitCandidates.createdAt,
       updatedAt: tripVisitCandidates.updatedAt,
@@ -357,6 +367,10 @@ async function loadTripDetail(
       rationale: row.rationale,
       source: row.source as "system_draft" | "manual",
       notes: row.notes,
+      nextStep: row.nextStep,
+      planningUpdatedByUserId: row.planningUpdatedByUserId,
+      planningUpdatedByUserName: row.planningUpdatedByUserName,
+      planningUpdatedAt: row.planningUpdatedAt,
       outreachStatus: response
         ? ("responded" as const)
         : invitation
@@ -373,9 +387,24 @@ async function loadTripDetail(
       updatedAt: row.updatedAt,
     };
   });
+  const comments = await db
+    .select({
+      id: tripPlanComments.id,
+      tripId: tripPlanComments.tripId,
+      authorUserId: tripPlanComments.authorUserId,
+      authorName: sql<string>`coalesce(nullif(${users.displayName}, ''), nullif(concat_ws(' ', ${users.firstName}, ${users.lastName}), ''), ${users.email})`,
+      body: tripPlanComments.body,
+      createdAt: tripPlanComments.createdAt,
+    })
+    .from(tripPlanComments)
+    .innerJoin(users, eq(users.id, tripPlanComments.authorUserId))
+    .where(eq(tripPlanComments.tripId, trip.id))
+    .orderBy(asc(tripPlanComments.createdAt));
+
   return {
     ...(await tripSummary(trip, caller.id)),
     visits,
+    comments,
     calendarEvents: events,
   };
 }
@@ -580,7 +609,8 @@ router.post(
 router.post(
   "/trips/:id/visits",
   asyncHandler(async (req, res) => {
-    if (!canMutate(req, res)) return;
+    const user = canMutate(req, res);
+    if (!user) return;
     const body = parseOrBadRequest(AddTripVisitBody, req.body, res);
     if (!body) return;
     const trip = await loadTrip(req, paramId(req));
@@ -615,6 +645,9 @@ router.post(
           rank: body.rank ?? existing.rank,
           rationale: nullableText(body.rationale) ?? existing.rationale,
           notes: nullableText(body.notes) ?? existing.notes,
+          nextStep: nullableText(body.nextStep) ?? existing.nextStep,
+          planningUpdatedByUserId: user.id,
+          planningUpdatedAt: new Date(),
           updatedAt: new Date(),
         })
         .where(eq(tripVisitCandidates.id, existing.id));
@@ -632,6 +665,9 @@ router.post(
         source: "manual",
         rationale: nullableText(body.rationale),
         notes: nullableText(body.notes),
+        nextStep: nullableText(body.nextStep),
+        planningUpdatedByUserId: user.id,
+        planningUpdatedAt: new Date(),
       });
     }
     const detail = await loadTripDetail(req, trip);
@@ -642,7 +678,8 @@ router.post(
 router.patch(
   "/trips/:id/visits/:visitId",
   asyncHandler(async (req, res) => {
-    if (!canMutate(req, res)) return;
+    const user = canMutate(req, res);
+    if (!user) return;
     const body = parseOrBadRequest(UpdateTripVisitBody, req.body, res);
     if (!body) return;
     const trip = await loadTrip(req, paramId(req));
@@ -657,6 +694,17 @@ router.patch(
         ...(body.notes === undefined
           ? {}
           : { notes: nullableText(body.notes) }),
+        ...(body.nextStep === undefined
+          ? {}
+          : { nextStep: nullableText(body.nextStep) }),
+        ...(
+          body.notes === undefined && body.nextStep === undefined
+            ? {}
+            : {
+                planningUpdatedByUserId: user.id,
+                planningUpdatedAt: new Date(),
+              }
+        ),
         updatedAt: new Date(),
       })
       .where(
@@ -670,6 +718,36 @@ router.patch(
     if (!row) return notFound(res, "trip visit");
     const detail = await loadTripDetail(req, trip);
     res.json(detail.visits.find((visit) => visit.id === row.id));
+  }),
+);
+
+router.post(
+  "/trips/:id/comments",
+  asyncHandler(async (req, res) => {
+    const user = canMutate(req, res);
+    if (!user) return;
+    const body = parseOrBadRequest(CreateTripCommentBody, req.body, res);
+    if (!body) return;
+    const trip = await loadTrip(req, paramId(req));
+    if (!trip) return notFound(res, "trip");
+    const commentBody = body.body.trim();
+    if (!commentBody) return badTrip(res, "Comment cannot be blank.");
+    const [comment] = await db
+      .insert(tripPlanComments)
+      .values({
+        id: newId(),
+        tripId: trip.id,
+        authorUserId: user.id,
+        body: commentBody,
+      })
+      .returning();
+    res.status(201).json({
+      ...comment,
+      authorName:
+        user.displayName ??
+        ([user.firstName, user.lastName].filter(Boolean).join(" ") ||
+          user.email),
+    });
   }),
 );
 

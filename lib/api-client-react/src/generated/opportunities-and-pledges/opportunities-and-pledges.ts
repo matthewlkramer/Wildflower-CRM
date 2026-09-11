@@ -43,7 +43,9 @@ import type {
   OpportunityOrPledge,
   OpportunityOrPledgeDetail,
   OpportunityOrPledgeList,
+  OpportunityPlanReductionResult,
   RecordVerbalCommitmentBody,
+  ReduceOpportunityPlanBody,
   RevertPledgeToOpportunityBody,
   RevertPledgeToVerbalGiftBody,
   UpdateOpportunityOrPledgeBody,
@@ -411,6 +413,78 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateOpportunityOrPledgeMutationOptions(options));
+    }
+    /**
+ * Atomically updates the header amount, pledge allocation amounts, and expected-payment installment amounts. Posted gifts/payments are factual history and are never changed.
+ * @summary Reduce an ask/award and its editable plans by the same proportion.
+ */
+export const getReduceOpportunityPlanProportionallyUrl = (id: string,) => {
+
+
+
+
+  return `/api/opportunities-and-pledges/${id}/reduce-plan-proportionally`
+}
+
+export const reduceOpportunityPlanProportionally = async (id: string,
+    reduceOpportunityPlanBody: ReduceOpportunityPlanBody, options?: RequestInit): Promise<OpportunityPlanReductionResult> => {
+
+  return customFetch<OpportunityPlanReductionResult>(getReduceOpportunityPlanProportionallyUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      reduceOpportunityPlanBody,)
+  }
+);}
+
+
+
+
+export const getReduceOpportunityPlanProportionallyMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>, TError,{id: string;data: BodyType<ReduceOpportunityPlanBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>, TError,{id: string;data: BodyType<ReduceOpportunityPlanBody>}, TContext> => {
+
+const mutationKey = ['reduceOpportunityPlanProportionally'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>, {id: string;data: BodyType<ReduceOpportunityPlanBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  reduceOpportunityPlanProportionally(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReduceOpportunityPlanProportionallyMutationResult = NonNullable<Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>>
+    export type ReduceOpportunityPlanProportionallyMutationBody = BodyType<ReduceOpportunityPlanBody>
+    export type ReduceOpportunityPlanProportionallyMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Reduce an ask/award and its editable plans by the same proportion.
+ */
+export const useReduceOpportunityPlanProportionally = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>, TError,{id: string;data: BodyType<ReduceOpportunityPlanBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reduceOpportunityPlanProportionally>>,
+        TError,
+        {id: string;data: BodyType<ReduceOpportunityPlanBody>},
+        TContext
+      > => {
+      return useMutation(getReduceOpportunityPlanProportionallyMutationOptions(options));
     }
     /**
  * Admin-only data correction. Requires a finalized fixed-commitment pledge with exactly one linked gift and exactly one received payment unit, where the payment, gift, and pledge amounts agree. Rewrites the lifecycle as though the donor had always committed to one stand-alone gift, keeps the gift linked to its originating opportunity, removes the obsolete pledge schedule and boundary, and preserves all payment and accounting evidence.

@@ -135,7 +135,11 @@ router.post(
           calendarEvents,
           eq(calendarEvents.id, meetingNotes.calendarEventId),
         )
-        .where(eq(calendarEvents.gcalEventId, event.gcalEventId))
+        .where(
+          event.gcalEventId.trim()
+            ? sql`NULLIF(BTRIM(${calendarEvents.gcalEventId}), '') = ${event.gcalEventId.trim()}`
+            : eq(calendarEvents.id, event.id),
+        )
         .then((rows) => rows[0]);
       if (existingNote) {
         res.status(409).json({

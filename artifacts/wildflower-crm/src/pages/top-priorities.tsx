@@ -23,7 +23,7 @@ import { PriorityStar } from "@/components/priority-star";
 import { useUserNameMap } from "@/components/user-picker";
 import { ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
 import { personDisplayName } from "@/lib/person";
-import { formatCurrency, formatDateShort } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import { Star } from "lucide-react";
 
@@ -80,14 +80,22 @@ function AffiliatedPeopleCell({ people }: { people: TopPriorityAffiliate[] }) {
 function OpenAsksCell({ asks }: { asks: TopPriorityOpenAsk[] }) {
   if (!asks || asks.length === 0) return <span className="text-muted-foreground">—</span>;
   return (
-    <div className="flex flex-wrap gap-x-1">
-      {asks.map((a, idx) => (
-        <span key={a.opportunityId}>
-          <Link href={`/opportunities/${a.opportunityId}`} className="text-primary hover:underline">
+    <div className="space-y-2 py-1">
+      {asks.map((a) => (
+        <div key={a.opportunityId}>
+          <Link href={`/opportunities/${a.opportunityId}`} className="font-medium text-primary hover:underline">
             {a.opportunityName}
           </Link>
-          {idx < asks.length - 1 && <span className="text-muted-foreground">, </span>}
-        </span>
+          <div className="text-xs text-muted-foreground">
+            {a.askAmount ? formatCurrency(a.askAmount) : "Amount not set"}
+            {" · "}
+            {a.stage ? formatEnum(a.stage) : "Stage not set"}
+            {" · "}
+            {a.projectedCloseDate
+              ? `Closes ${formatDateShort(a.projectedCloseDate)}`
+              : "No projected close"}
+          </div>
+        </div>
       ))}
     </div>
   );

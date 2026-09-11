@@ -31,6 +31,7 @@ CODEGEN_OUT_ROOT="$tmp" node ./gen-index.mjs
 # byte-identical to the existing baseline.
 for rel in \
   calendar-events/calendar-events.ts \
+  feedback/feedback.ts \
   reconciliation/reconciliation.ts \
   gifts-and-payments/gifts-and-payments.ts \
   opportunities-and-pledges/opportunities-and-pledges.ts; do
@@ -42,6 +43,8 @@ done
 # Match the targeted normalization performed by codegen.sh.
 for file in \
   "$tmp/lib/api-client-react/src/generated/newsletter/newsletter.ts" \
+  "$tmp/lib/api-client-react/src/generated/feedback/feedback.ts" \
+  "$tmp/lib/api-zod/src/generated/feedback/feedback.ts" \
   "$tmp/lib/api-zod/src/generated/newsletter/newsletter.ts" \
   "$tmp/lib/api-client-react/src/generated/trip-plans/trip-plans.ts" \
   "$tmp/lib/api-zod/src/generated/trip-plans/trip-plans.ts"; do

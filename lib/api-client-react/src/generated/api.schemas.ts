@@ -1083,6 +1083,9 @@ export interface TopPriorityAffiliate {
 export interface TopPriorityOpenAsk {
   opportunityId: string;
   opportunityName: string;
+  askAmount: string | null;
+  projectedCloseDate: string | null;
+  stage: OpportunityStage | null;
 }
 
 export interface TopPriorityOrganization {
@@ -2455,6 +2458,31 @@ export interface UpdateOpportunityOrPledgeBody {
   grantLetterUploadedAt?: string | null;
   primaryContactPersonId?: string | null;
   ownerUserId?: string | null;
+}
+
+export interface ReduceOpportunityPlanBody {
+  askAmount: string | null;
+  awardedAmount: string | null;
+}
+
+/**
+ * Always zero: posted payment facts are never edited by this action.
+ */
+export type OpportunityPlanReductionResultPostedPaymentsAdjusted = typeof OpportunityPlanReductionResultPostedPaymentsAdjusted[keyof typeof OpportunityPlanReductionResultPostedPaymentsAdjusted];
+
+
+export const OpportunityPlanReductionResultPostedPaymentsAdjusted = {
+  NUMBER_0: 0,
+} as const;
+
+export interface OpportunityPlanReductionResult {
+  opportunity: OpportunityOrPledge;
+  oldTarget: string;
+  newTarget: string;
+  allocationsAdjusted: number;
+  installmentsAdjusted: number;
+  /** Always zero: posted payment facts are never edited by this action. */
+  postedPaymentsAdjusted: OpportunityPlanReductionResultPostedPaymentsAdjusted;
 }
 
 export interface PledgeAllocationList {
@@ -8112,6 +8140,10 @@ export interface TripVisit {
   rationale?: string | null;
   source: TripVisitSource;
   notes?: string | null;
+  nextStep?: string | null;
+  planningUpdatedByUserId?: string | null;
+  planningUpdatedByUserName?: string | null;
+  planningUpdatedAt?: string | null;
   outreachStatus: TripOutreachStatus;
   invitationSentAt?: string | null;
   invitationMessageId?: string | null;
@@ -8122,6 +8154,15 @@ export interface TripVisit {
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TripComment {
+  id: string;
+  tripId: string;
+  authorUserId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
 }
 
 export interface CalendarEvent {
@@ -8159,6 +8200,7 @@ export interface CalendarEvent {
 
 export type TripPlanDetail = TripPlanSummary & {
   visits: TripVisit[];
+  comments: TripComment[];
   calendarEvents: CalendarEvent[];
 };
 
@@ -8200,6 +8242,7 @@ export interface AddTripVisitBody {
   rank?: number;
   rationale?: string | null;
   notes?: string | null;
+  nextStep?: string | null;
 }
 
 export interface UpdateTripVisitBody {
@@ -8207,6 +8250,15 @@ export interface UpdateTripVisitBody {
   rank?: number;
   rationale?: string | null;
   notes?: string | null;
+  nextStep?: string | null;
+}
+
+export interface CreateTripCommentBody {
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  body: string;
 }
 
 export type EmailMessageDirection = typeof EmailMessageDirection[keyof typeof EmailMessageDirection];
@@ -8900,6 +8952,8 @@ export interface MediaMention {
   author?: string | null;
   publicationDate?: string | null;
   url: string;
+  readonly canonicalUrl?: string | null;
+  readonly headlineFingerprint?: string | null;
   aiSummary?: string | null;
   source?: string | null;
   pinned: boolean;
@@ -9023,6 +9077,8 @@ export interface GrantLead {
   dedupeKey: string;
   status: GrantLeadStatus;
   title: string;
+  /** Named funding program extracted from the title and snippet. */
+  programName?: string | null;
   /** AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending. */
   aiSummary?: string | null;
   funderName?: string | null;
@@ -9064,6 +9120,23 @@ export interface GrantLeadList {
 export interface AssignGrantLeadBody {
   /** Set to null to unassign. */
   assigneeUserId: string | null;
+}
+
+/**
+ * Archive only this lead, or also suppress future ingests for its named program or funder.
+ */
+export type ArchiveGrantLeadBodyFutureScope = typeof ArchiveGrantLeadBodyFutureScope[keyof typeof ArchiveGrantLeadBodyFutureScope];
+
+
+export const ArchiveGrantLeadBodyFutureScope = {
+  lead: 'lead',
+  program: 'program',
+  funder: 'funder',
+} as const;
+
+export interface ArchiveGrantLeadBody {
+  /** Archive only this lead, or also suppress future ingests for its named program or funder. */
+  futureScope: ArchiveGrantLeadBodyFutureScope;
 }
 
 export interface SplitGrantLeadBody {
@@ -10032,6 +10105,33 @@ export interface NewsletterOverview {
   campaigns: NewsletterCampaign[];
 }
 
+export type NewsletterContactLinkedRecordType = typeof NewsletterContactLinkedRecordType[keyof typeof NewsletterContactLinkedRecordType] | null;
+
+
+export const NewsletterContactLinkedRecordType = {
+  person: 'person',
+  organization: 'organization',
+  household: 'household',
+  payment_intermediary: 'payment_intermediary',
+} as const;
+
+export interface NewsletterContact {
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  sourceCurrentSubscriber: boolean;
+  sourceUnsubscribed: boolean;
+  sourceBounced: boolean;
+  linkedRecordType?: NewsletterContactLinkedRecordType;
+  linkedRecordId?: string | null;
+  linkedRecordName?: string | null;
+}
+
+export interface NewsletterContactList {
+  data: NewsletterContact[];
+  pagination: Pagination;
+}
+
 export type NewsletterEngagementLinkedRecordType = typeof NewsletterEngagementLinkedRecordType[keyof typeof NewsletterEngagementLinkedRecordType] | null;
 
 
@@ -10062,6 +10162,27 @@ export interface NewsletterEngagement {
 
 export interface NewsletterEngagementList {
   data: NewsletterEngagement[];
+  pagination: Pagination;
+}
+
+export interface PersonNewsletterEngagement {
+  campaignId: string;
+  campaignSubject: string;
+  sentAt: string;
+  previewUrl?: string | null;
+  email: string;
+  deliveredAt?: string | null;
+  opened: boolean;
+  lastOpenedAt?: string | null;
+  totalOpens: number;
+  clicked: boolean;
+  lastClickedAt?: string | null;
+  totalClicks: number;
+  clickedLinks: string[];
+}
+
+export interface PersonNewsletterEngagementList {
+  data: PersonNewsletterEngagement[];
   pagination: Pagination;
 }
 
@@ -10128,6 +10249,170 @@ export interface NewsletterImportResult {
   operationalRecordsChanged: boolean;
   subscriptionDifferences: NewsletterSubscriptionDifferenceSummary;
   emailDifferences: NewsletterEmailDifferenceSummary;
+}
+
+export type AppFeedbackCategory = typeof AppFeedbackCategory[keyof typeof AppFeedbackCategory];
+
+
+export const AppFeedbackCategory = {
+  bug: 'bug',
+  question: 'question',
+  suggestion: 'suggestion',
+  other: 'other',
+} as const;
+
+export type AppFeedbackStatus = typeof AppFeedbackStatus[keyof typeof AppFeedbackStatus];
+
+
+export const AppFeedbackStatus = {
+  open: 'open',
+  in_progress: 'in_progress',
+  resolved: 'resolved',
+  dismissed: 'dismissed',
+} as const;
+
+export type AppFeedbackScreenshotStatus = typeof AppFeedbackScreenshotStatus[keyof typeof AppFeedbackScreenshotStatus];
+
+
+export const AppFeedbackScreenshotStatus = {
+  captured: 'captured',
+  failed: 'failed',
+  skipped: 'skipped',
+} as const;
+
+export interface AppFeedbackPerson {
+  id: string;
+  name: string | null;
+  email: string | null;
+}
+
+export interface AppFeedbackProposalCodeArea {
+  area: string;
+  rationale: string;
+}
+
+export interface AppFeedbackProposalContent {
+  title: string;
+  summary: string;
+  userExperience: string[];
+  implementationSteps: string[];
+  likelyCodeAreas: AppFeedbackProposalCodeArea[];
+  acceptanceCriteria: string[];
+  testPlan: string[];
+  risksAndOpenQuestions: string[];
+  implementationBrief: string;
+}
+
+export type AppFeedbackProposalGenerationStatus = typeof AppFeedbackProposalGenerationStatus[keyof typeof AppFeedbackProposalGenerationStatus];
+
+
+export const AppFeedbackProposalGenerationStatus = {
+  queued: 'queued',
+  generating: 'generating',
+  ready: 'ready',
+  error: 'error',
+} as const;
+
+export type AppFeedbackProposalContextSnapshot = { [key: string]: unknown };
+
+export interface AppFeedbackProposal {
+  id: string;
+  feedbackId: string;
+  generationStatus: AppFeedbackProposalGenerationStatus;
+  /** @minimum 1 */
+  revision: number;
+  contextSnapshot: AppFeedbackProposalContextSnapshot;
+  proposal: AppFeedbackProposalContent | null;
+  reviewerGuidance: string | null;
+  analyzedAt: string | null;
+  model: string | null;
+  error: string | null;
+  implementationRequestedAt: string | null;
+  implementationRequestedByUserId: string | null;
+  implementationRequestedBy: AppFeedbackPerson | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type AppFeedbackItemContext = { [key: string]: unknown };
+
+export interface AppFeedbackItem {
+  id: string;
+  createdByUserId: string;
+  category: AppFeedbackCategory;
+  message: string;
+  status: AppFeedbackStatus;
+  pageUrl: string;
+  pagePath: string;
+  pageTitle: string | null;
+  context: AppFeedbackItemContext;
+  screenshotUrl: string | null;
+  screenshotFilename: string | null;
+  screenshotStatus: AppFeedbackScreenshotStatus;
+  screenshotError: string | null;
+  adminNotes: string | null;
+  resolvedByUserId: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reporter: AppFeedbackPerson;
+  resolver: AppFeedbackPerson | null;
+  proposal: AppFeedbackProposal | null;
+  /** Whether the authenticated viewer may start the implementation handoff. The API remains authoritative even when the UI hides the action. */
+  viewerCanImplement: boolean;
+}
+
+export type CreateAppFeedbackBodyContext = { [key: string]: unknown };
+
+export interface CreateAppFeedbackBody {
+  category?: AppFeedbackCategory;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  message: string;
+  /**
+   * @minLength 1
+   * @maxLength 5000
+   */
+  pageUrl: string;
+  /**
+   * @minLength 1
+   * @maxLength 3000
+   */
+  pagePath: string;
+  /** @maxLength 500 */
+  pageTitle?: string | null;
+  context?: CreateAppFeedbackBodyContext;
+  /**
+   * @maxLength 2048
+   * @pattern ^/api/storage/objects/
+   */
+  screenshotUrl?: string | null;
+  /** @maxLength 500 */
+  screenshotFilename?: string | null;
+  screenshotStatus?: AppFeedbackScreenshotStatus;
+  /** @maxLength 2000 */
+  screenshotError?: string | null;
+}
+
+export interface UpdateAppFeedbackBody {
+  status?: AppFeedbackStatus;
+  /** @maxLength 20000 */
+  adminNotes?: string | null;
+}
+
+export interface ReviseAppFeedbackProposalBody {
+  /**
+   * @minLength 1
+   * @maxLength 20000
+   */
+  reviewerGuidance: string;
+}
+
+export interface AppFeedbackList {
+  data: AppFeedbackItem[];
+  pagination: Pagination;
 }
 
 /**
@@ -10314,6 +10599,28 @@ personId?: string;
 organizationId?: string;
 };
 
+export type ListAppFeedbackParams = {
+status?: typeof ListAppFeedbackStatus[keyof typeof ListAppFeedbackStatus];
+category?: typeof ListAppFeedbackCategory[keyof typeof ListAppFeedbackCategory];
+/**
+ * @maxLength 500
+ */
+search?: string;
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+};
+
+export const ListAppFeedbackStatus = {...AppFeedbackStatus,  all: 'all',
+} as const
+export const ListAppFeedbackCategory = {...AppFeedbackCategory,  all: 'all',
+} as const
 export type AdminDiscardEmailIntelPrompt200 = {
   ok: boolean;
 };
@@ -12088,6 +12395,43 @@ lens?: WorkbenchDepositLens;
  * Free-text over bank memo/reference/account, payment-unit ids and linked gift names.
  */
 q?: string;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListNewsletterContactsParams = {
+audience: ListNewsletterContactsAudience;
+search?: string;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListNewsletterContactsAudience = typeof ListNewsletterContactsAudience[keyof typeof ListNewsletterContactsAudience];
+
+
+export const ListNewsletterContactsAudience = {
+  current_subscribers: 'current_subscribers',
+  linked_current_subscribers: 'linked_current_subscribers',
+  unmatched_current_subscribers: 'unmatched_current_subscribers',
+  unsubscribe_evidence: 'unsubscribe_evidence',
+  bounce_evidence: 'bounce_evidence',
+} as const;
+
+export type ListPersonNewsletterEngagementParams = {
 /**
  * @minimum 1
  * @maximum 10000

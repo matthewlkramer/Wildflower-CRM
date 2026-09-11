@@ -23,7 +23,11 @@ import {
   sql,
   type SQL,
 } from "drizzle-orm";
-import { ListNewsletterEngagementQueryParams } from "@workspace/api-zod";
+import {
+  ListNewsletterContactsQueryParams,
+  ListNewsletterEngagementQueryParams,
+  ListPersonNewsletterEngagementQueryParams,
+} from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { recordAudit } from "../lib/audit";
@@ -97,6 +101,175 @@ router.get(
   }),
 );
 
+const linkedRecordTypeExpr = sql<
+  "person" | "organization" | "household" | "payment_intermediary" | null
+>`case
+  when ${emailsTable.personId} is not null then 'person'
+  when ${emailsTable.organizationId} is not null then 'organization'
+  when ${emailsTable.householdId} is not null then 'household'
+  when ${emailsTable.paymentIntermediaryId} is not null then 'payment_intermediary'
+  else null end`;
+
+const linkedRecordIdExpr = sql<
+  string | null
+>`coalesce(${emailsTable.personId}, ${emailsTable.organizationId}, ${emailsTable.householdId}, ${emailsTable.paymentIntermediaryId})`;
+
+const linkedRecordNameExpr = sql<string | null>`coalesce(
+  ${people.fullName},
+  nullif(trim(concat_ws(' ', ${people.firstName}, ${people.lastName})), ''),
+  ${organizations.name},
+  ${households.name},
+  ${paymentIntermediaries.name}
+)`;
+
+router.get(
+  "/newsletter-contacts",
+  asyncHandler(async (req, res) => {
+    const q = parseOrBadRequest(
+      ListNewsletterContactsQueryParams,
+      req.query,
+      res,
+    );
+    if (!q) return;
+    const { limit, page, offset } = parsePagination(q);
+    const filters: SQL[] = [];
+    if (q.audience === "current_subscribers") {
+      filters.push(eq(newsletterContacts.sourceCurrentSubscriber, true));
+    } else if (q.audience === "linked_current_subscribers") {
+      filters.push(
+        eq(newsletterContacts.sourceCurrentSubscriber, true),
+        isNotNull(newsletterContacts.emailId),
+      );
+    } else if (q.audience === "unmatched_current_subscribers") {
+      filters.push(
+        eq(newsletterContacts.sourceCurrentSubscriber, true),
+        isNull(newsletterContacts.emailId),
+      );
+    } else if (q.audience === "unsubscribe_evidence") {
+      filters.push(eq(newsletterContacts.sourceUnsubscribed, true));
+    } else {
+      filters.push(eq(newsletterContacts.sourceBounced, true));
+    }
+    if (q.search) {
+      const term = `%${q.search.trim()}%`;
+      const match = or(
+        ilike(newsletterContacts.email, term),
+        ilike(newsletterContacts.firstName, term),
+        ilike(newsletterContacts.lastName, term),
+        ilike(people.fullName, term),
+        ilike(organizations.name, term),
+        ilike(households.name, term),
+        ilike(paymentIntermediaries.name, term),
+      );
+      if (match) filters.push(match);
+    }
+    const where = and(...filters);
+    const joinAudienceRecords = () =>
+      db
+        .select({
+          email: newsletterContacts.email,
+          firstName: newsletterContacts.firstName,
+          lastName: newsletterContacts.lastName,
+          sourceCurrentSubscriber: newsletterContacts.sourceCurrentSubscriber,
+          sourceUnsubscribed: newsletterContacts.sourceUnsubscribed,
+          sourceBounced: newsletterContacts.sourceBounced,
+          linkedRecordType: linkedRecordTypeExpr,
+          linkedRecordId: linkedRecordIdExpr,
+          linkedRecordName: linkedRecordNameExpr,
+        })
+        .from(newsletterContacts)
+        .leftJoin(emailsTable, eq(emailsTable.id, newsletterContacts.emailId))
+        .leftJoin(people, eq(people.id, emailsTable.personId))
+        .leftJoin(
+          organizations,
+          eq(organizations.id, emailsTable.organizationId),
+        )
+        .leftJoin(households, eq(households.id, emailsTable.householdId))
+        .leftJoin(
+          paymentIntermediaries,
+          eq(paymentIntermediaries.id, emailsTable.paymentIntermediaryId),
+        )
+        .where(where);
+    const countBase = db
+      .select({ value: count() })
+      .from(newsletterContacts)
+      .leftJoin(emailsTable, eq(emailsTable.id, newsletterContacts.emailId))
+      .leftJoin(people, eq(people.id, emailsTable.personId))
+      .leftJoin(organizations, eq(organizations.id, emailsTable.organizationId))
+      .leftJoin(households, eq(households.id, emailsTable.householdId))
+      .leftJoin(
+        paymentIntermediaries,
+        eq(paymentIntermediaries.id, emailsTable.paymentIntermediaryId),
+      )
+      .where(where);
+    const [data, [{ value: total } = { value: 0 }]] = await Promise.all([
+      joinAudienceRecords()
+        .orderBy(asc(newsletterContacts.email))
+        .limit(limit)
+        .offset(offset),
+      countBase,
+    ]);
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
+  }),
+);
+
+router.get(
+  "/people/:id/newsletter-engagement",
+  asyncHandler(async (req, res) => {
+    const personId = paramId(req);
+    const q = parseOrBadRequest(
+      ListPersonNewsletterEngagementQueryParams,
+      req.query,
+      res,
+    );
+    if (!q) return;
+    const exists = await db
+      .select({ id: people.id })
+      .from(people)
+      .where(eq(people.id, personId))
+      .then((rows) => rows[0]);
+    if (!exists) return notFound(res, "person");
+    const { limit, page, offset } = parsePagination(q);
+    const where = eq(emailsTable.personId, personId);
+    const base = db
+      .select({
+        campaignId: newsletterEngagement.campaignId,
+        campaignSubject: newsletterCampaigns.subject,
+        sentAt: newsletterCampaigns.sentAt,
+        previewUrl: newsletterCampaigns.previewUrl,
+        email: newsletterEngagement.email,
+        deliveredAt: newsletterEngagement.deliveredAt,
+        opened: newsletterEngagement.opened,
+        lastOpenedAt: newsletterEngagement.lastOpenedAt,
+        totalOpens: newsletterEngagement.totalOpens,
+        clicked: newsletterEngagement.clicked,
+        lastClickedAt: newsletterEngagement.lastClickedAt,
+        totalClicks: newsletterEngagement.totalClicks,
+        clickedLinks: newsletterEngagement.clickedLinks,
+      })
+      .from(newsletterEngagement)
+      .innerJoin(
+        newsletterCampaigns,
+        eq(newsletterCampaigns.id, newsletterEngagement.campaignId),
+      )
+      .innerJoin(emailsTable, eq(emailsTable.id, newsletterEngagement.emailId))
+      .where(where);
+    const countBase = db
+      .select({ value: count() })
+      .from(newsletterEngagement)
+      .innerJoin(emailsTable, eq(emailsTable.id, newsletterEngagement.emailId))
+      .where(where);
+    const [data, [{ value: total } = { value: 0 }]] = await Promise.all([
+      base
+        .orderBy(desc(newsletterCampaigns.sentAt))
+        .limit(limit)
+        .offset(offset),
+      countBase,
+    ]);
+    res.json({ data, pagination: { page, limit, total: Number(total) } });
+  }),
+);
+
 router.get(
   "/newsletter-campaigns/:id/engagement",
   asyncHandler(async (req, res) => {
@@ -158,28 +331,9 @@ router.get(
         lastClickedAt: newsletterEngagement.lastClickedAt,
         totalClicks: newsletterEngagement.totalClicks,
         clickedLinks: newsletterEngagement.clickedLinks,
-        linkedRecordType: sql<
-          | "person"
-          | "organization"
-          | "household"
-          | "payment_intermediary"
-          | null
-        >`case
-          when ${emailsTable.personId} is not null then 'person'
-          when ${emailsTable.organizationId} is not null then 'organization'
-          when ${emailsTable.householdId} is not null then 'household'
-          when ${emailsTable.paymentIntermediaryId} is not null then 'payment_intermediary'
-          else null end`,
-        linkedRecordId: sql<
-          string | null
-        >`coalesce(${emailsTable.personId}, ${emailsTable.organizationId}, ${emailsTable.householdId}, ${emailsTable.paymentIntermediaryId})`,
-        linkedRecordName: sql<string | null>`coalesce(
-          ${people.fullName},
-          nullif(trim(concat_ws(' ', ${people.firstName}, ${people.lastName})), ''),
-          ${organizations.name},
-          ${households.name},
-          ${paymentIntermediaries.name}
-        )`,
+        linkedRecordType: linkedRecordTypeExpr,
+        linkedRecordId: linkedRecordIdExpr,
+        linkedRecordName: linkedRecordNameExpr,
       })
       .from(newsletterEngagement)
       .leftJoin(emailsTable, eq(emailsTable.id, newsletterEngagement.emailId))
@@ -230,12 +384,10 @@ router.post(
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "Upload a non-empty .xlsx workbook.",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "Upload a non-empty .xlsx workbook.",
+      });
       return;
     }
 

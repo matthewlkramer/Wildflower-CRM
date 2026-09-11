@@ -30,6 +30,10 @@ export const mediaMentions = pgTable(
     author: text("author"),
     publicationDate: date("publication_date"),
     url: text("url").notNull(),
+    // Tracking-free URL and normalized-headline digest used by the ingest
+    // pipeline to collapse URL variants and same-day syndicated reposts.
+    canonicalUrl: text("canonical_url"),
+    headlineFingerprint: text("headline_fingerprint"),
     aiSummary: text("ai_summary"),
     // Provenance of the row: "gdelt" for auto-ingested news, null/"manual"
     // for hand-entered mentions. Lets the UI/cleanup distinguish the two.
@@ -53,6 +57,11 @@ export const mediaMentions = pgTable(
   (t) => [
     index("media_mentions_created_at_idx").on(t.createdAt),
     index("media_mentions_publication_date_idx").on(t.publicationDate),
+    index("media_mentions_canonical_url_idx").on(t.canonicalUrl),
+    index("media_mentions_headline_fingerprint_idx").on(
+      t.headlineFingerprint,
+      t.publicationDate,
+    ),
     index("media_mentions_pinned_idx").on(t.pinned),
     index("media_mentions_dismissed_idx").on(t.dismissed),
     index("media_mentions_person_ids_gin_idx").using("gin", t.personIds),

@@ -1,15 +1,46 @@
 import {
   check,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { users } from "./users";
 
 export type AppFeedbackContext = Record<string, unknown>;
+
+export type AppFeedbackProposalCodeArea = {
+  area: string;
+  rationale: string;
+};
+
+export type AppFeedbackProposalContent = {
+  title: string;
+  summary: string;
+  userExperience: string[];
+  implementationSteps: string[];
+  likelyCodeAreas: AppFeedbackProposalCodeArea[];
+  acceptanceCriteria: string[];
+  testPlan: string[];
+  risksAndOpenQuestions: string[];
+  implementationBrief: string;
+};
+
+export type AppFeedbackProposalSnapshot = {
+  feedbackId: string;
+  category: string;
+  message: string;
+  pageUrl: string;
+  pagePath: string;
+  pageTitle: string | null;
+  capturedContext: Record<string, unknown>;
+  architectureContextVersion: string;
+  likelyAreas: string[];
+};
 
 /**
  * User-submitted product feedback with enough page context to reproduce the
@@ -69,3 +100,60 @@ export const appFeedback = pgTable(
 
 export type AppFeedback = typeof appFeedback.$inferSelect;
 export type NewAppFeedback = typeof appFeedback.$inferInsert;
+
+/**
+ * AI-authored implementation proposal for one feedback item.
+ *
+ * There is one durable row per feedback item. Revising regenerates the
+ * proposal in place, increments revision, and appends the human guidance so
+ * the current proposal and its review trail stay together. `contextSnapshot`
+ * records exactly what the model was allowed to reason over; it deliberately
+ * excludes browser fingerprint fields and the screenshot binary.
+ */
+export const appFeedbackProposals = pgTable(
+  "app_feedback_proposals",
+  {
+    id: text("id").primaryKey(),
+    feedbackId: text("feedback_id")
+      .notNull()
+      .references(() => appFeedback.id, { onDelete: "cascade" }),
+    generationStatus: text("generation_status").notNull().default("queued"),
+    revision: integer("revision").notNull().default(1),
+    contextSnapshot: jsonb("context_snapshot")
+      .$type<AppFeedbackProposalSnapshot>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    proposal: jsonb("proposal").$type<AppFeedbackProposalContent>(),
+    reviewerGuidance: text("reviewer_guidance"),
+    analyzedAt: timestamp("analyzed_at"),
+    model: text("model"),
+    error: text("error"),
+    implementationRequestedAt: timestamp("implementation_requested_at"),
+    implementationRequestedByUserId: text(
+      "implementation_requested_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("app_feedback_proposals_feedback_uq").on(t.feedbackId),
+    check(
+      "app_feedback_proposals_generation_status_ck",
+      sql`${t.generationStatus} IN ('queued', 'generating', 'ready', 'error')`,
+    ),
+    check(
+      "app_feedback_proposals_revision_ck",
+      sql`${t.revision} >= 1`,
+    ),
+    index("app_feedback_proposals_generation_idx").on(
+      t.generationStatus,
+      t.updatedAt,
+    ),
+    index("app_feedback_proposals_implementation_idx").on(
+      t.implementationRequestedAt,
+    ),
+  ],
+);
+
+export type AppFeedbackProposal = typeof appFeedbackProposals.$inferSelect;
+export type NewAppFeedbackProposal = typeof appFeedbackProposals.$inferInsert;

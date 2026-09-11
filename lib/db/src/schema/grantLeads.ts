@@ -1,10 +1,12 @@
 import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   jsonb,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { users } from "./users";
@@ -146,7 +148,45 @@ export const grantLeadSightings = pgTable(
   ],
 );
 
+/**
+ * A reviewer's durable instruction not to recreate grant leads for the same
+ * named program or funder. These are deliberately separate from archived
+ * leads: archived rows remain provenance, while this table controls future
+ * ingestion.
+ */
+export const grantLeadSuppressions = pgTable(
+  "grant_lead_suppressions",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    normalizedValue: text("normalized_value").notNull(),
+    displayValue: text("display_value").notNull(),
+    sourceLeadId: text("source_lead_id").references(() => grantLeads.id, {
+      onDelete: "set null",
+    }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    check(
+      "grant_lead_suppressions_scope_check",
+      sql`${t.scope} in ('program', 'funder')`,
+    ),
+    unique("grant_lead_suppressions_scope_value_uq").on(
+      t.scope,
+      t.normalizedValue,
+    ),
+    index("grant_lead_suppressions_source_lead_id_idx").on(t.sourceLeadId),
+  ],
+);
+
 export type GrantLead = typeof grantLeads.$inferSelect;
 export type NewGrantLead = typeof grantLeads.$inferInsert;
 export type GrantLeadSighting = typeof grantLeadSightings.$inferSelect;
 export type NewGrantLeadSighting = typeof grantLeadSightings.$inferInsert;
+export type GrantLeadSuppression = typeof grantLeadSuppressions.$inferSelect;
+export type NewGrantLeadSuppression = typeof grantLeadSuppressions.$inferInsert;

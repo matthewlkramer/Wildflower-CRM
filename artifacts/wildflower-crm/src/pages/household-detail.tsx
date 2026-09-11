@@ -18,13 +18,9 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { EDIT_PENCIL_REVEAL } from "@/components/inline-edit";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
-import {
-  LinkedGiftsCard,
-  LinkedOpportunitiesCard,
-} from "@/components/linked-records";
 import { GivesThroughCard } from "@/components/gives-through-card";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
-import { GivingRelationshipCard } from "@/components/giving-relationship-card";
+import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import {
   RecordLayout,
   FieldCard,
@@ -347,31 +343,15 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
             )}
           </RelatedCard>
 
-          <GivingRelationshipCard
-            sourceKind="household"
-            sourceId={household.id}
+          <GivingPipelineCard
+            scope={{ householdId: household.id }}
+            relationship={{ sourceKind: "household", sourceId: household.id }}
           />
 
           <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 
           <GivesThroughCard donor={{ householdId: household.id }} />
 
-          <LinkedOpportunitiesCard
-            scope={{ householdId: household.id }}
-            title="Pledges"
-            pledgeView="pledges"
-            emptyLabel="No pledges from this household."
-          />
-
-          <LinkedOpportunitiesCard
-            scope={{ householdId: household.id }}
-            title="Open opportunities"
-            pledgeView="opportunities"
-            status="open"
-            emptyLabel="No open opportunities."
-          />
-
-          <LinkedGiftsCard scope={{ householdId: household.id }} />
         </>
       }
     />

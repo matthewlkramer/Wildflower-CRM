@@ -19,6 +19,7 @@ export * from "./email-proposals/email-proposals";
 export * from "./email-tracking/email-tracking";
 export * from "./emails/emails";
 export * from "./entities/entities";
+export * from "./feedback/feedback";
 export * from "./financial-corrections/financial-corrections";
 export * from "./fiscal-year-entity-goals/fiscal-year-entity-goals";
 export * from "./fiscal-years/fiscal-years";

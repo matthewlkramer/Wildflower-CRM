@@ -4,6 +4,7 @@ import { Link, useLocation, useRoute } from "wouter";
 import {
   useGetOpportunityOrPledge,
   useUpdateOpportunityOrPledge,
+  useReduceOpportunityPlanProportionally,
   useArchiveOpportunityOrPledge,
   useUnarchiveOpportunityOrPledge,
   useGetOrganization,
@@ -246,6 +247,31 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
       onError: (err: unknown) => {
         toast({
           title: "Update failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  const reducePlan = useReduceOpportunityPlanProportionally({
+    mutation: {
+      onSuccess: async (result) => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getGetOpportunityOrPledgeQueryKey(opp.id),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: getListOpportunitiesAndPledgesQueryKey(),
+          }),
+        ]);
+        toast({
+          title: `${recordLabel} and plan reduced`,
+          description: `${result.allocationsAdjusted} allocation${result.allocationsAdjusted === 1 ? "" : "s"} and ${result.installmentsAdjusted} installment${result.installmentsAdjusted === 1 ? "" : "s"} adjusted. Posted payments were unchanged.`,
+        });
+      },
+      onError: (err: unknown) => {
+        toast({
+          title: "Plan reduction failed",
           description: err instanceof Error ? err.message : String(err),
           variant: "destructive",
         });
@@ -550,26 +576,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
     >
       Finalize pledge
     </Button>
-  ) : (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" data-testid="button-record-verbal-commitment">
-          Record verbal commitment
-          <ChevronDown className="ml-1 h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onSelect={() => setCommitmentPathOpen("gift")}>
-          Commitment to make a gift…
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => setCommitmentPathOpen("written_pledge")}
-        >
-          Commitment to make a written pledge…
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  ) : null;
 
   const actions = editingName ? (
     <>
@@ -1026,6 +1033,13 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
           ask={opp.askAmount ?? null}
           awarded={opp.awardedAmount ?? null}
           onSave={(body) => patch(body)}
+          onReducePlan={(body) =>
+            reducePlan.mutateAsync({ id: opp.id, data: body })
+          }
+          hasEditablePlan={
+            (opp.allocations ?? []).some((item) => item.subAmount != null) ||
+            (opp.expectedPayments ?? []).some((item) => item.amount != null)
+          }
         />
       ),
     },
@@ -1599,15 +1613,26 @@ function InlineEditAmounts({
   ask,
   awarded,
   onSave,
+  onReducePlan,
+  hasEditablePlan,
 }: {
   ask: string | null;
   awarded: string | null;
   onSave: (body: UpdateOpportunityOrPledgeBody) => SaveResult;
+  onReducePlan: (body: {
+    askAmount: string | null;
+    awardedAmount: string | null;
+  }) => SaveResult;
+  hasEditablePlan: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const { busy, run } = useSaveRunner();
   const [askDraft, setAskDraft] = useState(ask ?? "");
   const [awardedDraft, setAwardedDraft] = useState(awarded ?? "");
+  const [reductionBody, setReductionBody] = useState<{
+    askAmount: string | null;
+    awardedAmount: string | null;
+  } | null>(null);
 
   const display = formatCurrency(awarded ?? ask);
 
@@ -1645,13 +1670,39 @@ function InlineEditAmounts({
 
   const trySave = () => {
     if (!canSave || busy) return;
+    const body = {
+      askAmount: askParsed.value,
+      awardedAmount: awardedParsed.value,
+    };
+    const oldTarget = Number(awarded ?? ask ?? 0);
+    const newTarget = Number(body.awardedAmount ?? body.askAmount ?? 0);
+    if (
+      hasEditablePlan &&
+      Number.isFinite(oldTarget) &&
+      Number.isFinite(newTarget) &&
+      oldTarget > 0 &&
+      newTarget < oldTarget
+    ) {
+      setReductionBody(body);
+      return;
+    }
+    run(
+      () => onSave(body),
+      () => setEditing(false),
+    );
+  };
+
+  const finishReduction = (proportional: boolean) => {
+    if (!reductionBody || busy) return;
     run(
       () =>
-        onSave({
-          askAmount: askParsed.value,
-          awardedAmount: awardedParsed.value,
-        }),
-      () => setEditing(false),
+        proportional
+          ? onReducePlan(reductionBody)
+          : onSave(reductionBody),
+      () => {
+        setReductionBody(null);
+        setEditing(false);
+      },
     );
   };
 
@@ -1693,6 +1744,39 @@ function InlineEditAmounts({
           label="amounts"
         />
       </div>
+      <Dialog
+        open={reductionBody != null}
+        onOpenChange={(open) => {
+          if (!open) setReductionBody(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reduce the related plan too?</DialogTitle>
+            <DialogDescription>
+              This record has allocation or installment amounts. You can reduce
+              those planned amounts by the same percentage, or change only the
+              ask/award. Posted payments are historical facts and will not be
+              changed either way.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setReductionBody(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => finishReduction(false)}
+            >
+              Change amount only
+            </Button>
+            <Button disabled={busy} onClick={() => finishReduction(true)}>
+              Reduce plan proportionally
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

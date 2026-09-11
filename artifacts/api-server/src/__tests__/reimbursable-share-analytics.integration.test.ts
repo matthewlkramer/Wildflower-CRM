@@ -126,6 +126,13 @@ async function getBreakdown(): Promise<any> {
   return body;
 }
 
+async function getReport(): Promise<{ status: number; body: any }> {
+  const res = await fetch(
+    `${baseUrl}/api/fiscal-year-report/${FY_ID}?category=revenue`,
+  );
+  return { status: res.status, body: await res.json() };
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -277,6 +284,41 @@ describe.skipIf(!HAS_DB)("reimbursable share — goal analytics exclusion", () =
     // Only the indirect 300 is added to the open ask.
     expect(Number(body.revenue.openPipeline.totalAsk)).toBeCloseTo(askBefore + 300, 2);
   });
+
+  it("loads committed FY drilldown rows without an ambiguous paid subtotal", async () => {
+    const oppId = nextId("report_pledge");
+    await db.insert(schema.opportunitiesAndPledges).values({
+      id: oppId,
+      name: `RSH report pledge ${oppId}`,
+      organizationId: ORG_ID,
+      status: "pledge",
+      stage: "verbal_confirmation",
+      pledgeCommittedAt: "2026-09-01",
+      winProbability: "0.9000",
+    });
+    seededOppIds.push(oppId);
+    await db.insert(schema.pledgeAllocations).values({
+      id: nextId("palloc"),
+      pledgeOrOpportunityId: oppId,
+      subAmount: "500.00",
+      entityId: ENTITY_ID,
+      grantYear: FY_ID,
+      reimbursementType: "indirect",
+    });
+
+    const report = await getReport();
+    expect(report.status).toBe(200);
+    expect(report.body.rows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          bucket: "committed",
+          opportunityId: oppId,
+          amount: "500.00",
+          paidAmount: "0",
+        }),
+      ]),
+    );
+  }, 30_000);
 
   it("cost-reimbursement pledge: full payment does NOT complete; close-award does (Task #788)", async () => {
     // A cost-reimbursement pledge whose FULL ceiling (direct + indirect) is

@@ -5,8 +5,12 @@ import {
   parseGdeltArticles,
 } from "../lib/gdelt";
 import {
+  canonicalizeMediaUrl,
   foundationSearchName,
+  isArticleRelevantToTarget,
+  mediaHeadlineFingerprint,
   mergeEntityId,
+  normalizeMediaHeadline,
   personDisplayName,
 } from "../lib/mediaIngest";
 
@@ -27,6 +31,51 @@ describe("buildGdeltQuery", () => {
     expect(buildGdeltQuery("  Jane Doe  ")).toBe(
       '"Jane Doe" sourcelang:english',
     );
+  });
+
+  it("adds fundraising context to ambiguous person-name searches", () => {
+    expect(buildGdeltQuery("Scott Cook", "person")).toBe(
+      '"Scott Cook" (philanthropy OR philanthropic OR foundation OR nonprofit OR charity OR donation OR grant) sourcelang:english',
+    );
+  });
+});
+
+describe("media ingest precision", () => {
+  it("canonicalizes tracking URL variants", () => {
+    expect(
+      canonicalizeMediaUrl(
+        "https://www.Example.com/story/?utm_source=email&b=2&a=1#top",
+      ),
+    ).toBe("https://example.com/story?a=1&b=2");
+  });
+
+  it("fingerprints equivalent headline punctuation", () => {
+    expect(normalizeMediaHeadline("A Grant — Announced!")).toBe(
+      "agrantannounced",
+    );
+    expect(mediaHeadlineFingerprint("A Grant — Announced!")).toBe(
+      mediaHeadlineFingerprint("A grant announced"),
+    );
+  });
+
+  it("requires a person's exact searched name in the headline", () => {
+    const person = { kind: "person", id: "p1", name: "Scott Cook" } as const;
+    expect(
+      isArticleRelevantToTarget(person, {
+        title: "Scott Cook announces a new philanthropic fund",
+      }),
+    ).toBe(true);
+    expect(
+      isArticleRelevantToTarget(person, {
+        title: "Grenades and guns seized by police in southwest Sydney",
+      }),
+    ).toBe(false);
+    expect(
+      isArticleRelevantToTarget(
+        { kind: "organization", id: "o1", name: "Acme Foundation" },
+        { title: "Regional giving roundup" },
+      ),
+    ).toBe(true);
   });
 });
 

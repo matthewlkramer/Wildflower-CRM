@@ -55,7 +55,7 @@ import { DonorRecordActions } from "@/components/donor-record-actions";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
-import { GivingRelationshipCard } from "@/components/giving-relationship-card";
+import { NewsletterEngagementCard } from "@/components/newsletter-engagement-card";
 import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -1007,11 +1007,11 @@ function PersonView({ person }: { person: PersonDetail }) {
       right={
         <>
           <PinnedMediaCard personId={person.id} />
-          <GivingRelationshipCard
-            sourceKind="individual"
-            sourceId={person.id}
+          <NewsletterEngagementCard personId={person.id} />
+          <GivingPipelineCard
+            scope={{ individualGiverPersonId: person.id }}
+            relationship={{ sourceKind: "individual", sourceId: person.id }}
           />
-          <GivingPipelineCard scope={{ individualGiverPersonId: person.id }} />
 
           <PeopleCard person={person} />
 
@@ -1174,7 +1174,7 @@ function PeopleCard({ person }: { person: PersonDetail }) {
   const [hideInactive, setHideInactive] = useState(false);
   return (
     <RelatedCard
-      title="People"
+      title="Connected people"
       empty={!hasAny}
       action={
         <>

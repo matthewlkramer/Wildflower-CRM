@@ -39,6 +39,7 @@ tags:
   - { name: google-sync }
   - { name: email-proposals }
   - { name: task-proposals }
+  - { name: feedback }
   - { name: correspondents }
   - { name: notes }
   - { name: tasks }
@@ -1406,6 +1407,131 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409":
           description: The proposal is no longer pending (already resolved), so it cannot be revised.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ─── In-app product feedback and implementation proposals ────────────────
+  /feedback:
+    post:
+      operationId: createAppFeedback
+      tags: [feedback]
+      summary: Submit in-app product feedback and queue an AI implementation proposal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateAppFeedbackBody" }
+      responses:
+        "201":
+          description: Feedback accepted; proposal generation is queued.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /admin/feedback:
+    get:
+      operationId: listAppFeedback
+      tags: [feedback]
+      summary: Admin-only feedback review queue with the current AI proposal.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            oneOf:
+              - { $ref: "#/components/schemas/AppFeedbackStatus" }
+              - { type: string, enum: [all] }
+            default: open
+        - name: category
+          in: query
+          schema:
+            oneOf:
+              - { $ref: "#/components/schemas/AppFeedbackCategory" }
+              - { type: string, enum: [all] }
+            default: all
+        - { name: search, in: query, schema: { type: string, maxLength: 500 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeedbackList" }
+        "403": { description: Admin required }
+  /admin/feedback/{id}:
+    patch:
+      operationId: updateAppFeedback
+      tags: [feedback]
+      summary: Admin-only update of feedback status or review notes.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAppFeedbackBody" }
+      responses:
+        "200":
+          description: Updated feedback item.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /admin/feedback/{id}/proposal/revise:
+    post:
+      operationId: reviseAppFeedbackProposal
+      tags: [feedback]
+      summary: >-
+        Admin-only regeneration of an implementation proposal using free-text
+        human guidance. Guidance is retained and the proposal revision number
+        increments.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReviseAppFeedbackProposalBody" }
+      responses:
+        "200":
+          description: Regenerated feedback item and proposal.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Admin required }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Proposal generation or implementation is already in progress.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /admin/feedback/{id}/proposal/implement:
+    post:
+      operationId: implementAppFeedbackProposal
+      tags: [feedback]
+      summary: >-
+        Owner-only approval handoff from the admin queue. The authenticated
+        admin must match the single server-configured feedback implementer.
+        Marks the feedback item in progress and records who approved the current
+        proposal; the response includes the self-contained implementation brief
+        for a repository-aware coding agent. This endpoint does not edit or
+        publish application code itself.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Implementation handoff recorded.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
+        "403":
+          description: >-
+            Admin access and the configured feedback-implementer identity are
+            required.
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Proposal is not ready or was already handed off.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -3790,6 +3916,30 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  /opportunities-and-pledges/{id}/reduce-plan-proportionally:
+    post:
+      operationId: reduceOpportunityPlanProportionally
+      tags: [opportunities-and-pledges]
+      summary: Reduce an ask/award and its editable plans by the same proportion.
+      description: >-
+        Atomically updates the header amount, pledge allocation amounts, and
+        expected-payment installment amounts. Posted gifts/payments are factual
+        history and are never changed.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ReduceOpportunityPlanBody" }
+      responses:
+        "200":
+          description: Plan reduced
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpportunityPlanReductionResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The amount changed while the reduction was being saved. }
   /opportunities-and-pledges/{id}/convert-to-standalone-gift:
     post:
       operationId: convertPledgeToStandaloneGift
@@ -6086,6 +6236,24 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TripPlanDetail" }
         "409": { description: Destination city is required }
+  /trips/{id}/comments:
+    post:
+      operationId: createTripComment
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTripCommentBody" }
+      responses:
+        "201":
+          description: Comment added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripComment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /trips/{id}/visits:
     post:
       operationId: addTripVisit
@@ -8385,6 +8553,13 @@ paths:
       tags: [grant-leads]
       summary: Archive (dismiss) this lead for everyone.
       parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/ArchiveGrantLeadBody" } },
+          }
       responses:
         "200":
           {
@@ -8983,7 +9158,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/DeduplicateOpportunitiesBody" }
+            schema:
+              { $ref: "#/components/schemas/DeduplicateOpportunitiesBody" }
       responses:
         "200":
           description: OK
@@ -9002,13 +9178,17 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/CombineOpportunitiesAsPledgeBody" }
+            schema:
+              { $ref: "#/components/schemas/CombineOpportunitiesAsPledgeBody" }
       responses:
         "200":
           description: OK
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/CombineOpportunitiesAsPledgeResult" }
+              schema:
+                {
+                  $ref: "#/components/schemas/CombineOpportunitiesAsPledgeResult",
+                }
         "400": { $ref: "#/components/responses/BadRequest" }
         "409":
           description: "The selected records cannot be combined without ambiguous or destructive accounting changes."
@@ -12012,6 +12192,51 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NewsletterOverview" }
 
+  /newsletter-contacts:
+    get:
+      operationId: listNewsletterContacts
+      tags: [newsletter]
+      parameters:
+        - name: audience
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              [
+                current_subscribers,
+                linked_current_subscribers,
+                unmatched_current_subscribers,
+                unsubscribe_evidence,
+                bounce_evidence,
+              ]
+        - { name: search, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200":
+          description: Imported audience evidence filtered to one overview metric.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsletterContactList" }
+
+  /people/{id}/newsletter-engagement:
+    get:
+      operationId: listPersonNewsletterEngagement
+      tags: [newsletter]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200":
+          description: Campaign delivery, open, and click history linked to one person.
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/PersonNewsletterEngagementList" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /newsletter-campaigns/{id}/engagement:
     get:
       operationId: listNewsletterEngagement
@@ -13370,10 +13595,16 @@ components:
 
     TopPriorityOpenAsk:
       type: object
-      required: [opportunityId, opportunityName]
+      required:
+        [opportunityId, opportunityName, askAmount, projectedCloseDate, stage]
       properties:
         opportunityId: { type: string }
         opportunityName: { type: string }
+        askAmount: { type: string, nullable: true }
+        projectedCloseDate: { type: string, nullable: true }
+        stage:
+          allOf: [{ $ref: "#/components/schemas/OpportunityStage" }]
+          nullable: true
 
     TopPriorityOrganization:
       type: object
@@ -15401,6 +15632,35 @@ components:
           { type: string, format: date-time, nullable: true }
         primaryContactPersonId: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
+    ReduceOpportunityPlanBody:
+      type: object
+      required: [askAmount, awardedAmount]
+      properties:
+        askAmount: { type: string, nullable: true }
+        awardedAmount: { type: string, nullable: true }
+    OpportunityPlanReductionResult:
+      type: object
+      required:
+        [
+          opportunity,
+          oldTarget,
+          newTarget,
+          allocationsAdjusted,
+          installmentsAdjusted,
+          postedPaymentsAdjusted,
+        ]
+      properties:
+        opportunity: { $ref: "#/components/schemas/OpportunityOrPledge" }
+        oldTarget: { type: string }
+        newTarget: { type: string }
+        allocationsAdjusted: { type: integer }
+        installmentsAdjusted: { type: integer }
+        postedPaymentsAdjusted:
+          {
+            type: integer,
+            enum: [0],
+            description: "Always zero: posted payment facts are never edited by this action.",
+          }
 
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:
@@ -19475,7 +19735,8 @@ components:
           }
         opportunityTransition:
           {
-            allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+            allOf:
+              [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
             nullable: true,
             description: "Explicit lifecycle choice when opportunityId is still open. Omit when opportunityId is already a pledge.",
           }
@@ -21261,7 +21522,12 @@ components:
             amount: { type: string }
             opportunityTransition:
               {
-                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                allOf:
+                  [
+                    {
+                      $ref: "#/components/schemas/OpportunityPaymentTransition",
+                    },
+                  ],
                 nullable: true,
                 description: "Required for an open opportunity; omit for an existing pledge.",
               }
@@ -23083,7 +23349,12 @@ components:
               }
             opportunityTransition:
               {
-                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                allOf:
+                  [
+                    {
+                      $ref: "#/components/schemas/OpportunityPaymentTransition",
+                    },
+                  ],
                 nullable: true,
               }
     StripeChargeCreateGiftBody:
@@ -23100,7 +23371,12 @@ components:
               }
             opportunityTransition:
               {
-                allOf: [{ $ref: "#/components/schemas/OpportunityPaymentTransition" }],
+                allOf:
+                  [
+                    {
+                      $ref: "#/components/schemas/OpportunityPaymentTransition",
+                    },
+                  ],
                 nullable: true,
               }
     PaymentUnitGiftResponse:
@@ -23668,6 +23944,10 @@ components:
         rationale: { type: string, nullable: true }
         source: { $ref: "#/components/schemas/TripVisitSource" }
         notes: { type: string, nullable: true }
+        nextStep: { type: string, nullable: true }
+        planningUpdatedByUserId: { type: string, nullable: true }
+        planningUpdatedByUserName: { type: string, nullable: true }
+        planningUpdatedAt: { type: string, format: date-time, nullable: true }
         outreachStatus: { $ref: "#/components/schemas/TripOutreachStatus" }
         invitationSentAt: { type: string, format: date-time, nullable: true }
         invitationMessageId: { type: string, nullable: true }
@@ -23682,10 +23962,12 @@ components:
       allOf:
         - { $ref: "#/components/schemas/TripPlanSummary" }
         - type: object
-          required: [visits, calendarEvents]
+          required: [visits, comments, calendarEvents]
           properties:
             visits:
               { type: array, items: { $ref: "#/components/schemas/TripVisit" } }
+            comments:
+              { type: array, items: { $ref: "#/components/schemas/TripComment" } }
             calendarEvents:
               {
                 type: array,
@@ -23730,12 +24012,29 @@ components:
         rank: { type: integer, minimum: 1 }
         rationale: { type: string, nullable: true }
         notes: { type: string, nullable: true }
+        nextStep: { type: string, nullable: true }
     UpdateTripVisitBody:
       type: object
       properties:
         rank: { type: integer, minimum: 1 }
         rationale: { type: string, nullable: true }
         notes: { type: string, nullable: true }
+        nextStep: { type: string, nullable: true }
+    TripComment:
+      type: object
+      required: [id, tripId, authorUserId, authorName, body, createdAt]
+      properties:
+        id: { type: string }
+        tripId: { type: string }
+        authorUserId: { type: string }
+        authorName: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+    CreateTripCommentBody:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 5000 }
 
     # ─── Email messages + attachments + calendar events ──────────────────────
     EmailMessage:
@@ -23831,7 +24130,18 @@ components:
     CalendarEvent:
       type: object
       required:
-        [id, calendarUserId, gcalCalendarId, gcalEventId, startAt, isPrivate, meetingNoteId, linkedNoteCount, hasMeetingNotes, hasNextSteps]
+        [
+          id,
+          calendarUserId,
+          gcalCalendarId,
+          gcalEventId,
+          startAt,
+          isPrivate,
+          meetingNoteId,
+          linkedNoteCount,
+          hasMeetingNotes,
+          hasNextSteps,
+        ]
       properties:
         id: { type: string }
         calendarUserId: { type: string }
@@ -24664,6 +24974,8 @@ components:
         author: { type: string, nullable: true }
         publicationDate: { type: string, format: date, nullable: true }
         url: { type: string }
+        canonicalUrl: { type: string, nullable: true, readOnly: true }
+        headlineFingerprint: { type: string, nullable: true, readOnly: true }
         aiSummary: { type: string, nullable: true }
         source: { type: string, nullable: true }
         pinned: { type: boolean }
@@ -24842,6 +25154,12 @@ components:
         dedupeKey: { type: string }
         status: { $ref: "#/components/schemas/GrantLeadStatus" }
         title: { type: string }
+        programName:
+          {
+            type: string,
+            nullable: true,
+            description: "Named funding program extracted from the title and snippet.",
+          }
         aiSummary:
           {
             type: string,
@@ -24918,6 +25236,16 @@ components:
             type: string,
             nullable: true,
             description: "Set to null to unassign.",
+          }
+    ArchiveGrantLeadBody:
+      type: object
+      required: [futureScope]
+      properties:
+        futureScope:
+          {
+            type: string,
+            enum: [lead, program, funder],
+            description: "Archive only this lead, or also suppress future ingests for its named program or funder.",
           }
     SplitGrantLeadBody:
       type: object
@@ -25457,8 +25785,7 @@ components:
       properties:
         sourceOpportunityId: { type: string }
         expectedDate: { type: string, format: date }
-        amount:
-          { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$" }
+        amount: { type: string, pattern: "^[0-9]+(\\.[0-9]{1,2})?$" }
     CombineOpportunitiesAsPledgeBody:
       type: object
       required: [primaryId, mergeIds, commitmentDate, expectedPayments]
@@ -25470,14 +25797,19 @@ components:
         name: { type: string, nullable: true }
         commitmentDate: { type: string, format: date }
         expectedPayments:
-          { type: array, minItems: 2, maxItems: 50, items: { $ref: "#/components/schemas/OpportunityExpectedPaymentInput" } }
+          {
+            type: array,
+            minItems: 2,
+            maxItems: 50,
+            items:
+              { $ref: "#/components/schemas/OpportunityExpectedPaymentInput" },
+          }
     CombineOpportunitiesAsPledgeResult:
       type: object
       required: [pledgeId, archivedOpportunityIds]
       properties:
         pledgeId: { type: string }
-        archivedOpportunityIds:
-          { type: array, items: { type: string } }
+        archivedOpportunityIds: { type: array, items: { type: string } }
     MergeGiftsIntoPledgeBody:
       type: object
       required: [giftIds]
@@ -26063,7 +26395,14 @@ components:
     # ─── Newsletter history ──────────────────────────────────────────────────
     NewsletterAudienceSummary:
       type: object
-      required: [currentSubscribers, linkedCurrentSubscribers, unmatchedCurrentSubscribers, unsubscribeEvidence, bounceEvidence]
+      required:
+        [
+          currentSubscribers,
+          linkedCurrentSubscribers,
+          unmatchedCurrentSubscribers,
+          unsubscribeEvidence,
+          bounceEvidence,
+        ]
       properties:
         currentSubscribers: { type: integer }
         linkedCurrentSubscribers: { type: integer }
@@ -26072,7 +26411,16 @@ components:
         bounceEvidence: { type: integer }
     NewsletterCampaign:
       type: object
-      required: [id, subject, sentAt, trackedRecipientCount, openedCount, clickedCount, linkedCount]
+      required:
+        [
+          id,
+          subject,
+          sentAt,
+          trackedRecipientCount,
+          openedCount,
+          clickedCount,
+          linkedCount,
+        ]
       properties:
         id: { type: string }
         subject: { type: string }
@@ -26093,9 +26441,45 @@ components:
         campaigns:
           type: array
           items: { $ref: "#/components/schemas/NewsletterCampaign" }
+    NewsletterContact:
+      type: object
+      required:
+        [email, sourceCurrentSubscriber, sourceUnsubscribed, sourceBounced]
+      properties:
+        email: { type: string, format: email }
+        firstName: { type: string, nullable: true }
+        lastName: { type: string, nullable: true }
+        sourceCurrentSubscriber: { type: boolean }
+        sourceUnsubscribed: { type: boolean }
+        sourceBounced: { type: boolean }
+        linkedRecordType:
+          {
+            type: string,
+            enum: [person, organization, household, payment_intermediary],
+            nullable: true,
+          }
+        linkedRecordId: { type: string, nullable: true }
+        linkedRecordName: { type: string, nullable: true }
+    NewsletterContactList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/NewsletterContact" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
     NewsletterEngagement:
       type: object
-      required: [campaignId, email, opened, totalOpens, clicked, totalClicks, clickedLinks]
+      required:
+        [
+          campaignId,
+          email,
+          opened,
+          totalOpens,
+          clicked,
+          totalClicks,
+          clickedLinks,
+        ]
       properties:
         campaignId: { type: string }
         email: { type: string, format: email }
@@ -26110,7 +26494,11 @@ components:
         totalClicks: { type: integer }
         clickedLinks: { type: array, items: { type: string } }
         linkedRecordType:
-          { type: string, enum: [person, organization, household, payment_intermediary], nullable: true }
+          {
+            type: string,
+            enum: [person, organization, household, payment_intermediary],
+            nullable: true,
+          }
         linkedRecordId: { type: string, nullable: true }
         linkedRecordName: { type: string, nullable: true }
     NewsletterEngagementList:
@@ -26120,6 +26508,42 @@ components:
         data:
           type: array
           items: { $ref: "#/components/schemas/NewsletterEngagement" }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    PersonNewsletterEngagement:
+      type: object
+      required:
+        [
+          campaignId,
+          campaignSubject,
+          sentAt,
+          email,
+          opened,
+          totalOpens,
+          clicked,
+          totalClicks,
+          clickedLinks,
+        ]
+      properties:
+        campaignId: { type: string }
+        campaignSubject: { type: string }
+        sentAt: { type: string, format: date-time }
+        previewUrl: { type: string, nullable: true }
+        email: { type: string, format: email }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        opened: { type: boolean }
+        lastOpenedAt: { type: string, format: date-time, nullable: true }
+        totalOpens: { type: integer }
+        clicked: { type: boolean }
+        lastClickedAt: { type: string, format: date-time, nullable: true }
+        totalClicks: { type: integer }
+        clickedLinks: { type: array, items: { type: string } }
+    PersonNewsletterEngagementList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/PersonNewsletterEngagement" }
         pagination: { $ref: "#/components/schemas/Pagination" }
     NewsletterImportResult:
       type: object
@@ -26191,3 +26615,193 @@ components:
         examples:
           type: array
           items: { $ref: "#/components/schemas/NewsletterEmailDifference" }
+    AppFeedbackCategory:
+      type: string
+      enum: [bug, question, suggestion, other]
+    AppFeedbackStatus:
+      type: string
+      enum: [open, in_progress, resolved, dismissed]
+    AppFeedbackScreenshotStatus:
+      type: string
+      enum: [captured, failed, skipped]
+    AppFeedbackPerson:
+      type: object
+      required: [id, name, email]
+      properties:
+        id: { type: string }
+        name: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+    AppFeedbackProposalCodeArea:
+      type: object
+      required: [area, rationale]
+      properties:
+        area: { type: string }
+        rationale: { type: string }
+    AppFeedbackProposalContent:
+      type: object
+      required:
+        [
+          title,
+          summary,
+          userExperience,
+          implementationSteps,
+          likelyCodeAreas,
+          acceptanceCriteria,
+          testPlan,
+          risksAndOpenQuestions,
+          implementationBrief,
+        ]
+      properties:
+        title: { type: string }
+        summary: { type: string }
+        userExperience: { type: array, items: { type: string } }
+        implementationSteps: { type: array, items: { type: string } }
+        likelyCodeAreas:
+          type: array
+          items: { $ref: "#/components/schemas/AppFeedbackProposalCodeArea" }
+        acceptanceCriteria: { type: array, items: { type: string } }
+        testPlan: { type: array, items: { type: string } }
+        risksAndOpenQuestions: { type: array, items: { type: string } }
+        implementationBrief: { type: string }
+    AppFeedbackProposal:
+      type: object
+      required:
+        [
+          id,
+          feedbackId,
+          generationStatus,
+          revision,
+          contextSnapshot,
+          proposal,
+          reviewerGuidance,
+          analyzedAt,
+          model,
+          error,
+          implementationRequestedAt,
+          implementationRequestedByUserId,
+          implementationRequestedBy,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string }
+        feedbackId: { type: string }
+        generationStatus:
+          { type: string, enum: [queued, generating, ready, error] }
+        revision: { type: integer, minimum: 1 }
+        contextSnapshot: { type: object, additionalProperties: true }
+        proposal:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackProposalContent" }]
+          nullable: true
+        reviewerGuidance: { type: string, nullable: true }
+        analyzedAt: { type: string, format: date-time, nullable: true }
+        model: { type: string, nullable: true }
+        error: { type: string, nullable: true }
+        implementationRequestedAt:
+          { type: string, format: date-time, nullable: true }
+        implementationRequestedByUserId: { type: string, nullable: true }
+        implementationRequestedBy:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackPerson" }]
+          nullable: true
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AppFeedbackItem:
+      type: object
+      required:
+        [
+          id,
+          createdByUserId,
+          category,
+          message,
+          status,
+          pageUrl,
+          pagePath,
+          pageTitle,
+          context,
+          screenshotUrl,
+          screenshotFilename,
+          screenshotStatus,
+          screenshotError,
+          adminNotes,
+          resolvedByUserId,
+          resolvedAt,
+          createdAt,
+          updatedAt,
+          reporter,
+          resolver,
+          proposal,
+          viewerCanImplement,
+        ]
+      properties:
+        id: { type: string }
+        createdByUserId: { type: string }
+        category: { $ref: "#/components/schemas/AppFeedbackCategory" }
+        message: { type: string }
+        status: { $ref: "#/components/schemas/AppFeedbackStatus" }
+        pageUrl: { type: string }
+        pagePath: { type: string }
+        pageTitle: { type: string, nullable: true }
+        context: { type: object, additionalProperties: true }
+        screenshotUrl: { type: string, nullable: true }
+        screenshotFilename: { type: string, nullable: true }
+        screenshotStatus:
+          { $ref: "#/components/schemas/AppFeedbackScreenshotStatus" }
+        screenshotError: { type: string, nullable: true }
+        adminNotes: { type: string, nullable: true }
+        resolvedByUserId: { type: string, nullable: true }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        reporter: { $ref: "#/components/schemas/AppFeedbackPerson" }
+        resolver:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackPerson" }]
+          nullable: true
+        proposal:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackProposal" }]
+          nullable: true
+        viewerCanImplement:
+          type: boolean
+          description: >-
+            Whether the authenticated viewer may start the implementation
+            handoff. The API remains authoritative even when the UI hides the
+            action.
+    CreateAppFeedbackBody:
+      type: object
+      required: [message, pageUrl, pagePath]
+      properties:
+        category:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackCategory" }]
+          default: bug
+        message: { type: string, minLength: 1, maxLength: 10000 }
+        pageUrl: { type: string, minLength: 1, maxLength: 5000 }
+        pagePath: { type: string, minLength: 1, maxLength: 3000 }
+        pageTitle: { type: string, maxLength: 500, nullable: true }
+        context: { type: object, additionalProperties: true, default: {} }
+        screenshotUrl:
+          type: string
+          pattern: '^/api/storage/objects/'
+          maxLength: 2048
+          nullable: true
+        screenshotFilename: { type: string, maxLength: 500, nullable: true }
+        screenshotStatus:
+          allOf: [{ $ref: "#/components/schemas/AppFeedbackScreenshotStatus" }]
+          default: skipped
+        screenshotError: { type: string, maxLength: 2000, nullable: true }
+    UpdateAppFeedbackBody:
+      type: object
+      properties:
+        status: { $ref: "#/components/schemas/AppFeedbackStatus" }
+        adminNotes: { type: string, maxLength: 20000, nullable: true }
+    ReviseAppFeedbackProposalBody:
+      type: object
+      required: [reviewerGuidance]
+      properties:
+        reviewerGuidance: { type: string, minLength: 1, maxLength: 20000 }
+    AppFeedbackList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AppFeedbackItem" }
+        pagination: { $ref: "#/components/schemas/Pagination" }

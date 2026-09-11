@@ -16,6 +16,7 @@ import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
 import { startGrantLeadSummaryScheduler } from "./lib/grantLeadSummaryScheduler";
+import { startFeedbackProposalScheduler } from "./lib/feedbackProposalEngine";
 
 const rawPort = process.env["PORT"];
 
@@ -50,6 +51,7 @@ app.listen(port, (err) => {
   startDerivationHealthScheduler();
   startCodingFormSyncScheduler();
   startGrantLeadSummaryScheduler();
+  startFeedbackProposalScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority
   // person + organization has a cached next-step suggestion. Triggered by

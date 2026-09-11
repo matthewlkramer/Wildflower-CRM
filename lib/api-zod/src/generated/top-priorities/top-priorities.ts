@@ -27,7 +27,10 @@ export const GetTopPrioritiesResponse = zod.object({
   "openTaskCount": zod.number(),
   "openAsks": zod.array(zod.object({
   "opportunityId": zod.string(),
-  "opportunityName": zod.string()
+  "opportunityName": zod.string(),
+  "askAmount": zod.string().nullable(),
+  "projectedCloseDate": zod.string().nullable(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullable()
 })),
   "affiliatedPeople": zod.array(zod.object({
   "personId": zod.string(),
@@ -49,7 +52,10 @@ export const GetTopPrioritiesResponse = zod.object({
   "openTaskCount": zod.number(),
   "openAsks": zod.array(zod.object({
   "opportunityId": zod.string(),
-  "opportunityName": zod.string()
+  "opportunityName": zod.string(),
+  "askAmount": zod.string().nullable(),
+  "projectedCloseDate": zod.string().nullable(),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullable()
 })),
   "lastGiftDate": zod.string().nullish(),
   "lastGiftAmount": zod.string().nullish()

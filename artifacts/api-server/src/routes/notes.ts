@@ -53,7 +53,11 @@ router.get(
         select 1
         from calendar_events linked_event
         join calendar_events requested_event
-          on requested_event.gcal_event_id = linked_event.gcal_event_id
+          on requested_event.id = linked_event.id
+          or (
+            NULLIF(BTRIM(requested_event.gcal_event_id), '') IS NOT NULL
+            and NULLIF(BTRIM(linked_event.gcal_event_id), '') = NULLIF(BTRIM(requested_event.gcal_event_id), '')
+          )
         where linked_event.id = ${notes.calendarEventId}
           and requested_event.id = ${q.calendarEventId}
       )`);
