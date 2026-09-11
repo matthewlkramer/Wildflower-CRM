@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { shouldOfferAddSender } from "./unified-activity-feed";
+import type { MediaMention } from "@workspace/api-client-react";
+import {
+  shouldOfferAddSender,
+  splitMediaMentionsByRelevance,
+} from "./unified-activity-feed";
 
 describe("activity email sender actions", () => {
   it.each([
@@ -33,5 +37,27 @@ describe("activity email sender actions", () => {
         isInternalSender: false,
       }),
     ).toBe(false);
+  });
+});
+
+describe("media relevance disclosure", () => {
+  const row = (id: string, filtered: boolean, pinned = false) =>
+    ({ id, filtered, pinned } as MediaMention);
+
+  it("hides likely irrelevant rows by default", () => {
+    const result = splitMediaMentionsByRelevance([
+      row("visible", false),
+      row("hidden", true),
+    ]);
+    expect(result.visible.map((item) => item.id)).toEqual(["visible"]);
+    expect(result.hidden.map((item) => item.id)).toEqual(["hidden"]);
+  });
+
+  it("never hides a pinned row", () => {
+    const result = splitMediaMentionsByRelevance([
+      row("pinned", true, true),
+    ]);
+    expect(result.visible.map((item) => item.id)).toEqual(["pinned"]);
+    expect(result.hidden).toEqual([]);
   });
 });

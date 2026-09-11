@@ -5,14 +5,21 @@ import {
   parseGdeltArticles,
 } from "../lib/gdelt";
 import {
-  canonicalizeMediaUrl,
   foundationSearchName,
   isArticleRelevantToTarget,
-  mediaHeadlineFingerprint,
   mergeEntityId,
-  normalizeMediaHeadline,
   personDisplayName,
 } from "../lib/mediaIngest";
+import {
+  canonicalizeMediaArticleUrl,
+  canonicalizeMediaUrl,
+  isMediaMentionFiltered,
+  mediaDisqualifyingTerms,
+  mediaHeadlineFingerprint,
+  mediaRelevanceThreshold,
+  normalizeMediaHeadline,
+  scoreMediaRelevance,
+} from "../lib/mediaRelevance";
 
 describe("buildGdeltQuery", () => {
   it("phrase-quotes the name and restricts to English", () => {
@@ -49,6 +56,16 @@ describe("media ingest precision", () => {
     ).toBe("https://example.com/story?a=1&b=2");
   });
 
+  it("uses an original publisher URL exposed by a syndication wrapper", () => {
+    expect(
+      canonicalizeMediaArticleUrl({
+        url: "https://news.yahoo.com/acme-story?utm_source=feed",
+        title: "Acme story",
+        body: '<link rel="canonical" href="https://localpaper.org/acme-story?fbclid=123">',
+      }),
+    ).toBe("https://localpaper.org/acme-story");
+  });
+
   it("fingerprints equivalent headline punctuation", () => {
     expect(normalizeMediaHeadline("A Grant — Announced!")).toBe(
       "agrantannounced",
@@ -58,7 +75,7 @@ describe("media ingest precision", () => {
     );
   });
 
-  it("requires a person's exact searched name in the headline", () => {
+  it("classifies person hits using name, affiliation, and location context", () => {
     const person = { kind: "person", id: "p1", name: "Scott Cook" } as const;
     expect(
       isArticleRelevantToTarget(person, {
@@ -71,11 +88,46 @@ describe("media ingest precision", () => {
       }),
     ).toBe(false);
     expect(
+      isArticleRelevantToTarget(person, {
+        title: "Scott Cook charged after police investigation",
+      }),
+    ).toBe(false);
+    expect(
+      isArticleRelevantToTarget(person, {
+        title: "Scott Cook joins a neighborhood committee",
+      }),
+    ).toBe(false);
+    expect(
       isArticleRelevantToTarget(
         { kind: "organization", id: "o1", name: "Acme Foundation" },
         { title: "Regional giving roundup" },
       ),
     ).toBe(true);
+
+    const contextual = {
+      kind: "person" as const,
+      id: "p2",
+      name: "Jordan Lee",
+      affiliations: ["Wildflower Schools"],
+      locations: ["Minneapolis"],
+    };
+    expect(
+      scoreMediaRelevance(contextual, {
+        url: "https://example.org/story",
+        title: "Wildflower Schools expands in Minneapolis",
+      }),
+    ).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it("supports configurable thresholds and disqualifying terms", () => {
+    expect(mediaRelevanceThreshold("0.65")).toBe(0.65);
+    expect(mediaRelevanceThreshold("not-a-number")).toBe(0.4);
+    expect(mediaDisqualifyingTerms("lawsuit, racing ")).toEqual([
+      "lawsuit",
+      "racing",
+    ]);
+    expect(isMediaMentionFiltered(0.39, false, 0.4)).toBe(true);
+    expect(isMediaMentionFiltered(0.1, true, 0.4)).toBe(false);
   });
 });
 
@@ -130,6 +182,24 @@ describe("parseGdeltArticles", () => {
     });
     expect(out).toHaveLength(1);
     expect(out[0]?.publicationDate).toBeNull();
+  });
+
+  it("retains optional snippet and original publisher metadata", () => {
+    const [article] = parseGdeltArticles({
+      articles: [
+        {
+          url: "https://news.yahoo.com/story",
+          title: "Story",
+          domain: "news.yahoo.com",
+          description: "Jordan Lee announced the grant.",
+          originalurl: "https://publisher.org/story",
+        },
+      ],
+    });
+    expect(article).toMatchObject({
+      snippet: "Jordan Lee announced the grant.",
+      originalUrl: "https://publisher.org/story",
+    });
   });
 
   it("returns [] for non-JSON / empty / non-object / missing articles", () => {

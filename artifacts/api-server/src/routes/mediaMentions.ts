@@ -24,6 +24,13 @@ import { organizationActivityArrayScope } from "../lib/organizationActivityScope
 const router: IRouter = Router();
 router.use(requireAuth);
 
+type MediaMentionRow = typeof mediaMentions.$inferSelect;
+
+function mediaMentionResponse(row: MediaMentionRow) {
+  const { isFiltered, ...response } = row;
+  return { ...response, filtered: isFiltered };
+}
+
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
     error: "validation_error",
@@ -41,6 +48,11 @@ router.get(
     // Never surface dismissed (soft-deleted) mentions; counts/pagination
     // must reflect this too, so it's part of the shared WHERE.
     const filters: SQL[] = [eq(mediaMentions.dismissed, false)];
+    if (parseBoolQuery(req, "includeFiltered") !== true) {
+      filters.push(
+        or(eq(mediaMentions.isFiltered, false), eq(mediaMentions.pinned, true))!,
+      );
+    }
     if (q.search) {
       const search = or(
         ilike(mediaMentions.publicationName, `%${q.search}%`),
@@ -74,7 +86,10 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(mediaMentions).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    res.json({
+      data: rows.map(mediaMentionResponse),
+      pagination: { page, limit, total: Number(total) },
+    });
   }),
 );
 
@@ -87,7 +102,7 @@ router.get(
       .where(eq(mediaMentions.id, paramId(req)))
       .then((r) => r[0]);
     if (!row) return notFound(res, "media mention");
-    res.json(row);
+    res.json(mediaMentionResponse(row));
   }),
 );
 
@@ -103,7 +118,7 @@ router.post(
         ...body,
       })
       .returning();
-    res.status(201).json(row);
+    res.status(201).json(mediaMentionResponse(row));
   }),
 );
 
@@ -135,7 +150,7 @@ router.patch(
       .where(eq(mediaMentions.id, id))
       .returning();
     if (!row) return notFound(res, "media mention");
-    res.json(row);
+    res.json(mediaMentionResponse(row));
   }),
 );
 

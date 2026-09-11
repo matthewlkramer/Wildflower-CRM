@@ -3,6 +3,7 @@ import {
   date,
   index,
   pgTable,
+  real,
   text,
   timestamp,
   uniqueIndex,
@@ -33,6 +34,12 @@ export const mediaMentions = pgTable(
     // Tracking-free URL and normalized-headline digest used by the ingest
     // pipeline to collapse URL variants and same-day syndicated reposts.
     canonicalUrl: text("canonical_url"),
+    // Deterministic 0..1 score assigned by ingestion/backfill. Null means the
+    // historical row has not been evaluated yet.
+    relevanceScore: real("relevance_score"),
+    // Classification is stored independently from pinning. Readers always
+    // surface pinned rows even when this remains true.
+    isFiltered: boolean("is_filtered").notNull().default(false),
     headlineFingerprint: text("headline_fingerprint"),
     aiSummary: text("ai_summary"),
     // Provenance of the row: "gdelt" for auto-ingested news, null/"manual"
@@ -64,12 +71,12 @@ export const mediaMentions = pgTable(
     ),
     index("media_mentions_pinned_idx").on(t.pinned),
     index("media_mentions_dismissed_idx").on(t.dismissed),
+    index("media_mentions_is_filtered_idx").on(t.isFiltered),
     index("media_mentions_person_ids_gin_idx").using("gin", t.personIds),
     index("media_mentions_organization_ids_gin_idx").using("gin", t.organizationIds),
-    // URL is the dedupe key for the GDELT ingestion upsert. A unique index
-    // lets the importer use `INSERT ... ON CONFLICT (url) DO UPDATE` so that
-    // concurrent runs can't create duplicate rows or drop entity-link merges.
-    // Manually-entered mentions always carry a url too (NOT NULL).
+    // Raw URL uniqueness is the last-resort collision guard. Ingestion also
+    // serializes canonical-URL and headline identities with advisory locks.
+    // Manually-entered mentions always carry a URL too (NOT NULL).
     uniqueIndex("media_mentions_url_uq").on(t.url),
   ],
 );

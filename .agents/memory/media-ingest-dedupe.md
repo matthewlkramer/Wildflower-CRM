@@ -1,43 +1,56 @@
 ---
 name: media-mention GDELT ingestion dedupe
-description: Why media_mentions dedupe must stay a DB-atomic upsert, and the no-AI-summary policy for auto items.
+description: Media mention advisory-lock dedupe, relevance filtering, tombstones, and the no-AI-summary policy.
 ---
 
 # media_mentions GDELT ingestion
 
-The automated press-coverage job (GDELT DOC 2.0, free/no-key) dedupes by `url`.
+The automated press-coverage job (GDELT DOC 2.0, free/no-key) dedupes by raw
+URL, tracking-free canonical URL, and same-day normalized headline.
 
-## Rule: dedupe stays DB-atomic — never read-then-write
-`media_mentions.url` has a UNIQUE index. The importer uses
-`INSERT ... ON CONFLICT (url) DO UPDATE` that `array_append`s the entity id, with
-a WHERE guard so an already-linked id is a no-op. `RETURNING (xmax = 0)`
-distinguishes created vs linked.
+## Rule: dedupe stays transaction-serialized
 
-**Why:** the daily scheduler and the manual `ingest:media` script can run
-concurrently (and multiple server instances exist). A `SELECT`-then-`UPDATE`/`INSERT`
-upsert loses entity-link merges (last-writer-wins on the array) and can create
-duplicate rows. A code review failed the feature specifically on this.
+The importer takes sorted transaction-scoped PostgreSQL advisory locks for the
+canonical URL and same-day headline fingerprint before selecting and updating
+or inserting. The URL column also retains its unique index. Existing entity ID
+arrays are merged without duplicates.
 
-**How to apply:** any change to the ingestion upsert must preserve the single-statement
-ON CONFLICT form and the unique index. The manual script must call
+**Why:** the daily scheduler, manual ingestion, and multiple server instances
+can overlap. Without the advisory locks, different raw URL variants could pass
+the lookup concurrently and create duplicate rows or lose link merges.
+
+**How to apply:** any change to the ingestion upsert must preserve both advisory
+locks and the unique URL index. The manual script must call
 `runMediaIngestIfDue({force:true})` (shares the global advisory lock + state table),
 never `ingestMediaMentions()` directly — calling the inner fn bypasses the lock.
 
+## Rule: relevance is reversible and pinning wins
+
+Person results are scored from name, current affiliation, and location signals.
+Rows below `MEDIA_RELEVANCE_THRESHOLD` (default `0.4`) are stored with
+`is_filtered = true`; they are not deleted. `includeFiltered=true` reveals them.
+Pinned rows always pass API/UI read filters, and the historical backfill never
+changes a pinned row's stored `is_filtered` value. For a row linked to several
+targets, retain the maximum score.
+
 ## Rule: "deleting" a media mention is a soft-delete (dismissed tombstone)
+
 `media_mentions.dismissed` (boolean) is the soft-delete flag. The DELETE endpoint
 UPDATEs `dismissed = true` instead of removing the row; the list endpoint always
 filters `dismissed = false`; the ingest upsert's `DO UPDATE ... WHERE` guard adds
-`media_mentions.dismissed = false` so a dismissed url is never re-linked/un-dismissed.
+checks `dismissed = false` before any link/score update so a dismissed URL is
+never re-linked or un-dismissed.
 
 **Why:** a hard DELETE left the url free, so the next GDELT sweep re-inserted the
 same article (dedupe is by url) and the mention came back. Keeping the row as a
 url tombstone is the only way the dismissal survives a sync.
 
 **How to apply:** dismissal is GLOBAL per article (per url) — it hides the mention
-for every linked entity, by design. Keep the guard inside the single ON CONFLICT
-statement (don't add a read-then-write). No admin trash/undo UI yet.
+for every linked entity, by design. Keep the guard inside the advisory-locked
+transaction. No admin trash/undo UI yet.
 
 ## Rule: do NOT AI-summarize auto-ingested headlines
+
 Store the GDELT headline verbatim in `title`; leave `aiSummary` null for `source='gdelt'`.
 
 **Why:** this is a donor CRM. Summarizing a bare headline risks fabricating claims

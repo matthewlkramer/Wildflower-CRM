@@ -26,6 +26,7 @@
     "backfill:sync-suppression": "tsx src/scripts/backfill-sync-suppression.ts",
     "backfill:email-domains": "tsx src/scripts/backfill-email-domains.ts",
     "backfill:task-suggestions": "tsx src/scripts/backfill-task-suggestions.ts",
+    "backfill:media-relevance": "tsx src/scripts/backfill-media-relevance.ts",
     "refresh:task-suggestions": "tsx src/scripts/refresh-task-suggestions.ts",
     "migrate:organizations": "tsx src/scripts/migrate-organizations.ts",
     "analyze:coding-form-conflicts": "tsx src/scripts/analyze-coding-form-conflicts.ts",

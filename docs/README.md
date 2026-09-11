@@ -75,6 +75,8 @@ unverified and confirm against code before relying on it.
 - [`feedback-proposals.md`](feedback-proposals.md) — context boundaries,
   generation/revision lifecycle, and the human-gated coding-agent handoff for
   the in-app feedback queue.
+- [`media-mentions.md`](media-mentions.md) — canonical URL deduplication,
+  deterministic relevance scoring, read filtering, and manual backfill rules.
 
 ## Rules
 

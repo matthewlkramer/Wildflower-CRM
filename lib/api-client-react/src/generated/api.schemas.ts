@@ -8952,7 +8952,10 @@ export interface MediaMention {
   author?: string | null;
   publicationDate?: string | null;
   url: string;
-  readonly canonicalUrl?: string | null;
+  readonly canonicalUrl: string | null;
+  readonly relevanceScore: number | null;
+  /** Whether the mention was classified as likely irrelevant. Pinned mentions remain visible even when true. */
+  readonly filtered: boolean;
   readonly headlineFingerprint?: string | null;
   aiSummary?: string | null;
   source?: string | null;
@@ -11645,6 +11648,10 @@ includeLinkedPeople?: boolean;
  * Filter to pinned (true) or unpinned (false) mentions.
  */
 pinned?: boolean;
+/**
+ * Include media mentions hidden by relevance filtering. Pinned mentions are always returned.
+ */
+includeFiltered?: boolean;
 /**
  * @minimum 1
  * @maximum 10000

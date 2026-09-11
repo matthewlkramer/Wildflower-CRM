@@ -3,9 +3,29 @@ import { organizations, people } from "@workspace/db/schema";
 import { eq, inArray, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
-import { searchGdelt } from "./gdelt";
+import { searchGdelt, type GdeltArticle } from "./gdelt";
 import { enqueueTaskSuggestion } from "./taskSuggestionQueue";
-import { createHash } from "node:crypto";
+import {
+  canonicalizeMediaArticleUrl,
+  canonicalizeMediaUrl,
+  isMediaMentionFiltered,
+  mediaHeadlineFingerprint,
+  mediaRelevanceThreshold,
+  normalizeMediaHeadline,
+  scoreMediaRelevance,
+  type MediaRelevanceTarget,
+} from "./mediaRelevance";
+import { loadPersonRelevanceTargets } from "./mediaRelevanceTargets";
+
+export {
+  canonicalizeMediaUrl,
+  mediaHeadlineFingerprint,
+  normalizeMediaHeadline,
+} from "./mediaRelevance";
+export {
+  loadPersonRelevanceTargets,
+  personDisplayName,
+} from "./mediaRelevanceTargets";
 
 /**
  * GDELT media-mention ingestion. For every funder and every high-capacity
@@ -35,11 +55,7 @@ const CORPORATE_FOUNDATION_SUBTYPES = [
 // arm (so we don't redundantly append "Foundation").
 const FOUNDATION_MARKER = /foundation|fundaci[oó]n|\.org|philanthrop|\bfund\b/i;
 
-export interface IngestTarget {
-  kind: "organization" | "person";
-  id: string;
-  name: string;
-}
+export type IngestTarget = MediaRelevanceTarget;
 
 export interface IngestOptions {
   /** Lookback window per entity in days. */
@@ -58,27 +74,6 @@ export interface IngestSummary {
   mentionsCreated: number;
   mentionsLinked: number;
   errors: number;
-}
-
-/**
- * Best display name for a person: prefer the denormalized `fullName`, else
- * join first/last. Returns null when there's nothing searchable (we skip
- * those — a blank/one-token name produces useless, noisy results).
- */
-export function personDisplayName(p: {
-  fullName?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-}): string | null {
-  const full = p.fullName?.trim();
-  if (full) return full;
-  const parts = [p.firstName?.trim(), p.lastName?.trim()].filter(
-    (s): s is string => !!s,
-  );
-  // Require at least two tokens (first + last) — a lone first name is far too
-  // noisy to phrase-search against global news.
-  if (parts.length < 2) return null;
-  return parts.join(" ");
 }
 
 /**
@@ -150,9 +145,6 @@ export async function buildIngestTargets(): Promise<IngestTarget[]> {
     db
       .select({
         id: people.id,
-        fullName: people.fullName,
-        firstName: people.firstName,
-        lastName: people.lastName,
       })
       .from(people)
       .where(inArray(people.capacityRating, [...MONITORED_CAPACITY_TIERS])),
@@ -170,58 +162,26 @@ export async function buildIngestTargets(): Promise<IngestTarget[]> {
         : raw;
     targets.push({ kind: "organization", id: f.id, name });
   }
-  for (const p of personRows) {
-    const name = personDisplayName(p);
-    if (name) targets.push({ kind: "person", id: p.id, name });
-  }
+  targets.push(
+    ...(await loadPersonRelevanceTargets(personRows.map((p) => p.id))),
+  );
   return targets;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const TRACKING_QUERY_PARAM = /^(utm_.+|fbclid|gclid|dclid|mc_cid|mc_eid)$/i;
-
-/** Stable URL identity with fragments and common campaign trackers removed. */
-export function canonicalizeMediaUrl(raw: string): string {
-  try {
-    const url = new URL(raw.trim());
-    url.hash = "";
-    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
-    for (const key of [...url.searchParams.keys()]) {
-      if (TRACKING_QUERY_PARAM.test(key)) url.searchParams.delete(key);
-    }
-    url.searchParams.sort();
-    if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
-    return url.toString();
-  } catch {
-    return raw.trim();
-  }
-}
-
-/** ASCII normalization mirrored by migration 0239 for historical rows. */
-export function normalizeMediaHeadline(title: string): string {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-export function mediaHeadlineFingerprint(title: string): string | null {
-  const normalized = normalizeMediaHeadline(title);
-  if (normalized.length < 12) return null;
-  return createHash("md5").update(normalized).digest("hex");
-}
-
 /**
- * Person-name searches are intrinsically ambiguous. GDELT can match a name
- * only in body text, which caused the Scott Cook/police false links. Require
- * the full searched name in the headline before a person result is eligible.
+ * Compatibility helper for callers/tests that need the binary decision. Live
+ * ingestion stores both sides of the threshold so users can reveal likely
+ * irrelevant results instead of silently losing them.
  */
 export function isArticleRelevantToTarget(
   target: IngestTarget,
-  article: { title: string },
+  article: Pick<GdeltArticle, "title"> & Partial<GdeltArticle>,
 ): boolean {
-  if (target.kind === "organization") return true;
-  const title = normalizeMediaHeadline(article.title);
-  const name = normalizeMediaHeadline(target.name);
-  return name.length >= 5 && title.includes(name);
+  return !isMediaMentionFiltered(
+    scoreMediaRelevance(target, { url: article.url ?? "", ...article }),
+  );
 }
 
 /**
@@ -239,12 +199,15 @@ const ENTITY_COLUMN = {
 
 export async function upsertArticle(
   target: IngestTarget,
-  article: { url: string; title: string; domain: string; publicationDate: string | null },
+  article: Pick<GdeltArticle, "url" | "title" | "domain" | "publicationDate"> &
+    Partial<GdeltArticle>,
 ): Promise<"created" | "linked" | "noop"> {
   // Column name comes from a fixed whitelist above — safe for sql.raw.
   const col = sql.raw(ENTITY_COLUMN[target.kind]);
-  const canonicalUrl = canonicalizeMediaUrl(article.url);
+  const canonicalUrl = canonicalizeMediaArticleUrl(article);
   const headlineFingerprint = mediaHeadlineFingerprint(article.title);
+  const relevanceScore = scoreMediaRelevance(target, article);
+  const relevanceThreshold = mediaRelevanceThreshold();
   const lockKeys = [
     `url:${canonicalUrl}`,
     ...(headlineFingerprint
@@ -257,8 +220,13 @@ export async function upsertArticle(
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
     }
 
-    const existing = await tx.execute<{ id: string; dismissed: boolean }>(sql`
-      SELECT id, dismissed
+    const existing = await tx.execute<{
+      id: string;
+      dismissed: boolean;
+      already_linked: boolean;
+    }>(sql`
+      SELECT id, dismissed,
+             coalesce(${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[] AS already_linked
       FROM media_mentions
       WHERE url = ${article.url}
          OR canonical_url = ${canonicalUrl}
@@ -273,23 +241,31 @@ export async function upsertArticle(
     const found = existing.rows[0];
     if (found) {
       if (found.dismissed) return "noop";
-      const updated = await tx.execute<{ id: string }>(sql`
+      await tx.execute(sql`
         UPDATE media_mentions
-        SET ${col} = array_append(coalesce(${col}, '{}'::text[]), ${target.id}),
+        SET ${col} = CASE
+              WHEN coalesce(${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[]
+                THEN ${col}
+              ELSE array_append(coalesce(${col}, '{}'::text[]), ${target.id})
+            END,
             canonical_url = coalesce(canonical_url, ${canonicalUrl}),
             headline_fingerprint = coalesce(headline_fingerprint, ${headlineFingerprint}),
+            relevance_score = greatest(coalesce(relevance_score, 0), ${relevanceScore}),
+            is_filtered = CASE
+              WHEN pinned THEN false
+              ELSE greatest(coalesce(relevance_score, 0), ${relevanceScore}) < ${relevanceThreshold}
+            END,
             updated_at = now()
         WHERE id = ${found.id}
-          AND NOT (coalesce(${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[])
-        RETURNING id
       `);
-      return updated.rows[0] ? "linked" : "noop";
+      return found.already_linked ? "noop" : "linked";
     }
 
     await tx.execute(sql`
       INSERT INTO media_mentions
         (id, publication_name, title, url, canonical_url, headline_fingerprint,
-         publication_date, source, ${col}, created_at, updated_at)
+         relevance_score, is_filtered, publication_date, source, ${col},
+         created_at, updated_at)
       VALUES (
         ${newId()},
         ${article.domain || "Unknown source"},
@@ -297,6 +273,8 @@ export async function upsertArticle(
         ${article.url},
         ${canonicalUrl},
         ${headlineFingerprint},
+        ${relevanceScore},
+        ${isMediaMentionFiltered(relevanceScore, false, relevanceThreshold)},
         ${article.publicationDate},
         'gdelt',
         ARRAY[${target.id}]::text[],
@@ -348,14 +326,14 @@ export async function ingestMediaMentions(
       summary.articlesSeen += articles.length;
       let touched = false;
       for (const article of articles) {
-        if (!isArticleRelevantToTarget(target, article)) continue;
+        const relevant = isArticleRelevantToTarget(target, article);
         const outcome = await upsertArticle(target, article);
         if (outcome === "created") {
           summary.mentionsCreated += 1;
-          touched = true;
+          touched ||= relevant;
         } else if (outcome === "linked") {
           summary.mentionsLinked += 1;
-          touched = true;
+          touched ||= relevant;
         }
       }
       if (touched) {
@@ -370,7 +348,10 @@ export async function ingestMediaMentions(
     } catch (err) {
       summary.errors += 1;
       logger.warn(
-        { errClass: err instanceof Error ? err.name : typeof err, target: target.id },
+        {
+          errClass: err instanceof Error ? err.name : typeof err,
+          target: target.id,
+        },
         "Media ingestion entity failed",
       );
     }

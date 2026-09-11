@@ -5285,6 +5285,12 @@ paths:
             schema: { type: boolean },
             description: "Filter to pinned (true) or unpinned (false) mentions.",
           }
+        - {
+            name: includeFiltered,
+            in: query,
+            schema: { type: boolean },
+            description: "Include media mentions hidden by relevance filtering. Pinned mentions are always returned.",
+          }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -24966,7 +24972,7 @@ components:
     MediaMention:
       type: object
       required:
-        [id, publicationName, url, pinned, dismissed, createdAt, updatedAt]
+        [id, publicationName, url, canonicalUrl, relevanceScore, pinned, dismissed, filtered, createdAt, updatedAt]
       properties:
         id: { type: string }
         publicationName: { type: string }
@@ -24975,6 +24981,14 @@ components:
         publicationDate: { type: string, format: date, nullable: true }
         url: { type: string }
         canonicalUrl: { type: string, nullable: true, readOnly: true }
+        relevanceScore:
+          { type: number, format: float, nullable: true, readOnly: true }
+        filtered:
+          {
+            type: boolean,
+            readOnly: true,
+            description: "Whether the mention was classified as likely irrelevant. Pinned mentions remain visible even when true.",
+          }
         headlineFingerprint: { type: string, nullable: true, readOnly: true }
         aiSummary: { type: string, nullable: true }
         source: { type: string, nullable: true }
