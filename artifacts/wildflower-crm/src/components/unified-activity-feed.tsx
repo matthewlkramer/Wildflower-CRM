@@ -258,6 +258,18 @@ function fmtDate(iso?: string | null) {
 
 const PAGE_SIZE = 50;
 
+export function splitMediaMentionsByRelevance(rows: MediaMention[]): {
+  visible: MediaMention[];
+  hidden: MediaMention[];
+} {
+  const visible: MediaMention[] = [];
+  const hidden: MediaMention[] = [];
+  for (const row of rows) {
+    (row.filtered && !row.pinned ? hidden : visible).push(row);
+  }
+  return { visible, hidden };
+}
+
 export function shouldOfferAddSender(
   message: Pick<EmailMessage, "direction" | "fromEmail" | "isInternalSender">,
 ): boolean {
@@ -282,6 +294,7 @@ export function UnifiedActivityFeed({
   const [addSenderEmail, setAddSenderEmail] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showHiddenMedia, setShowHiddenMedia] = useState(false);
+  const [showFilteredMedia, setShowFilteredMedia] = useState(false);
 
   // Notes/tasks scope — falls back to the relationship scope when no
   // explicit context is given (the common funder/person/household case).
@@ -366,6 +379,7 @@ export function UnifiedActivityFeed({
     organizationId,
     includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
     includeHidden: showHiddenMedia ? true : undefined,
+    includeFiltered: true,
     limit,
   };
   const media = useListMediaMentions(mediaParams, {
@@ -378,6 +392,11 @@ export function UnifiedActivityFeed({
   const userMap = useUserNameMap();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  const mediaByRelevance = useMemo(
+    () => splitMediaMentionsByRelevance(media.data?.data ?? []),
+    [media.data?.data],
+  );
 
   // ---- Inline composer (quick note) -------------------------------
   const [draft, setDraft] = useState("");
@@ -510,7 +529,7 @@ export function UnifiedActivityFeed({
         at: r.meetingDate,
         row: r,
       })),
-      ...(media.data?.data ?? []).map<Item>((r) => ({
+      ...mediaByRelevance.visible.map<Item>((r) => ({
         source: "media",
         at: r.publicationDate ?? r.createdAt,
         row: r,
@@ -526,7 +545,7 @@ export function UnifiedActivityFeed({
     cals.data,
     proposals.data,
     meetings.data,
-    media.data,
+    mediaByRelevance.visible,
     hideTasks,
   ]);
 
@@ -538,6 +557,22 @@ export function UnifiedActivityFeed({
     if (!q) return bySource;
     return bySource.filter((it) => searchTextForItem(it).includes(q));
   }, [allItems, activeSource, search]);
+
+  const filteredMediaItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return mediaByRelevance.hidden;
+    return mediaByRelevance.hidden.filter((row) =>
+      searchTextForItem({
+        source: "media",
+        at: row.publicationDate ?? row.createdAt,
+        row,
+      }).includes(q),
+    );
+  }, [mediaByRelevance.hidden, search]);
+
+  const showMediaDisclosure =
+    mediaByRelevance.hidden.length > 0 &&
+    (activeSource === null || activeSource === "media");
 
   const loading =
     notes.isLoading ||
@@ -1175,6 +1210,41 @@ export function UnifiedActivityFeed({
             })}
           </ul>
         )}
+        {showMediaDisclosure ? (
+          <div
+            className="mt-3 rounded-md border border-dashed px-3 py-2 text-sm text-muted-foreground"
+            data-testid="media-filtered-disclosure"
+          >
+            {mediaByRelevance.hidden.length}{" "}
+            {mediaByRelevance.hidden.length === 1 ? "article" : "articles"}{" "}
+            hidden as likely irrelevant —{" "}
+            <button
+              type="button"
+              className="font-medium text-foreground underline-offset-4 hover:underline"
+              onClick={() => setShowFilteredMedia((shown) => !shown)}
+              data-testid="media-filtered-toggle"
+            >
+              {showFilteredMedia ? "hide" : "show all"}
+            </button>
+          </div>
+        ) : null}
+        {showMediaDisclosure && showFilteredMedia && filteredMediaItems.length ? (
+          <ul className="mt-3 space-y-3" data-testid="media-filtered-list">
+            {filteredMediaItems.map((row) => (
+              <li
+                key={`filtered-media-${row.id}`}
+                className="rounded-md border bg-muted/30 p-3 text-muted-foreground italic opacity-75"
+                data-testid={`media-row-${row.id}`}
+                data-filtered="true"
+              >
+                <Badge variant="outline" className="mb-2">
+                  May not be relevant
+                </Badge>
+                <MediaMentionRow row={row} />
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {hasMore ? (
           <div className="flex justify-center pt-3">
             <Button

@@ -25,6 +25,13 @@ import { normalizeMediaHeadline } from "../lib/mediaIngest";
 const router: IRouter = Router();
 router.use(requireAuth);
 
+type MediaMentionRow = typeof mediaMentions.$inferSelect;
+
+function mediaMentionResponse(row: MediaMentionRow) {
+  const { isFiltered, ...response } = row;
+  return { ...response, filtered: isFiltered };
+}
+
 function respondInvariantFailure(res: Response, issues: InvariantIssue[]): void {
   res.status(400).json({
     error: "validation_error",
@@ -65,12 +72,23 @@ router.get(
     }
     if (q.pinned !== undefined) filters.push(eq(mediaMentions.pinned, q.pinned));
     const baseWhere = and(...filters);
+    const includeFiltered = parseBoolQuery(req, "includeFiltered") === true;
+    // Persisted relevance filtering is independent from the historical
+    // read-time quality guard below. Pinned records remain visible for either
+    // filter because pinning is an explicit human decision.
+    const relevanceFilters = includeFiltered
+      ? filters
+      : [
+          ...filters,
+          or(eq(mediaMentions.isFiltered, false), eq(mediaMentions.pinned, true))!,
+        ];
+    const relevanceWhere = and(...relevanceFilters);
 
     // Historical GDELT rows predate the stricter ingest safeguards. Apply the
     // same quality bar at read time so the retroactive review improves every
     // existing profile without deleting provenance. Pinned-only views are left
     // untouched because pinning is an explicit human decision.
-    const qualityFilters = [...filters];
+    const qualityFilters = [...relevanceFilters];
     if (q.pinned !== true) {
       const candidateScope = q.personId
         ? sql`candidate.person_ids @> ARRAY[${q.personId}]::text[]`
@@ -138,7 +156,7 @@ router.get(
 
     const qualityWhere = and(...qualityFilters);
     const includeHidden = parseBoolQuery(req, "includeHidden") === true;
-    const visibleWhere = includeHidden ? baseWhere : qualityWhere;
+    const visibleWhere = includeHidden ? relevanceWhere : qualityWhere;
     const [
       rows,
       [{ value: total } = { value: 0 }],
@@ -157,7 +175,7 @@ router.get(
       db.select({ value: count() }).from(mediaMentions).where(qualityWhere),
     ]);
     res.json({
-      data: rows,
+      data: rows.map(mediaMentionResponse),
       pagination: { page, limit, total: Number(total) },
       hiddenCount: Math.max(0, Number(baseTotal) - Number(qualityTotal)),
     });
@@ -173,7 +191,7 @@ router.get(
       .where(eq(mediaMentions.id, paramId(req)))
       .then((r) => r[0]);
     if (!row) return notFound(res, "media mention");
-    res.json(row);
+    res.json(mediaMentionResponse(row));
   }),
 );
 
@@ -189,7 +207,7 @@ router.post(
         ...body,
       })
       .returning();
-    res.status(201).json(row);
+    res.status(201).json(mediaMentionResponse(row));
   }),
 );
 
@@ -221,7 +239,7 @@ router.patch(
       .where(eq(mediaMentions.id, id))
       .returning();
     if (!row) return notFound(res, "media mention");
-    res.json(row);
+    res.json(mediaMentionResponse(row));
   }),
 );
 

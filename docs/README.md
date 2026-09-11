@@ -78,6 +78,8 @@ unverified and confirm against code before relying on it.
 - [`enrichment-field-audit.md`](enrichment-field-audit.md) — reviewed
   Individual/Organization enrichment candidates, evidence priorities, and the
   external-provider safety boundary.
+- [`media-mentions.md`](media-mentions.md) — canonical URL deduplication,
+  deterministic relevance scoring, read filtering, and manual backfill rules.
 
 ## Rules
 

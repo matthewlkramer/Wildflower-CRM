@@ -3,9 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 /**
  * Guard: a DELETED (dismissed) media mention stays gone.
  *
- * `upsertArticle` in lib/mediaIngest.ts uses
- * `INSERT ... ON CONFLICT (url) DO UPDATE ... WHERE media_mentions.dismissed = false`
- * so a news re-sync of the same URL:
+ * `upsertArticle` in lib/mediaIngest.ts serializes canonical URL/headline
+ * identities with transaction-scoped advisory locks, then checks the
+ * dismissed tombstone before any update. A news re-sync of the same URL:
  *   - creates the row on first sight,
  *   - links additional entities onto a live row (append, no duplicates),
  *   - is a NOOP against a dismissed row — never resurrects it or appends
@@ -72,8 +72,18 @@ describe.skipIf(!HAS_DB)("media mention dismissal vs news sync", () => {
     ).toBe("created");
     // Same URL, different entity → linked (appended).
     expect(
-      await upsertArticle({ kind: "person", id: PERSON_A, name: "Person A" }, ARTICLE),
+      await upsertArticle(
+        { kind: "person", id: PERSON_A, name: "Person A" },
+        { ...ARTICLE, url: `${URL_LIVE}?utm_source=newsletter` },
+      ),
     ).toBe("linked");
+    // A second tracking variant for that same person is still the same row.
+    expect(
+      await upsertArticle(
+        { kind: "person", id: PERSON_A, name: "Person A" },
+        { ...ARTICLE, url: `${URL_LIVE}?utm_medium=email` },
+      ),
+    ).toBe("noop");
     // Same entity again → noop, no duplicate id in the array.
     expect(
       await upsertArticle({ kind: "organization", id: ORG_A, name: "Org A" }, ARTICLE),
@@ -83,6 +93,9 @@ describe.skipIf(!HAS_DB)("media mention dismissal vs news sync", () => {
     expect(row.organizationIds).toEqual([ORG_A]);
     expect(row.personIds).toEqual([PERSON_A]);
     expect(row.dismissed).toBe(false);
+    expect(row.canonicalUrl).toBe(URL_LIVE);
+    expect(row.relevanceScore).toBe(1);
+    expect(row.isFiltered).toBe(false);
   }, 30_000);
 
   it("a dismissed mention is NOT resurrected or re-linked by a later sync", async () => {

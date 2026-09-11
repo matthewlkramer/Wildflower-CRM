@@ -452,7 +452,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   editable priority list. Travel/meeting totals, outreach status, replies, and
   scheduled meetings are derived from these rows plus synced Gmail/Calendar
   evidence; they are not stored on the trip tables.
-- `media_mentions`, `media_ingest_state` — GDELT press coverage.
+- `media_mentions`, `media_ingest_state` — GDELT press coverage, including
+  tracking-free canonical URL identity plus deterministic relevance score and
+  stored filter classification. Pinned rows remain visible regardless of the
+  classification.
 - `saved_views`, `bulk_operations`, `connection_enthusiasm_history`,
   `flodesk_sync_state`, `audit_log`, `cleanup_queue`, `duplicate_dismissals`,
   `coding_form_rows`, `wildflower_updates` — app plumbing and operational

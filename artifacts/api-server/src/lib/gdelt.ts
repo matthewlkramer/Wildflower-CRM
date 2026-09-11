@@ -23,6 +23,10 @@ export interface GdeltArticle {
   /** Article seen-date as an ISO `YYYY-MM-DD`, or null if unparseable. */
   publicationDate: string | null;
   language: string | null;
+  /** Optional descriptive text when supplied by the upstream payload. */
+  snippet?: string;
+  /** Original publisher URL exposed by a syndication wrapper, when present. */
+  originalUrl?: string;
 }
 
 interface RawGdeltArticle {
@@ -31,6 +35,27 @@ interface RawGdeltArticle {
   domain?: unknown;
   seendate?: unknown;
   language?: unknown;
+  snippet?: unknown;
+  description?: unknown;
+  originalurl?: unknown;
+  originalUrl?: unknown;
+  sourceurl?: unknown;
+  sourceUrl?: unknown;
+  canonicalurl?: unknown;
+  canonicalUrl?: unknown;
+}
+
+function optionalString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+function optionalHttpUrl(...values: unknown[]): string | undefined {
+  return values
+    .map((value) => optionalString(value))
+    .find((value) => value != null && /^https?:\/\/\S+$/i.test(value));
 }
 
 /**
@@ -93,12 +118,23 @@ export function parseGdeltArticles(raw: unknown): GdeltArticle[] {
     if (!/^https?:\/\/\S+$/i.test(url)) continue;
     const title = typeof a.title === "string" ? a.title.trim() : "";
     const domain = typeof a.domain === "string" ? a.domain.trim() : "";
+    const snippet = optionalString(a.snippet, a.description);
+    const originalUrl = optionalHttpUrl(
+      a.originalurl,
+      a.originalUrl,
+      a.sourceurl,
+      a.sourceUrl,
+      a.canonicalurl,
+      a.canonicalUrl,
+    );
     out.push({
       url,
       title,
       domain,
       publicationDate: gdeltDateToISO(a.seendate),
       language: typeof a.language === "string" ? a.language.trim() : null,
+      ...(snippet ? { snippet } : {}),
+      ...(originalUrl ? { originalUrl } : {}),
     });
   }
   return out;
