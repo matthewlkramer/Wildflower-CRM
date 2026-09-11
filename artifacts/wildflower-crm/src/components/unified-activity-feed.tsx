@@ -281,6 +281,7 @@ export function UnifiedActivityFeed({
   const [openEmailId, setOpenEmailId] = useState<string | null>(null);
   const [addSenderEmail, setAddSenderEmail] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [showHiddenMedia, setShowHiddenMedia] = useState(false);
 
   // Notes/tasks scope — falls back to the relationship scope when no
   // explicit context is given (the common funder/person/household case).
@@ -364,6 +365,7 @@ export function UnifiedActivityFeed({
     personId,
     organizationId,
     includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    includeHidden: showHiddenMedia ? true : undefined,
     limit,
   };
   const media = useListMediaMentions(mediaParams, {
@@ -737,6 +739,31 @@ export function UnifiedActivityFeed({
             );
           })}
         </div>
+        {mediaEnabled &&
+        (activeSource === null || activeSource === "media") &&
+        (media.data?.hiddenCount ?? 0) > 0 ? (
+          <div
+            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
+            data-testid="media-hidden-summary"
+          >
+            <span>
+              {showHiddenMedia ? "Showing" : "Hiding"}{" "}
+              {(media.data?.hiddenCount ?? 0).toLocaleString()} duplicate or
+              low-confidence media hit
+              {(media.data?.hiddenCount ?? 0) === 1 ? "" : "s"}.
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              onClick={() => setShowHiddenMedia((value) => !value)}
+              data-testid="button-toggle-hidden-media"
+            >
+              {showHiddenMedia ? "Use cleaner view" : "Show all media"}
+            </Button>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent>
         {loading ? (

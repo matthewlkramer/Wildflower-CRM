@@ -21,9 +21,14 @@ export const ListMediaMentionsQueryParams = zod.object({
   "organizationId": zod.coerce.string().optional(),
   "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include media mentions linked to people who hold a current role at that organization.'),
   "pinned": zod.coerce.boolean().optional().describe('Filter to pinned (true) or unpinned (false) mentions.'),
+  "includeHidden": zod.coerce.boolean().optional().describe('Include duplicate and low-confidence historical mentions that are hidden by default.'),
   "limit": zod.coerce.number().min(1).max(listMediaMentionsQueryLimitMax).default(listMediaMentionsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listMediaMentionsQueryPageDefault)
 })
+
+export const listMediaMentionsResponseHiddenCountMin = 0;
+
+
 
 export const ListMediaMentionsResponse = zod.object({
   "data": zod.array(zod.object({
@@ -48,7 +53,8 @@ export const ListMediaMentionsResponse = zod.object({
   "page": zod.number(),
   "limit": zod.number(),
   "total": zod.number()
-})
+}),
+  "hiddenCount": zod.number().min(listMediaMentionsResponseHiddenCountMin).describe('Number of in-scope duplicate or low-confidence mentions hidden from the default view.')
 })
 
 

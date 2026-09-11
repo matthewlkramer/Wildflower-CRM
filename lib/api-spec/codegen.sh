@@ -44,6 +44,18 @@ for rel in \
   [ -f "$file" ] && sed -i 's/[[:space:]]*$//' "$file"
 done
 
+# These two generated tag files receive the new enrichment operations. Trim
+# only those inserted sections so unrelated historical output stays byte-for-
+# byte stable.
+file="$tmp/lib/api-client-react/src/generated/organizations/organizations.ts"
+[ -f "$file" ] && sed -i \
+  '/List pending, human-reviewed enrichment suggestions for an organization\./,/Download the Organizations list as CSV\./ s/[[:space:]]*$//' \
+  "$file"
+file="$tmp/lib/api-client-react/src/generated/people/people.ts"
+[ -f "$file" ] && sed -i \
+  '/List pending, human-reviewed enrichment suggestions for a person\./,/export const getBulkUpdatePeopleUrl/ s/[[:space:]]*$//' \
+  "$file"
+
 # Newsletter operations include a binary upload shape that Orval formats very
 # unevenly. Keep the targeted generated files deterministic and diff-clean.
 for file in \

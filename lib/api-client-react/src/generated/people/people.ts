@@ -25,6 +25,8 @@ import type {
   BulkUpdatePeopleBody,
   BulkUpdateResult,
   CreatePersonBody,
+  EnrichmentSuggestion,
+  EnrichmentSuggestionList,
   ExportPeopleCsvParams,
   ForbiddenResponse,
   ListPeopleParams,
@@ -35,6 +37,7 @@ import type {
   PersonDetail,
   PersonList,
   RelationshipSummary,
+  ResolveEnrichmentSuggestionBody,
   UpdatePersonBody
 } from '../api.schemas';
 
@@ -472,7 +475,212 @@ export function useGetPersonRelationshipSummary<TData = Awaited<ReturnType<typeo
 
 
 
-export const getBulkUpdatePeopleUrl = () => {
+/**
+ * List pending, human-reviewed enrichment suggestions for a person.
+ */
+export const getListPersonEnrichmentSuggestionsUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/enrichment-suggestions`
+}
+
+export const listPersonEnrichmentSuggestions = async (id: string, options?: RequestInit): Promise<EnrichmentSuggestionList> => {
+
+  return customFetch<EnrichmentSuggestionList>(getListPersonEnrichmentSuggestionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListPersonEnrichmentSuggestionsQueryKey = (id: string,) => {
+    return [
+    `/api/people/${id}/enrichment-suggestions`
+    ] as const;
+    }
+
+
+export const getListPersonEnrichmentSuggestionsQueryOptions = <TData = Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPersonEnrichmentSuggestionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>> = ({ signal }) => listPersonEnrichmentSuggestions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPersonEnrichmentSuggestionsQueryResult = NonNullable<Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>>
+export type ListPersonEnrichmentSuggestionsQueryError = ErrorType<NotFoundResponse>
+
+
+
+export function useListPersonEnrichmentSuggestions<TData = Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonEnrichmentSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPersonEnrichmentSuggestionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Derive reviewable suggestions from existing CRM evidence without changing canonical person data.
+ */
+export const getRunPersonEnrichmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/enrich`
+}
+
+export const runPersonEnrichment = async (id: string, options?: RequestInit): Promise<EnrichmentSuggestionList> => {
+
+  return customFetch<EnrichmentSuggestionList>(getRunPersonEnrichmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunPersonEnrichmentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runPersonEnrichment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runPersonEnrichment>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['runPersonEnrichment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runPersonEnrichment>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  runPersonEnrichment(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunPersonEnrichmentMutationResult = NonNullable<Awaited<ReturnType<typeof runPersonEnrichment>>>
+
+    export type RunPersonEnrichmentMutationError = ErrorType<NotFoundResponse>
+
+    export const useRunPersonEnrichment = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runPersonEnrichment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runPersonEnrichment>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRunPersonEnrichmentMutationOptions(options));
+    }
+    /**
+ * Accept or dismiss a pending suggestion. Accepting never overwrites a canonical value that was filled after generation.
+ */
+export const getResolveEnrichmentSuggestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/enrichment-suggestions/${id}`
+}
+
+export const resolveEnrichmentSuggestion = async (id: string,
+    resolveEnrichmentSuggestionBody: ResolveEnrichmentSuggestionBody, options?: RequestInit): Promise<EnrichmentSuggestion> => {
+
+  return customFetch<EnrichmentSuggestion>(getResolveEnrichmentSuggestionUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      resolveEnrichmentSuggestionBody,)
+  }
+);}
+
+
+
+
+export const getResolveEnrichmentSuggestionMutationOptions = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>, TError,{id: string;data: BodyType<ResolveEnrichmentSuggestionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>, TError,{id: string;data: BodyType<ResolveEnrichmentSuggestionBody>}, TContext> => {
+
+const mutationKey = ['resolveEnrichmentSuggestion'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>, {id: string;data: BodyType<ResolveEnrichmentSuggestionBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  resolveEnrichmentSuggestion(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResolveEnrichmentSuggestionMutationResult = NonNullable<Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>>
+    export type ResolveEnrichmentSuggestionMutationBody = BodyType<ResolveEnrichmentSuggestionBody>
+    export type ResolveEnrichmentSuggestionMutationError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>
+
+    export const useResolveEnrichmentSuggestion = <TError = ErrorType<BadRequestResponse | ForbiddenResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>, TError,{id: string;data: BodyType<ResolveEnrichmentSuggestionBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resolveEnrichmentSuggestion>>,
+        TError,
+        {id: string;data: BodyType<ResolveEnrichmentSuggestionBody>},
+        TContext
+      > => {
+      return useMutation(getResolveEnrichmentSuggestionMutationOptions(options));
+    }
+    export const getBulkUpdatePeopleUrl = () => {
 
 
   

@@ -674,7 +674,10 @@ async function runBankSpineRecompute(): Promise<void> {
       END::payment_unit_lifecycle
     FROM eligible_stripe_charges sc
     ORDER BY sc.id
-    ON CONFLICT (id) DO NOTHING
+    -- A concurrent reconciliation flow may already have materialized the
+    -- canonical unit for this source charge under its own stable ID. Preserve
+    -- the existing unit when any supported uniqueness guard detects it.
+    ON CONFLICT DO NOTHING
   `);
   // …and refresh lifecycle/amount facts on existing stripe units (read-only
   // Stripe facts can change after the unit was minted).

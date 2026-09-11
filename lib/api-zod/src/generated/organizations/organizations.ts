@@ -344,6 +344,62 @@ export const GetOrganizationRelationshipSummaryResponse = zod.object({
 }).describe('On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it\'s requested.\n')
 
 /**
+ * List pending, human-reviewed enrichment suggestions for an organization.
+ */
+export const ListOrganizationEnrichmentSuggestionsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListOrganizationEnrichmentSuggestionsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "entityType": zod.enum(['person', 'organization']),
+  "entityId": zod.string(),
+  "fieldName": zod.enum(['currentHomeRegionId', 'regionIds']),
+  "suggestedValue": zod.object({
+  "regionId": zod.string().describe('Canonical regions.id value proposed for the field.'),
+  "label": zod.string()
+}),
+  "sourceLabel": zod.string(),
+  "sourceDetail": zod.string().nullish(),
+  "status": zod.enum(['pending', 'accepted', 'dismissed']),
+  "viewerCanResolve": zod.boolean(),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}))
+})
+
+/**
+ * Derive reviewable suggestions from existing CRM evidence without changing canonical organization data.
+ */
+export const RunOrganizationEnrichmentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RunOrganizationEnrichmentResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "entityType": zod.enum(['person', 'organization']),
+  "entityId": zod.string(),
+  "fieldName": zod.enum(['currentHomeRegionId', 'regionIds']),
+  "suggestedValue": zod.object({
+  "regionId": zod.string().describe('Canonical regions.id value proposed for the field.'),
+  "label": zod.string()
+}),
+  "sourceLabel": zod.string(),
+  "sourceDetail": zod.string().nullish(),
+  "status": zod.enum(['pending', 'accepted', 'dismissed']),
+  "viewerCanResolve": zod.boolean(),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}))
+})
+
+/**
  * Download the Organizations list as CSV. Accepts the same filter query params as `listOrganizations` plus optional comma-separated `fields`.
  */
 export const ExportOrganizationsCsvQueryParams = zod.object({

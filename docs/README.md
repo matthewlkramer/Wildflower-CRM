@@ -75,6 +75,9 @@ unverified and confirm against code before relying on it.
 - [`feedback-proposals.md`](feedback-proposals.md) — context boundaries,
   generation/revision lifecycle, and the human-gated coding-agent handoff for
   the in-app feedback queue.
+- [`enrichment-field-audit.md`](enrichment-field-audit.md) — reviewed
+  Individual/Organization enrichment candidates, evidence priorities, and the
+  external-provider safety boundary.
 
 ## Rules
 
