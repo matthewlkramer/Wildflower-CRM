@@ -10,6 +10,7 @@ topic files relevant to the symptom.
 
 ## Build, typecheck, and environment
 
+- [Fundraising CRM uses Replit-only delivery](replit-only-delivery.md) — ignore Vercel checks/previews; reconcile Replit-local code with GitHub before Replit Republish.
 - [api-server runs a built bundle](wildflower-api-server-build.md) — schema/DB drift (e.g. "column X does not exist" 500) may be a stale build; restart rebuilds, check newest log.
 - [Verify under CPU throttling](build-verify-cpu-throttling.md) — monorepo tsc --build/orval/runTest blow past tool caps; let one full build finish to warm .tsbuildinfo (then incremental is fast); e2e can exceed the 600s cap.
 - [Vite build-time env gating](vite-build-env-gating.md) — artifact vite.config must validate PORT/BASE_PATH only in `command==="serve"`; root build builds ALL artifacts (incl. non-deployed design ones), so build-time throws crash the deploy.

@@ -8,6 +8,7 @@ import {
   useArchiveTripPlan,
   useArchiveTripVisit,
   useCreateTripPlan,
+  useCreateTripComment,
   useDraftTripVisits,
   useGetCurrentUser,
   useGetTripPlan,
@@ -28,6 +29,7 @@ import {
   EyeOff,
   ExternalLink,
   MapPin,
+  MessageSquare,
   Pencil,
   Plane,
   Plus,
@@ -349,7 +351,7 @@ function TripFormDialog({
             />
           </div>
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="trip-notes">Notes</Label>
+            <Label htmlFor="trip-notes">Team scratchpad</Label>
             <Textarea
               id="trip-notes"
               value={form.notes}
@@ -477,11 +479,13 @@ function EditVisitDialog({
   const [rank, setRank] = useState(String(visit.rank));
   const [rationale, setRationale] = useState(visit.rationale ?? "");
   const [notes, setNotes] = useState(visit.notes ?? "");
+  const [nextStep, setNextStep] = useState(visit.nextStep ?? "");
   useEffect(() => {
     if (open) {
       setRank(String(visit.rank));
       setRationale(visit.rationale ?? "");
       setNotes(visit.notes ?? "");
+      setNextStep(visit.nextStep ?? "");
     }
   }, [open, visit]);
   const update = useUpdateTripVisit({
@@ -525,6 +529,15 @@ function EditVisitDialog({
               onChange={(e) => setNotes(e.target.value)}
             />
           </div>
+          <div className="space-y-2">
+            <Label htmlFor={`trip-visit-next-step-${visit.id}`}>Next step</Label>
+            <Textarea
+              id={`trip-visit-next-step-${visit.id}`}
+              value={nextStep}
+              onChange={(e) => setNextStep(e.target.value)}
+              placeholder="Who will do what next?"
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -540,6 +553,7 @@ function EditVisitDialog({
                   rank: Math.max(1, Number(rank) || 1),
                   rationale: rationale.trim() || null,
                   notes: notes.trim() || null,
+                  nextStep: nextStep.trim() || null,
                 },
               })
             }
@@ -620,7 +634,22 @@ function VisitRow({
         <p className="mt-3 text-sm">{visit.rationale}</p>
       ) : null}
       {visit.notes ? (
-        <p className="mt-2 rounded bg-muted px-3 py-2 text-sm">{visit.notes}</p>
+        <div className="mt-2 rounded bg-muted px-3 py-2 text-sm">
+          <p className="text-xs font-medium text-muted-foreground">Notes</p>
+          <p>{visit.notes}</p>
+        </div>
+      ) : null}
+      {visit.nextStep ? (
+        <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm">
+          <p className="text-xs font-medium text-blue-800">Next step</p>
+          <p>{visit.nextStep}</p>
+        </div>
+      ) : null}
+      {visit.planningUpdatedByUserName && visit.planningUpdatedAt ? (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Updated by {visit.planningUpdatedByUserName} ·{" "}
+          {new Date(visit.planningUpdatedAt).toLocaleString()}
+        </p>
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <OutreachBadge visit={visit} />
@@ -813,6 +842,70 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
   );
 }
 
+function TripDiscussion({ trip, onChanged }: { trip: TripPlanDetail; onChanged: () => void }) {
+  const [body, setBody] = useState("");
+  const { toast } = useToast();
+  const createComment = useCreateTripComment({
+    mutation: {
+      onSuccess: () => {
+        setBody("");
+        onChanged();
+      },
+      onError: (error: unknown) => {
+        toast({
+          title: "Comment could not be added",
+          description: error instanceof Error ? error.message : String(error),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <MessageSquare className="h-5 w-5" />
+          Team discussion
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {trip.comments.length ? (
+          <div className="space-y-3">
+            {trip.comments.map((comment) => (
+              <div key={comment.id} className="rounded-md border p-3">
+                <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground">{comment.authorName}</span>
+                  <span>{new Date(comment.createdAt).toLocaleString()}</span>
+                </div>
+                <p className="mt-2 whitespace-pre-wrap text-sm">{comment.body}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No comments yet.</p>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor={`trip-comment-${trip.id}`}>New comment</Label>
+          <Textarea
+            id={`trip-comment-${trip.id}`}
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            placeholder="Add a comment for the team…"
+          />
+          <Button
+            disabled={!body.trim() || createComment.isPending}
+            onClick={() =>
+              createComment.mutate({ id: trip.id, data: { body: body.trim() } })
+            }
+          >
+            Add comment
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function TripDetailPanel({
   tripId,
   onArchived,
@@ -899,7 +992,12 @@ function TripDetailPanel({
             </div>
           </div>
           {trip.notes ? (
-            <p className="mt-4 rounded-md bg-muted p-3 text-sm">{trip.notes}</p>
+            <div className="mt-4 rounded-md bg-muted p-3 text-sm">
+              <p className="mb-1 text-xs font-medium text-muted-foreground">
+                Team scratchpad
+              </p>
+              <p className="whitespace-pre-wrap">{trip.notes}</p>
+            </div>
           ) : null}
         </CardContent>
       </Card>
@@ -954,6 +1052,7 @@ function TripDetailPanel({
           )}
         </CardContent>
       </Card>
+      <TripDiscussion trip={trip} onChanged={refresh} />
       <Schedule key={trip.id} trip={trip} />
       <TripFormDialog
         open={editOpen}

@@ -32,6 +32,100 @@ export const GetNewsletterOverviewResponse = zod.object({
   ),
 });
 
+export const listNewsletterContactsQueryLimitDefault = 50;
+export const listNewsletterContactsQueryLimitMax = 10000;
+
+export const listNewsletterContactsQueryPageDefault = 1;
+
+export const ListNewsletterContactsQueryParams = zod.object({
+  audience: zod.enum([
+    "current_subscribers",
+    "linked_current_subscribers",
+    "unmatched_current_subscribers",
+    "unsubscribe_evidence",
+    "bounce_evidence",
+  ]),
+  search: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listNewsletterContactsQueryLimitMax)
+    .default(listNewsletterContactsQueryLimitDefault),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(listNewsletterContactsQueryPageDefault),
+});
+
+export const ListNewsletterContactsResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      email: zod.string().email(),
+      firstName: zod.string().nullish(),
+      lastName: zod.string().nullish(),
+      sourceCurrentSubscriber: zod.boolean(),
+      sourceUnsubscribed: zod.boolean(),
+      sourceBounced: zod.boolean(),
+      linkedRecordType: zod
+        .enum(["person", "organization", "household", "payment_intermediary"])
+        .nullish(),
+      linkedRecordId: zod.string().nullish(),
+      linkedRecordName: zod.string().nullish(),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
+export const ListPersonNewsletterEngagementParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const listPersonNewsletterEngagementQueryLimitDefault = 50;
+export const listPersonNewsletterEngagementQueryLimitMax = 10000;
+
+export const listPersonNewsletterEngagementQueryPageDefault = 1;
+
+export const ListPersonNewsletterEngagementQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listPersonNewsletterEngagementQueryLimitMax)
+    .default(listPersonNewsletterEngagementQueryLimitDefault),
+  page: zod.coerce
+    .number()
+    .min(1)
+    .default(listPersonNewsletterEngagementQueryPageDefault),
+});
+
+export const ListPersonNewsletterEngagementResponse = zod.object({
+  data: zod.array(
+    zod.object({
+      campaignId: zod.string(),
+      campaignSubject: zod.string(),
+      sentAt: zod.string().datetime({}),
+      previewUrl: zod.string().nullish(),
+      email: zod.string().email(),
+      deliveredAt: zod.string().datetime({}).nullish(),
+      opened: zod.boolean(),
+      lastOpenedAt: zod.string().datetime({}).nullish(),
+      totalOpens: zod.number(),
+      clicked: zod.boolean(),
+      lastClickedAt: zod.string().datetime({}).nullish(),
+      totalClicks: zod.number(),
+      clickedLinks: zod.array(zod.string()),
+    }),
+  ),
+  pagination: zod.object({
+    page: zod.number(),
+    limit: zod.number(),
+    total: zod.number(),
+  }),
+});
+
 export const ListNewsletterEngagementParams = zod.object({
   id: zod.coerce.string(),
 });

@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  ArchiveGrantLeadBody,
   AssignGrantLeadBody,
   BadRequestResponse,
   ConvertGrantLeadBody,
@@ -345,14 +346,16 @@ export const getArchiveGrantLeadUrl = (id: string,) => {
   return `/api/grant-leads/${id}/archive`
 }
 
-export const archiveGrantLead = async (id: string, options?: RequestInit): Promise<GrantLead> => {
+export const archiveGrantLead = async (id: string,
+    archiveGrantLeadBody: ArchiveGrantLeadBody, options?: RequestInit): Promise<GrantLead> => {
   
   return customFetch<GrantLead>(getArchiveGrantLeadUrl(id),
   {      
     ...options,
-    method: 'POST'
-    
-    
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      archiveGrantLeadBody,)
   }
 );}
   
@@ -360,8 +363,8 @@ export const archiveGrantLead = async (id: string, options?: RequestInit): Promi
 
 
 export const getArchiveGrantLeadMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string;data: BodyType<ArchiveGrantLeadBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string;data: BodyType<ArchiveGrantLeadBody>}, TContext> => {
 
 const mutationKey = ['archiveGrantLead'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -373,10 +376,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveGrantLead>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveGrantLead>>, {id: string;data: BodyType<ArchiveGrantLeadBody>}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  archiveGrantLead(id,requestOptions)
+          return  archiveGrantLead(id,data,requestOptions)
         }
 
 
@@ -387,18 +390,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchiveGrantLeadMutationResult = NonNullable<Awaited<ReturnType<typeof archiveGrantLead>>>
-    
+    export type ArchiveGrantLeadMutationBody = BodyType<ArchiveGrantLeadBody>
     export type ArchiveGrantLeadMutationError = ErrorType<NotFoundResponse | void>
 
     /**
  * @summary Archive (dismiss) this lead for everyone.
  */
 export const useArchiveGrantLead = <TError = ErrorType<NotFoundResponse | void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveGrantLead>>, TError,{id: string;data: BodyType<ArchiveGrantLeadBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof archiveGrantLead>>,
         TError,
-        {id: string},
+        {id: string;data: BodyType<ArchiveGrantLeadBody>},
         TContext
       > => {
       return useMutation(getArchiveGrantLeadMutationOptions(options));

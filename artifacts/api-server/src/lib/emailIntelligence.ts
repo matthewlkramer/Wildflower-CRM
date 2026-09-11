@@ -3,6 +3,7 @@ import {
   emailProposals,
   grantLeads,
   grantLeadSightings,
+  grantLeadSuppressions,
   people,
   organizations,
   peopleEntityRoles,
@@ -37,7 +38,11 @@ import {
   parseBounce,
   parseEmailSignature,
 } from "./intelDetectors";
-import { buildGrantLeadDedupeKey } from "./grantLeadIdentity";
+import {
+  buildGrantLeadDedupeKey,
+  extractNamedGrantProgram,
+  normalizeGrantLeadIdentity,
+} from "./grantLeadIdentity";
 import { summarizeGrantLeadById } from "./summarizeGrantLead";
 
 /**
@@ -327,6 +332,39 @@ async function handleGrants(args: {
 
   for (const it of items) {
     const dedupeKey = buildGrantLeadDedupeKey(it, args.fromEmail);
+    const programName = extractNamedGrantProgram(`${it.title}\n${it.snippet}`);
+    const programKey = programName
+      ? normalizeGrantLeadIdentity(programName)
+      : null;
+    const funderKey = it.funderName
+      ? normalizeGrantLeadIdentity(it.funderName)
+      : null;
+    const suppressionFilters: SQL[] = [];
+    if (programKey) {
+      suppressionFilters.push(
+        and(
+          eq(grantLeadSuppressions.scope, "program"),
+          eq(grantLeadSuppressions.normalizedValue, programKey),
+        )!,
+      );
+    }
+    if (funderKey) {
+      suppressionFilters.push(
+        and(
+          eq(grantLeadSuppressions.scope, "funder"),
+          eq(grantLeadSuppressions.normalizedValue, funderKey),
+        )!,
+      );
+    }
+    if (suppressionFilters.length > 0) {
+      const suppressed = await db
+        .select({ id: grantLeadSuppressions.id })
+        .from(grantLeadSuppressions)
+        .where(or(...suppressionFilters))
+        .limit(1)
+        .then((rows) => rows[0]);
+      if (suppressed) continue;
+    }
 
     // Try to attach to a CRM organization if the parsed funder name matches
     // one we already know. Soft match — accept either direction of

@@ -731,6 +731,7 @@ router.get(
       .where(
         and(
           eq(opportunitiesAndPledges.status, "pledge"),
+          eq(opportunitiesAndPledges.isWriteOff, false),
           eq(pledgeAllocations.grantYear, fyId),
           pledgeAllocCountsTowardGoal,
           oppCatFilter,
@@ -758,6 +759,21 @@ router.get(
       )
       .groupBy(giftsAndPayments.opportunityId)
       .as("paid_per_opp");
+
+    // Drizzle renders columns from an aliased subquery unqualified when they
+    // are interpolated inside sql``. The committed-detail query also joins the
+    // opportunity header, which has its own `paid` column, so a bare `paid`
+    // becomes ambiguous in PostgreSQL. Keep every subtotal explicitly tied to
+    // its subquery alias (see the alias footgun documented in derivedStatus).
+    const pledgedOppId = sql<string>`"pledged_per_opp"."pledged_opp_id"`;
+    const pledgedAmount = sql<string>`"pledged_per_opp"."pledged"`;
+    const pledgedWinProbability = sql<string>`"pledged_per_opp"."pledged_win_prob"`;
+    const paidOppId = sql<string>`"paid_per_opp"."paid_opp_id"`;
+    const paidAmount = sql<string>`"paid_per_opp"."paid"`;
+    const committedRemainder = sql<string>`GREATEST(
+      ${pledgedAmount} - COALESCE(${paidAmount}, 0),
+      0
+    )`;
 
     const [receivedRaw, committedRaw, openRaw, goalRow] = await Promise.all([
       // Received = gift_allocations booked to this FY+track (cash in).
@@ -807,10 +823,10 @@ router.get(
           opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
           winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
           projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
-          pledged: sql<string>`${pledgedPerOpp.pledged}::text`,
-          paid: sql<string>`COALESCE(${paidPerOpp.paid}, 0)::text`,
-          remainder: sql<string>`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)::text`,
-          weighted: sql<string>`(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) * ${pledgedPerOpp.winProb})::text`,
+          pledged: sql<string>`${pledgedAmount}::text`,
+          paid: sql<string>`COALESCE(${paidAmount}, 0)::text`,
+          remainder: sql<string>`${committedRemainder}::text`,
+          weighted: sql<string>`(${committedRemainder} * ${pledgedWinProbability})::text`,
           organizationId: opportunitiesAndPledges.organizationId,
           organizationName: organizations.name,
           householdId: opportunitiesAndPledges.householdId,
@@ -821,13 +837,13 @@ router.get(
           individualGiverPersonPriority: people.priority,
         })
         .from(pledgedPerOpp)
-        .innerJoin(opportunitiesAndPledges, eq(opportunitiesAndPledges.id, pledgedPerOpp.oppId))
-        .leftJoin(paidPerOpp, eq(pledgedPerOpp.oppId, paidPerOpp.oppId))
+        .innerJoin(opportunitiesAndPledges, eq(opportunitiesAndPledges.id, pledgedOppId))
+        .leftJoin(paidPerOpp, eq(pledgedOppId, paidOppId))
         .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
         .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
         .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-        .where(sql`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) > 0`)
-        .orderBy(desc(sql`GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)`)),
+        .where(sql`${committedRemainder} > 0`)
+        .orderBy(desc(committedRemainder)),
       // Open = pledge_allocations on status='open' opps for this FY+track.
       db
         .select({
@@ -862,6 +878,7 @@ router.get(
         .where(
           and(
             eq(opportunitiesAndPledges.status, "open"),
+            eq(opportunitiesAndPledges.isWriteOff, false),
             eq(pledgeAllocations.grantYear, fyId),
             pledgeAllocCountsTowardGoal,
             oppCatFilter,

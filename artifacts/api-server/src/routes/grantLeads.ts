@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   grantLeads,
   grantLeadSightings,
+  grantLeadSuppressions,
   organizations,
   opportunitiesAndPledges,
   users,
@@ -19,6 +20,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  ArchiveGrantLeadBody,
   AssignGrantLeadBody,
   ConvertGrantLeadBody,
   ListGrantLeadsQueryParams,
@@ -35,6 +37,10 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { applyDerivedOppFields } from "../lib/pledgeStage";
+import {
+  extractNamedGrantProgram,
+  normalizeGrantLeadIdentity,
+} from "../lib/grantLeadIdentity";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -60,6 +66,8 @@ function grantLeadRow(row: typeof grantLeads.$inferSelect & {
     dedupeKey: row.dedupeKey,
     status: row.status,
     title: row.title,
+    programName:
+      extractNamedGrantProgram(`${row.title}\n${row.snippet ?? ""}`) ?? null,
     aiSummary: row.aiSummary ?? null,
     funderName: row.funderName ?? null,
     targetOrganizationId: row.targetOrganizationId ?? null,
@@ -320,6 +328,8 @@ router.post(
     const id = paramId(req);
     const user = getAppUser(req);
     if (!user) { res.status(401).json({ error: "unauthorized" }); return; }
+    const body = parseOrBadRequest(ArchiveGrantLeadBody, req.body, res);
+    if (!body) return;
 
     const existing = await db.select().from(grantLeads).where(eq(grantLeads.id, id)).then((r) => r[0]);
     if (!existing) return notFound(res, "grant lead");
@@ -328,16 +338,47 @@ router.post(
       return;
     }
 
-    const [updated] = await db
-      .update(grantLeads)
-      .set({
-        status: "archived",
-        archivedAt: new Date(),
-        archivedByUserId: user.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(grantLeads.id, id))
-      .returning();
+    const programName = extractNamedGrantProgram(
+      `${existing.title}\n${existing.snippet ?? ""}`,
+    );
+    const suppressionValue =
+      body.futureScope === "program"
+        ? programName
+        : body.futureScope === "funder"
+          ? existing.funderName
+          : null;
+    if (body.futureScope !== "lead" && !suppressionValue) {
+      res.status(400).json({
+        error: `This lead has no ${body.futureScope} name to suppress`,
+      });
+      return;
+    }
+
+    const [updated] = await db.transaction(async (tx) => {
+      if (suppressionValue && body.futureScope !== "lead") {
+        await tx
+          .insert(grantLeadSuppressions)
+          .values({
+            id: newId(),
+            scope: body.futureScope,
+            normalizedValue: normalizeGrantLeadIdentity(suppressionValue),
+            displayValue: suppressionValue,
+            sourceLeadId: existing.id,
+            createdByUserId: user.id,
+          })
+          .onConflictDoNothing();
+      }
+      return tx
+        .update(grantLeads)
+        .set({
+          status: "archived",
+          archivedAt: new Date(),
+          archivedByUserId: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(grantLeads.id, id))
+        .returning();
+    });
 
     const [enriched] = await enrichLeads([updated!]);
     res.json(enriched);

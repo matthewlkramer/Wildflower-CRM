@@ -33,6 +33,8 @@ import {
 import { recordAudit } from "../lib/audit";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 import {
+  calendarEventDismissalKey,
+  calendarEventPhysicalKeySql,
   calendarEventSelection,
   calendarEventVisibleToCaller,
 } from "../lib/calendarEventSelect";
@@ -98,7 +100,7 @@ router.get(
             .select({ id: meetingNoteDismissals.id })
             .from(meetingNoteDismissals)
             .where(
-              eq(meetingNoteDismissals.gcalEventId, calendarEvents.gcalEventId),
+              eq(meetingNoteDismissals.gcalEventId, calendarEventPhysicalKeySql()),
             ),
         ),
       );
@@ -114,14 +116,15 @@ router.get(
     // Deduplicate across calendars: the same Google Calendar event is stored
     // once per synced staff user (unique key = calendarUserId + gcalCalendarId
     // + gcalEventId), so a shared meeting with two sync-enabled attendees would
-    // otherwise appear twice in a donor's feed. DISTINCT ON (gcal_event_id)
-    // keeps one row per physical event; calendarUserId provides a deterministic
-    // tiebreak.
+    // otherwise appear twice in a donor's feed. DISTINCT ON the guarded
+    // physical key keeps one row per real Google event while preserving every
+    // legacy row whose Google id is blank; calendarUserId is the tiebreak.
+    const physicalKey = calendarEventPhysicalKeySql();
     const deduped = db
-      .selectDistinctOn([calendarEvents.gcalEventId], calendarEventSelection())
+      .selectDistinctOn([physicalKey], calendarEventSelection())
       .from(calendarEvents)
       .where(where)
-      .orderBy(calendarEvents.gcalEventId, calendarEvents.calendarUserId)
+      .orderBy(physicalKey, calendarEvents.calendarUserId)
       .as("deduped");
 
     // Order by the deduped subquery's column, NOT the base table: the outer
@@ -226,11 +229,15 @@ router.post(
 
     await db.transaction(async (tx) => {
       const dismissalId = newId();
+      const eventKey = calendarEventDismissalKey(event);
       const [inserted] = await tx
         .insert(meetingNoteDismissals)
         .values({
           id: dismissalId,
-          gcalEventId: event.gcalEventId,
+          // The column predates the CRM-row fallback. Non-empty Google ids keep
+          // their historical value; empty ids use `crm:<id>`.
+          // This prevents one blank id from dismissing every imported meeting.
+          gcalEventId: eventKey,
           dismissedByUserId: user.id,
         })
         .onConflictDoNothing({
@@ -247,6 +254,7 @@ router.post(
         metadata: {
           calendarEventId: event.id,
           gcalEventId: event.gcalEventId,
+          eventKey,
         },
       });
     });

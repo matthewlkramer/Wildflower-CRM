@@ -384,13 +384,13 @@ export default function Opportunities({
   const [search, setSearch] = usePersistedState<string>(`${persistNs}.search`, "");
   const debouncedSearch = useDebounce(search, 250);
   // All enum filters are multi-select. Status defaults to:
-  //   pledges view       → [open, pledge] (active commitments; dormant + lost hidden)
+  //   pledges view       → [pledge] (active commitments; open belongs to the opportunity funnel)
   //   opportunities view → [open] only (active funnel)
   //   unscoped           → no default
   const defaultStatusArr: OpportunityStatus[] =
     defaultStatuses ??
     (pledgeView === "pledges"
-      ? ["open", "pledge"]
+      ? ["pledge"]
       : pledgeView === "opportunities"
         ? ["open"]
         : []);
@@ -476,7 +476,9 @@ export default function Opportunities({
   // the react-query cache key is stable regardless of the order the user
   // clicked checkboxes in (`['a','b']` and `['b','a']` would otherwise
   // produce distinct keys / refetches).
-  const effectiveStatuses = [...statuses].sort();
+  const effectiveStatuses = [...(pledgeView === "pledges"
+    ? statuses.filter((status) => status !== "open")
+    : statuses)].sort();
 
   const ts = useTableState("opportunities");
   const sortActive = ts.sort.key !== null;
@@ -698,7 +700,8 @@ export default function Opportunities({
             label="Status"
             selected={statuses}
             onChange={(v) => { setStatuses(v); setPage(1); selection.clear(); }}
-            options={STATUSES.map((s) => ({ value: s, label: OPPORTUNITY_STATUS_LABEL[s] }))}
+            options={(isPledgeView ? STATUSES.filter((s) => s !== "open") : STATUSES)
+              .map((s) => ({ value: s, label: OPPORTUNITY_STATUS_LABEL[s] }))}
             testId="select-opp-status"
           />
         ),
@@ -1012,7 +1015,9 @@ export default function Opportunities({
     current: currentView,
     apply: (s) => {
       setSearch(s.search ?? "");
-      setStatuses(s.statuses ?? defaultStatusArr);
+      setStatuses(isPledgeView
+        ? (s.statuses ?? defaultStatusArr).filter((status) => status !== "open")
+        : (s.statuses ?? defaultStatusArr));
       setStages(isPledgeView ? [] : (s.stages ?? []));
       setTypes(isPledgeView ? [] : (s.types ?? []));
       setFiscalYears(s.fiscalYears ?? []);

@@ -13,6 +13,9 @@ const EVENT_COPY_ID = `${RUN}_event_copy`;
 const CONTROL_EVENT_ID = `${RUN}_control`;
 const PRIVATE_EVENT_ID = `${RUN}_private`;
 const PHYSICAL_EVENT_ID = `${RUN}_physical`;
+const BLANK_EVENT_A_ID = `${RUN}_blank_a`;
+const BLANK_EVENT_B_ID = `${RUN}_blank_b`;
+const BLANK_NOTE_ID = `${RUN}_blank_note`;
 
 const { currentUser } = vi.hoisted(() => ({
   currentUser: { id: "", role: "team_member" as string },
@@ -108,7 +111,31 @@ beforeAll(async () => {
       summary: `Private ${RUN}`,
       isPrivate: true,
     },
+    {
+      id: BLANK_EVENT_A_ID,
+      calendarUserId: USER_ID,
+      gcalCalendarId: "legacy-a",
+      gcalEventId: "",
+      startAt,
+      summary: `Legacy A ${RUN}`,
+      isPrivate: false,
+    },
+    {
+      id: BLANK_EVENT_B_ID,
+      calendarUserId: OTHER_USER_ID,
+      gcalCalendarId: "legacy-b",
+      gcalEventId: "",
+      startAt,
+      summary: `Legacy B ${RUN}`,
+      isPrivate: false,
+    },
   ]);
+  await db.insert(schema.notes).values({
+    id: BLANK_NOTE_ID,
+    body: `Only legacy A has notes ${RUN}`,
+    authorUserId: USER_ID,
+    calendarEventId: BLANK_EVENT_A_ID,
+  });
   const { default: app } = await import("../app");
   server = await new Promise<Server>((resolve) => {
     const instance = app.listen(0, () => resolve(instance));
@@ -138,6 +165,9 @@ afterAll(async () => {
       drizzle.eq(schema.meetingNoteDismissals.gcalEventId, PHYSICAL_EVENT_ID),
     );
   await db
+    .delete(schema.notes)
+    .where(drizzle.eq(schema.notes.id, BLANK_NOTE_ID));
+  await db
     .delete(schema.calendarEvents)
     .where(
       drizzle.inArray(schema.calendarEvents.id, [
@@ -145,6 +175,8 @@ afterAll(async () => {
         EVENT_COPY_ID,
         CONTROL_EVENT_ID,
         PRIVATE_EVENT_ID,
+        BLANK_EVENT_A_ID,
+        BLANK_EVENT_B_ID,
       ]),
     );
   await db
@@ -156,6 +188,42 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
+  it("keeps unrelated legacy events with blank Google ids separate", async () => {
+    const events = await request(
+      `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,
+    );
+    expect(events.status).toBe(200);
+    const legacyA = events.json.data.find(
+      (event: { id: string }) => event.id === BLANK_EVENT_A_ID,
+    );
+    const legacyB = events.json.data.find(
+      (event: { id: string }) => event.id === BLANK_EVENT_B_ID,
+    );
+    expect(legacyA).toMatchObject({
+      hasMeetingNotes: true,
+      hasNextSteps: false,
+      linkedNoteCount: 1,
+    });
+    expect(legacyB).toMatchObject({
+      hasMeetingNotes: false,
+      hasNextSteps: false,
+      linkedNoteCount: 0,
+    });
+
+    const notesForA = await request(
+      `/api/notes?calendarEventId=${BLANK_EVENT_A_ID}&limit=20`,
+    );
+    const notesForB = await request(
+      `/api/notes?calendarEventId=${BLANK_EVENT_B_ID}&limit=20`,
+    );
+    expect(notesForA.json.data.map((note: { id: string }) => note.id)).toContain(
+      BLANK_NOTE_ID,
+    );
+    expect(notesForB.json.data.map((note: { id: string }) => note.id)).not.toContain(
+      BLANK_NOTE_ID,
+    );
+  });
+
   it("durably hides every synced copy from the notes queue", async () => {
     const before = await request(
       `/api/calendar-events?search=${encodeURIComponent(RUN)}&excludeNotesNotNeeded=true&limit=20`,

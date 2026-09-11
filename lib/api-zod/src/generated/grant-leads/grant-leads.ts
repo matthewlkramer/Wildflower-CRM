@@ -33,6 +33,7 @@ export const ListGrantLeadsResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -76,6 +77,7 @@ export const GetGrantLeadResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -127,6 +129,7 @@ export const ClaimGrantLeadResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -171,6 +174,7 @@ export const AssignGrantLeadResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -206,11 +210,16 @@ export const ArchiveGrantLeadParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const ArchiveGrantLeadBody = zod.object({
+  "futureScope": zod.enum(['lead', 'program', 'funder']).describe('Archive only this lead, or also suppress future ingests for its named program or funder.')
+})
+
 export const ArchiveGrantLeadResponse = zod.object({
   "id": zod.string(),
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -262,6 +271,7 @@ export const SplitGrantLeadResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),
@@ -294,6 +304,7 @@ export const SplitGrantLeadResponse = zod.object({
   "dedupeKey": zod.string(),
   "status": zod.enum(['new', 'claimed', 'converted', 'archived']),
   "title": zod.string(),
+  "programName": zod.string().nullish().describe('Named funding program extracted from the title and snippet.'),
   "aiSummary": zod.string().nullish().describe('AI-generated one-sentence headline describing the funding opportunity. Null while generation is pending.'),
   "funderName": zod.string().nullish(),
   "targetOrganizationId": zod.string().nullish(),

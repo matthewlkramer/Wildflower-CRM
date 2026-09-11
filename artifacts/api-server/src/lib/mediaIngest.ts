@@ -5,6 +5,7 @@ import { logger } from "./logger";
 import { newId } from "./helpers";
 import { searchGdelt } from "./gdelt";
 import { enqueueTaskSuggestion } from "./taskSuggestionQueue";
+import { createHash } from "node:crypto";
 
 /**
  * GDELT media-mention ingestion. For every funder and every high-capacity
@@ -178,18 +179,58 @@ export async function buildIngestTargets(): Promise<IngestTarget[]> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const TRACKING_QUERY_PARAM = /^(utm_.+|fbclid|gclid|dclid|mc_cid|mc_eid)$/i;
+
+/** Stable URL identity with fragments and common campaign trackers removed. */
+export function canonicalizeMediaUrl(raw: string): string {
+  try {
+    const url = new URL(raw.trim());
+    url.hash = "";
+    url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    for (const key of [...url.searchParams.keys()]) {
+      if (TRACKING_QUERY_PARAM.test(key)) url.searchParams.delete(key);
+    }
+    url.searchParams.sort();
+    if (url.pathname !== "/") url.pathname = url.pathname.replace(/\/+$/, "");
+    return url.toString();
+  } catch {
+    return raw.trim();
+  }
+}
+
+/** ASCII normalization mirrored by migration 0239 for historical rows. */
+export function normalizeMediaHeadline(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+export function mediaHeadlineFingerprint(title: string): string | null {
+  const normalized = normalizeMediaHeadline(title);
+  if (normalized.length < 12) return null;
+  return createHash("md5").update(normalized).digest("hex");
+}
+
+/**
+ * Person-name searches are intrinsically ambiguous. GDELT can match a name
+ * only in body text, which caused the Scott Cook/police false links. Require
+ * the full searched name in the headline before a person result is eligible.
+ */
+export function isArticleRelevantToTarget(
+  target: IngestTarget,
+  article: { title: string },
+): boolean {
+  if (target.kind === "organization") return true;
+  const title = normalizeMediaHeadline(article.title);
+  const name = normalizeMediaHeadline(target.name);
+  return name.length >= 5 && title.includes(name);
+}
+
 /**
  * Atomically upsert a single article for one entity. Returns
  * "created" | "linked" | "noop".
  *
- * Uses `INSERT ... ON CONFLICT (url) DO UPDATE` so concurrent runs (the daily
- * scheduler + a manual trigger, or multiple instances) can't create duplicate
- * rows or clobber each other's entity-link merges — the dedupe + array-append
- * happen in a single statement under the unique index on `url`.
- *
- * The DO UPDATE merge only fires when the entity id is missing (the WHERE
- * guard), so an already-linked article returns no row → "noop". `xmax = 0`
- * distinguishes a fresh insert ("created") from an array merge ("linked").
+ * Transaction-scoped advisory locks serialize both the canonical URL and the
+ * same-day headline fingerprint. This collapses tracking variants and exact
+ * syndicated reposts while preserving one row with all relevant entity links.
  */
 const ENTITY_COLUMN = {
   organization: "organization_ids",
@@ -202,30 +243,68 @@ export async function upsertArticle(
 ): Promise<"created" | "linked" | "noop"> {
   // Column name comes from a fixed whitelist above — safe for sql.raw.
   const col = sql.raw(ENTITY_COLUMN[target.kind]);
-  const result = await db.execute<{ inserted: boolean }>(sql`
-    INSERT INTO media_mentions
-      (id, publication_name, title, url, publication_date, source, ${col}, created_at, updated_at)
-    VALUES (
-      ${newId()},
-      ${article.domain || "Unknown source"},
-      ${article.title || null},
-      ${article.url},
-      ${article.publicationDate},
-      'gdelt',
-      ARRAY[${target.id}]::text[],
-      now(), now()
-    )
-    ON CONFLICT (url) DO UPDATE SET
-      ${col} = array_append(coalesce(media_mentions.${col}, '{}'::text[]), ${target.id}),
-      updated_at = now()
-    WHERE media_mentions.dismissed = false
-      AND NOT (coalesce(media_mentions.${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[])
-    RETURNING (xmax = 0) AS inserted
-  `);
+  const canonicalUrl = canonicalizeMediaUrl(article.url);
+  const headlineFingerprint = mediaHeadlineFingerprint(article.title);
+  const lockKeys = [
+    `url:${canonicalUrl}`,
+    ...(headlineFingerprint
+      ? [`headline:${headlineFingerprint}:${article.publicationDate ?? ""}`]
+      : []),
+  ].sort();
 
-  const row = result.rows[0];
-  if (!row) return "noop";
-  return row.inserted ? "created" : "linked";
+  return db.transaction(async (tx) => {
+    for (const key of lockKeys) {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
+    }
+
+    const existing = await tx.execute<{ id: string; dismissed: boolean }>(sql`
+      SELECT id, dismissed
+      FROM media_mentions
+      WHERE url = ${article.url}
+         OR canonical_url = ${canonicalUrl}
+         OR (
+           ${headlineFingerprint}::text IS NOT NULL
+           AND headline_fingerprint = ${headlineFingerprint}
+           AND publication_date IS NOT DISTINCT FROM ${article.publicationDate}::date
+         )
+      ORDER BY dismissed ASC, created_at ASC
+      LIMIT 1
+    `);
+    const found = existing.rows[0];
+    if (found) {
+      if (found.dismissed) return "noop";
+      const updated = await tx.execute<{ id: string }>(sql`
+        UPDATE media_mentions
+        SET ${col} = array_append(coalesce(${col}, '{}'::text[]), ${target.id}),
+            canonical_url = coalesce(canonical_url, ${canonicalUrl}),
+            headline_fingerprint = coalesce(headline_fingerprint, ${headlineFingerprint}),
+            updated_at = now()
+        WHERE id = ${found.id}
+          AND NOT (coalesce(${col}, '{}'::text[]) @> ARRAY[${target.id}]::text[])
+        RETURNING id
+      `);
+      return updated.rows[0] ? "linked" : "noop";
+    }
+
+    await tx.execute(sql`
+      INSERT INTO media_mentions
+        (id, publication_name, title, url, canonical_url, headline_fingerprint,
+         publication_date, source, ${col}, created_at, updated_at)
+      VALUES (
+        ${newId()},
+        ${article.domain || "Unknown source"},
+        ${article.title || null},
+        ${article.url},
+        ${canonicalUrl},
+        ${headlineFingerprint},
+        ${article.publicationDate},
+        'gdelt',
+        ARRAY[${target.id}]::text[],
+        now(), now()
+      )
+    `);
+    return "created";
+  });
 }
 
 /**
@@ -264,10 +343,12 @@ export async function ingestMediaMentions(
       const articles = await searchGdelt(target.name, {
         timespanDays,
         maxRecords: maxRecordsPerEntity,
+        targetKind: target.kind,
       });
       summary.articlesSeen += articles.length;
       let touched = false;
       for (const article of articles) {
+        if (!isArticleRelevantToTarget(target, article)) continue;
         const outcome = await upsertArticle(target, article);
         if (outcome === "created") {
           summary.mentionsCreated += 1;

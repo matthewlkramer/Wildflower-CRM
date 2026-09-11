@@ -146,6 +146,10 @@ export const GetTripPlanResponse = zod
           rationale: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
           notes: zod.string().nullish(),
+          nextStep: zod.string().nullish(),
+          planningUpdatedByUserId: zod.string().nullish(),
+          planningUpdatedByUserName: zod.string().nullish(),
+          planningUpdatedAt: zod.string().datetime({}).nullish(),
           outreachStatus: zod.enum(["not_invited", "invited", "responded"]),
           invitationSentAt: zod.string().datetime({}).nullish(),
           invitationMessageId: zod.string().nullish(),
@@ -156,6 +160,16 @@ export const GetTripPlanResponse = zod
           archivedAt: zod.string().datetime({}).nullish(),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
+        }),
+      ),
+      comments: zod.array(
+        zod.object({
+          id: zod.string(),
+          tripId: zod.string(),
+          authorUserId: zod.string(),
+          authorName: zod.string(),
+          body: zod.string(),
+          createdAt: zod.string().datetime({}),
         }),
       ),
       calendarEvents: zod.array(
@@ -390,6 +404,10 @@ export const DraftTripVisitsResponse = zod
           rationale: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
           notes: zod.string().nullish(),
+          nextStep: zod.string().nullish(),
+          planningUpdatedByUserId: zod.string().nullish(),
+          planningUpdatedByUserName: zod.string().nullish(),
+          planningUpdatedAt: zod.string().datetime({}).nullish(),
           outreachStatus: zod.enum(["not_invited", "invited", "responded"]),
           invitationSentAt: zod.string().datetime({}).nullish(),
           invitationMessageId: zod.string().nullish(),
@@ -400,6 +418,16 @@ export const DraftTripVisitsResponse = zod
           archivedAt: zod.string().datetime({}).nullish(),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
+        }),
+      ),
+      comments: zod.array(
+        zod.object({
+          id: zod.string(),
+          tripId: zod.string(),
+          authorUserId: zod.string(),
+          authorName: zod.string(),
+          body: zod.string(),
+          createdAt: zod.string().datetime({}),
         }),
       ),
       calendarEvents: zod.array(
@@ -460,6 +488,16 @@ export const DraftTripVisitsResponse = zod
     }),
   );
 
+export const CreateTripCommentParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const createTripCommentBodyBodyMax = 5000;
+
+export const CreateTripCommentBody = zod.object({
+  body: zod.string().min(1).max(createTripCommentBodyBodyMax),
+});
+
 export const AddTripVisitParams = zod.object({
   id: zod.coerce.string(),
 });
@@ -469,6 +507,7 @@ export const AddTripVisitBody = zod.object({
   rank: zod.number().min(1).optional(),
   rationale: zod.string().nullish(),
   notes: zod.string().nullish(),
+  nextStep: zod.string().nullish(),
 });
 
 export const UpdateTripVisitParams = zod.object({
@@ -480,6 +519,7 @@ export const UpdateTripVisitBody = zod.object({
   rank: zod.number().min(1).optional(),
   rationale: zod.string().nullish(),
   notes: zod.string().nullish(),
+  nextStep: zod.string().nullish(),
 });
 
 export const UpdateTripVisitResponse = zod.object({
@@ -494,6 +534,10 @@ export const UpdateTripVisitResponse = zod.object({
   rationale: zod.string().nullish(),
   source: zod.enum(["system_draft", "manual"]),
   notes: zod.string().nullish(),
+  nextStep: zod.string().nullish(),
+  planningUpdatedByUserId: zod.string().nullish(),
+  planningUpdatedByUserName: zod.string().nullish(),
+  planningUpdatedAt: zod.string().datetime({}).nullish(),
   outreachStatus: zod.enum(["not_invited", "invited", "responded"]),
   invitationSentAt: zod.string().datetime({}).nullish(),
   invitationMessageId: zod.string().nullish(),

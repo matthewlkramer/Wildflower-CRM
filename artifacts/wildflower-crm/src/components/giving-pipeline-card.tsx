@@ -4,6 +4,10 @@ import {
   getListGiftsAndPaymentsQueryKey,
   useListOpportunitiesAndPledges,
   getListOpportunitiesAndPledgesQueryKey,
+  useGetGivingRelationship,
+  getGetGivingRelationshipQueryKey,
+  type DonorRecordKind,
+  type GivingRelationship,
   type ListGiftsAndPaymentsParams,
   type ListOpportunitiesAndPledgesParams,
   type GiftOrPayment,
@@ -38,7 +42,13 @@ const PAGE_SIZE = 50;
  * nested under their source opportunity so a pledge and its payments read
  * as one thread.
  */
-export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
+export function GivingPipelineCard({
+  scope,
+  relationship,
+}: {
+  scope: LinkedRecordsScope;
+  relationship: { sourceKind: DonorRecordKind; sourceId: string };
+}) {
   const oppParams: ListOpportunitiesAndPledgesParams = {
     ...buildBaseParams(scope),
     limit: PAGE_SIZE,
@@ -55,12 +65,23 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
   const giftsQ = useListGiftsAndPayments(giftParams, {
     query: { queryKey: getListGiftsAndPaymentsQueryKey(giftParams) },
   });
+  const relationshipQueryKey = getGetGivingRelationshipQueryKey(
+    relationship.sourceKind,
+    relationship.sourceId,
+  );
+  const relationshipQ = useGetGivingRelationship(
+    relationship.sourceKind,
+    relationship.sourceId,
+    { query: { queryKey: relationshipQueryKey } },
+  );
 
-  const isLoading = oppsQ.isLoading || giftsQ.isLoading;
+  const isLoading =
+    oppsQ.isLoading || giftsQ.isLoading || relationshipQ.isLoading;
   const isError = oppsQ.isError || giftsQ.isError;
   const error = oppsQ.error ?? giftsQ.error;
   const opps = oppsQ.data?.data ?? [];
   const gifts = giftsQ.data?.data ?? [];
+  const givingRelationship = relationshipQ.data ?? null;
   const total =
     (oppsQ.data?.pagination.total ?? 0) + (giftsQ.data?.pagination.total ?? 0);
 
@@ -91,12 +112,20 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
         </p>
       ) : isLoading ? (
         <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
-      ) : isEmpty ? (
-        <p className="px-2 py-2 text-sm text-muted-foreground">
-          No giving or pipeline records yet.
-        </p>
       ) : (
         <div data-testid="giving-pipeline">
+          {relationshipQ.isError ? (
+            <p className="px-2 pb-3 text-sm text-destructive">
+              The giving relationship summary could not be loaded.
+            </p>
+          ) : givingRelationship ? (
+            <GivingRelationshipSummary data={givingRelationship} />
+          ) : null}
+          {isEmpty ? (
+            <p className="px-2 py-2 text-sm text-muted-foreground">
+              No giving or pipeline records yet.
+            </p>
+          ) : null}
           <Section title="Open asks" show={groups.openAsks.length > 0}>
             {groups.openAsks.map((t) => (
               <OppThread key={t.opp.id} thread={t} amountField="ask" />
@@ -136,6 +165,101 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
         </div>
       )}
     </RelatedCard>
+  );
+}
+
+function GivingRelationshipSummary({ data }: { data: GivingRelationship }) {
+  return (
+    <div className="mb-4" data-testid="giving-relationship-summary">
+      <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Giving relationship
+      </div>
+      <div className="grid grid-cols-2 gap-2 px-2 pb-3">
+        <Metric
+          label="Relationship total"
+          value={formatCurrency(data.relationshipTotal)}
+          emphasized
+        />
+        <Metric
+          label="Donor of record"
+          value={formatCurrency(data.donorOfRecordTotal)}
+        />
+        <Metric label="Gifts" value={String(data.giftCount)} />
+        <Metric
+          label="Largest gift"
+          value={formatCurrency(data.largestGift?.amount)}
+        />
+      </div>
+
+      <div className="mx-2 mb-3 rounded-md border bg-muted/30 px-3 py-2 text-xs">
+        <div className="font-medium text-foreground">
+          {data.requiresDecision
+            ? "Choose the donor each time"
+            : data.resolvedDonor
+              ? `New gifts route to ${data.resolvedDonor.name}`
+              : "No resolved donor pathway"}
+        </div>
+        {data.throughIntermediaryTotal !== "0.00" ? (
+          <div className="mt-1 text-muted-foreground">
+            {formatCurrency(data.throughIntermediaryTotal)} was delivered
+            through an intermediary. This overlaps the relationship total; it is
+            a delivery method, not additional giving.
+          </div>
+        ) : null}
+      </div>
+
+      {data.breakdown.length > 0 ? (
+        <div>
+          <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Attribution breakdown
+          </div>
+          {data.breakdown.map((item) => (
+            <div
+              key={item.kind}
+              className="flex items-start justify-between gap-3 px-2 py-1.5 text-sm"
+              title={item.description}
+            >
+              <div className="min-w-0">
+                <div className="font-medium">{item.label}</div>
+                <div className="text-xs text-muted-foreground">
+                  {item.giftCount} {item.giftCount === 1 ? "gift" : "gifts"}
+                </div>
+              </div>
+              <div className="shrink-0 tabular-nums font-medium">
+                {formatCurrency(item.amount)}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Metric({
+  label,
+  value,
+  emphasized = false,
+}: {
+  label: string;
+  value: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <div className="rounded-md border px-3 py-2">
+      <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <div
+        className={
+          emphasized
+            ? "mt-1 text-lg font-semibold tabular-nums"
+            : "mt-1 text-sm font-semibold tabular-nums"
+        }
+      >
+        {value}
+      </div>
+    </div>
   );
 }
 

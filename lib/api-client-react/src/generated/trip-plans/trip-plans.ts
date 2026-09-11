@@ -19,9 +19,11 @@ import type {
 import type {
   AddTripVisitBody,
   BadRequestResponse,
+  CreateTripCommentBody,
   CreateTripPlanBody,
   ListTripPlansParams,
   NotFoundResponse,
+  TripComment,
   TripPlanDetail,
   TripPlanList,
   TripPlanSummary,
@@ -523,6 +525,88 @@ export const useDraftTripVisits = <
   TContext
 > => {
   return useMutation(getDraftTripVisitsMutationOptions(options));
+};
+export const getCreateTripCommentUrl = (id: string) => {
+  return `/api/trips/${id}/comments`;
+};
+
+export const createTripComment = async (
+  id: string,
+  createTripCommentBody: CreateTripCommentBody,
+  options?: RequestInit,
+): Promise<TripComment> => {
+  return customFetch<TripComment>(getCreateTripCommentUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createTripCommentBody),
+  });
+};
+
+export const getCreateTripCommentMutationOptions = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTripComment>>,
+    TError,
+    { id: string; data: BodyType<CreateTripCommentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTripComment>>,
+  TError,
+  { id: string; data: BodyType<CreateTripCommentBody> },
+  TContext
+> => {
+  const mutationKey = ["createTripComment"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTripComment>>,
+    { id: string; data: BodyType<CreateTripCommentBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return createTripComment(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTripCommentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createTripComment>>
+>;
+export type CreateTripCommentMutationBody = BodyType<CreateTripCommentBody>;
+export type CreateTripCommentMutationError = ErrorType<
+  BadRequestResponse | NotFoundResponse
+>;
+
+export const useCreateTripComment = <
+  TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTripComment>>,
+    TError,
+    { id: string; data: BodyType<CreateTripCommentBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createTripComment>>,
+  TError,
+  { id: string; data: BodyType<CreateTripCommentBody> },
+  TContext
+> => {
+  return useMutation(getCreateTripCommentMutationOptions(options));
 };
 export const getAddTripVisitUrl = (id: string) => {
   return `/api/trips/${id}/visits`;

@@ -18,11 +18,15 @@ import type {
 
 import type {
   BadRequestResponse,
+  ListNewsletterContactsParams,
   ListNewsletterEngagementParams,
+  ListPersonNewsletterEngagementParams,
+  NewsletterContactList,
   NewsletterEngagementList,
   NewsletterImportResult,
   NewsletterOverview,
   NotFoundResponse,
+  PersonNewsletterEngagementList,
 } from "../api.schemas";
 
 import { customFetch } from "../../custom-fetch";
@@ -94,6 +98,217 @@ export function useGetNewsletterOverview<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetNewsletterOverviewQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListNewsletterContactsUrl = (
+  params: ListNewsletterContactsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/newsletter-contacts?${stringifiedParams}`
+    : `/api/newsletter-contacts`;
+};
+
+export const listNewsletterContacts = async (
+  params: ListNewsletterContactsParams,
+  options?: RequestInit,
+): Promise<NewsletterContactList> => {
+  return customFetch<NewsletterContactList>(
+    getListNewsletterContactsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListNewsletterContactsQueryKey = (
+  params?: ListNewsletterContactsParams,
+) => {
+  return [`/api/newsletter-contacts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListNewsletterContactsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listNewsletterContacts>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListNewsletterContactsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listNewsletterContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListNewsletterContactsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listNewsletterContacts>>
+  > = ({ signal }) =>
+    listNewsletterContacts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listNewsletterContacts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListNewsletterContactsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listNewsletterContacts>>
+>;
+export type ListNewsletterContactsQueryError = ErrorType<unknown>;
+
+export function useListNewsletterContacts<
+  TData = Awaited<ReturnType<typeof listNewsletterContacts>>,
+  TError = ErrorType<unknown>,
+>(
+  params: ListNewsletterContactsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listNewsletterContacts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListNewsletterContactsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+export const getListPersonNewsletterEngagementUrl = (
+  id: string,
+  params?: ListPersonNewsletterEngagementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/people/${id}/newsletter-engagement?${stringifiedParams}`
+    : `/api/people/${id}/newsletter-engagement`;
+};
+
+export const listPersonNewsletterEngagement = async (
+  id: string,
+  params?: ListPersonNewsletterEngagementParams,
+  options?: RequestInit,
+): Promise<PersonNewsletterEngagementList> => {
+  return customFetch<PersonNewsletterEngagementList>(
+    getListPersonNewsletterEngagementUrl(id, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPersonNewsletterEngagementQueryKey = (
+  id: string,
+  params?: ListPersonNewsletterEngagementParams,
+) => {
+  return [
+    `/api/people/${id}/newsletter-engagement`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getListPersonNewsletterEngagementQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPersonNewsletterEngagement>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  params?: ListPersonNewsletterEngagementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPersonNewsletterEngagement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getListPersonNewsletterEngagementQueryKey(id, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPersonNewsletterEngagement>>
+  > = ({ signal }) =>
+    listPersonNewsletterEngagement(id, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPersonNewsletterEngagement>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPersonNewsletterEngagementQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPersonNewsletterEngagement>>
+>;
+export type ListPersonNewsletterEngagementQueryError =
+  ErrorType<NotFoundResponse>;
+
+export function useListPersonNewsletterEngagement<
+  TData = Awaited<ReturnType<typeof listPersonNewsletterEngagement>>,
+  TError = ErrorType<NotFoundResponse>,
+>(
+  id: string,
+  params?: ListPersonNewsletterEngagementParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPersonNewsletterEngagement>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPersonNewsletterEngagementQueryOptions(
+    id,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

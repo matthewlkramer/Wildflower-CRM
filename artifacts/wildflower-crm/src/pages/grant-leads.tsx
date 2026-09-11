@@ -307,6 +307,7 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
   const claim = useClaimGrantLead();
   const archive = useArchiveGrantLead();
   const [convertOpen, setConvertOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
 
   const invalidate = () =>
@@ -322,11 +323,21 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
     );
   };
 
-  const handleArchive = () => {
+  const handleArchive = (futureScope: "lead" | "program" | "funder") => {
     archive.mutate(
-      { id: lead.id },
+      { id: lead.id, data: { futureScope } },
       {
-        onSuccess: () => { toast({ title: "Lead archived" }); invalidate(); onRefresh(); },
+        onSuccess: () => {
+          toast({
+            title:
+              futureScope === "lead"
+                ? "Lead archived"
+                : `Lead archived; future ${futureScope} matches hidden`,
+          });
+          setArchiveOpen(false);
+          invalidate();
+          onRefresh();
+        },
         onError: () => toast({ title: "Failed to archive lead", variant: "destructive" }),
       },
     );
@@ -344,11 +355,15 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
           <div className="flex items-start justify-between gap-2">
             <div className="space-y-0.5">
               <p className="font-medium text-sm leading-snug">
+                {[lead.funderName, lead.programName]
+                  .filter((value, index, values) =>
+                    Boolean(value) && values.indexOf(value) === index,
+                  )
+                  .join(" — ") || lead.title}
+              </p>
+              <p className="text-xs text-muted-foreground">
                 {lead.aiSummary ?? "Generating opportunity summary…"}
               </p>
-              {lead.funderName && (
-                <p className="text-xs text-muted-foreground">{lead.funderName}</p>
-              )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <Badge variant={statusInfo.variant} className="text-xs">
@@ -386,7 +401,7 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
                       Add task
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                      onClick={handleArchive}
+                      onClick={() => setArchiveOpen(true)}
                       disabled={archive.isPending}
                       className="text-destructive focus:text-destructive"
                     >
@@ -471,6 +486,52 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
           onConverted={() => { invalidate(); onRefresh(); }}
         />
       )}
+      <Dialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Archive grant lead</DialogTitle>
+            <DialogDescription>
+              Choose whether this decision applies only to this lead or to
+              matching opportunities found in future email ingests.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-2">
+            <Button
+              variant="outline"
+              className="h-auto justify-start py-3 text-left"
+              onClick={() => handleArchive("lead")}
+              disabled={archive.isPending}
+            >
+              Archive this lead only
+            </Button>
+            {lead.programName && (
+              <Button
+                variant="outline"
+                className="h-auto justify-start py-3 text-left"
+                onClick={() => handleArchive("program")}
+                disabled={archive.isPending}
+              >
+                Archive and hide future “{lead.programName}” leads
+              </Button>
+            )}
+            {lead.funderName && (
+              <Button
+                variant="outline"
+                className="h-auto justify-start py-3 text-left"
+                onClick={() => handleArchive("funder")}
+                disabled={archive.isPending}
+              >
+                Archive and hide all future leads from {lead.funderName}
+              </Button>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setArchiveOpen(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

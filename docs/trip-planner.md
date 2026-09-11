@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-09
+last_verified: 2026-09-10
 ---
 
 # Trip planner
@@ -16,7 +16,9 @@ last_verified: 2026-09-09
   columns remain nullable for compatibility, are cleared whenever a trip is
   saved in the CRM, and are not separate planning authorities.
 - The visit list is editable CRM planning state. A team member can add, remove,
-  reorder, and annotate people. The system-draft action adds up to 25 active,
+  reorder, and annotate people. Each person has separate planning notes and a
+  next step, plus the name and timestamp of the teammate who last edited those
+  fields. The system-draft action adds up to 25 active,
   living CRM people whose address city (and state, when entered) exactly matches
   the destination and whose own solicitation priority, or a current affiliated
   organization's solicitation priority, is `medium`, `high`, or `top`. It orders
@@ -72,3 +74,6 @@ last_verified: 2026-09-09
 - No trip table points to Gmail messages or Calendar events. Evidence links are
   derived from the existing matched-person arrays, mailbox/calendar owner, and
   provider thread/event facts.
+- `trip_plans.notes` is the shared, editable trip scratchpad.
+- `trip_plan_comments` is an append-only team discussion with an author and
+  timestamp on every comment; it never overwrites the scratchpad.

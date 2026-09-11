@@ -72,6 +72,9 @@ unverified and confirm against code before relying on it.
 - [`trip-planner.md`](trip-planner.md) — **ratified** travel planning,
   visit-list drafting, and Gmail/Calendar-derived outreach and availability
   rules.
+- [`feedback-proposals.md`](feedback-proposals.md) — context boundaries,
+  generation/revision lifecycle, and the human-gated coding-agent handoff for
+  the in-app feedback queue.
 
 ## Rules
 

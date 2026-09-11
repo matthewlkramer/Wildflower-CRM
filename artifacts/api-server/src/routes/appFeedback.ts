@@ -1,11 +1,26 @@
 import { Router, type IRouter, type Response } from "express";
 import { z } from "zod";
-import { and, count, desc, eq, inArray, sql, type SQL } from "drizzle-orm";
-import { appFeedback, db, users } from "@workspace/db";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNull,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { appFeedback, appFeedbackProposals, db, users } from "@workspace/db";
 import { requireAuth } from "../middlewares/requireAuth";
 import { requireAdmin } from "../lib/archive";
 import { getAppUser } from "../lib/appRequest";
+import { canStartFeedbackImplementation } from "../lib/feedbackImplementationAuth";
 import { asyncHandler, newId } from "../lib/helpers";
+import {
+  processQueuedFeedbackProposal,
+  queueAppFeedbackProposal,
+} from "../lib/feedbackProposalEngine";
+import { generateAppFeedbackProposal } from "../lib/proposeFeedback";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -53,6 +68,12 @@ const UpdateFeedbackBody = z
       message: "At least one feedback field must be updated.",
     },
   );
+
+const ReviseFeedbackProposalBody = z.object({
+  reviewerGuidance: z.string().trim().min(1).max(20_000),
+});
+
+class FeedbackImplementationConflict extends Error {}
 
 function parseOr400<T>(
   schema: z.ZodType<T>,
@@ -106,6 +127,8 @@ async function usersById(ids: Array<string | null>) {
 function serializeFeedback(
   row: typeof appFeedback.$inferSelect,
   userMap: Map<string, UserSummary>,
+  proposalRow: typeof appFeedbackProposals.$inferSelect | null = null,
+  viewerCanImplement = false,
 ) {
   const reporter = userMap.get(row.createdByUserId);
   const resolver = row.resolvedByUserId
@@ -125,7 +148,36 @@ function serializeFeedback(
           email: resolver?.email ?? null,
         }
       : null,
+    proposal: proposalRow
+      ? {
+          ...proposalRow,
+          implementationRequestedBy: proposalRow.implementationRequestedByUserId
+            ? (() => {
+                const user = userMap.get(
+                  proposalRow.implementationRequestedByUserId,
+                );
+                return {
+                  id: proposalRow.implementationRequestedByUserId,
+                  name: displayName(user),
+                  email: user?.email ?? null,
+                };
+              })()
+            : null,
+        }
+      : null,
+    viewerCanImplement,
   };
+}
+
+async function proposalsByFeedbackId(feedbackIds: string[]) {
+  if (!feedbackIds.length) {
+    return new Map<string, typeof appFeedbackProposals.$inferSelect>();
+  }
+  const rows = await db
+    .select()
+    .from(appFeedbackProposals)
+    .where(inArray(appFeedbackProposals.feedbackId, feedbackIds));
+  return new Map(rows.map((row) => [row.feedbackId, row]));
 }
 
 router.post(
@@ -165,8 +217,16 @@ router.post(
         screenshotError: body.screenshotError ?? null,
       })
       .returning();
+    const proposal = await queueAppFeedbackProposal(row.id);
     const userMap = await usersById([row.createdByUserId]);
-    res.status(201).json(serializeFeedback(row, userMap));
+    res.status(201).json(serializeFeedback(row, userMap, proposal));
+    if (proposal && process.env.NODE_ENV !== "test") {
+      void processQueuedFeedbackProposal(proposal.id).catch(() => {
+        // Generation records its own failures; the scheduler also recovers a
+        // process interruption. Feedback submission must never fail because AI
+        // is unavailable.
+      });
+    }
   }),
 );
 
@@ -174,6 +234,7 @@ router.get(
   "/admin/feedback",
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
+    const viewerCanImplement = canStartFeedbackImplementation(getAppUser(req));
     const query = parseOr400(ListFeedbackQuery, req.query, res);
     if (!query) return;
 
@@ -220,11 +281,26 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(appFeedback).where(where),
     ]);
+    const proposalMap = await proposalsByFeedbackId(rows.map((row) => row.id));
     const userMap = await usersById(
-      rows.flatMap((row) => [row.createdByUserId, row.resolvedByUserId]),
+      rows.flatMap((row) => {
+        const proposal = proposalMap.get(row.id);
+        return [
+          row.createdByUserId,
+          row.resolvedByUserId,
+          proposal?.implementationRequestedByUserId ?? null,
+        ];
+      }),
     );
     res.json({
-      data: rows.map((row) => serializeFeedback(row, userMap)),
+      data: rows.map((row) =>
+        serializeFeedback(
+          row,
+          userMap,
+          proposalMap.get(row.id) ?? null,
+          viewerCanImplement,
+        ),
+      ),
       pagination: {
         page,
         limit,
@@ -273,11 +349,221 @@ router.patch(
       })
       .where(eq(appFeedback.id, id))
       .returning();
+    const proposalMap = await proposalsByFeedbackId([row.id]);
+    const proposal = proposalMap.get(row.id) ?? null;
     const userMap = await usersById([
       row.createdByUserId,
       row.resolvedByUserId,
+      proposal?.implementationRequestedByUserId ?? null,
     ]);
-    res.json(serializeFeedback(row, userMap));
+    res.json(
+      serializeFeedback(
+        row,
+        userMap,
+        proposal,
+        canStartFeedbackImplementation(actor),
+      ),
+    );
+  }),
+);
+
+router.post(
+  "/admin/feedback/:id/proposal/revise",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const actor = getAppUser(req);
+    if (!actor?.id) {
+      res
+        .status(401)
+        .json({ error: "unauthorized", message: "Sign in required." });
+      return;
+    }
+    const feedbackId = String(req.params.id ?? "");
+    const body = parseOr400(ReviseFeedbackProposalBody, req.body, res);
+    if (!body) return;
+
+    const current = await db.query.appFeedbackProposals.findFirst({
+      where: eq(appFeedbackProposals.feedbackId, feedbackId),
+    });
+    if (!current) {
+      res.status(404).json({
+        error: "not_found",
+        message: "Feedback proposal not found.",
+      });
+      return;
+    }
+    if (current.implementationRequestedAt) {
+      res.status(409).json({
+        error: "implementation_already_requested",
+        message: "Implementation has already been requested for this proposal.",
+      });
+      return;
+    }
+
+    const appendedGuidance = current.reviewerGuidance?.trim()
+      ? `${current.reviewerGuidance.trim()}\n\n---\n\nRevision ${current.revision + 1}: ${body.reviewerGuidance}`
+      : `Revision ${current.revision + 1}: ${body.reviewerGuidance}`;
+    const [claimed] = await db
+      .update(appFeedbackProposals)
+      .set({
+        generationStatus: "generating",
+        revision: sql`${appFeedbackProposals.revision} + 1`,
+        proposal: null,
+        reviewerGuidance: appendedGuidance,
+        analyzedAt: null,
+        model: null,
+        error: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(appFeedbackProposals.id, current.id),
+          inArray(appFeedbackProposals.generationStatus, ["ready", "error"]),
+          isNull(appFeedbackProposals.implementationRequestedAt),
+        ),
+      )
+      .returning({ id: appFeedbackProposals.id });
+    if (!claimed) {
+      res.status(409).json({
+        error: "proposal_generating",
+        message: "This proposal is already being generated.",
+      });
+      return;
+    }
+
+    await generateAppFeedbackProposal(claimed.id);
+    const [feedbackRow, proposalRow] = await Promise.all([
+      db.query.appFeedback.findFirst({
+        where: eq(appFeedback.id, feedbackId),
+      }),
+      db.query.appFeedbackProposals.findFirst({
+        where: eq(appFeedbackProposals.id, claimed.id),
+      }),
+    ]);
+    if (!feedbackRow || !proposalRow) {
+      res.status(404).json({
+        error: "not_found",
+        message: "Feedback item not found.",
+      });
+      return;
+    }
+    const userMap = await usersById([
+      feedbackRow.createdByUserId,
+      feedbackRow.resolvedByUserId,
+      proposalRow.implementationRequestedByUserId,
+    ]);
+    res.json(
+      serializeFeedback(
+        feedbackRow,
+        userMap,
+        proposalRow,
+        canStartFeedbackImplementation(actor),
+      ),
+    );
+  }),
+);
+
+router.post(
+  "/admin/feedback/:id/proposal/implement",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const actor = getAppUser(req);
+    if (!actor?.id) {
+      res
+        .status(401)
+        .json({ error: "unauthorized", message: "Sign in required." });
+      return;
+    }
+    if (!canStartFeedbackImplementation(actor)) {
+      res.status(403).json({
+        error: "feedback_implementer_required",
+        message:
+          "Only the configured feedback implementer can start implementation.",
+      });
+      return;
+    }
+    const feedbackId = String(req.params.id ?? "");
+
+    let result:
+      | {
+          feedback: typeof appFeedback.$inferSelect;
+          proposal: typeof appFeedbackProposals.$inferSelect;
+        }
+      | undefined;
+    try {
+      result = await db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(appFeedbackProposals)
+          .where(eq(appFeedbackProposals.feedbackId, feedbackId))
+          .limit(1);
+        if (!current) return undefined;
+        if (
+          current.generationStatus !== "ready" ||
+          !current.proposal?.implementationBrief ||
+          current.implementationRequestedAt
+        ) {
+          throw new FeedbackImplementationConflict();
+        }
+
+        const now = new Date();
+        const [proposal] = await tx
+          .update(appFeedbackProposals)
+          .set({
+            implementationRequestedAt: now,
+            implementationRequestedByUserId: actor.id,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(appFeedbackProposals.id, current.id),
+              eq(appFeedbackProposals.generationStatus, "ready"),
+              isNull(appFeedbackProposals.implementationRequestedAt),
+            ),
+          )
+          .returning();
+        if (!proposal) throw new FeedbackImplementationConflict();
+
+        const [feedback] = await tx
+          .update(appFeedback)
+          .set({
+            status: "in_progress",
+            resolvedByUserId: null,
+            resolvedAt: null,
+            updatedAt: now,
+          })
+          .where(eq(appFeedback.id, feedbackId))
+          .returning();
+        if (!feedback) throw new FeedbackImplementationConflict();
+        return { feedback, proposal };
+      });
+    } catch (err) {
+      if (err instanceof FeedbackImplementationConflict) {
+        res.status(409).json({
+          error: "proposal_not_ready",
+          message:
+            "The proposal is not ready or implementation has already been requested.",
+        });
+        return;
+      }
+      throw err;
+    }
+    if (!result) {
+      res.status(404).json({
+        error: "not_found",
+        message: "Feedback proposal not found.",
+      });
+      return;
+    }
+
+    const userMap = await usersById([
+      result.feedback.createdByUserId,
+      result.feedback.resolvedByUserId,
+      result.proposal.implementationRequestedByUserId,
+    ]);
+    res.json(
+      serializeFeedback(result.feedback, userMap, result.proposal, true),
+    );
   }),
 );
 

@@ -39,9 +39,16 @@ interface RawGdeltArticle {
  * sources to cut noise. Quotes inside the name are stripped so we never emit a
  * malformed query.
  */
-export function buildGdeltQuery(name: string): string {
+export function buildGdeltQuery(
+  name: string,
+  targetKind: "organization" | "person" = "organization",
+): string {
   const cleaned = name.replace(/["]/g, "").trim();
-  return `"${cleaned}" sourcelang:english`;
+  const relevance =
+    targetKind === "person"
+      ? " (philanthropy OR philanthropic OR foundation OR nonprofit OR charity OR donation OR grant)"
+      : "";
+  return `"${cleaned}"${relevance} sourcelang:english`;
 }
 
 /**
@@ -106,6 +113,8 @@ export interface SearchGdeltOptions {
   timeoutMs?: number;
   /** Extra attempts on transient network failure (connect timeout, etc.). */
   retries?: number;
+  /** Person searches add fundraising context to reduce namesake matches. */
+  targetKind?: "organization" | "person";
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -120,9 +129,15 @@ export async function searchGdelt(
   name: string,
   opts: SearchGdeltOptions = {},
 ): Promise<GdeltArticle[]> {
-  const { timespanDays = 2, maxRecords = 25, timeoutMs = 20_000, retries = 2 } = opts;
+  const {
+    timespanDays = 2,
+    maxRecords = 25,
+    timeoutMs = 20_000,
+    retries = 2,
+    targetKind = "organization",
+  } = opts;
   const params = new URLSearchParams({
-    query: buildGdeltQuery(name),
+    query: buildGdeltQuery(name, targetKind),
     mode: "ArtList",
     format: "json",
     sort: "DateDesc",

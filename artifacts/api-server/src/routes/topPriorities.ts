@@ -31,7 +31,10 @@ const orgOpenAsksExpr = sql`(
     JSON_AGG(
       JSON_BUILD_OBJECT(
         'opportunityId',   o.id,
-        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id)
+        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id),
+        'askAmount',       o.ask_amount::text,
+        'projectedCloseDate', o.projected_close_date::text,
+        'stage',           o.stage
       )
       ORDER BY o.name NULLS LAST, o.id
     ),
@@ -97,7 +100,10 @@ const personOpenAsksExpr = sql`(
     JSON_AGG(
       JSON_BUILD_OBJECT(
         'opportunityId',   o.id,
-        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id)
+        'opportunityName', COALESCE(NULLIF(TRIM(o.name), ''), 'Untitled ' || o.id),
+        'askAmount',       o.ask_amount::text,
+        'projectedCloseDate', o.projected_close_date::text,
+        'stage',           o.stage
       )
       ORDER BY o.name NULLS LAST, o.id
     ),
@@ -227,7 +233,13 @@ router.get(
             "open_task_count",
           ),
           openAsks: sql<
-            Array<{ opportunityId: string; opportunityName: string }>
+            Array<{
+              opportunityId: string;
+              opportunityName: string;
+              askAmount: string | null;
+              projectedCloseDate: string | null;
+              stage: string | null;
+            }>
           >`${orgOpenAsksExpr}`.as("open_asks"),
           affiliatedPeople: sql<
             Array<{
@@ -263,7 +275,13 @@ router.get(
             "open_task_count",
           ),
           openAsks: sql<
-            Array<{ opportunityId: string; opportunityName: string }>
+            Array<{
+              opportunityId: string;
+              opportunityName: string;
+              askAmount: string | null;
+              projectedCloseDate: string | null;
+              stage: string | null;
+            }>
           >`${personOpenAsksExpr}`.as("open_asks"),
           lastGiftDate: sql<string | null>`${personLastGiftDateExpr}`.as(
             "last_gift_date",

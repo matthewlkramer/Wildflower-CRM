@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-04
+last_verified: 2026-09-10
 ---
 
 # Grant Leads
@@ -43,13 +43,15 @@ legacy `email_proposals`; they do not generate `grant_leads`.
 ## Display headline
 
 The source subject/extracted title remains stored as provenance and as the
-default name when a reviewer converts a lead. The headline beside the
-lightbulb is instead `grant_leads.ai_summary`: a one-sentence AI summary of the
-opportunity's purpose, eligibility, amount, and deadline using only facts that
-the extractor captured. It explicitly names the known funder and named program
-(or whichever of those is available), so a generic phrase such as "a funding
-opportunity" never replaces the opportunity's identity. New leads are
-summarized asynchronously. A versioned, bounded
+default name when a reviewer converts a lead. The list renders the known funder
+and named program as the primary identity. Beneath it,
+`grant_leads.ai_summary` gives a one-sentence account of the opportunity's
+purpose, eligibility, amount, and deadline using only facts that the extractor
+captured. New leads are summarized asynchronously. A versioned, bounded
 background sweep fills older or temporarily failed rows; while it is pending,
-the list says that the opportunity summary is being generated rather than
-falling back to an email subject.
+the list says that the opportunity summary is being generated.
+
+Archiving can apply to only the current
+lead, the named program, or the whole funder. Program/funder choices write a
+durable suppression rule, and later email ingests skip matching items before
+creating a lead or sighting.
