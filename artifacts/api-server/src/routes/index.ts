@@ -69,6 +69,7 @@ import reconciliationRouter from "./reconciliation";
 import codingFormRowsRouter from "./codingFormRows";
 import newsletterRouter from "./newsletter";
 import tripPlansRouter from "./tripPlans";
+import enrichmentRouter from "./enrichment";
 
 const router: IRouter = Router();
 
@@ -152,5 +153,6 @@ router.use(reconciliationRouter);
 router.use(codingFormRowsRouter);
 router.use(newsletterRouter);
 router.use(tripPlansRouter);
+router.use(enrichmentRouter);
 
 export default router;

@@ -1450,8 +1450,16 @@ paths:
               - { type: string, enum: [all] }
             default: all
         - { name: search, in: query, schema: { type: string, maxLength: 500 } }
-        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - {
+            name: page,
+            in: query,
+            schema: { type: integer, minimum: 1, default: 1 },
+          }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 50 },
+          }
       responses:
         "200":
           description: OK
@@ -1492,7 +1500,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/ReviseAppFeedbackProposalBody" }
+            schema:
+              { $ref: "#/components/schemas/ReviseAppFeedbackProposalBody" }
       responses:
         "200":
           description: Regenerated feedback item and proposal.
@@ -2769,6 +2778,46 @@ paths:
               },
           }
         "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{id}/enrichment-suggestions:
+    get:
+      operationId: listOrganizationEnrichmentSuggestions
+      tags: [organizations]
+      description: List pending, human-reviewed enrichment suggestions for an organization.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EnrichmentSuggestionList" },
+                  },
+              },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /organizations/{id}/enrich:
+    post:
+      operationId: runOrganizationEnrichment
+      tags: [organizations]
+      description: Derive reviewable suggestions from existing CRM evidence without changing canonical organization data.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          {
+            description: Suggestions derived,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EnrichmentSuggestionList" },
+                  },
+              },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Payment intermediaries ────────────────────────────────────────────────
   /payment-intermediaries:
@@ -3261,6 +3310,78 @@ paths:
               },
           }
         "404": { $ref: "#/components/responses/NotFound" }
+  /people/{id}/enrichment-suggestions:
+    get:
+      operationId: listPersonEnrichmentSuggestions
+      tags: [people]
+      description: List pending, human-reviewed enrichment suggestions for a person.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EnrichmentSuggestionList" },
+                  },
+              },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /people/{id}/enrich:
+    post:
+      operationId: runPersonEnrichment
+      tags: [people]
+      description: Derive reviewable suggestions from existing CRM evidence without changing canonical person data.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          {
+            description: Suggestions derived,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EnrichmentSuggestionList" },
+                  },
+              },
+          }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /enrichment-suggestions/{id}:
+    patch:
+      operationId: resolveEnrichmentSuggestion
+      tags: [people, organizations]
+      description: Accept or dismiss a pending suggestion. Accepting never overwrites a canonical value that was filled after generation.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/ResolveEnrichmentSuggestionBody" }
+      responses:
+        "200":
+          {
+            description: Suggestion resolved,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/EnrichmentSuggestion" },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          {
+            description: "Suggestion is stale, already resolved, or the canonical field now has a value.",
+          }
 
   # ─── People-entity-roles ───────────────────────────────────────────────────
   /people-entity-roles:
@@ -3936,10 +4057,14 @@ paths:
           description: Plan reduced
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/OpportunityPlanReductionResult" }
+              schema:
+                { $ref: "#/components/schemas/OpportunityPlanReductionResult" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
-        "409": { description: The amount changed while the reduction was being saved. }
+        "409":
+          {
+            description: The amount changed while the reduction was being saved.,
+          }
   /opportunities-and-pledges/{id}/convert-to-standalone-gift:
     post:
       operationId: convertPledgeToStandaloneGift
@@ -5284,6 +5409,12 @@ paths:
             in: query,
             schema: { type: boolean },
             description: "Filter to pinned (true) or unpinned (false) mentions.",
+          }
+        - {
+            name: includeHidden,
+            in: query,
+            schema: { type: boolean },
+            description: "Include duplicate and low-confidence historical mentions that are hidden by default.",
           }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
@@ -12351,6 +12482,62 @@ components:
         page: { type: integer }
         limit: { type: integer }
         total: { type: integer }
+
+    EnrichmentSuggestedValue:
+      type: object
+      required: [regionId, label]
+      properties:
+        regionId:
+          {
+            type: string,
+            description: "Canonical regions.id value proposed for the field.",
+          }
+        label: { type: string }
+    EnrichmentSuggestion:
+      type: object
+      required:
+        [
+          id,
+          entityType,
+          entityId,
+          fieldName,
+          suggestedValue,
+          sourceLabel,
+          status,
+          viewerCanResolve,
+          createdAt,
+          updatedAt,
+        ]
+      properties:
+        id: { type: string }
+        entityType: { type: string, enum: [person, organization] }
+        entityId: { type: string }
+        fieldName: { type: string, enum: [currentHomeRegionId, regionIds] }
+        suggestedValue:
+          { $ref: "#/components/schemas/EnrichmentSuggestedValue" }
+        sourceLabel: { type: string }
+        sourceDetail: { type: string, nullable: true }
+        status: { type: string, enum: [pending, accepted, dismissed] }
+        viewerCanResolve: { type: boolean }
+        resolvedAt: { type: string, format: date-time, nullable: true }
+        resolvedByUserId: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    EnrichmentSuggestionList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/EnrichmentSuggestion" },
+          }
+    ResolveEnrichmentSuggestionBody:
+      type: object
+      required: [status]
+      additionalProperties: false
+      properties:
+        status: { type: string, enum: [accepted, dismissed] }
 
     # ─── Enums ─────────────────────────────────────────────────────────────────
     RegionType:
@@ -23967,7 +24154,10 @@ components:
             visits:
               { type: array, items: { $ref: "#/components/schemas/TripVisit" } }
             comments:
-              { type: array, items: { $ref: "#/components/schemas/TripComment" } }
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/TripComment" },
+              }
             calendarEvents:
               {
                 type: array,
@@ -24990,11 +25180,17 @@ components:
         updatedAt: { type: string, format: date-time }
     MediaMentionList:
       type: object
-      required: [data, pagination]
+      required: [data, pagination, hiddenCount]
       properties:
         data:
           { type: array, items: { $ref: "#/components/schemas/MediaMention" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+        hiddenCount:
+          {
+            type: integer,
+            minimum: 0,
+            description: "Number of in-scope duplicate or low-confidence mentions hidden from the default view.",
+          }
     MediaMentionInput:
       type: object
       required: [publicationName, url]
@@ -26779,7 +26975,7 @@ components:
         context: { type: object, additionalProperties: true, default: {} }
         screenshotUrl:
           type: string
-          pattern: '^/api/storage/objects/'
+          pattern: "^/api/storage/objects/"
           maxLength: 2048
           nullable: true
         screenshotFilename: { type: string, maxLength: 500, nullable: true }

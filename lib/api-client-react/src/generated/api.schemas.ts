@@ -23,6 +23,69 @@ export interface Pagination {
   total: number;
 }
 
+export interface EnrichmentSuggestedValue {
+  /** Canonical regions.id value proposed for the field. */
+  regionId: string;
+  label: string;
+}
+
+export type EnrichmentSuggestionEntityType = typeof EnrichmentSuggestionEntityType[keyof typeof EnrichmentSuggestionEntityType];
+
+
+export const EnrichmentSuggestionEntityType = {
+  person: 'person',
+  organization: 'organization',
+} as const;
+
+export type EnrichmentSuggestionFieldName = typeof EnrichmentSuggestionFieldName[keyof typeof EnrichmentSuggestionFieldName];
+
+
+export const EnrichmentSuggestionFieldName = {
+  currentHomeRegionId: 'currentHomeRegionId',
+  regionIds: 'regionIds',
+} as const;
+
+export type EnrichmentSuggestionStatus = typeof EnrichmentSuggestionStatus[keyof typeof EnrichmentSuggestionStatus];
+
+
+export const EnrichmentSuggestionStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  dismissed: 'dismissed',
+} as const;
+
+export interface EnrichmentSuggestion {
+  id: string;
+  entityType: EnrichmentSuggestionEntityType;
+  entityId: string;
+  fieldName: EnrichmentSuggestionFieldName;
+  suggestedValue: EnrichmentSuggestedValue;
+  sourceLabel: string;
+  sourceDetail?: string | null;
+  status: EnrichmentSuggestionStatus;
+  viewerCanResolve: boolean;
+  resolvedAt?: string | null;
+  resolvedByUserId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EnrichmentSuggestionList {
+  data: EnrichmentSuggestion[];
+}
+
+export type ResolveEnrichmentSuggestionBodyStatus = typeof ResolveEnrichmentSuggestionBodyStatus[keyof typeof ResolveEnrichmentSuggestionBodyStatus];
+
+
+export const ResolveEnrichmentSuggestionBodyStatus = {
+  accepted: 'accepted',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ResolveEnrichmentSuggestionBody {
+  status: ResolveEnrichmentSuggestionBodyStatus;
+}
+
 export type RegionType = typeof RegionType[keyof typeof RegionType];
 
 
@@ -8967,6 +9030,11 @@ export interface MediaMention {
 export interface MediaMentionList {
   data: MediaMention[];
   pagination: Pagination;
+  /**
+   * Number of in-scope duplicate or low-confidence mentions hidden from the default view.
+   * @minimum 0
+   */
+  hiddenCount: number;
 }
 
 export interface MediaMentionInput {
@@ -11645,6 +11713,10 @@ includeLinkedPeople?: boolean;
  * Filter to pinned (true) or unpinned (false) mentions.
  */
 pinned?: boolean;
+/**
+ * Include duplicate and low-confidence historical mentions that are hidden by default.
+ */
+includeHidden?: boolean;
 /**
  * @minimum 1
  * @maximum 10000

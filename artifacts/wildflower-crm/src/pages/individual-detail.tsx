@@ -56,6 +56,7 @@ import { PreferredDonorCard } from "@/components/preferred-donor-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import { NewsletterEngagementCard } from "@/components/newsletter-engagement-card";
+import { RegionEnrichmentSuggestion } from "@/components/region-enrichment-suggestion";
 import { PersonRelationshipSummaryCard } from "@/components/relationship-summary-card";
 import {
   AttributeBadges,
@@ -610,6 +611,11 @@ function PersonView({ person }: { person: PersonDetail }) {
                     onSave={(next) => patch({ currentHomeRegionId: next })}
                   />
                 </Row>
+                <RegionEnrichmentSuggestion
+                  entityType="person"
+                  entityId={person.id}
+                  eligible={!person.currentHomeRegionId}
+                />
                 <Row label="Children at WF">
                   <InlineEditText
                     label="Children at WF"

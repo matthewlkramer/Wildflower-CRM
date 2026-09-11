@@ -363,6 +363,92 @@ export const GetPersonRelationshipSummaryResponse = zod.object({
   "generatedAt": zod.string().datetime({})
 }).describe('On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it\'s requested.\n')
 
+/**
+ * List pending, human-reviewed enrichment suggestions for a person.
+ */
+export const ListPersonEnrichmentSuggestionsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListPersonEnrichmentSuggestionsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "entityType": zod.enum(['person', 'organization']),
+  "entityId": zod.string(),
+  "fieldName": zod.enum(['currentHomeRegionId', 'regionIds']),
+  "suggestedValue": zod.object({
+  "regionId": zod.string().describe('Canonical regions.id value proposed for the field.'),
+  "label": zod.string()
+}),
+  "sourceLabel": zod.string(),
+  "sourceDetail": zod.string().nullish(),
+  "status": zod.enum(['pending', 'accepted', 'dismissed']),
+  "viewerCanResolve": zod.boolean(),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}))
+})
+
+/**
+ * Derive reviewable suggestions from existing CRM evidence without changing canonical person data.
+ */
+export const RunPersonEnrichmentParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RunPersonEnrichmentResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "entityType": zod.enum(['person', 'organization']),
+  "entityId": zod.string(),
+  "fieldName": zod.enum(['currentHomeRegionId', 'regionIds']),
+  "suggestedValue": zod.object({
+  "regionId": zod.string().describe('Canonical regions.id value proposed for the field.'),
+  "label": zod.string()
+}),
+  "sourceLabel": zod.string(),
+  "sourceDetail": zod.string().nullish(),
+  "status": zod.enum(['pending', 'accepted', 'dismissed']),
+  "viewerCanResolve": zod.boolean(),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}))
+})
+
+/**
+ * Accept or dismiss a pending suggestion. Accepting never overwrites a canonical value that was filled after generation.
+ */
+export const ResolveEnrichmentSuggestionParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ResolveEnrichmentSuggestionBody = zod.object({
+  "status": zod.enum(['accepted', 'dismissed'])
+})
+
+export const ResolveEnrichmentSuggestionResponse = zod.object({
+  "id": zod.string(),
+  "entityType": zod.enum(['person', 'organization']),
+  "entityId": zod.string(),
+  "fieldName": zod.enum(['currentHomeRegionId', 'regionIds']),
+  "suggestedValue": zod.object({
+  "regionId": zod.string().describe('Canonical regions.id value proposed for the field.'),
+  "label": zod.string()
+}),
+  "sourceLabel": zod.string(),
+  "sourceDetail": zod.string().nullish(),
+  "status": zod.enum(['pending', 'accepted', 'dismissed']),
+  "viewerCanResolve": zod.boolean(),
+  "resolvedAt": zod.string().datetime({}).nullish(),
+  "resolvedByUserId": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
 export const bulkUpdatePeopleBodyIdsMax = 1000;
 
 

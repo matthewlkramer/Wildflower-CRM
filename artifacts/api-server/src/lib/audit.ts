@@ -27,7 +27,9 @@ export type AuditAction =
   | "delete"
   | "merge"
   | "bulk_update"
-  | "bulk_archive";
+  | "bulk_archive"
+  | "field_enriched"
+  | "field_enrichment_dismissed";
 
 export interface AuditEvent {
   action: AuditAction;

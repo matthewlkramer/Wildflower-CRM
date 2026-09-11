@@ -25,6 +25,7 @@ import type {
   BulkUpdateOrganizationsBody,
   BulkUpdateResult,
   CreateOrganizationBody,
+  EnrichmentSuggestionList,
   ExportOrganizationsCsvParams,
   ForbiddenResponse,
   ListOrganizationsParams,
@@ -395,6 +396,143 @@ export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType
 
 
 /**
+ * List pending, human-reviewed enrichment suggestions for an organization.
+ */
+export const getListOrganizationEnrichmentSuggestionsUrl = (id: string,) => {
+
+
+
+
+  return `/api/organizations/${id}/enrichment-suggestions`
+}
+
+export const listOrganizationEnrichmentSuggestions = async (id: string, options?: RequestInit): Promise<EnrichmentSuggestionList> => {
+
+  return customFetch<EnrichmentSuggestionList>(getListOrganizationEnrichmentSuggestionsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListOrganizationEnrichmentSuggestionsQueryKey = (id: string,) => {
+    return [
+    `/api/organizations/${id}/enrichment-suggestions`
+    ] as const;
+    }
+
+
+export const getListOrganizationEnrichmentSuggestionsQueryOptions = <TData = Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListOrganizationEnrichmentSuggestionsQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>> = ({ signal }) => listOrganizationEnrichmentSuggestions(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListOrganizationEnrichmentSuggestionsQueryResult = NonNullable<Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>>
+export type ListOrganizationEnrichmentSuggestionsQueryError = ErrorType<NotFoundResponse>
+
+
+
+export function useListOrganizationEnrichmentSuggestions<TData = Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listOrganizationEnrichmentSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListOrganizationEnrichmentSuggestionsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Derive reviewable suggestions from existing CRM evidence without changing canonical organization data.
+ */
+export const getRunOrganizationEnrichmentUrl = (id: string,) => {
+
+
+
+
+  return `/api/organizations/${id}/enrich`
+}
+
+export const runOrganizationEnrichment = async (id: string, options?: RequestInit): Promise<EnrichmentSuggestionList> => {
+
+  return customFetch<EnrichmentSuggestionList>(getRunOrganizationEnrichmentUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRunOrganizationEnrichmentMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runOrganizationEnrichment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runOrganizationEnrichment>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['runOrganizationEnrichment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runOrganizationEnrichment>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  runOrganizationEnrichment(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunOrganizationEnrichmentMutationResult = NonNullable<Awaited<ReturnType<typeof runOrganizationEnrichment>>>
+
+    export type RunOrganizationEnrichmentMutationError = ErrorType<NotFoundResponse>
+
+    export const useRunOrganizationEnrichment = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runOrganizationEnrichment>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runOrganizationEnrichment>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRunOrganizationEnrichmentMutationOptions(options));
+    }
+    /**
  * Download the Organizations list as CSV. Accepts the same filter query params as `listOrganizations` plus optional comma-separated `fields`.
  */
 export const getExportOrganizationsCsvUrl = (params?: ExportOrganizationsCsvParams,) => {

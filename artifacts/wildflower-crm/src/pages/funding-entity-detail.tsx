@@ -36,6 +36,7 @@ import { TasksPanel } from "@/components/tasks-panel";
 import { DonorRecordActions } from "@/components/donor-record-actions";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import { OrganizationRelationshipSummaryCard } from "@/components/relationship-summary-card";
+import { RegionEnrichmentSuggestion } from "@/components/region-enrichment-suggestion";
 import {
   AttributeBadges,
   AttributeBadgeSelect,
@@ -795,6 +796,11 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ regionIds: next })}
                 />
               </TagEditRow>
+              <RegionEnrichmentSuggestion
+                entityType="organization"
+                entityId={org.id}
+                eligible={(org.regionIds?.length ?? 0) === 0}
+              />
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">
                   Priority areas notes

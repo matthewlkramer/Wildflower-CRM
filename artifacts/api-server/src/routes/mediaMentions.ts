@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
-import { mediaMentions } from "@workspace/db/schema";
+import { mediaMentions, people } from "@workspace/db/schema";
 import { and, desc, count, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import {
   ListMediaMentionsQueryParams,
@@ -20,6 +20,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
+import { normalizeMediaHeadline } from "../lib/mediaIngest";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -63,18 +64,103 @@ router.get(
       );
     }
     if (q.pinned !== undefined) filters.push(eq(mediaMentions.pinned, q.pinned));
-    const where = and(...filters);
-    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+    const baseWhere = and(...filters);
+
+    // Historical GDELT rows predate the stricter ingest safeguards. Apply the
+    // same quality bar at read time so the retroactive review improves every
+    // existing profile without deleting provenance. Pinned-only views are left
+    // untouched because pinning is an explicit human decision.
+    const qualityFilters = [...filters];
+    if (q.pinned !== true) {
+      const candidateScope = q.personId
+        ? sql`candidate.person_ids @> ARRAY[${q.personId}]::text[]`
+        : q.organizationId
+          ? parseBoolQuery(req, "includeLinkedPeople") === true
+            ? organizationActivityArrayScope(
+                q.organizationId,
+                sql`candidate.organization_ids`,
+                sql`candidate.person_ids`,
+              )
+            : sql`candidate.organization_ids @> ARRAY[${q.organizationId}]::text[]`
+          : sql`TRUE`;
+
+      qualityFilters.push(sql`NOT EXISTS (
+        SELECT 1
+        FROM media_mentions candidate
+        WHERE candidate.dismissed = false
+          AND ${candidateScope}
+          AND (
+            (
+              media_mentions.canonical_url IS NOT NULL
+              AND candidate.canonical_url = media_mentions.canonical_url
+            )
+            OR (
+              media_mentions.headline_fingerprint IS NOT NULL
+              AND candidate.headline_fingerprint = media_mentions.headline_fingerprint
+              AND candidate.publication_date IS NOT DISTINCT FROM media_mentions.publication_date
+            )
+          )
+          AND (
+            (candidate.pinned = true AND media_mentions.pinned = false)
+            OR (
+              candidate.pinned = media_mentions.pinned
+              AND (
+                candidate.created_at < media_mentions.created_at
+                OR (
+                  candidate.created_at = media_mentions.created_at
+                  AND candidate.id < media_mentions.id
+                )
+              )
+            )
+          )
+      )`);
+
+      if (q.personId) {
+        const person = await db
+          .select({ fullName: people.fullName })
+          .from(people)
+          .where(eq(people.id, q.personId))
+          .then((rows) => rows[0]);
+        const normalizedName = normalizeMediaHeadline(person?.fullName ?? "");
+        if (normalizedName.length >= 5) {
+          qualityFilters.push(sql`(
+            media_mentions.pinned = true
+            OR regexp_replace(
+              lower(coalesce(media_mentions.title, '')),
+              '[^a-z0-9]+',
+              '',
+              'g'
+            ) LIKE ${`%${normalizedName}%`}
+          )`);
+        }
+      }
+    }
+
+    const qualityWhere = and(...qualityFilters);
+    const includeHidden = parseBoolQuery(req, "includeHidden") === true;
+    const visibleWhere = includeHidden ? baseWhere : qualityWhere;
+    const [
+      rows,
+      [{ value: total } = { value: 0 }],
+      [{ value: baseTotal } = { value: 0 }],
+      [{ value: qualityTotal } = { value: 0 }],
+    ] = await Promise.all([
       db
         .select()
         .from(mediaMentions)
-        .where(where)
+        .where(visibleWhere)
         .orderBy(desc(mediaMentions.publicationDate), desc(mediaMentions.createdAt))
         .limit(limit)
         .offset(offset),
-      db.select({ value: count() }).from(mediaMentions).where(where),
+      db.select({ value: count() }).from(mediaMentions).where(visibleWhere),
+      db.select({ value: count() }).from(mediaMentions).where(baseWhere),
+      db.select({ value: count() }).from(mediaMentions).where(qualityWhere),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    res.json({
+      data: rows,
+      pagination: { page, limit, total: Number(total) },
+      hiddenCount: Math.max(0, Number(baseTotal) - Number(qualityTotal)),
+    });
   }),
 );
 
