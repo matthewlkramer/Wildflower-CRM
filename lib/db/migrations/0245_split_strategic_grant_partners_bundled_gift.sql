@@ -6,16 +6,18 @@
 --   * its three active payments are $400,000, $100,000, and $300,000;
 --   * the extra $25,000 is a stand-alone Strategic Grant Partners gift;
 --   * the 2018-09-06 Wells Fargo deposit remains one $326,500 bank event;
---   * the existing $300,000 QuickBooks record is not modified;
+--   * the existing $300,000 and $25,000 QuickBooks records are not modified;
 --   * CRM deposit composition becomes $300,000 pledge payment + $25,000
 --     direct gift + the existing excluded $1,500 component.
+--   * the existing $25,000 QBO/allocation/register evidence is reattached to
+--     the restored $25,000 payment unit instead of being rewritten.
 --
 -- SAFE / IDEMPOTENT:
 --   * first-run preflight locks onto the exact reviewed opportunity, gifts,
 --     allocation split, payment unit, QBO evidence, component, and bank deposit;
 --   * it aborts if any reviewed amount, link, date, or target count drifted;
---   * it never updates bank_deposits, bank_transactions, staged_payments,
---     qbo_accounting_checks, or source_links;
+--   * it never updates bank_deposits, bank_transactions, staged_payments, or
+--     qbo_accounting_checks; one internal source_links pointer is reattached;
 --   * deterministic ids plus one audit marker make successful re-runs no-ops;
 --   * the postflight proves both the pledge rollup and deposit composition.
 --
@@ -37,11 +39,17 @@ DECLARE
   v_300_allocation_count integer;
   v_25_allocation_count integer;
   v_payment_unit_count integer;
+  v_absorbed_unit_count integer;
   v_component_count integer;
   v_deposit_component_count integer;
   v_deposit_component_total numeric;
   v_excluded_1500_count integer;
   v_staged_payment_count integer;
+  v_staged_payment_total numeric;
+  v_line_allocation_link_count integer;
+  v_register_link_count integer;
+  v_bank_transaction_count integer;
+  v_bank_transaction_total numeric;
   v_deposit_count integer;
   v_reserved_id_count bigint;
 BEGIN
@@ -113,9 +121,17 @@ BEGIN
        AND donorbox_donation_id IS NULL
        AND source_staged_payment_id = 'eYUufuwn1mea0hs80eKzK'
        AND gross_amount = 325000::numeric
-       AND (net_amount IS NULL OR net_amount = 325000::numeric)
+       -- Migration 0200 intentionally expanded gross donor credit from the
+       -- $300,000 QBO line to the $325,000 physical receipt while retaining
+       -- the original $300,000 net/accounting fact.
+       AND net_amount = 300000::numeric
        AND received_date = DATE '2018-09-06'
        AND lifecycle = 'received';
+
+    SELECT count(*)::integer
+      INTO v_absorbed_unit_count
+      FROM payment_units
+     WHERE id = 'pu_3BKPGN7dLcb_pvliqNtRk';
 
     SELECT count(*)::integer
       INTO v_component_count
@@ -140,12 +156,62 @@ BEGIN
     FROM bank_deposit_components
     WHERE bank_deposit_id = 'bdep_0600314fc0e164a1f15604c2';
 
-    SELECT count(*)::integer
-      INTO v_staged_payment_count
+    SELECT count(*)::integer, COALESCE(sum(amount), 0)
+      INTO v_staged_payment_count, v_staged_payment_total
       FROM staged_payments
-     WHERE id = 'eYUufuwn1mea0hs80eKzK'
+     WHERE (
+       id = 'eYUufuwn1mea0hs80eKzK'
        AND amount = 300000::numeric
-       AND date_received = DATE '2018-09-06';
+       AND date_received = DATE '2018-09-06'
+     ) OR (
+       id = '3BKPGN7dLcb_pvliqNtRk'
+       AND amount = 25000::numeric
+       AND date_received = DATE '2018-09-06'
+     );
+
+    -- Migration 0200 preserved each QBO line at allocation grain and both
+    -- register postings at unit grain when it merged the two gifts. Those
+    -- evidence rows are the authorities this correction now separates again.
+    SELECT count(*)::integer
+      INTO v_line_allocation_link_count
+      FROM source_links
+     WHERE lifecycle = 'confirmed'
+       AND (
+         (
+           id = 'srcl_qla_eYUufuwn1mea0hs80eKzK_synth-ga-recaKMBM7D9Bxv662'
+           AND link_type = 'qbo_line_allocation'
+           AND qb_staged_payment_id = 'eYUufuwn1mea0hs80eKzK'
+           AND gift_allocation_id = 'synth-ga-recaKMBM7D9Bxv662'
+         )
+         OR (
+           id = 'srcl_qla_3BKPGN7dLcb_pvliqNtRk_synth-ga-recuRLvecG7IgHgY6'
+           AND link_type = 'qbo_line_allocation'
+           AND qb_staged_payment_id = '3BKPGN7dLcb_pvliqNtRk'
+           AND gift_allocation_id = 'synth-ga-recuRLvecG7IgHgY6'
+         )
+       );
+
+    SELECT count(*)::integer
+      INTO v_register_link_count
+      FROM source_links
+     WHERE lifecycle = 'confirmed'
+       AND link_type = 'qbo_register_unit'
+       AND payment_unit_id = 'pu_eYUufuwn1mea0hs80eKzK'
+       AND (id, bank_transaction_id) IN (
+         ('srcl_qru_bnk_00131128bdef8fd2c7bee604', 'bnk_00131128bdef8fd2c7bee604'),
+         ('srcl_qru_bnk_2c81a4c08fe3508073012685', 'bnk_2c81a4c08fe3508073012685')
+       );
+
+    SELECT count(*)::integer, COALESCE(sum(deposit), 0)
+      INTO v_bank_transaction_count, v_bank_transaction_total
+      FROM bank_transactions
+     WHERE (
+       id = 'bnk_00131128bdef8fd2c7bee604'
+       AND deposit = 300000::numeric
+     ) OR (
+       id = 'bnk_2c81a4c08fe3508073012685'
+       AND deposit = 25000::numeric
+     );
 
     SELECT count(*)::integer
       INTO v_deposit_count
@@ -158,7 +224,7 @@ BEGIN
       (SELECT count(*) FROM gifts_and_payments
         WHERE id = 'gift_0245_sgp_direct_25')
       + (SELECT count(*) FROM payment_units
-          WHERE id = 'pu_manual_0245_sgp_direct_25')
+          WHERE id = 'pu_3BKPGN7dLcb_pvliqNtRk')
       + (SELECT count(*) FROM bank_deposit_components
           WHERE id = 'bdc_manual_0245_sgp_direct_25')
       INTO v_reserved_id_count;
@@ -204,9 +270,11 @@ BEGIN
         '0245 preflight: expected exactly the reviewed FY2019 $300,000 + $25,000 allocation split';
     END IF;
 
-    IF v_payment_unit_count <> 1 OR v_component_count <> 1 THEN
+    IF v_payment_unit_count <> 1
+       OR v_absorbed_unit_count <> 0
+       OR v_component_count <> 1 THEN
       RAISE EXCEPTION
-        '0245 preflight: the reviewed $325,000 payment unit/component link changed';
+        '0245 preflight: expected the reviewed merged $325,000 unit (gross $325,000 / net $300,000), absent absorbed $25,000 unit, and one $325,000 component';
     END IF;
 
     IF v_deposit_count <> 1
@@ -217,9 +285,18 @@ BEGIN
         '0245 preflight: the reviewed $326,500 deposit composition changed';
     END IF;
 
-    IF v_staged_payment_count <> 1 THEN
+    IF v_staged_payment_count <> 2
+       OR v_staged_payment_total <> 325000::numeric THEN
       RAISE EXCEPTION
-        '0245 preflight: the source $300,000 QuickBooks record changed';
+        '0245 preflight: the source $300,000 + $25,000 QuickBooks records changed';
+    END IF;
+
+    IF v_line_allocation_link_count <> 2
+       OR v_register_link_count <> 2
+       OR v_bank_transaction_count <> 2
+       OR v_bank_transaction_total <> 325000::numeric THEN
+      RAISE EXCEPTION
+        '0245 preflight: the preserved $300,000 + $25,000 QBO allocation/register evidence changed';
     END IF;
 
     IF v_reserved_id_count <> 0 THEN
@@ -341,10 +418,10 @@ UPDATE bank_deposit_components
       WHERE id = 'audit_0245_sgp_bundled_gift_split'
    );
 
--- Represent the additional donor intent as its own manual payment unit within
--- the SAME historical deposit. It deliberately has no QBO source pointer:
--- QuickBooks contains the $300,000 pledge-payment line, not a separate $25,000
--- accounting record.
+-- Restore the $25,000 payment unit that migration 0200 absorbed into the
+-- $300,000 unit. The source $25,000 QBO row was never deleted or changed;
+-- reusing its original deterministic unit id reconnects that existing evidence
+-- to the owner-confirmed direct gift.
 INSERT INTO payment_units (
   id,
   kind,
@@ -362,11 +439,12 @@ INSERT INTO payment_units (
   received_date,
   lifecycle,
   bank_deposit_expected,
+  source_staged_payment_id,
   created_at,
   updated_at
 )
 SELECT
-  'pu_manual_0245_sgp_direct_25',
+  'pu_3BKPGN7dLcb_pvliqNtRk',
   u.kind,
   'gift_0245_sgp_direct_25',
   ga.id,
@@ -379,12 +457,17 @@ SELECT
   NULL,
   25000::numeric,
   u.currency,
-  u.received_date,
+  sp.date_received,
   u.lifecycle,
   u.bank_deposit_expected,
+  sp.id,
   now(),
   now()
 FROM payment_units u
+JOIN staged_payments sp
+  ON sp.id = '3BKPGN7dLcb_pvliqNtRk'
+ AND sp.amount = 25000::numeric
+ AND sp.date_received = DATE '2018-09-06'
 JOIN gifts_and_payments g
   ON g.id = 'gift_0245_sgp_direct_25'
 JOIN gift_allocations ga
@@ -395,6 +478,21 @@ WHERE u.id = 'pu_eYUufuwn1mea0hs80eKzK'
     SELECT 1 FROM audit_log
      WHERE id = 'audit_0245_sgp_bundled_gift_split'
   );
+
+-- Reattach the existing $25,000 QBO-register claim to its restored unit. The
+-- bank transaction itself remains immutable; only this internal evidence
+-- pointer changes from the formerly merged $325,000 unit to the $25,000 unit.
+UPDATE source_links
+   SET payment_unit_id = 'pu_3BKPGN7dLcb_pvliqNtRk',
+       updated_at = now()
+ WHERE id = 'srcl_qru_bnk_2c81a4c08fe3508073012685'
+   AND link_type = 'qbo_register_unit'
+   AND bank_transaction_id = 'bnk_2c81a4c08fe3508073012685'
+   AND payment_unit_id = 'pu_eYUufuwn1mea0hs80eKzK'
+   AND NOT EXISTS (
+     SELECT 1 FROM audit_log
+      WHERE id = 'audit_0245_sgp_bundled_gift_split'
+   );
 
 INSERT INTO bank_deposit_components (
   id,
@@ -416,7 +514,7 @@ SELECT
   u.id,
   25000::numeric,
   'manual',
-  NULL,
+  '3BKPGN7dLcb_pvliqNtRk',
   false,
   false,
   NULL,
@@ -425,7 +523,7 @@ SELECT
   now()
 FROM bank_deposits d
 JOIN payment_units u
-  ON u.id = 'pu_manual_0245_sgp_direct_25'
+  ON u.id = 'pu_3BKPGN7dLcb_pvliqNtRk'
 WHERE d.id = 'bdep_0600314fc0e164a1f15604c2'
   AND NOT EXISTS (
   SELECT 1 FROM audit_log
@@ -484,8 +582,12 @@ SELECT
     'directGiftId', 'gift_0245_sgp_direct_25',
     'bankDepositId', 'bdep_0600314fc0e164a1f15604c2',
     'existingPaymentUnitId', 'pu_eYUufuwn1mea0hs80eKzK',
-    'newPaymentUnitId', 'pu_manual_0245_sgp_direct_25',
-    'qboStagedPaymentId', 'eYUufuwn1mea0hs80eKzK',
+    'newPaymentUnitId', 'pu_3BKPGN7dLcb_pvliqNtRk',
+    'qboStagedPaymentIds', jsonb_build_array(
+      'eYUufuwn1mea0hs80eKzK',
+      '3BKPGN7dLcb_pvliqNtRk'
+    ),
+    'qboRegisterSourceLinkReattached', true,
     'bankDepositChanged', false,
     'quickBooksRecordChanged', false
   ),
@@ -514,6 +616,10 @@ DECLARE
   v_deposit_component_total numeric;
   v_excluded_1500_count integer;
   v_staged_payment_count integer;
+  v_staged_payment_total numeric;
+  v_source_link_count integer;
+  v_bank_transaction_count integer;
+  v_bank_transaction_total numeric;
   v_deposit_count integer;
 BEGIN
   SELECT count(*)::integer
@@ -591,14 +697,14 @@ BEGIN
   SELECT count(*)::integer
     INTO v_direct_unit_count
     FROM payment_units
-   WHERE id = 'pu_manual_0245_sgp_direct_25'
+   WHERE id = 'pu_3BKPGN7dLcb_pvliqNtRk'
      AND gift_id = 'gift_0245_sgp_direct_25'
      AND gift_allocation_id IN (
        SELECT id FROM gift_allocations
         WHERE gift_id = 'gift_0245_sgp_direct_25'
           AND sub_amount = 25000::numeric
      )
-     AND source_staged_payment_id IS NULL
+     AND source_staged_payment_id = '3BKPGN7dLcb_pvliqNtRk'
      AND stripe_charge_id IS NULL
      AND donorbox_donation_id IS NULL
      AND gross_amount = 25000::numeric
@@ -619,10 +725,10 @@ BEGIN
     FROM bank_deposit_components
    WHERE id = 'bdc_manual_0245_sgp_direct_25'
      AND bank_deposit_id = 'bdep_0600314fc0e164a1f15604c2'
-     AND payment_unit_id = 'pu_manual_0245_sgp_direct_25'
+     AND payment_unit_id = 'pu_3BKPGN7dLcb_pvliqNtRk'
      AND amount = 25000::numeric
      AND source = 'manual'
-     AND source_staged_payment_id IS NULL
+     AND source_staged_payment_id = '3BKPGN7dLcb_pvliqNtRk'
      AND exclusion_reason IS NULL;
 
   SELECT
@@ -639,14 +745,70 @@ BEGIN
     FROM bank_deposit_components
    WHERE bank_deposit_id = 'bdep_0600314fc0e164a1f15604c2';
 
-  -- These are deliberately read-only source-history checks: neither table is
-  -- updated anywhere in this migration.
-  SELECT count(*)::integer
-    INTO v_staged_payment_count
+  -- These are deliberately read-only source-history checks: neither source
+  -- table is updated anywhere in this migration.
+  SELECT count(*)::integer, COALESCE(sum(amount), 0)
+    INTO v_staged_payment_count, v_staged_payment_total
     FROM staged_payments
-   WHERE id = 'eYUufuwn1mea0hs80eKzK'
+   WHERE (
+     id = 'eYUufuwn1mea0hs80eKzK'
      AND amount = 300000::numeric
-     AND date_received = DATE '2018-09-06';
+     AND date_received = DATE '2018-09-06'
+   ) OR (
+     id = '3BKPGN7dLcb_pvliqNtRk'
+     AND amount = 25000::numeric
+     AND date_received = DATE '2018-09-06'
+   );
+
+  SELECT count(*)::integer
+    INTO v_source_link_count
+    FROM source_links
+   WHERE lifecycle = 'confirmed'
+     AND (
+       (
+         id = 'srcl_qla_eYUufuwn1mea0hs80eKzK_synth-ga-recaKMBM7D9Bxv662'
+         AND link_type = 'qbo_line_allocation'
+         AND qb_staged_payment_id = 'eYUufuwn1mea0hs80eKzK'
+         AND gift_allocation_id IN (
+           SELECT id FROM gift_allocations
+            WHERE gift_id = 'recaKMBM7D9Bxv662'
+              AND sub_amount = 300000::numeric
+         )
+       )
+       OR (
+         id = 'srcl_qla_3BKPGN7dLcb_pvliqNtRk_synth-ga-recuRLvecG7IgHgY6'
+         AND link_type = 'qbo_line_allocation'
+         AND qb_staged_payment_id = '3BKPGN7dLcb_pvliqNtRk'
+         AND gift_allocation_id IN (
+           SELECT id FROM gift_allocations
+            WHERE gift_id = 'gift_0245_sgp_direct_25'
+              AND sub_amount = 25000::numeric
+         )
+       )
+       OR (
+         id = 'srcl_qru_bnk_00131128bdef8fd2c7bee604'
+         AND link_type = 'qbo_register_unit'
+         AND bank_transaction_id = 'bnk_00131128bdef8fd2c7bee604'
+         AND payment_unit_id = 'pu_eYUufuwn1mea0hs80eKzK'
+       )
+       OR (
+         id = 'srcl_qru_bnk_2c81a4c08fe3508073012685'
+         AND link_type = 'qbo_register_unit'
+         AND bank_transaction_id = 'bnk_2c81a4c08fe3508073012685'
+         AND payment_unit_id = 'pu_3BKPGN7dLcb_pvliqNtRk'
+       )
+     );
+
+  SELECT count(*)::integer, COALESCE(sum(deposit), 0)
+    INTO v_bank_transaction_count, v_bank_transaction_total
+    FROM bank_transactions
+   WHERE (
+     id = 'bnk_00131128bdef8fd2c7bee604'
+     AND deposit = 300000::numeric
+   ) OR (
+     id = 'bnk_2c81a4c08fe3508073012685'
+     AND deposit = 25000::numeric
+   );
 
   SELECT count(*)::integer
     INTO v_deposit_count
@@ -713,11 +875,15 @@ BEGIN
       v_excluded_1500_count;
   END IF;
 
-  IF v_staged_payment_count <> 1 THEN
+  IF v_staged_payment_count <> 2
+     OR v_staged_payment_total <> 325000::numeric
+     OR v_source_link_count <> 4
+     OR v_bank_transaction_count <> 2
+     OR v_bank_transaction_total <> 325000::numeric THEN
     RAISE EXCEPTION
-      '0245 postflight: the source $300,000 QuickBooks record changed';
+      '0245 postflight: the untouched $300,000 + $25,000 QBO/register evidence or its internal links are invalid';
   END IF;
 
   RAISE NOTICE
-    '0245: SGP verified — $800,000 pledge paid $400,000 + $100,000 + $300,000; separate $25,000 direct gift; $326,500 deposit and $300,000 QBO record preserved';
+    '0245: SGP verified — $800,000 pledge paid $400,000 + $100,000 + $300,000; separate $25,000 direct gift; $326,500 deposit and $300,000 + $25,000 QBO records preserved';
 END $$;
