@@ -6588,6 +6588,49 @@ paths:
         "409": { description: User has no active Google grant }
 
   # ─── Admin: derivation health (report-only drift check) ───────────────────
+  /admin/media-relevance-backfill:
+    get:
+      operationId: adminGetMediaRelevanceBackfillStatus
+      tags: [admin]
+      summary: Report progress for the resumable historical media relevance review.
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/MediaRelevanceBackfillStatus",
+                      },
+                  },
+              },
+          }
+        "403": { description: Admin required }
+    post:
+      operationId: adminStartMediaRelevanceBackfill
+      tags: [admin]
+      summary: Start or resume the historical media relevance review (configured implementation owner only).
+      responses:
+        "202":
+          {
+            description: Backfill start accepted,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/MediaRelevanceBackfillStartResult",
+                      },
+                  },
+              },
+          }
+        "403": { description: Configured implementation owner required }
+
+  # ─── Admin: owner-gated historical media relevance review ────────────
   /admin/derivation-health:
     get:
       operationId: adminGetDerivationHealth
@@ -24457,6 +24500,49 @@ components:
           items: { $ref: "#/components/schemas/AdminGoogleSyncUserRow" }
 
     # ─── Google OAuth status ──────────────────────────────────────────────────
+    MediaRelevanceBackfillStatus:
+      type: object
+      required:
+        [
+          canRun,
+          running,
+          total,
+          canonicalized,
+          scored,
+          unscored,
+          filtered,
+          pinned,
+          pinnedFiltered,
+          minScore,
+          maxScore,
+        ]
+      properties:
+        canRun:
+          {
+            type: boolean,
+            description: "True only for the configured feedback implementation owner.",
+          }
+        running:
+          {
+            type: boolean,
+            description: "Best-effort process-local signal that this app instance is running the review.",
+          }
+        total: { type: integer }
+        canonicalized: { type: integer }
+        scored: { type: integer }
+        unscored: { type: integer }
+        filtered: { type: integer }
+        pinned: { type: integer }
+        pinnedFiltered: { type: integer }
+        minScore: { type: [number, "null"] }
+        maxScore: { type: [number, "null"] }
+    MediaRelevanceBackfillStartResult:
+      type: object
+      required: [started, message]
+      properties:
+        started: { type: boolean }
+        message: { type: string }
+
     GoogleOauthStatus:
       type: object
       required: [configured, connected]

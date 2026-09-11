@@ -47,9 +47,16 @@ offer an explicit “show all” disclosure.
 
 ## Historical backfill
 
-The backfill is a standalone command, not an application startup task. It
-processes 100 unscored rows per batch and can resume safely. It updates the
-canonical URL and relevance score, but never changes `is_filtered` for a
-pinned row. Follow
+The shared backfill service processes 100 unscored rows per batch and can
+resume safely. It is not an application startup task. The standalone command
+and the Admin → Integrations “Historical media review” action both call that
+same service; only the configured feedback implementation owner can start the
+in-app action. A database advisory lock prevents overlapping runs across app
+instances.
+
+The review updates the canonical URL and relevance score, but never changes
+`is_filtered` for a pinned row and never deletes a media record. Progress is
+reported from database counts, so an interrupted run appears as paused and can
+be resumed without reprocessing scored rows. Follow
 [`0244_media_relevance_filtering_RUNBOOK.md`](../lib/db/migrations/0244_media_relevance_filtering_RUNBOOK.md)
 and obtain human approval before production.

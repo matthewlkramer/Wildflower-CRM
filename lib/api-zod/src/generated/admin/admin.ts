@@ -236,6 +236,23 @@ export const AdminResyncGoogleUserParams = zod.object({
 export const AdminResyncGoogleUserResponse = zod.record(zod.string(), zod.unknown())
 
 /**
+ * @summary Report progress for the resumable historical media relevance review.
+ */
+export const AdminGetMediaRelevanceBackfillStatusResponse = zod.object({
+  "canRun": zod.boolean().describe('True only for the configured feedback implementation owner.'),
+  "running": zod.boolean().describe('Best-effort process-local signal that this app instance is running the review.'),
+  "total": zod.number(),
+  "canonicalized": zod.number(),
+  "scored": zod.number(),
+  "unscored": zod.number(),
+  "filtered": zod.number(),
+  "pinned": zod.number(),
+  "pinnedFiltered": zod.number(),
+  "minScore": zod.number().nullable(),
+  "maxScore": zod.number().nullable()
+})
+
+/**
  * @summary Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
  */
 export const AdminGetDerivationHealthResponse = zod.object({

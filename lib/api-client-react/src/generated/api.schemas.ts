@@ -8424,6 +8424,29 @@ export interface AdminGoogleSyncList {
   data: AdminGoogleSyncUserRow[];
 }
 
+export interface MediaRelevanceBackfillStatus {
+  /** True only for the configured feedback implementation owner. */
+  canRun: boolean;
+  /** Best-effort process-local signal that this app instance is running the review. */
+  running: boolean;
+  total: number;
+  canonicalized: number;
+  scored: number;
+  unscored: number;
+  filtered: number;
+  pinned: number;
+  pinnedFiltered: number;
+  /** @nullable */
+  minScore: number | null;
+  /** @nullable */
+  maxScore: number | null;
+}
+
+export interface MediaRelevanceBackfillStartResult {
+  started: boolean;
+  message: string;
+}
+
 export interface GoogleOauthStatus {
   /** Server has GOOGLE_OAUTH_CLIENT_ID/SECRET set */
   configured: boolean;

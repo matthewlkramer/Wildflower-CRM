@@ -10,6 +10,8 @@ import {
   useDeleteFiscalYearEntityGoal,
   useAdminListGoogleSync,
   useAdminResyncGoogleUser,
+  useAdminGetMediaRelevanceBackfillStatus,
+  useAdminStartMediaRelevanceBackfill,
   useAdminGetSchoolSyncStatus,
   useAdminRunSchoolSync,
   getAdminGetSchoolSyncStatusQueryKey,
@@ -49,6 +51,7 @@ import {
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
+  getAdminGetMediaRelevanceBackfillStatusQueryKey,
   getGetCalendarMeetingFiltersQueryKey,
   getGetInternalEmailDomainsQueryKey,
   getGetWildflowerUpdateQueryKey,
@@ -198,6 +201,7 @@ export default function Admin() {
         {isAdmin && (
           <TabsContent value="integrations" className="space-y-8">
             <AdminSyncSection />
+            <MediaRelevanceBackfillSection />
             <SchoolSyncSection />
             <QuickbooksConnectSection returnTo="/admin" />
             <StripeSyncSection />
@@ -237,6 +241,142 @@ export default function Admin() {
 // state. The "Resync now" button calls the same workers the in-process
 // scheduler does — useful when debugging a stuck mailbox without
 // waiting 15 minutes for the next tick.
+
+function MediaRelevanceBackfillSection() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const queryKey = getAdminGetMediaRelevanceBackfillStatusQueryKey();
+  const q = useAdminGetMediaRelevanceBackfillStatus({
+    query: {
+      queryKey,
+      refetchInterval: (query) => {
+        const status = query.state.data;
+        return status?.running ||
+          (status && status.scored > 0 && status.unscored > 0)
+          ? 2_000
+          : false;
+      },
+    },
+  });
+  const start = useAdminStartMediaRelevanceBackfill({
+    mutation: {
+      onSuccess: (result) => {
+        void qc.invalidateQueries({ queryKey });
+        toast({
+          title: result.started
+            ? "Historical media review started"
+            : "Historical media review is already running",
+          description:
+            "You can leave this page. The review is resumable and never deletes media.",
+        });
+      },
+      onError: (error: unknown) => {
+        toast({
+          title: "Could not start the media review",
+          description: error instanceof Error ? error.message : String(error),
+          variant: "destructive",
+        });
+      },
+    },
+  });
+
+  const errStatus = (q.error as unknown as { status?: number } | null)?.status;
+  if (errStatus === 403) return null;
+
+  const status = q.data;
+  const complete = status ? status.unscored === 0 : false;
+  const partiallyReviewed = status ? status.scored > 0 && !complete : false;
+  const canStart = Boolean(
+    status?.canRun && status.unscored > 0 && !status.running && !start.isPending,
+  );
+
+  return (
+    <Card data-testid="admin-media-relevance-backfill">
+      <CardHeader>
+        <CardTitle>Historical media review</CardTitle>
+        <CardDescription>
+          Score every existing media result with the same relevance rules used
+          for new ingests. Low-confidence results are hidden from the cleaner
+          view but remain available through Show all; nothing is deleted.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {q.isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !status ? (
+          <p className="text-sm text-muted-foreground">No status available.</p>
+        ) : (
+          <>
+            <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="text-muted-foreground">Reviewed</dt>
+                <dd className="font-medium" data-testid="media-backfill-reviewed">
+                  {status.scored.toLocaleString()} of {status.total.toLocaleString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Remaining</dt>
+                <dd className="font-medium" data-testid="media-backfill-remaining">
+                  {status.unscored.toLocaleString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Low confidence</dt>
+                <dd className="font-medium" data-testid="media-backfill-filtered">
+                  {status.filtered.toLocaleString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Status</dt>
+                <dd className="font-medium" data-testid="media-backfill-status">
+                  {complete ? (
+                    <span className="text-emerald-700">Complete</span>
+                  ) : status.running ? (
+                    <span className="text-amber-700">Running…</span>
+                  ) : partiallyReviewed ? (
+                    <span className="text-amber-700">Paused — safe to resume</span>
+                  ) : (
+                    <span className="text-muted-foreground">Ready</span>
+                  )}
+                </dd>
+              </div>
+            </dl>
+            {status.scored > 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Score range: {status.minScore ?? "—"} to {status.maxScore ?? "—"}.
+                {" "}{status.canonicalized.toLocaleString()} canonical URLs;
+                {" "}{status.pinned.toLocaleString()} pinned results, including
+                {" "}{status.pinnedFiltered.toLocaleString()} stored low-confidence
+                classifications that remain visible because they are pinned.
+              </p>
+            ) : null}
+          </>
+        )}
+
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!canStart}
+          onClick={() => start.mutate()}
+          data-testid="media-backfill-start"
+        >
+          {start.isPending
+            ? "Starting…"
+            : complete
+              ? "Review complete"
+              : partiallyReviewed
+                ? "Resume historical review"
+                : "Start historical review"}
+        </Button>
+        {status && !status.canRun ? (
+          <p className="text-xs text-muted-foreground">
+            Only the configured implementation owner can start this review.
+          </p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
 
 function fmtTime(iso: string | null | undefined): string {
   if (!iso) return "never";

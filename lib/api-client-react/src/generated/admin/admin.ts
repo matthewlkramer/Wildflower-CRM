@@ -39,6 +39,8 @@ import type {
   ForbiddenResponse,
   GenerateEmailIntelPromptBody,
   GetOwnedRecordCountsParams,
+  MediaRelevanceBackfillStartResult,
+  MediaRelevanceBackfillStatus,
   NotFoundResponse,
   OwnedRecordCounts,
   QuickbooksHandlingRule,
@@ -695,6 +697,149 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getAdminResyncGoogleUserMutationOptions(options));
+    }
+    /**
+ * @summary Report progress for the resumable historical media relevance review.
+ */
+export const getAdminGetMediaRelevanceBackfillStatusUrl = () => {
+
+
+  
+
+  return `/api/admin/media-relevance-backfill`
+}
+
+export const adminGetMediaRelevanceBackfillStatus = async ( options?: RequestInit): Promise<MediaRelevanceBackfillStatus> => {
+  
+  return customFetch<MediaRelevanceBackfillStatus>(getAdminGetMediaRelevanceBackfillStatusUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getAdminGetMediaRelevanceBackfillStatusQueryKey = () => {
+    return [
+    `/api/admin/media-relevance-backfill`
+    ] as const;
+    }
+
+    
+export const getAdminGetMediaRelevanceBackfillStatusQueryOptions = <TData = Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAdminGetMediaRelevanceBackfillStatusQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>> = ({ signal }) => adminGetMediaRelevanceBackfillStatus({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type AdminGetMediaRelevanceBackfillStatusQueryResult = NonNullable<Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>>
+export type AdminGetMediaRelevanceBackfillStatusQueryError = ErrorType<void>
+
+
+/**
+ * @summary Report progress for the resumable historical media relevance review.
+ */
+
+export function useAdminGetMediaRelevanceBackfillStatus<TData = Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof adminGetMediaRelevanceBackfillStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getAdminGetMediaRelevanceBackfillStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Start or resume the historical media relevance review (configured implementation owner only).
+ */
+export const getAdminStartMediaRelevanceBackfillUrl = () => {
+
+
+  
+
+  return `/api/admin/media-relevance-backfill`
+}
+
+export const adminStartMediaRelevanceBackfill = async ( options?: RequestInit): Promise<MediaRelevanceBackfillStartResult> => {
+  
+  return customFetch<MediaRelevanceBackfillStartResult>(getAdminStartMediaRelevanceBackfillUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getAdminStartMediaRelevanceBackfillMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>, TError,void, TContext> => {
+
+const mutationKey = ['adminStartMediaRelevanceBackfill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>, void> = () => {
+          
+
+          return  adminStartMediaRelevanceBackfill(requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AdminStartMediaRelevanceBackfillMutationResult = NonNullable<Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>>
+    
+    export type AdminStartMediaRelevanceBackfillMutationError = ErrorType<void>
+
+    /**
+ * @summary Start or resume the historical media relevance review (configured implementation owner only).
+ */
+export const useAdminStartMediaRelevanceBackfill = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof adminStartMediaRelevanceBackfill>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getAdminStartMediaRelevanceBackfillMutationOptions(options));
     }
     /**
  * @summary Re-derive every persisted-derived field and report rows where stored ≠ derived (admin-only, report-only — never writes).
