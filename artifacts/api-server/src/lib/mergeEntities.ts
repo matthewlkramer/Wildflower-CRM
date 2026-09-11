@@ -123,6 +123,7 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donorbox_donations", col: "individual_giver_person_id" },
   { table: "donor_routing_preferences", col: "source_person_id" },
   { table: "donor_routing_preferences", col: "target_person_id" },
+  { table: "trip_visit_candidates", col: "person_id" },
 ];
 
 const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [

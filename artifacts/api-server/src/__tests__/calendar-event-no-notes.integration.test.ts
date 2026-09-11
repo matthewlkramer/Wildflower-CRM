@@ -265,9 +265,13 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
       `/api/calendar-events?search=${encodeURIComponent(RUN)}&excludeNotesNotNeeded=true&limit=20`,
     );
     expect(queue.status).toBe(200);
-    expect(queue.json.data.map((event: { id: string }) => event.id)).toEqual([
-      CONTROL_EVENT_ID,
-    ]);
+    expect(
+      queue.json.data
+        .map((event: { id: string }) => event.id)
+        .sort(),
+    ).toEqual(
+      [CONTROL_EVENT_ID, BLANK_EVENT_A_ID, BLANK_EVENT_B_ID].sort(),
+    );
 
     const evidence = await request(
       `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,
