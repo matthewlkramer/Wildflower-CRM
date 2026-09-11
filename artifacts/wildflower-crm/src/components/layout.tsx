@@ -57,6 +57,30 @@ type NavLink = {
 type NavSection = { section: string; adminOnly?: boolean; indent?: boolean };
 type NavEntry = NavLink | NavSection;
 
+function BrandLockup({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={`flex items-center ${compact ? "justify-center" : "gap-2"}`}>
+      <span className="flex h-10 w-12 shrink-0 items-center justify-center rounded-md bg-white/95 p-1 shadow-sm">
+        <img
+          src={`${import.meta.env.BASE_URL}wildflower-watercolor-mark.png`}
+          alt=""
+          className="h-full w-full object-contain"
+        />
+      </span>
+      {compact ? null : (
+        <span className="leading-none">
+          <span className="block font-serif text-[1.05rem] font-medium tracking-wide text-sidebar-foreground">
+            Wildflower
+          </span>
+          <span className="mt-0.5 block text-[10px] font-bold uppercase tracking-[0.18em] text-sidebar-foreground/65">
+            Fundraising CRM
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 const navItems: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 
@@ -169,18 +193,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         data-collapsed={collapsed ? "true" : "false"}
       >
         <div className={`flex h-14 items-center border-b border-sidebar-border ${collapsed ? "justify-center px-2" : "justify-between px-4"}`}>
-          {collapsed ? null : (
-            <div className="flex items-center gap-2 font-serif font-medium text-sidebar-foreground text-lg tracking-tight">
-              <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
-                <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
-                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
-                <circle cx="50" cy="40" r="6" fill="#F4A261"/>
-                <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
-              </svg>
-              Wildflower CRM
-            </div>
-          )}
+          {collapsed ? null : <BrandLockup />}
           <Button
             variant="ghost"
             size="icon"
@@ -258,15 +271,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="flex w-72 flex-col gap-0 p-0 bg-sidebar border-r-sidebar-border text-sidebar-foreground">
-                <div className="flex h-14 shrink-0 items-center border-b border-sidebar-border px-4 gap-2 font-serif font-medium text-lg tracking-tight text-sidebar-foreground">
-                  <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
-                    <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                    <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
-                    <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
-                    <circle cx="50" cy="40" r="6" fill="#F4A261"/>
-                    <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
-                  </svg>
-                  Wildflower CRM
+                <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-4">
+                  <BrandLockup />
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-4">
                   <NavLinks onNavigate={() => setMobileOpen(false)} />
@@ -295,15 +301,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center gap-2 font-serif font-medium tracking-tight text-primary md:hidden text-lg">
-              <svg viewBox="0 0 100 100" className="h-7 w-7 shrink-0" fill="none">
-                <circle cx="50" cy="50" r="45" fill="#E8F3E8"/>
-                <path d="M50 85 C50 85 45 60 50 40" stroke="#2D6A4F" strokeWidth="4" strokeLinecap="round"/>
-                <path d="M50 40 C35 35 30 50 50 55 C70 50 65 35 50 40" fill="#2D6A4F"/>
-                <circle cx="50" cy="40" r="6" fill="#F4A261"/>
-                <path d="M50 60 C40 60 30 75 50 80 C70 75 60 60 50 60" fill="#40916C"/>
-              </svg>
-              Wildflower CRM
+            <div className="flex items-center gap-2 md:hidden">
+              <span className="font-serif text-lg font-medium tracking-wide text-primary">
+                Wildflower CRM
+              </span>
             </div>
           </div>
 

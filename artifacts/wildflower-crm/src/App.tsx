@@ -69,41 +69,41 @@ const clerkAppearance = {
   options: {
     logoPlacement: "inside" as const,
     logoLinkUrl: basePath || "/",
-    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+    logoImageUrl: `${window.location.origin}${basePath}/wildflower-watercolor-logo.png`,
   },
   variables: {
-    colorPrimary: "hsl(153, 40%, 30%)",
-    colorBackground: "hsl(40, 25%, 98%)",
+    colorPrimary: "#00a69c",
+    colorBackground: "#ffffff",
     colorInputBackground: "hsl(0, 0%, 100%)",
-    colorText: "hsl(153, 30%, 15%)",
-    colorTextSecondary: "hsl(153, 10%, 45%)",
-    colorInputText: "hsl(153, 30%, 15%)",
-    colorNeutral: "hsl(120, 15%, 88%)",
-    borderRadius: "0.5rem",
-    fontFamily: '"Plus Jakarta Sans", sans-serif',
-    fontFamilyButtons: '"Plus Jakarta Sans", sans-serif',
+    colorText: "#137070",
+    colorTextSecondary: "#58585b",
+    colorInputText: "#137070",
+    colorNeutral: "#b2c9c7",
+    borderRadius: "0.375rem",
+    fontFamily: '"Avenir Next", Avenir, "Helvetica Neue", Helvetica, Arial, sans-serif',
+    fontFamilyButtons: '"Avenir Next", Avenir, "Helvetica Neue", Helvetica, Arial, sans-serif',
   },
   elements: {
     rootBox: "w-full",
-    cardBox: "rounded-2xl w-full overflow-hidden border border-border shadow-xl bg-card",
+    cardBox: "rounded-xl w-full overflow-hidden border border-primary/20 shadow-xl bg-card",
     card: "!shadow-none !border-0 !bg-transparent !rounded-none",
     footer: "!shadow-none !border-0 !bg-transparent !rounded-none",
-    headerTitle: { color: "hsl(153, 30%, 15%)", fontFamily: '"Fraunces", serif' },
-    headerSubtitle: { color: "hsl(153, 10%, 45%)" },
-    socialButtonsBlockButtonText: { color: "hsl(153, 30%, 15%)" },
-    formFieldLabel: { color: "hsl(153, 30%, 15%)" },
-    footerActionLink: { color: "hsl(153, 40%, 30%)" },
-    footerActionText: { color: "hsl(153, 10%, 45%)" },
-    dividerText: { color: "hsl(153, 10%, 45%)" },
-    formFieldSuccessText: { color: "hsl(153, 40%, 30%)" },
+    logoImage: "h-20 w-auto object-contain",
+    headerTitle: { color: "#137070", fontFamily: '"Mrs Eaves", "EB Garamond", Garamond, serif', fontWeight: 500 },
+    headerSubtitle: { color: "#58585b" },
+    socialButtonsBlockButtonText: { color: "#137070" },
+    formFieldLabel: { color: "#137070" },
+    footerActionLink: { color: "#137070" },
+    footerActionText: { color: "#58585b" },
+    dividerText: { color: "#58585b" },
+    formFieldSuccessText: { color: "#00a69c" },
     alertText: { color: "hsl(0, 70%, 45%)" },
   },
 };
 
 function SignInPage() {
   return (
-    <div className="relative flex min-h-[100dvh] items-center justify-center bg-background px-4">
-      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none"></div>
+    <div className="wf-watercolor-bg relative flex min-h-[100dvh] items-center justify-center px-4">
       <div className="z-10 w-full max-w-md">
         <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`} />
       </div>
@@ -113,8 +113,7 @@ function SignInPage() {
 
 function SignUpPage() {
   return (
-    <div className="relative flex min-h-[100dvh] items-center justify-center bg-background px-4">
-      <div className="absolute inset-0 z-0 bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-primary/5 via-background to-background pointer-events-none"></div>
+    <div className="wf-watercolor-bg relative flex min-h-[100dvh] items-center justify-center px-4">
       <div className="z-10 w-full max-w-md">
         <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`} />
       </div>

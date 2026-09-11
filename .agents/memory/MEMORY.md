@@ -51,6 +51,7 @@ code/docs and update or archive the stale memory.
 
 ## Frontend and interaction conventions
 
+- [Wildflower brand guide](wildflower-brand-guide.md) — the uploaded Montessori style guide is the visual authority for CRM colors, typography, logos, and watercolor accents.
 - [Unpickable rows are labeled, never hidden](unpickable-rows-label-not-hide.md) — user rule (also in replit.md prefs): pickers gray blocked rows WITH the reason; enforce via 409s.
 - [wildflower list-page chooser pattern](wildflower-list-chooser-pattern.md) — 4 list pages share filter/column choosers; saved views persist null at default, known/hidden keeps opt-in filters hidden for predating views.
 - [List-page pagination & PageJumper](list-page-pagination.md) — pagination markup duplicated (not shared) across 6 list pages; blur-after-Enter/Escape needs skipBlurRef guard.
