@@ -12,6 +12,8 @@ import { logger } from "./logger";
 
 const MODEL = "claude-sonnet-4-6";
 const ARCHITECTURE_CONTEXT_VERSION = "feedback-proposals-v1-2026-09";
+const FEEDBACK_PROPOSAL_MAX_TOKENS = 8192;
+const FEEDBACK_PROPOSAL_TIMEOUT_MS = 120_000;
 
 const PROPOSE_FEEDBACK_TOOL = {
   name: "propose_feedback_implementation",
@@ -313,6 +315,111 @@ function parseProposal(input: Record<string, unknown>): AppFeedbackProposalConte
   };
 }
 
+type FeedbackProposalResponseDiagnostic = {
+  stopReason:
+    | "end_turn"
+    | "max_tokens"
+    | "stop_sequence"
+    | "tool_use"
+    | "pause_turn"
+    | "refusal"
+    | "unknown"
+    | null;
+  contentBlockCount: number;
+  contentBlockTypes: Array<"tool_use" | "text" | "other">;
+  matchingToolUseCount: number;
+  matchingToolInputs: Array<"object" | "array" | "null" | "primitive">;
+  missingCoreFields: string[];
+};
+
+const CORE_PROPOSAL_FIELDS = [
+  "title",
+  "summary",
+  "implementationBrief",
+  "acceptanceCriteria",
+] as const;
+
+function safeStopReason(value: unknown): FeedbackProposalResponseDiagnostic["stopReason"] {
+  switch (value) {
+    case "end_turn":
+    case "max_tokens":
+    case "stop_sequence":
+    case "tool_use":
+    case "pause_turn":
+    case "refusal":
+      return value;
+    case undefined:
+    case null:
+      return null;
+    default:
+      return "unknown";
+  }
+}
+
+function safeInputShape(value: unknown): FeedbackProposalResponseDiagnostic["matchingToolInputs"][number] {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value === "object" ? "object" : "primitive";
+}
+
+/**
+ * Parse only the forced tool response. The diagnostic intentionally contains
+ * provider control metadata, never feedback text or generated proposal content.
+ */
+export function parseFeedbackProposalResponse(response: unknown): {
+  proposal: AppFeedbackProposalContent | null;
+  diagnostic: FeedbackProposalResponseDiagnostic;
+  error: string | null;
+} {
+  const rawResponse = asRecord(response);
+  const content = Array.isArray(rawResponse.content) ? rawResponse.content : [];
+  const diagnostic: FeedbackProposalResponseDiagnostic = {
+    stopReason: safeStopReason(rawResponse.stop_reason),
+    contentBlockCount: content.length,
+    contentBlockTypes: content.map((item) => {
+      const type = asRecord(item).type;
+      return type === "tool_use" || type === "text" ? type : "other";
+    }),
+    matchingToolUseCount: 0,
+    matchingToolInputs: [],
+    missingCoreFields: [],
+  };
+
+  for (const rawBlock of content) {
+    const block = asRecord(rawBlock);
+    if (
+      block.type !== "tool_use" ||
+      block.name !== "propose_feedback_implementation"
+    ) {
+      continue;
+    }
+
+    diagnostic.matchingToolUseCount += 1;
+    diagnostic.matchingToolInputs.push(safeInputShape(block.input));
+    const proposal = parseProposal(asRecord(block.input));
+    const missingCoreFields = CORE_PROPOSAL_FIELDS.filter((field) =>
+      field === "acceptanceCriteria"
+        ? proposal.acceptanceCriteria.length === 0
+        : !proposal[field],
+    );
+    if (missingCoreFields.length === 0) {
+      return { proposal, diagnostic, error: null };
+    }
+    diagnostic.missingCoreFields = [
+      ...new Set([...diagnostic.missingCoreFields, ...missingCoreFields]),
+    ];
+  }
+
+  return {
+    proposal: null,
+    diagnostic,
+    error:
+      diagnostic.stopReason === "max_tokens"
+        ? "AI response reached its output limit before returning a complete feedback proposal."
+        : "AI returned an incomplete feedback proposal.",
+  };
+}
+
 export async function generateAppFeedbackProposal(
   proposalId: string,
 ): Promise<{ ok: boolean; error?: string }> {
@@ -332,7 +439,7 @@ export async function generateAppFeedbackProposal(
           anthropic.messages.create(
             {
               model: MODEL,
-              max_tokens: 3000,
+              max_tokens: FEEDBACK_PROPOSAL_MAX_TOKENS,
               system: [
                 {
                   type: "text",
@@ -361,7 +468,7 @@ export async function generateAppFeedbackProposal(
                 },
               ],
             },
-            { timeout: 60_000, maxRetries: 0 },
+            { timeout: FEEDBACK_PROPOSAL_TIMEOUT_MS, maxRetries: 1 },
           ),
         {
           onRetry: ({ attempt, delayMs }) =>
@@ -373,24 +480,17 @@ export async function generateAppFeedbackProposal(
       ),
     );
 
-    let proposal: AppFeedbackProposalContent | null = null;
-    for (const block of response.content) {
-      if (
-        block.type === "tool_use" &&
-        block.name === "propose_feedback_implementation"
-      ) {
-        proposal = parseProposal(block.input as Record<string, unknown>);
-        break;
-      }
+    const parsedResponse = parseFeedbackProposalResponse(response);
+    if (!parsedResponse.proposal) {
+      logger.warn(
+        { proposalId, response: parsedResponse.diagnostic },
+        "generateAppFeedbackProposal received an unusable AI response",
+      );
+      throw new Error(
+        parsedResponse.error ?? "AI returned an incomplete feedback proposal.",
+      );
     }
-    if (
-      !proposal?.title ||
-      !proposal.summary ||
-      !proposal.implementationBrief ||
-      proposal.acceptanceCriteria.length === 0
-    ) {
-      throw new Error("AI returned an incomplete feedback proposal.");
-    }
+    const proposal = parsedResponse.proposal;
 
     await db
       .update(appFeedbackProposals)
