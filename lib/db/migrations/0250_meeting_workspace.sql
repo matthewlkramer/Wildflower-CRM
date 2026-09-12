@@ -14,17 +14,12 @@ COMMENT ON COLUMN meeting_notes.artifacts IS
 UPDATE cleanup_queue
 SET note = regexp_replace(
   regexp_replace(
-    regexp_replace(
-      note,
-      E'\\n\\nOwner and follow-up date: to be assigned\\.?',
-      '',
-      'gi'
-    ),
+    note,
     'assign Finance review, an owner, and a follow-up date',
     'complete Finance review',
     'gi'
   ),
-  E'\\nOwner and follow-up date: to be assigned\\.?',
+  E'\\s*Owner and follow-up date: to be assigned\\.?',
   '',
   'gi'
 ),
