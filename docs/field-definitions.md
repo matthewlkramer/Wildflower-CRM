@@ -28,6 +28,13 @@ conditional commitments or existing values. Hidden controls preserve existing
 data. Payment timing remains in the payment plan. These form changes do not
 alter recognition, donor identity, money amounts, or lifecycle rules.
 
+In the Expected arrivals report, standard one-time pipeline gifts use the
+projected close date as a labeled receipt estimate unless an explicit payment
+plan exists. Payment dates remain optional; the report shows the timing basis
+instead of creating missing-date cleanup items. This derived estimate does not
+change the stored meaning of commitment dates or fiscal-year credit. See
+[funding-arrivals-current-status.md](funding-arrivals-current-status.md).
+
 ## Newsletter evidence and current status
 
 `newsletter_preference_events` is authoritative. Each item preserves what

@@ -7,6 +7,7 @@ import {
   useReopenAward,
   getGetOpportunityOrPledgeQueryKey,
   getListOpportunitiesAndPledgesQueryKey,
+  getGetFundingArrivalsByMonthQueryKey,
   AwardCloseReason,
   type OpportunityOrPledgeDetail,
   type PledgeExpectedPayment,
@@ -78,6 +79,7 @@ export function InstallmentSchedule({ opp }: { opp: OpportunityOrPledgeDetail })
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: getGetOpportunityOrPledgeQueryKey(opp.id) }),
       queryClient.invalidateQueries({ queryKey: getListOpportunitiesAndPledgesQueryKey() }),
+      queryClient.invalidateQueries({ queryKey: getGetFundingArrivalsByMonthQueryKey() }),
     ]);
   };
   const onError = (err: unknown) =>

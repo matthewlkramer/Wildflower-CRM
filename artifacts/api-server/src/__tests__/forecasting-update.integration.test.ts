@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { derivePledgePlanning } from "../lib/pledgePlanning";
+import { effectiveProjectedCloseDate } from "../lib/effectiveProjectedCloseDate";
 import {
   chicagoCalendarDate,
   isExpectedDateOverdue,
@@ -273,10 +274,9 @@ afterAll(async () => {
   await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_B_ID));
   await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_C_ID));
   await db.delete(schema.entities).where(eqFn(schema.entities.id, ENTITY_D_ID));
-  await db.delete(schema.fundableProjects).where(inArrayFn(
-    schema.fundableProjects.id,
-    [PROJECT_A_ID, PROJECT_B_ID],
-  ));
+  await db
+    .delete(schema.fundableProjects)
+    .where(inArrayFn(schema.fundableProjects.id, [PROJECT_A_ID, PROJECT_B_ID]));
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -312,17 +312,25 @@ describe("funding-arrival Chicago date boundaries", () => {
     // 23:30 on June 30 in Chicago is already July 1 in UTC.
     const lateChicago = new Date("2026-07-01T04:30:00.000Z");
     expect(chicagoCalendarDate(lateChicago)).toBe("2026-06-30");
-    expect(isExpectedDateOverdue("2026-06-30", chicagoCalendarDate(lateChicago))).toBe(false);
-    expect(isExpectedDateOverdue("2026-06-29", chicagoCalendarDate(lateChicago))).toBe(true);
+    expect(
+      isExpectedDateOverdue("2026-06-30", chicagoCalendarDate(lateChicago)),
+    ).toBe(false);
+    expect(
+      isExpectedDateOverdue("2026-06-29", chicagoCalendarDate(lateChicago)),
+    ).toBe(true);
 
     const julyFirstChicago = new Date("2026-07-01T05:00:00.000Z");
     expect(chicagoCalendarDate(julyFirstChicago)).toBe("2026-07-01");
-    expect(isExpectedDateOverdue("2026-06-30", chicagoCalendarDate(julyFirstChicago))).toBe(true);
+    expect(
+      isExpectedDateOverdue(
+        "2026-06-30",
+        chicagoCalendarDate(julyFirstChicago),
+      ),
+    ).toBe(true);
   });
 });
 
 // prettier-ignore
-
 
 describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
   it("reports monthly commitment/prospect timing, payment coverage, reimbursements, and scope", async () => {
@@ -393,11 +401,12 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     const writeoffOriginalId = await insertOpportunity({ status: "pledge" });
     await insertPledgeAllocation(writeoffOriginalId, { subAmount: "70.00", entityId: ENTITY_ID });
     await insertExpectedPayment(writeoffOriginalId, "2099-08-15", "70.00");
-    await insertOpportunity({
+    const fullWriteoff = await insertOpportunity({
       status: "pledge",
       isWriteOff: true,
       writeOffOfPledgeId: writeoffOriginalId,
     });
+    await insertPledgeAllocation(fullWriteoff, { subAmount: "-70.00", entityId: ENTITY_ID });
 
     const all = await getJson(
       `/api/funding-arrivals-by-month?category=revenue&entityId=${ENTITY_ID},${ENTITY_B_ID}`,
@@ -405,6 +414,7 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     const committedMonth = all.months.find((row: any) => row.month === "2020-01");
     expect(committedMonth.sourceRecordIds).toContain(committedId);
     expectMoney(committedMonth.committedAmount, 30);
+    expect(all.items.filter((row: any) => row.opportunityId === committedId).some((row: any) => row.note.includes("differs"))).toBe(false);
     expectMoney(
       all.months.find((row: any) => row.month === "2020-02").committedAmount,
       40,
@@ -412,34 +422,29 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     const prospectiveMonth = all.months.find((row: any) => row.month === "2099-03");
     expectMoney(prospectiveMonth.prospectiveAmount, 100);
     expectMoney(prospectiveMonth.prospectiveWeightedAmount, 25);
-    expect(all.actionableItems).toEqual(expect.arrayContaining([
+    expect(all.items).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        type: "overdue",
+        overdue: true,
         opportunityId: committedId,
-        expectedPaymentId: committedFirst,
-      }),
-      expect.objectContaining({
-        type: "missing_amount",
-        opportunityId: prospectiveId,
-        expectedPaymentId: prospectiveMissing,
-      }),
-      expect.objectContaining({
-        type: "missing_timing",
-        opportunityId: untimedFixedId,
-        remainingAmount: "55",
+        id: committedFirst,
       }),
     ]));
-    expect(all.untimedReimbursementPlans).toEqual(expect.arrayContaining([
+    expect(all.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: prospectiveMissing, basis: "explicit_payment", amount: null }),
+      expect.objectContaining({ opportunityId: untimedFixedId, basis: "unscheduled", amount: "55" }),
+    ]));
+    expect(all.actionableItems).toBeUndefined();
+    expect(all.items).toEqual(expect.arrayContaining([
       expect.objectContaining({
         opportunityId: reimbursementId,
-        allocationId: reimbursementAllocationId,
-        amount: "500.00",
+        id: reimbursementAllocationId,
+        basis: "reimbursement_annual",
+        amount: "500",
       }),
     ]));
     const allIds = [
       ...all.months.flatMap((row: any) => row.sourceRecordIds),
-      ...all.unknownTiming.flatMap((row: any) => row.sourceRecordIds),
-      ...all.actionableItems.flatMap((row: any) => row.sourceRecordIds),
+      ...all.items.map((row: any) => row.opportunityId),
     ];
     expect(allIds).not.toContain(archivedId);
     expect(allIds).not.toContain(lostId);
@@ -454,6 +459,68 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     );
     expectMoney(scopedCross.committedAmount, 100);
   }, 60_000);
+
+  it("caps excessive schedules, preserves partial writeoffs, and exposes missing collection information", async () => {
+    const id = await insertOpportunity({ status: "pledge" });
+    await insertPledgeAllocation(id, { subAmount: "100.00", entityId: ENTITY_C_ID });
+    await insertExpectedPayment(id, "2098-01-01", "70.00");
+    await insertExpectedPayment(id, "2098-02-01", "70.00");
+    const partial = await insertOpportunity({ status: "pledge", isWriteOff: true, writeOffOfPledgeId: id });
+    await insertPledgeAllocation(partial, { subAmount: "-20.00", entityId: ENTITY_C_ID });
+    const archived = await insertOpportunity({ status: "pledge", isWriteOff: true, writeOffOfPledgeId: id, archivedAt: new Date() });
+    await insertPledgeAllocation(archived, { subAmount: "-50.00", entityId: ENTITY_C_ID });
+    const missing = await insertOpportunity({ status: "open", projectedCloseDate: "2098-04-01" });
+    await insertPledgeAllocation(missing, { subAmount: null, entityId: ENTITY_C_ID });
+    const prospect = await insertOpportunity({ status: "open", winProbability: "0.5000" });
+    await insertPledgeAllocation(prospect, { subAmount: "20.00", entityId: ENTITY_C_ID });
+    await insertExpectedPayment(prospect, "2020-01-01", "20.00");
+    const short = await insertOpportunity({ status: "pledge" });
+    await insertPledgeAllocation(short, { subAmount: "100.00", entityId: ENTITY_C_ID });
+    await insertExpectedPayment(short, "2098-03-01", "40.00");
+
+    const result = await getJson(`/api/funding-arrivals-by-month?category=revenue&entityId=${ENTITY_C_ID}`);
+    expectMoney(result.months.find((row: any) => row.month === "2098-01").committedAmount, 70);
+    expectMoney(result.months.find((row: any) => row.month === "2098-02").committedAmount, 10);
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ opportunityId: short, basis: "unscheduled", amount: "60" }),
+    ]));
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ opportunityId: missing, basis: "projected_close", amount: null }),
+    ]));
+    expect(result.months.find((row: any) => row.month === "2098-04")).toBeUndefined();
+    expect(result.items.filter((row: any) => row.opportunityId === prospect && row.overdue)).toEqual([]);
+    expect(result.items.filter((row: any) => row.opportunityId === id).every((row: any) => row.note.includes("differs"))).toBe(true);
+  });
+
+  it("defaults one-time pipeline gifts to weighted close dates and lets explicit payment plans override", async () => {
+    const plain = await insertOpportunity({ status: "open", askAmount: "100.00", winProbability: "0.2500", projectedCloseDate: "2097-04-12" });
+    await insertPledgeAllocation(plain, { subAmount: "100.00", entityId: ENTITY_D_ID });
+    const explicit = await insertOpportunity({ status: "open", askAmount: "200.00", winProbability: "0.5000", projectedCloseDate: "2097-04-12" });
+    await insertPledgeAllocation(explicit, { subAmount: "200.00", entityId: ENTITY_D_ID });
+    await insertExpectedPayment(explicit, "2097-06-15", "200.00");
+    const rolling = await insertOpportunity({ status: "open", askAmount: "40.00", winProbability: "0.5000", projectedCloseMonthsOut: 2 });
+    await insertPledgeAllocation(rolling, { subAmount: "40.00", entityId: ENTITY_D_ID });
+    const pledgePath = await insertOpportunity({ status: "open", commitmentPath: "written_pledge", verbalCommitmentAt: "2026-09-12", askAmount: "80.00", winProbability: "0.5000", projectedCloseDate: "2097-04-12" });
+    await insertPledgeAllocation(pledgePath, { subAmount: "80.00", entityId: ENTITY_D_ID });
+    const pledge = await insertOpportunity({ status: "pledge", projectedCloseDate: "2097-04-12" });
+    await insertPledgeAllocation(pledge, { subAmount: "70.00", entityId: ENTITY_D_ID });
+    const noAmount = await insertOpportunity({ status: "open", askAmount: "50.00", winProbability: "0.5000", projectedCloseDate: "2097-04-12" });
+    await insertPledgeAllocation(noAmount, { subAmount: "50.00", entityId: ENTITY_D_ID });
+    await insertExpectedPayment(noAmount, "2097-07-01", null);
+
+    const result = await getJson(`/api/funding-arrivals-by-month?category=revenue&entityId=${ENTITY_D_ID}`);
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ opportunityId: plain, basis: "projected_close", expectedDate: "2097-04-12", amount: "100", weightedAmount: "25" }),
+      expect.objectContaining({ opportunityId: explicit, basis: "explicit_payment", expectedDate: "2097-06-15", weightedAmount: "100" }),
+      expect.objectContaining({ opportunityId: rolling, basis: "projected_close", expectedDate: effectiveProjectedCloseDate(null, 2, result.asOfDate), weightedAmount: "20" }),
+      expect.objectContaining({ opportunityId: pledgePath, basis: "unscheduled" }),
+      expect.objectContaining({ opportunityId: pledge, basis: "unscheduled" }),
+      expect.objectContaining({ opportunityId: noAmount, basis: "explicit_payment", amount: null }),
+    ]));
+    expect(result.items.filter((row: any) => row.basis === "projected_close" && [explicit, noAmount, pledge, pledgePath].includes(row.opportunityId))).toEqual([]);
+    expectMoney(result.months.find((row: any) => row.month === "2097-04").prospectiveWeightedAmount, 25);
+    expect(result.actionableItems).toBeUndefined();
+  });
 
   it("reconciles Dashboard, FY report, and Projections and reports intentional omissions", async () => {
     await db.insert(schema.fiscalYearEntityGoals).values({

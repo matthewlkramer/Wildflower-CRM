@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
 import {
@@ -195,6 +195,11 @@ export default function OpportunityDetail({
 }
 
 function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
+  useEffect(() => {
+    if (window.location.hash === "#payment-plan") {
+      document.getElementById("payment-plan")?.scrollIntoView?.({ block: "start" });
+    }
+  }, [opp.id]);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [, navigate] = useLocation();
@@ -1387,6 +1392,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
               </div>
             </RelatedCard>
 
+            <section id="payment-plan" className="scroll-mt-6">
             <RelatedCard
               title="Payment plan"
               count={(opp.expectedPayments ?? []).length || undefined}
@@ -1395,6 +1401,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                 <InstallmentSchedule opp={opp} />
               </div>
             </RelatedCard>
+            </section>
 
             <RelatedCard
               title="Payments"

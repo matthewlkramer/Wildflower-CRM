@@ -637,67 +637,42 @@ export interface FundingArrivalMonth {
   sourceRecordIds: string[];
 }
 
-export type FundingArrivalUnknownTimingStatus = typeof FundingArrivalUnknownTimingStatus[keyof typeof FundingArrivalUnknownTimingStatus];
+export type FundingArrivalItemStatus = typeof FundingArrivalItemStatus[keyof typeof FundingArrivalItemStatus];
 
 
-export const FundingArrivalUnknownTimingStatus = {
+export const FundingArrivalItemStatus = {
   pledge: 'pledge',
   open: 'open',
 } as const;
 
-export interface FundingArrivalUnknownTiming {
-  category: FundraisingCategory;
-  status: FundingArrivalUnknownTimingStatus;
-  opportunityId: string;
-  /** @nullable */
-  opportunityName: string | null;
-  amount: string;
-  remainingAmount: string;
-  sourceRecordIds: string[];
-  message: string;
-}
-
-export type FundingArrivalActionType = typeof FundingArrivalActionType[keyof typeof FundingArrivalActionType];
+export type FundingArrivalItemBasis = typeof FundingArrivalItemBasis[keyof typeof FundingArrivalItemBasis];
 
 
-export const FundingArrivalActionType = {
-  overdue: 'overdue',
-  missing_timing: 'missing_timing',
-  missing_amount: 'missing_amount',
-  schedule_discrepancy: 'schedule_discrepancy',
+export const FundingArrivalItemBasis = {
+  projected_close: 'projected_close',
+  explicit_payment: 'explicit_payment',
+  unscheduled: 'unscheduled',
+  reimbursement_annual: 'reimbursement_annual',
 } as const;
 
-export interface FundingArrivalAction {
-  type: FundingArrivalActionType;
-  category: FundraisingCategory;
+export interface FundingArrivalItem {
+  id: string;
   opportunityId: string;
-  /** @nullable */
   opportunityName: string | null;
-  expectedPaymentId?: string;
-  expectedDate?: string;
-  amount?: string;
-  remainingAmount?: string;
-  sourceRecordIds: string[];
-  message: string;
-}
-
-export interface UntimedReimbursementPlan {
-  opportunityId: string;
-  /** @nullable */
-  opportunityName: string | null;
-  allocationId: string;
-  /** @nullable */
-  entityId: string | null;
-  amount: string;
-  sourceRecordIds: string[];
+  status: FundingArrivalItemStatus;
+  expectedDate: string | null;
+  amount: string | null;
+  weightedAmount: string | null;
+  basis: FundingArrivalItemBasis;
+  overdue: boolean;
+  note: string;
 }
 
 export interface FundingArrivalsByMonth {
   category: FundraisingCategory;
+  asOfDate: string;
+  items: FundingArrivalItem[];
   months: FundingArrivalMonth[];
-  unknownTiming: FundingArrivalUnknownTiming[];
-  actionableItems: FundingArrivalAction[];
-  untimedReimbursementPlans: UntimedReimbursementPlan[];
 }
 
 /**

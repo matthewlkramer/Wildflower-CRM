@@ -123,7 +123,7 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
 
 
 /**
- * Returns known dated installment arrivals for active, unarchived,
+ * Returns receipt estimates and their timing basis for active, unarchived,
 non-writeoff pledges and opportunities. `pledge` rows are committed;
 `open` rows are prospective and expose both face and
 probability-weighted amounts. Payments are parent-gift totals consumed
@@ -132,12 +132,15 @@ payment matching evidence. Expected-payment rows intentionally retain
 no recipient attribution. When entityId is supplied (comma-separated or
 repeated), a parent schedule is included once if any non-direct
 allocation overlaps the requested scope; installments are never split
-across recipients. Active writeoff children resolve and exclude their
-original, matching canonical writeoff behavior. Cost-reimbursement
-ceilings are not forecasts: only explicit dated schedule rows are
-timing entries, while annual allocation plans without a schedule are
-returned in untimedReimbursementPlans and never monthly totals.
-Projected close dates and allocation fiscal years are not payment timing.
+across recipients. Active writeoff amounts reduce the original collectible
+balance; partial writeoffs do not remove an entire pledge. Standard open
+one-time gifts (fixed model, grant track, no pledge commitment path)
+default to the effective projected close date, including rolling estimates.
+Any explicit schedule overrides that default. Pledges and reimbursements
+do not inherit close dates. Undated amounts remain report rows, never
+missing-date queue tasks. Reimbursement annual plans are contextual rows,
+not award ceilings or additional monthly cash. Each item states its basis;
+only dated, known remaining amounts contribute to monthly totals.
 
  * @summary Authenticated monthly funding-arrival timing forecast.
  */

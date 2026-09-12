@@ -19,6 +19,7 @@ import {
   currentFiscalYearEndYear,
   currentFiscalYearSlug,
   formatCurrency,
+  formatDate,
 } from "@/lib/format";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import {
@@ -36,6 +37,7 @@ type ProjectionCombinedForecastRow = ProjectionCombinedFyRow;
 
 export default function Projections() {
   const { selected: globalEntityIds } = useEntityFilter();
+  const [view, setView] = useState<"annual" | "arrivals">("annual");
   const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const projParams = useMemo(
     () =>
@@ -176,85 +178,108 @@ export default function Projections() {
         ))}
       </div>
 
-      <ForecastTotals
-        rows={combinedRows}
-        fiscalYears={fyQ.data ?? []}
-        category={category}
-      />
-
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Fiscal year</TableHead>
-              {entityCols.map((e) => (
-                <TableHead key={e} className="whitespace-nowrap">
-                  {entityName(e)}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
-            ) : isError ? (
-              <TableRow>
-                <TableCell
-                  colSpan={Math.max(entityCols.length + 1, 2)}
-                  className="text-center h-24 text-destructive"
-                >
-                  {error instanceof Error
-                    ? error.message
-                    : "Failed to load projections."}
-                </TableCell>
-              </TableRow>
-            ) : fyRows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={Math.max(entityCols.length + 1, 2)}
-                  className="text-center h-24 text-muted-foreground"
-                >
-                  No forecast information is available.
-                </TableCell>
-              </TableRow>
-            ) : (
-              <>
-                {fyRows.map((fy) => {
-                  return (
-                    <TableRow key={fy} data-testid={`row-projection-${fy}`}>
-                      <TableCell className="font-medium whitespace-nowrap">
-                        {fyLabel(fy)}
-                      </TableCell>
-                      {entityCols.map((ent) => {
-                        const row = cell.get(`${fy}|${ent}`);
-                        return (
-                          <TableCell
-                            key={ent}
-                            className="align-top"
-                            data-testid={`cell-${fy}-${ent}`}
-                          >
-                            {row ? <ProjectionCell row={row} /> : "—"}
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  );
-                })}
-              </>
-            )}
-          </TableBody>
-        </Table>
+      <div className="flex gap-2" aria-label="Projection view">
+        {(
+          [
+            { value: "annual", label: "Annual forecast" },
+            { value: "arrivals", label: "Expected arrivals" },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={view === option.value}
+            onClick={() => setView(option.value)}
+            data-testid={`projection-view-${option.value}`}
+            className={`rounded-md border px-3 py-2 text-sm ${view === option.value ? "bg-primary text-primary-foreground" : "bg-card"}`}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
-      {entityCols.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Recipient comparisons are useful for context, but they may not add up
-          to the total because payment credit is capped once per opportunity
-          within the selected recipient scope.
-        </p>
-      ) : null}
-      <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
+      {view === "arrivals" ? (
+        <MonthlyCashOutlook params={monthlyParams} />
+      ) : (
+        <>
+          <ForecastTotals
+            rows={combinedRows}
+            fiscalYears={fyQ.data ?? []}
+            category={category}
+          />
 
-      {monthlyParams && <MonthlyCashOutlook params={monthlyParams} />}
+          <div className="rounded-md border bg-card overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fiscal year</TableHead>
+                  {entityCols.map((e) => (
+                    <TableHead key={e} className="whitespace-nowrap">
+                      {entityName(e)}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={Math.max(entityCols.length + 1, 2)}
+                      className="text-center h-24 text-destructive"
+                    >
+                      {error instanceof Error
+                        ? error.message
+                        : "Failed to load projections."}
+                    </TableCell>
+                  </TableRow>
+                ) : fyRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={Math.max(entityCols.length + 1, 2)}
+                      className="text-center h-24 text-muted-foreground"
+                    >
+                      No forecast information is available.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    {fyRows.map((fy) => {
+                      return (
+                        <TableRow key={fy} data-testid={`row-projection-${fy}`}>
+                          <TableCell className="font-medium whitespace-nowrap">
+                            {fyLabel(fy)}
+                          </TableCell>
+                          {entityCols.map((ent) => {
+                            const row = cell.get(`${fy}|${ent}`);
+                            return (
+                              <TableCell
+                                key={ent}
+                                className="align-top"
+                                data-testid={`cell-${fy}-${ent}`}
+                              >
+                                {row ? <ProjectionCell row={row} /> : "—"}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      );
+                    })}
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {entityCols.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Recipient comparisons are useful for context, but they may not add
+              up to the total because payment credit is capped once per
+              opportunity within the selected recipient scope.
+            </p>
+          ) : null}
+          <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
+        </>
+      )}
     </div>
   );
 }
@@ -267,77 +292,88 @@ function MonthlyCashOutlook({
   const query = useGetFundingArrivalsByMonth(params, {
     query: { queryKey: getGetFundingArrivalsByMonthQueryKey(params) },
   });
-
-  if (query.isLoading) {
+  if (query.isLoading) return <SkeletonRows cols={5} />;
+  if (query.isError)
     return (
-      <div className="mt-12 space-y-4">
-        <SkeletonRows cols={4} />
-      </div>
+      <p role="alert" className="text-destructive">
+        Could not load expected arrivals.{" "}
+        {query.error instanceof Error
+          ? query.error.message
+          : "Please try again."}
+      </p>
     );
-  }
-
-  if (query.isError) {
-    return (
-      <div className="mt-12 text-destructive border-destructive border p-4 rounded-md">
-        Failed to load monthly cash outlook:{" "}
-        {query.error instanceof Error ? query.error.message : "Unknown error"}
-      </div>
-    );
-  }
-
   if (!query.data) return null;
-
-  const {
-    months,
-    actionableItems,
-    unknownTiming,
-    untimedReimbursementPlans,
-  } = query.data;
-
+  const { months, items } = query.data;
+  const basisLabels = {
+    projected_close: "Projected close date",
+    explicit_payment: "Explicit payment date",
+    unscheduled: "Timing not estimated",
+    reimbursement_annual: "Annual reimbursement plan",
+  };
+  const money = (amount: string | null) =>
+    amount == null ? "Unknown" : formatCurrency(amount);
+  const monthLabel = (month: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${month}-01T12:00:00Z`));
   return (
-    <section className="mt-12 space-y-6" data-testid="monthly-cash-outlook">
+    <section className="space-y-5" data-testid="monthly-cash-outlook">
       <div>
-        <h2 className="text-2xl font-serif font-bold text-foreground">
-          Monthly cash outlook
+        <h2 className="text-2xl font-serif font-bold">
+          Expected funding arrivals
         </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          One-time pipeline gifts default to their projected close date. An
+          explicit payment plan overrides that estimate. Prospective amounts are
+          weighted by the existing opportunity probability. Payment dates are
+          optional.
+        </p>
         <p
+          className="text-xs text-muted-foreground mt-2"
           id="monthly-cash-outlook-description"
-          className="text-sm text-muted-foreground mt-1"
         >
-          Scheduled installments are reduced by recorded payments in oldest-due-first
-          planning order, which is not evidence of a payment-to-installment match.
-          Recipient filters select parent records with matching allocations; they do
-          not split an installment between recipients.
+          Recorded payments cover the oldest installments first for planning;
+          this does not establish individual payment matches. Recipient filters
+          select whole records with matching allocations, so amounts may also
+          cover other recipients. Do not add separate recipient views together.
+          Past months show amounts still outstanding at their original expected
+          dates. Unknown amounts and undated rows are excluded from monthly
+          totals.
         </p>
       </div>
-
-      {months.length > 0 ? (
+      {months.length ? (
         <div className="rounded-md border bg-card overflow-x-auto">
-          <Table aria-describedby="monthly-cash-outlook-description">
+          <Table
+            aria-label="Monthly expected arrivals"
+            aria-describedby="monthly-cash-outlook-description"
+          >
             <TableHeader>
               <TableRow>
-                <TableHead>Month</TableHead>
+                <TableHead>Expected month</TableHead>
                 <TableHead className="text-right">Committed</TableHead>
                 <TableHead className="text-right">Prospective</TableHead>
                 <TableHead className="text-right">
-                  Prospective (Weighted)
+                  Prospective, weighted
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {months.map((m) => (
-                <TableRow key={m.month} data-testid={`row-monthly-${m.month}`}>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {m.month}
+              {months.map((month) => (
+                <TableRow
+                  key={month.month}
+                  data-testid={`row-monthly-${month.month}`}
+                >
+                  <TableCell>{monthLabel(month.month)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(month.committedAmount)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(m.committedAmount)}
+                    {money(month.prospectiveAmount)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {formatCurrency(m.prospectiveAmount)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(m.prospectiveWeightedAmount)}
+                    {money(month.prospectiveWeightedAmount)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -345,128 +381,75 @@ function MonthlyCashOutlook({
           </Table>
         </div>
       ) : (
-        <div className="rounded-md border bg-card p-6 text-center text-muted-foreground">
-          No dated installments are recorded for the selected scope.
-        </div>
+        <p className="rounded-md border bg-card p-4 text-muted-foreground">
+          No dated amounts are available for the selected scope. Any untimed
+          records appear below.
+        </p>
       )}
-
-      {actionableItems.length > 0 && (
-        <div
-          className="space-y-3 rounded-md border border-amber-300 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/20"
-          data-testid="monthly-actionable"
-        >
-          <h3 className="font-serif text-lg font-semibold">Needs attention</h3>
-          <ul className="mt-2 grid gap-2 md:grid-cols-2">
-            {actionableItems.map((item, i) => (
-              <li
-                key={`${item.opportunityId}-${i}`}
-                className="rounded-md border bg-card p-2"
-              >
-                <Link
-                  href={`/opportunities/${item.opportunityId}`}
-                  className="font-medium text-foreground hover:underline"
-                >
-                  {item.opportunityName ?? item.opportunityId}
-                </Link>
-                <div className="mt-1 text-xs text-muted-foreground">
-                  <div>{item.message}</div>
-                  <div className="mt-2">
+      <div className="rounded-md border bg-card overflow-x-auto">
+        <Table aria-label="Funding arrival details">
+          <TableHeader>
+            <TableRow>
+              <TableHead>Opportunity / pledge</TableHead>
+              <TableHead>Expected receipt</TableHead>
+              <TableHead>Timing basis</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Weighted amount</TableHead>
+              <TableHead>Notes</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.length ? (
+              items.map((item) => (
+                <TableRow key={item.id} data-testid={`arrival-${item.id}`}>
+                  <TableCell className="min-w-48">
                     <Link
-                      href={`/opportunities/${item.opportunityId}`}
-                      className="text-primary hover:underline"
+                      className="font-medium hover:underline"
+                      href={`/opportunities/${item.opportunityId}#payment-plan`}
                     >
-                      Edit schedule
+                      {item.opportunityName ?? "Unnamed opportunity"}
                     </Link>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {unknownTiming.length > 0 && (
-        <div
-          className="space-y-3 rounded-md border bg-card p-4"
-          data-testid="monthly-unknown"
-        >
-          <h3 className="font-serif text-lg font-semibold">Unknown timing</h3>
-          <p className="text-xs text-muted-foreground">
-            These active commitments and open asks have no recorded payment dates.
-          </p>
-          <ul className="mt-2 grid gap-2 md:grid-cols-2">
-            {unknownTiming.map((item, i) => (
-              <li
-                key={`${item.opportunityId}-${i}`}
-                className="rounded-md border p-2"
-              >
-                <Link
-                  href={`/opportunities/${item.opportunityId}`}
-                  className="font-medium text-foreground hover:underline"
+                    <div className="text-xs text-muted-foreground">
+                      {item.status === "pledge" ? "Committed" : "Prospective"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {item.expectedDate
+                      ? formatDate(item.expectedDate)
+                      : "Not estimated"}
+                  </TableCell>
+                  <TableCell>{basisLabels[item.basis]}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(item.amount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {item.basis === "reimbursement_annual"
+                      ? "Not included"
+                      : money(item.weightedAmount)}
+                  </TableCell>
+                  <TableCell className="min-w-64 text-xs text-muted-foreground">
+                    {item.overdue && (
+                      <strong className="block text-amber-700 dark:text-amber-400">
+                        Overdue expected payment
+                      </strong>
+                    )}
+                    {item.note}
+                  </TableCell>
+                </TableRow>
+              ))
+            ) : (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center text-muted-foreground"
                 >
-                  {item.opportunityName ?? item.opportunityId}
-                </Link>
-                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
-                  <div>{item.message}</div>
-                  <div className="flex justify-between">
-                    <span>Remaining amount:</span>
-                    <span className="font-medium tabular-nums text-foreground">
-                      {formatCurrency(item.remainingAmount)}
-                    </span>
-                  </div>
-                  <div className="mt-1">
-                    <Link
-                      href={`/opportunities/${item.opportunityId}`}
-                      className="text-primary hover:underline"
-                    >
-                      Edit schedule
-                    </Link>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {untimedReimbursementPlans.length > 0 && (
-        <div
-          className="space-y-3 rounded-md border bg-card p-4"
-          data-testid="monthly-reimbursement"
-        >
-          <h3 className="font-serif text-lg font-semibold">
-            Untimed cost-reimbursement plans
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            These are annual planned amounts for cost-reimbursement awards, not
-            cash forecasts or award ceilings. Only explicitly dated drawdowns appear
-            above.
-          </p>
-          <ul className="mt-2 grid gap-2 md:grid-cols-2">
-            {untimedReimbursementPlans.map((item, i) => (
-              <li
-                key={`${item.opportunityId}-${item.allocationId}-${i}`}
-                className="rounded-md border p-2"
-              >
-                <Link
-                  href={`/opportunities/${item.opportunityId}`}
-                  className="font-medium text-foreground hover:underline"
-                >
-                  {item.opportunityName ?? item.opportunityId}
-                </Link>
-                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
-                  <div className="flex justify-between">
-                    <span>Planned annual amount:</span>
-                    <span className="font-medium tabular-nums text-foreground">
-                      {formatCurrency(item.amount)}
-                    </span>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+                  No active funding records in this scope.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </section>
   );
 }

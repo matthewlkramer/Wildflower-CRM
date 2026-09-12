@@ -8395,7 +8395,7 @@ paths:
       tags: [analytics]
       summary: Authenticated monthly funding-arrival timing forecast.
       description: |
-        Returns known dated installment arrivals for active, unarchived,
+        Returns receipt estimates and their timing basis for active, unarchived,
         non-writeoff pledges and opportunities. `pledge` rows are committed;
         `open` rows are prospective and expose both face and
         probability-weighted amounts. Payments are parent-gift totals consumed
@@ -8404,12 +8404,15 @@ paths:
         no recipient attribution. When entityId is supplied (comma-separated or
         repeated), a parent schedule is included once if any non-direct
         allocation overlaps the requested scope; installments are never split
-        across recipients. Active writeoff children resolve and exclude their
-        original, matching canonical writeoff behavior. Cost-reimbursement
-        ceilings are not forecasts: only explicit dated schedule rows are
-        timing entries, while annual allocation plans without a schedule are
-        returned in untimedReimbursementPlans and never monthly totals.
-        Projected close dates and allocation fiscal years are not payment timing.
+        across recipients. Active writeoff amounts reduce the original collectible
+        balance; partial writeoffs do not remove an entire pledge. Standard open
+        one-time gifts (fixed model, grant track, no pledge commitment path)
+        default to the effective projected close date, including rolling estimates.
+        Any explicit schedule overrides that default. Pledges and reimbursements
+        do not inherit close dates. Undated amounts remain report rows, never
+        missing-date queue tasks. Reimbursement annual plans are contextual rows,
+        not award ceilings or additional monthly cash. Each item states its basis;
+        only dated, known remaining amounts contribute to monthly totals.
       parameters:
         - name: entityId
           in: query
@@ -12609,51 +12612,28 @@ components:
         prospectiveAmount: { type: string }
         prospectiveWeightedAmount: { type: string }
         sourceRecordIds: { type: array, items: { type: string } }
-    FundingArrivalUnknownTiming:
-      type: object
-      required: [category, status, opportunityId, opportunityName, amount, remainingAmount, sourceRecordIds, message]
-      properties:
-        category: { $ref: "#/components/schemas/FundraisingCategory" }
-        status: { type: string, enum: [pledge, open] }
-        opportunityId: { type: string }
-        opportunityName: { type: ["string", "null"] }
-        amount: { type: string }
-        remainingAmount: { type: string }
-        sourceRecordIds: { type: array, items: { type: string } }
-        message: { type: string }
-    FundingArrivalAction:
-      type: object
-      required: [type, category, opportunityId, opportunityName, sourceRecordIds, message]
-      properties:
-        type: { type: string, enum: [overdue, missing_timing, missing_amount, schedule_discrepancy] }
-        category: { $ref: "#/components/schemas/FundraisingCategory" }
-        opportunityId: { type: string }
-        opportunityName: { type: ["string", "null"] }
-        expectedPaymentId: { type: string }
-        expectedDate: { type: string, format: date }
-        amount: { type: string }
-        remainingAmount: { type: string }
-        sourceRecordIds: { type: array, items: { type: string } }
-        message: { type: string }
-    UntimedReimbursementPlan:
-      type: object
-      required: [opportunityId, opportunityName, allocationId, entityId, amount, sourceRecordIds]
-      properties:
-        opportunityId: { type: string }
-        opportunityName: { type: ["string", "null"] }
-        allocationId: { type: string }
-        entityId: { type: ["string", "null"] }
-        amount: { type: string }
-        sourceRecordIds: { type: array, items: { type: string } }
     FundingArrivalsByMonth:
       type: object
-      required: [category, months, unknownTiming, actionableItems, untimedReimbursementPlans]
+      required: [category, asOfDate, items, months]
       properties:
         category: { $ref: "#/components/schemas/FundraisingCategory" }
+        asOfDate: { type: string, format: date }
+        items: { type: array, items: { $ref: "#/components/schemas/FundingArrivalItem" } }
         months: { type: array, items: { $ref: "#/components/schemas/FundingArrivalMonth" } }
-        unknownTiming: { type: array, items: { $ref: "#/components/schemas/FundingArrivalUnknownTiming" } }
-        actionableItems: { type: array, items: { $ref: "#/components/schemas/FundingArrivalAction" } }
-        untimedReimbursementPlans: { type: array, items: { $ref: "#/components/schemas/UntimedReimbursementPlan" } }
+    FundingArrivalItem:
+      type: object
+      required: [id, opportunityId, opportunityName, status, expectedDate, amount, weightedAmount, basis, overdue, note]
+      properties:
+        id: { type: string }
+        opportunityId: { type: string }
+        opportunityName: { type: string, nullable: true }
+        status: { type: string, enum: [pledge, open] }
+        expectedDate: { type: string, format: date, nullable: true }
+        amount: { type: string, nullable: true }
+        weightedAmount: { type: string, nullable: true }
+        basis: { type: string, enum: [projected_close, explicit_payment, unscheduled, reimbursement_annual] }
+        overdue: { type: boolean }
+        note: { type: string }
     LoanOrGrant:
       type: string
       enum: [loan, grant]
