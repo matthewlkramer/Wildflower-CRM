@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  getGetCalendarEventQueryKey,
   getGetMeetingNoteQueryKey,
   getGetHouseholdQueryKey,
   getGetOrganizationQueryKey,
@@ -185,11 +186,22 @@ async function uploadPrivateFile(file: File) {
 }
 
 export default function MeetingWorkspacePage() {
-  const { id = "" } = useParams<{ id: string }>();
+  const { id = "", noteId: routeNoteId = "" } = useParams<{
+    id?: string;
+    noteId?: string;
+  }>();
+  const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const event = useGetCalendarEvent(id);
-  const existingNoteId = event.data?.meetingNoteId ?? "";
+  const isNewMeeting = id === "new";
+  const eventId = routeNoteId || isNewMeeting ? "" : id;
+  const event = useGetCalendarEvent(eventId, {
+    query: {
+      enabled: Boolean(eventId),
+      queryKey: getGetCalendarEventQueryKey(eventId),
+    },
+  });
+  const existingNoteId = routeNoteId || event.data?.meetingNoteId || "";
   const [createdNoteId, setCreatedNoteId] = useState("");
   const noteId = existingNoteId || createdNoteId;
   const note = useGetMeetingNote(noteId, {
@@ -203,7 +215,9 @@ export default function MeetingWorkspacePage() {
   const [selectedContact, setSelectedContact] = useState<ContactRef | null>(
     null,
   );
-  const [manualContact, setManualContact] = useState<PickedContact | null>(null);
+  const [manualContact, setManualContact] = useState<PickedContact | null>(
+    null,
+  );
   const [recording, setRecording] = useState(false);
   const [processingLabel, setProcessingLabel] = useState("");
   const [proposals, setProposals] = useState<MeetingNextStepProposal[]>([]);
@@ -213,25 +227,59 @@ export default function MeetingWorkspacePage() {
   const streamsRef = useRef<MediaStream[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const startedAtRef = useRef(new Date().toISOString());
+
+  const requestedContact = useMemo<ContactRef | null>(() => {
+    if (!isNewMeeting) return null;
+    const params = new URLSearchParams(window.location.search);
+    const kind = params.get("contactKind");
+    const contactId = params.get("contactId")?.trim();
+    if (
+      !contactId ||
+      (kind !== "person" && kind !== "organization" && kind !== "household")
+    ) {
+      return null;
+    }
+    return { kind, id: contactId };
+  }, [isNewMeeting, location]);
 
   const contacts = useMemo<ContactRef[]>(() => {
     const value = event.data;
-    if (!value) return [];
-    return [
-      ...(value.matchedPersonIds ?? []).map((contactId) => ({
-        kind: "person" as const,
-        id: contactId,
-      })),
-      ...(value.matchedOrganizationIds ?? []).map((contactId) => ({
-        kind: "organization" as const,
-        id: contactId,
-      })),
-      ...(value.matchedHouseholdIds ?? []).map((contactId) => ({
-        kind: "household" as const,
-        id: contactId,
-      })),
-    ];
-  }, [event.data]);
+    const linked: ContactRef[] = value
+      ? [
+          ...(value.matchedPersonIds ?? []).map((contactId) => ({
+            kind: "person" as const,
+            id: contactId,
+          })),
+          ...(value.matchedOrganizationIds ?? []).map((contactId) => ({
+            kind: "organization" as const,
+            id: contactId,
+          })),
+          ...(value.matchedHouseholdIds ?? []).map((contactId) => ({
+            kind: "household" as const,
+            id: contactId,
+          })),
+        ]
+      : [];
+    const noteContact: ContactRef | null = note.data?.personId
+      ? { kind: "person", id: note.data.personId }
+      : note.data?.organizationId
+        ? { kind: "organization", id: note.data.organizationId }
+        : note.data?.householdId
+          ? { kind: "household", id: note.data.householdId }
+          : null;
+    for (const contact of [noteContact, requestedContact]) {
+      if (
+        contact &&
+        !linked.some(
+          (item) => item.kind === contact.kind && item.id === contact.id,
+        )
+      ) {
+        linked.push(contact);
+      }
+    }
+    return linked;
+  }, [event.data, note.data, requestedContact]);
 
   useEffect(() => {
     if (note.data) {
@@ -254,6 +302,12 @@ export default function MeetingWorkspacePage() {
       setSelectedContact(contacts[0]);
     }
   }, [contacts, noteId, selectedContact]);
+
+  useEffect(() => {
+    if (isNewMeeting && requestedContact && !selectedContact) {
+      setSelectedContact(requestedContact);
+    }
+  }, [isNewMeeting, requestedContact, selectedContact]);
 
   useEffect(
     () => () => {
@@ -410,8 +464,7 @@ export default function MeetingWorkspacePage() {
   }
 
   async function saveMeeting() {
-    if (!event.data || !selectedContact)
-      throw new Error("Choose a primary contact.");
+    if (!selectedContact) throw new Error("Choose a primary contact.");
     const contact = {
       personId:
         selectedContact.kind === "person" ? selectedContact.id : undefined,
@@ -435,10 +488,12 @@ export default function MeetingWorkspacePage() {
     } else {
       const saved = await create.mutateAsync({
         data: {
-          title: event.data.summary?.trim() || undefined,
-          meetingDate: event.data.startAt,
-          attendees: event.data.attendeeEmails ?? undefined,
-          calendarEventId: event.data.id,
+          title:
+            event.data?.summary?.trim() ||
+            (isNewMeeting ? "Meeting" : undefined),
+          meetingDate: event.data?.startAt ?? startedAtRef.current,
+          attendees: event.data?.attendeeEmails ?? undefined,
+          calendarEventId: event.data?.id,
           manualNotes: manualNotes.trim() || undefined,
           artifacts: artifacts.length ? artifacts : undefined,
           ...contact,
@@ -446,6 +501,7 @@ export default function MeetingWorkspacePage() {
       });
       savedId = saved.id;
       setCreatedNoteId(saved.id);
+      if (isNewMeeting) navigate(`/meetings/notes/${saved.id}`);
     }
     await Promise.all([
       queryClient.invalidateQueries({
@@ -506,9 +562,13 @@ export default function MeetingWorkspacePage() {
     }
   }
 
-  if (event.isLoading)
+  if ((eventId && event.isLoading) || (routeNoteId && note.isLoading))
     return <p className="text-sm text-muted-foreground">Loading meeting…</p>;
-  if (event.isError || !event.data) {
+  if (
+    (eventId && (event.isError || !event.data)) ||
+    (routeNoteId && (note.isError || !note.data)) ||
+    (isNewMeeting && !requestedContact)
+  ) {
     return (
       <p className="text-sm text-destructive">
         This meeting could not be loaded.
@@ -531,6 +591,12 @@ export default function MeetingWorkspacePage() {
           selectedContact.kind === "household" ? selectedContact.id : undefined,
       }
     : {};
+  const meetingTitle =
+    event.data?.summary?.trim() ||
+    note.data?.title?.trim() ||
+    (isNewMeeting ? "New meeting" : "Meeting workspace");
+  const meetingStartAt =
+    event.data?.startAt ?? note.data?.meetingDate ?? startedAtRef.current;
 
   return (
     <div className="space-y-6">
@@ -542,15 +608,13 @@ export default function MeetingWorkspacePage() {
         </Button>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-3xl font-serif font-bold">
-              {event.data.summary?.trim() || "Meeting workspace"}
-            </h1>
+            <h1 className="text-3xl font-serif font-bold">{meetingTitle}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {formatMeetingTime(event.data.startAt, event.data.endAt)}
+              {formatMeetingTime(meetingStartAt, event.data?.endAt)}
             </p>
           </div>
           <div className="flex gap-2">
-            {event.data.htmlLink ? (
+            {event.data?.htmlLink ? (
               <Button asChild variant="outline">
                 <a href={event.data.htmlLink} target="_blank" rel="noreferrer">
                   <Calendar className="mr-1 h-4 w-4" /> Calendar
@@ -608,7 +672,7 @@ export default function MeetingWorkspacePage() {
                 />
               </div>
               <ContactPreparation contact={selectedContact} />
-              {event.data.description ? (
+              {event.data?.description ? (
                 <div className="rounded-md border bg-muted/30 p-3">
                   <p className="text-xs font-medium uppercase text-muted-foreground">
                     Calendar description

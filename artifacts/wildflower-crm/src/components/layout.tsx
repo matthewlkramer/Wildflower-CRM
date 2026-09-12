@@ -42,7 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { HeaderEntityFilter } from "@/components/entity-filter";
 import { SidebarCollapsedContext } from "@/components/sidebar-collapsed-context";
 import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/command-palette";
-import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
+import { MeetingLauncherDialog } from "@/components/meeting-launcher-dialog";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
 
@@ -314,7 +314,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2">
             <FeedbackDialog />
             <LogInteractionDialog compact />
-            <AddMeetingNoteDialog unpinned />
+            <MeetingLauncherDialog />
             <CommandPaletteTrigger />
             <HeaderEntityFilter />
           </div>
