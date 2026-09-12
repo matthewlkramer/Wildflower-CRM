@@ -24,6 +24,12 @@ import { asyncHandler, notFound } from "../lib/helpers";
 import { personDisplayNameSql as personNameSqlFor } from "../lib/personNameSql";
 import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
 import { effectiveProjectedCloseDateSql } from "../lib/effectiveProjectedCloseDate";
+import {
+  getForecastDiagnostics,
+  getForecastMatrix,
+  getGoalForecast,
+  type ForecastCategory,
+} from "../lib/goalForecast";
 
 // Person display name — the canonical chain shared with the rest of the
 // API (see lib/personNameSql.ts).
@@ -90,8 +96,7 @@ function computeCurrentFiscalYear(now: Date = new Date()): FyDescriptor {
 // fundraising_category / goal category). The response keys + downstream
 // bucketing stay on the legacy `revenue`/`loan_capital` slugs until A003 — only
 // the SOURCE column changed, so existing data + API consumers are unaffected.
-const FUNDRAISING_CATEGORIES = ["revenue", "loan_capital"] as const;
-type FundraisingCategory = (typeof FUNDRAISING_CATEGORIES)[number];
+type FundraisingCategory = "revenue" | "loan_capital";
 
 // loan_or_grant → legacy bucket string, one helper per source table.
 const giftCategorySql = sql<string>`CASE WHEN ${giftsAndPayments.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
@@ -102,34 +107,22 @@ const effectiveCloseDateExpr = effectiveProjectedCloseDateSql(
   opportunitiesAndPledges.projectedCloseMonthsOut,
 );
 
-type CategoryMetrics = {
-  openPipelineAsk: string;
-  openPipelineWeighted: string;
-  committed: string;
-  committedWeighted: string;
-  received: string;
-  // Audit-close write-offs booked into THIS FY: the (negative) sum of
-  // is_write_off pledge allocations. A settled correction, not an open ask —
-  // surfaced as its own negative "written off" line, never folded into
-  // committed / open-pipeline / received.
-  writtenOff: string;
-  goal: string | null;
-};
-
-function emptyCategoryMetrics(): CategoryMetrics {
-  return {
-    openPipelineAsk: "0",
-    openPipelineWeighted: "0",
-    committed: "0",
-    committedWeighted: "0",
-    received: "0",
-    writtenOff: "0",
-    goal: null,
-  };
-}
-
 function isFundraisingCategory(v: unknown): v is FundraisingCategory {
   return v === "revenue" || v === "loan_capital";
+}
+
+// Preserve the public FY-report currency scale without converting/rounding the
+// shared model's arbitrary-precision decimal strings.
+function currencyScale(value: string | null): string | null {
+  if (value == null) return null;
+  const dot = value.indexOf(".");
+  if (dot < 0) return `${value}.00`;
+  const fractionDigits = value.length - dot - 1;
+  return fractionDigits === 0
+    ? `${value}00`
+    : fractionDigits === 1
+      ? `${value}0`
+      : value;
 }
 
 // Goal analytics EXCLUDE direct-tagged reimbursable allocation lines. Untagged
@@ -149,221 +142,33 @@ const pledgeAllocCountsTowardGoal = sql`(${pledgeAllocations.reimbursementType} 
 const giftAllocCountsTowardGoal = sql`${giftAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
 
 async function fyMetricsFor(fy: FyDescriptor, entityIds?: string[]) {
-  // Entity scoping is applied at the allocation level (both pledge_allocations
-  // and gift_allocations carry an entity_id). An empty/undefined list means
-  // "all entities" — pass-through with no filter. The goal is summed from
-  // the per-entity `fiscal_year_entity_goals` table, also entity-scoped.
-  const hasEntityFilter = !!entityIds && entityIds.length > 0;
-
-  // Per-opp pledged amount for this FY (status='pledge' written commitments).
-  // Carries the opp's fundraising category so `committed` splits by track.
-  const pledgedPerOpp = db
-    .select({
-      oppId: sql<string>`${pledgeAllocations.pledgeOrOpportunityId}`.as("pledged_opp_id"),
-      category: oppCategorySql.as("pledged_category"),
-      pledged: sql<string>`SUM(${pledgeAllocations.subAmount})`.as("pledged"),
-      // Win-probability is per-opp; the derivation sets it to 0.90 for an unpaid
-      // written pledge (0.75 if conditional). Carried through so the weighted
-      // commitment line discounts pledges instead of counting them at 100%.
-      winProb: sql<string>`MAX(${opportunitiesAndPledges.winProbability})`.as("pledged_win_prob"),
-    })
-    .from(pledgeAllocations)
-    .innerJoin(
-      opportunitiesAndPledges,
-      eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
-    )
-    .where(
-      and(
-        eq(opportunitiesAndPledges.status, "pledge"),
-        // Audit-close write-offs are status='pledge' too, but they are a
-        // settled negative correction — keep them out of `committed` (they get
-        // their own `writtenOff` line below).
-        eq(opportunitiesAndPledges.isWriteOff, false),
-        eq(pledgeAllocations.grantYear, fy.id),
-        pledgeAllocCountsTowardGoal,
-        hasEntityFilter ? inArray(pledgeAllocations.entityId, entityIds!) : undefined,
-      ),
-    )
-    .groupBy(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.loanOrGrant)
-    .as("pledged_per_opp");
-
-  // Payments already booked against those pledges, scoped to the same FY +
-  // entities as `received`, so we only ever subtract money `received` counts.
-  const paidPerOpp = db
-    .select({
-      oppId: sql<string>`${giftsAndPayments.opportunityId}`.as("paid_opp_id"),
-      paid: sql<string>`SUM(${giftAllocations.subAmount})`.as("paid"),
-    })
-    .from(giftAllocations)
-    .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-    .where(
-      and(
-        eq(giftAllocations.grantYear, fy.id),
-        // Archived gifts (e.g. a QB lump superseded by a Stripe REPLACE) are
-        // never counted as payments — keep them out of `paid` so `committed`
-        // (pledged − paid) doesn't get artificially reduced by dead money.
-        isNull(giftsAndPayments.archivedAt),
-        // Allocations flagged out of goal tracking neither add to `received` nor
-        // pay down `committed`, so the goal numbers stay internally consistent.
-        eq(giftAllocations.countsTowardGoal, true),
-        giftAllocCountsTowardGoal,
-        hasEntityFilter ? inArray(giftAllocations.entityId, entityIds!) : undefined,
-      ),
-    )
-    .groupBy(giftsAndPayments.opportunityId)
-    .as("paid_per_opp");
-
-  const [openRows, committedRows, receivedRows, writtenOffRows, goalRows] = await Promise.all([
-    db
-      .select({
-        category: oppCategorySql,
-        ask: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-        weighted: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability}), 0)::text`,
-      })
-      .from(pledgeAllocations)
-      .innerJoin(
-        opportunitiesAndPledges,
-        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
-      )
-      .where(
-        and(
-          eq(opportunitiesAndPledges.status, "open"),
-          // A write-off never reads status='open' (it's a written pledge), but
-          // exclude it explicitly so the open-pipeline ask can never absorb one.
-          eq(opportunitiesAndPledges.isWriteOff, false),
-          eq(pledgeAllocations.grantYear, fy.id),
-          pledgeAllocCountsTowardGoal,
-          hasEntityFilter
-            ? inArray(pledgeAllocations.entityId, entityIds!)
-            : undefined,
-        ),
-      )
-      .groupBy(opportunitiesAndPledges.loanOrGrant),
-    // "Committed" = UNPAID remainder of written commitments (status='pledge')
-    // for this FY: pledged amount minus payments already received against each
-    // pledge (see pledgedPerOpp / paidPerOpp above). This dedupes partial
-    // payments — the paid portion stays in `received`, only the not-yet-paid
-    // portion lands in `committed`, so received + committed + openPipelineWeighted
-    // counts each dollar once. GREATEST(..,0) clamps each opp's remainder at
-    // zero so an over-paid-this-year pledge can't offset another opp.
-    db
-      .select({
-        category: sql<string>`${pledgedPerOpp.category}`,
-        v: sql<string>`COALESCE(SUM(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0)), 0)::text`,
-        // Same unpaid remainder, but discounted by the pledge's win-probability
-        // (0.90 non-conditional / 0.75 conditional). This is the figure the
-        // projection tile uses — an unpaid written pledge is NOT counted at 100%.
-        weighted: sql<string>`COALESCE(SUM(GREATEST(${pledgedPerOpp.pledged} - COALESCE(${paidPerOpp.paid}, 0), 0) * ${pledgedPerOpp.winProb}), 0)::text`,
-      })
-      .from(pledgedPerOpp)
-      .leftJoin(paidPerOpp, eq(pledgedPerOpp.oppId, paidPerOpp.oppId))
-      .groupBy(pledgedPerOpp.category),
-    db
-      .select({
-        category: giftCategorySql,
-        v: sql<string>`COALESCE(SUM(${giftAllocations.subAmount}), 0)::text`,
-      })
-      .from(giftAllocations)
-      // Join the parent gift so archived gifts can be excluded from `received`
-      // (archived = doesn't count). Without this, a REPLACE would double-count
-      // the superseded QB lump alongside its per-charge Stripe gifts.
-      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-      .where(
-        and(
-          eq(giftAllocations.grantYear, fy.id),
-          isNull(giftsAndPayments.archivedAt),
-          eq(giftAllocations.countsTowardGoal, true),
-          giftAllocCountsTowardGoal,
-          hasEntityFilter
-            ? inArray(giftAllocations.entityId, entityIds!)
-            : undefined,
-        ),
-      )
-      .groupBy(giftCategorySql),
-    // Audit-close write-offs booked INTO this FY. The write-off pledge's
-    // allocations carry grant_year = the open FY they were recognised in and a
-    // NEGATIVE sub_amount, so this sums to a negative "written off" line per
-    // category. Keyed on is_write_off (not status) so it's independent of the
-    // derived pledge status.
-    //
-    // NOT unified with pledgeCapacity.ts on purpose: capacity is a PER-PLEDGE
-    // figure (a pledge's own allocations + its write-off children's, netted
-    // against ITS paid rollup, no FY/goal scoping), while this is a fiscal-
-    // year GOAL bucket — write-off rows selected by their OWN grant_year /
-    // countsTowardGoal / entity filters, grouped by category, and never
-    // combined with committed or paid into a remainder. Same rows, different
-    // aggregation semantics; folding this into the capacity helper would
-    // force FY/goal parameters onto a per-pledge derivation that must stay
-    // scope-free.
-    db
-      .select({
-        category: oppCategorySql,
-        v: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-      })
-      .from(pledgeAllocations)
-      .innerJoin(
-        opportunitiesAndPledges,
-        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
-      )
-      .where(
-        and(
-          eq(opportunitiesAndPledges.isWriteOff, true),
-          eq(pledgeAllocations.grantYear, fy.id),
-          pledgeAllocCountsTowardGoal,
-          hasEntityFilter
-            ? inArray(pledgeAllocations.entityId, entityIds!)
-            : undefined,
-        ),
-      )
-      .groupBy(opportunitiesAndPledges.loanOrGrant),
-    db
-      .select({
-        category: goalCategorySql,
-        goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
-      })
-      .from(fiscalYearEntityGoals)
-      .where(
-        and(
-          eq(fiscalYearEntityGoals.fiscalYearId, fy.id),
-          hasEntityFilter
-            ? inArray(fiscalYearEntityGoals.entityId, entityIds!)
-            : undefined,
-        ),
-      )
-      .groupBy(fiscalYearEntityGoals.loanOrGrant),
-  ]);
-
-  const byCategory: Record<FundraisingCategory, CategoryMetrics> = {
-    revenue: emptyCategoryMetrics(),
-    loan_capital: emptyCategoryMetrics(),
-  };
-  for (const r of openRows) {
-    if (!isFundraisingCategory(r.category)) continue;
-    byCategory[r.category].openPipelineAsk = r.ask;
-    byCategory[r.category].openPipelineWeighted = r.weighted;
-  }
-  for (const r of committedRows) {
-    if (!isFundraisingCategory(r.category)) continue;
-    byCategory[r.category].committed = r.v;
-    byCategory[r.category].committedWeighted = r.weighted;
-  }
-  for (const r of receivedRows) {
-    if (!isFundraisingCategory(r.category)) continue;
-    byCategory[r.category].received = r.v;
-  }
-  for (const r of writtenOffRows) {
-    if (!isFundraisingCategory(r.category)) continue;
-    byCategory[r.category].writtenOff = r.v;
-  }
-  for (const r of goalRows) {
-    if (!isFundraisingCategory(r.category)) continue;
-    byCategory[r.category].goal = r.goal ?? null;
-  }
-
+  const shared = await getGoalForecast({
+    fiscalYearId: fy.id,
+    entityIds: entityIds ?? [],
+  });
+  const sharedMetric = shared.metrics;
   return {
     fiscalYear: fy,
-    revenue: byCategory.revenue,
-    loanCapital: byCategory.loan_capital,
+    revenue: {
+      openPipelineAsk: sharedMetric.revenue.openAsk,
+      openPipelineWeighted: sharedMetric.revenue.openWeighted,
+      committed: sharedMetric.revenue.committed,
+      committedWeighted: sharedMetric.revenue.committedWeighted,
+      received: sharedMetric.revenue.received,
+      goalGap: sharedMetric.revenue.goalGap,
+      writtenOff: "0",
+      goal: sharedMetric.revenue.goal,
+    },
+    loanCapital: {
+      openPipelineAsk: sharedMetric.loan_capital.openAsk,
+      openPipelineWeighted: sharedMetric.loan_capital.openWeighted,
+      committed: sharedMetric.loan_capital.committed,
+      committedWeighted: sharedMetric.loan_capital.committedWeighted,
+      received: sharedMetric.loan_capital.received,
+      goalGap: sharedMetric.loan_capital.goalGap,
+      writtenOff: "0",
+      goal: sharedMetric.loan_capital.goal,
+    },
   };
 }
 
@@ -628,6 +433,7 @@ router.get(
         .where(
           and(
             eq(opportunitiesAndPledges.status, "open"),
+            isNull(opportunitiesAndPledges.archivedAt),
             eq(pledgeAllocations.grantYear, fyId),
             pledgeAllocCountsTowardGoal,
             entityIdParam ? eq(pledgeAllocations.entityId, entityIdParam) : undefined,
@@ -650,6 +456,14 @@ router.get(
       const open = openRows.filter((r) => r.category === cat);
       return {
         goal: goalByCategory[cat],
+        goalGap:
+          goalByCategory[cat] == null
+            ? null
+            : Math.max(
+                0,
+                Number(goalByCategory[cat]) -
+                  (Number(sumStr(received)) + Number(sumStr(open, "weightedAmount"))),
+              ).toFixed(2),
         received: {
           total: sumStr(received),
           rows: received,
@@ -708,6 +522,40 @@ router.get(
       startDate: fyRow.startDate,
       endDate: fyRow.endDate,
     };
+    const shared = await getGoalForecast({ fiscalYearId: fyId, entityIds });
+    const sharedMetric = shared.metrics[category === "loan_capital" ? "loan_capital" : "revenue"];
+    const sharedRows = [
+      ...shared.receivedRows,
+      ...shared.committedRows,
+      ...shared.openRows,
+    ].filter((row) => row.category === category).map((row) =>
+      row.bucket === "committed"
+        ? {
+            ...row,
+            // The legacy FY-report contract exposes committed pledge amounts
+            // at allocation currency scale. This is lexical scale
+            // preservation only; all arithmetic remains full precision in the
+            // shared forecast authority.
+            amount: currencyScale(row.amount),
+            pledgedAmount: currencyScale(row.pledgedAmount),
+          }
+        : row,
+    );
+    return res.json({
+      fiscalYear,
+      category,
+      totals: {
+        received: sharedMetric.received,
+        committed: sharedMetric.committed,
+        committedWeighted: sharedMetric.committedWeighted,
+        openAsk: sharedMetric.openAsk,
+        openWeighted: sharedMetric.openWeighted,
+        weightedProjection: sharedMetric.weightedProjection,
+        goal: sharedMetric.goal,
+        goalGap: sharedMetric.goalGap,
+      },
+      rows: sharedRows,
+    });
 
     // Track filter, one per source table. Revenue = "anything not loan" using
     // IS DISTINCT FROM so a null loan_or_grant still counts as revenue (mirrors
@@ -743,6 +591,7 @@ router.get(
       .where(
         and(
           eq(opportunitiesAndPledges.status, "pledge"),
+          isNull(opportunitiesAndPledges.archivedAt),
           eq(opportunitiesAndPledges.isWriteOff, false),
           eq(pledgeAllocations.grantYear, fyId),
           pledgeAllocCountsTowardGoal,
@@ -892,6 +741,7 @@ router.get(
         .where(
           and(
             eq(opportunitiesAndPledges.status, "open"),
+            isNull(opportunitiesAndPledges.archivedAt),
             eq(opportunitiesAndPledges.isWriteOff, false),
             eq(pledgeAllocations.grantYear, fyId),
             pledgeAllocCountsTowardGoal,
@@ -1038,6 +888,10 @@ router.get(
         openWeighted,
         weightedProjection,
         goal: goalRow?.goal ?? null,
+        goalGap:
+          goalRow?.goal == null
+            ? null
+            : Math.max(0, Number(goalRow.goal) - Number(weightedProjection)).toFixed(2),
       },
       rows: [...receivedRows, ...committedRows, ...openRows],
     });
@@ -1051,57 +905,85 @@ router.get(
     // Mirrors the orval `style: form, explode: false` serialization used
     // by every other multi-value filter in this codebase.
     const raw = req.query.entityId;
+    const category: FundraisingCategory | undefined =
+      isFundraisingCategory(req.query.category) ? req.query.category : undefined;
     const entityIds: string[] = Array.isArray(raw)
       ? raw.map(String)
       : typeof raw === "string" && raw.length > 0
         ? raw.split(",").map((s) => s.trim()).filter(Boolean)
         : [];
-    const baseFilters = [
-      eq(opportunitiesAndPledges.status, "open"),
-      inArray(pledgeAllocations.status, [
-        "working",
-        "committed",
-        "committed_with_conditions",
-      ]),
-      pledgeAllocCountsTowardGoal,
-    ];
-    if (entityIds.length > 0) {
-      baseFilters.push(inArray(pledgeAllocations.entityId, entityIds));
-    }
-    const rows = await db
-      .select({
-        grantYear: pledgeAllocations.grantYear,
-        entityId: pledgeAllocations.entityId,
-        category: oppCategorySql,
-        allocationCount: count(),
-        totalSubAmount: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount}), 0)::text`,
-        expected: sql<string>`COALESCE(SUM(${pledgeAllocations.subAmount} * ${opportunitiesAndPledges.winProbability}), 0)::text`,
-      })
-      .from(pledgeAllocations)
-      .innerJoin(
-        opportunitiesAndPledges,
-        eq(
-          pledgeAllocations.pledgeOrOpportunityId,
-          opportunitiesAndPledges.id,
-        ),
-      )
-      .where(and(...baseFilters))
-      .groupBy(
-        pledgeAllocations.grantYear,
-        pledgeAllocations.entityId,
-        opportunitiesAndPledges.loanOrGrant,
-      );
-
-    res.json({
-      rows: rows.map((r) => ({
-        grantYear: r.grantYear,
-        entityId: r.entityId,
-        category: isFundraisingCategory(r.category) ? r.category : "revenue",
-        allocationCount: Number(r.allocationCount),
-        totalSubAmount: r.totalSubAmount,
-        expected: r.expected,
-      })),
+    const currentFiscalYear = computeCurrentFiscalYear();
+    const nextFiscalYear = fyFromEndYear(
+      Number(currentFiscalYear.id.slice(2)) + 1,
+    );
+    const forecastMatrix = await getForecastMatrix({
+      entityIds,
+      currentFiscalYearId: currentFiscalYear.id,
+      nextFiscalYearId: nextFiscalYear.id,
     });
+    const toProjectionRow = (
+      fyId: string | null,
+      category: "revenue" | "loan_capital",
+      metric: {
+        received: string;
+        committed: string;
+        committedWeighted: string;
+        openAsk: string;
+        openWeighted: string;
+        weightedProjection: string;
+        goal: string | null;
+        goalGap: string | null;
+      },
+      entityId: string | null,
+      forecast: Awaited<ReturnType<typeof getGoalForecast>>,
+    ) => ({
+      grantYear: fyId,
+      entityId,
+      category,
+      allocationCount: 0,
+      totalSubAmount: metric.openAsk,
+      expected: metric.openWeighted,
+      receivedGoalCredit: metric.received,
+      unpaidCommitment: metric.committed,
+      unpaidCommitmentWeighted: metric.committedWeighted,
+      openAsk: metric.openAsk,
+      openAskWeighted: metric.openWeighted,
+      goal: metric.goal,
+      goalGap: metric.goalGap,
+      contributionIds: [
+        ...forecast.receivedRows,
+        ...forecast.committedRows,
+        ...forecast.openRows,
+      ].filter((row) => row.category === category).map((row) => row.rowId),
+    });
+    const sharedRows = forecastMatrix.cells.flatMap(({ fiscalYearId, entityId, forecast }) =>
+        (["revenue", "loan_capital"] as const).map((category) =>
+          toProjectionRow(
+            fiscalYearId,
+            category,
+            forecast.metrics[category === "revenue" ? "revenue" : "loan_capital"],
+            entityId,
+            forecast,
+          ),
+        ),
+    );
+    const sharedCombinedRows = forecastMatrix.combined.flatMap(({ fiscalYearId, forecast }) =>
+      (["revenue", "loan_capital"] as const).map((category) =>
+        toProjectionRow(
+          fiscalYearId,
+          category,
+          forecast.metrics[category === "revenue" ? "revenue" : "loan_capital"],
+          null,
+          forecast,
+        ),
+      ),
+    ).map(({ allocationCount: _allocationCount, entityId: _entityId, ...row }) => row);
+    return res.json({
+      rows: sharedRows,
+      combinedRows: sharedCombinedRows,
+      diagnostics: await getForecastDiagnostics(entityIds, category),
+    });
+
   }),
 );
 

@@ -8862,20 +8862,36 @@ paths:
       tags: [analytics]
       summary: Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
       description: |
-        Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
-        excludes abandoned allocation rows, and groups remaining rows by
-        (grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
-        (defaulting to 1 when null). Both grouping keys may be null.
+        Returns the shared allocation-grain forecast for each (grantYear, entityId,
+        category) bucket. `receivedGoalCredit` is received gift allocation credit;
+        `unpaidCommitment` and `unpaidCommitmentWeighted` are face and
+        probability-weighted unpaid written commitments; `openAsk` and
+        `openAskWeighted` are the face and weighted open asks. `goalGap` is the
+        non-negative gap after the weighted projection. `totalSubAmount` and
+        `expected` remain aliases for the open-ask columns for existing clients.
+        Archived opportunities are excluded, while null FY/entity buckets remain
+         visible. Current and next FY are returned as zero-valued buckets when
+         they have no allocations. `combinedRows` is the server-owned
+         all-recipient total for each known FY/category and is calculated with
+         the same per-opportunity payment cap as Dashboard and FY Report.
+         Recipient cells in `rows` are comparisons and must not be summed to
+         reconstruct `combinedRows`. `diagnostics` explains active, unarchived
+         opportunities omitted wholly or partly from known forecast buckets.
       parameters:
         - name: entityId
           in: query
           required: false
           description: |
-            Optional set of `entities.id` slugs. When provided, only allocations
-            on those entities are included. Comma-separated form supported.
+             Optional set of `entities.id` slugs. When provided, only allocations
+             on those entities are included. Comma-separated form supported.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: category
+          in: query
+          required: false
+          description: "Optional active forecast track for diagnostics: revenue or loan_capital."
+          schema: { $ref: "#/components/schemas/FundraisingCategory" }
       responses:
         "200":
           {
@@ -13740,6 +13756,7 @@ components:
           committed,
           committedWeighted,
           received,
+          goalGap,
           writtenOff,
           goal,
         ]
@@ -13756,22 +13773,28 @@ components:
         openPipelineWeighted:
           {
             type: string,
-            description: "SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open', NON-write-off opps (of this category) with grant_year = this FY.",
+             description: "SUM(pledge_allocations.sub_amount × parent.win_probability) for status='open', NON-write-off, unarchived opps (of this category) with grant_year = this FY.",
           }
         committed:
           {
             type: string,
-            description: "Per-pledge UNPAID remainder (at 100%) for status='pledge', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+             description: "Per-pledge UNPAID remainder (at face value) for status='pledge', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
           }
         committedWeighted:
           {
             type: string,
-            description: "Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
+             description: "Per-pledge UNPAID remainder discounted by the pledge's current win_probability for status='pledge', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
           }
         received:
           {
             type: string,
             description: "SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).",
+          }
+        goalGap:
+          {
+            type: string,
+            nullable: true,
+            description: "Non-negative goal less received + weighted unpaid commitments + weighted open asks; null if no goal is set.",
           }
         writtenOff:
           {
@@ -13849,6 +13872,14 @@ components:
           allocationCount,
           totalSubAmount,
           expected,
+          receivedGoalCredit,
+          unpaidCommitment,
+          unpaidCommitmentWeighted,
+          openAsk,
+          openAskWeighted,
+          goal,
+          goalGap,
+           contributionIds,
         ]
       properties:
         grantYear:
@@ -13873,17 +13904,111 @@ components:
         expected:
           {
             type: string,
-            description: "SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string.",
+            description: "Legacy alias for openAskWeighted, as a numeric string.",
+          }
+        receivedGoalCredit:
+          { type: string, description: "Received gift allocation credit for the bucket." }
+        unpaidCommitment:
+          { type: string, description: "Face-value unpaid written commitment for the bucket." }
+        unpaidCommitmentWeighted:
+          { type: string, description: "Probability-weighted unpaid written commitment." }
+        openAsk:
+          { type: string, description: "Face-value open ask for the bucket." }
+        openAskWeighted:
+          { type: string, description: "Probability-weighted open ask for the bucket." }
+        goal:
+          { type: string, nullable: true, description: "Goal for the FY/entity/category bucket." }
+        goalGap:
+          { type: string, nullable: true, description: "Non-negative goal less weighted projection; null when no goal is set." }
+        contributionIds:
+          {
+            type: array,
+            items: { type: string },
+            description: "Shared forecast contribution identifiers represented by this recipient comparison cell.",
+          }
+    ProjectionForecastOmissionReason:
+      type: string
+      enum:
+        - missing_amount
+        - missing_fiscal_year
+        - missing_recipient
+        - missing_reimbursement_type
+        - no_allocations
+        - unused_capacity
+        - direct_reimbursement_excluded
+        - zero_weight_early_prospect
+    ProjectionForecastDiagnostic:
+      type: object
+      required: [opportunityId, opportunityName, reasons]
+      properties:
+        opportunityId: { type: string }
+        opportunityName: { type: string, nullable: true }
+        allocationId: { type: string, nullable: true }
+        grantYear: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        reasons:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectionForecastOmissionReason" }
+        message:
+          {
+            type: string,
+            nullable: true,
+            description: "Additional scope-aware explanation, including when a known-year amount is included in all-recipient totals but omitted from a selected-recipient forecast because its recipient is missing.",
+          }
+    ProjectionCombinedFyRow:
+      type: object
+      required:
+        [
+          grantYear,
+          category,
+          totalSubAmount,
+          expected,
+          receivedGoalCredit,
+          unpaidCommitment,
+          unpaidCommitmentWeighted,
+          openAsk,
+          openAskWeighted,
+          goal,
+          goalGap,
+          contributionIds,
+        ]
+      description: |
+        Server-owned all-recipient forecast for one known fiscal year or the
+        explicit unknown fiscal-year bucket and category. These totals use the same per-opportunity payment cap as
+        Dashboard and FY Report; recipient comparison cells are not additive.
+      properties:
+        grantYear: { type: string, nullable: true }
+        category: { $ref: "#/components/schemas/FundraisingCategory" }
+        totalSubAmount: { type: string, description: "Alias for openAsk." }
+        expected: { type: string, description: "Alias for openAskWeighted." }
+        receivedGoalCredit: { type: string }
+        unpaidCommitment: { type: string }
+        unpaidCommitmentWeighted: { type: string }
+        openAsk: { type: string }
+        openAskWeighted: { type: string }
+        goal: { type: string, nullable: true }
+        goalGap: { type: string, nullable: true }
+        contributionIds:
+          {
+            type: array,
+            items: { type: string },
+            description: "Shared forecast contribution identifiers represented by this combined total.",
           }
     ProjectionsByFyEntity:
       type: object
-      required: [rows]
+      required: [rows, combinedRows, diagnostics]
       properties:
         rows:
           {
             type: array,
             items: { $ref: "#/components/schemas/ProjectionByFyEntityRow" },
           }
+        combinedRows:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectionCombinedFyRow" }
+        diagnostics:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectionForecastDiagnostic" }
 
     TopPriorityAffiliate:
       type: object
@@ -14102,10 +14227,11 @@ components:
           { $ref: "#/components/schemas/FiscalYearCategoryBreakdown" }
     FiscalYearCategoryBreakdown:
       type: object
-      required: [goal, received, openPipeline]
+      required: [goal, goalGap, received, openPipeline]
       description: "Per-category (revenue OR loan_capital) supporting detail for one FY."
       properties:
         goal: { type: string, nullable: true }
+        goalGap: { type: string, nullable: true }
         received:
           type: object
           required: [total, rows]
@@ -14252,6 +14378,7 @@ components:
           openAsk,
           openWeighted,
           weightedProjection,
+          goalGap,
           goal,
         ]
       description: |
@@ -14281,6 +14408,12 @@ components:
           {
             type: string,
             description: "received + committedWeighted + openWeighted — matches the dashboard bar's projection.",
+          }
+        goalGap:
+          {
+            type: string,
+            nullable: true,
+            description: "Non-negative goal less weightedProjection; null if no goal is set.",
           }
         goal:
           {
@@ -15808,9 +15941,9 @@ components:
               }
             planningComplete:
               {
-                type: boolean,
+                type: [boolean, "null"],
                 readOnly: true,
-                description: "Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Always true for un-won records.",
+                description: "Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Null for pre-award/open records; those records have no planning gaps.",
               }
             planningGaps:
               {

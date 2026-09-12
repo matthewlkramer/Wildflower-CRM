@@ -1135,14 +1135,16 @@ preserve precision — format with `formatCurrency` on the client.
 export interface FiscalYearCategoryMetrics {
   /** SUM(pledge_allocations.sub_amount) for status='open', NON-write-off opps (of this category) with grant_year = this FY. */
   openPipelineAsk: string;
-  /** SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status='open', NON-write-off opps (of this category) with grant_year = this FY. */
+  /** SUM(pledge_allocations.sub_amount × parent.win_probability) for status='open', NON-write-off, unarchived opps (of this category) with grant_year = this FY. */
   openPipelineWeighted: string;
-  /** Per-pledge UNPAID remainder (at 100%) for status='pledge', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
+  /** Per-pledge UNPAID remainder (at face value) for status='pledge', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only). */
   committed: string;
-  /** Per-pledge UNPAID remainder discounted by the pledge's win_probability (0.90 non-conditional / 0.75 conditional) for status='pledge', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed. */
+  /** Per-pledge UNPAID remainder discounted by the pledge's current win_probability for status='pledge', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed. */
   committedWeighted: string;
   /** SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else). */
   received: string;
+  /** Non-negative goal less received + weighted unpaid commitments + weighted open asks; null if no goal is set. */
+  goalGap: string | null;
   /** SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own 'written off' line. NOT folded into committed/received — CRM ≠ GL. */
   writtenOff: string;
   /** Fundraising goal for the FY+category; null if not set. */
@@ -1195,12 +1197,79 @@ export interface ProjectionByFyEntityRow {
   allocationCount: number;
   /** SUM(sub_amount) for the group, as numeric string. */
   totalSubAmount: string;
-  /** SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string. */
+  /** Legacy alias for openAskWeighted, as a numeric string. */
   expected: string;
+  /** Received gift allocation credit for the bucket. */
+  receivedGoalCredit: string;
+  /** Face-value unpaid written commitment for the bucket. */
+  unpaidCommitment: string;
+  /** Probability-weighted unpaid written commitment. */
+  unpaidCommitmentWeighted: string;
+  /** Face-value open ask for the bucket. */
+  openAsk: string;
+  /** Probability-weighted open ask for the bucket. */
+  openAskWeighted: string;
+  /** Goal for the FY/entity/category bucket. */
+  goal: string | null;
+  /** Non-negative goal less weighted projection; null when no goal is set. */
+  goalGap: string | null;
+  /** Shared forecast contribution identifiers represented by this recipient comparison cell. */
+  contributionIds: string[];
+}
+
+export type ProjectionForecastOmissionReason = typeof ProjectionForecastOmissionReason[keyof typeof ProjectionForecastOmissionReason];
+
+
+export const ProjectionForecastOmissionReason = {
+  missing_amount: 'missing_amount',
+  missing_fiscal_year: 'missing_fiscal_year',
+  missing_recipient: 'missing_recipient',
+  missing_reimbursement_type: 'missing_reimbursement_type',
+  no_allocations: 'no_allocations',
+  unused_capacity: 'unused_capacity',
+  direct_reimbursement_excluded: 'direct_reimbursement_excluded',
+  zero_weight_early_prospect: 'zero_weight_early_prospect',
+} as const;
+
+export interface ProjectionForecastDiagnostic {
+  opportunityId: string;
+  opportunityName: string | null;
+  allocationId?: string | null;
+  grantYear?: string | null;
+  entityId?: string | null;
+  reasons: ProjectionForecastOmissionReason[];
+  /** Additional scope-aware explanation, including when a known-year amount is included in all-recipient totals but omitted from a selected-recipient forecast because its recipient is missing. */
+  message?: string | null;
+}
+
+/**
+ * Server-owned all-recipient forecast for one known fiscal year or the
+explicit unknown fiscal-year bucket and category. These totals use the same per-opportunity payment cap as
+Dashboard and FY Report; recipient comparison cells are not additive.
+
+ */
+export interface ProjectionCombinedFyRow {
+  grantYear: string | null;
+  category: FundraisingCategory;
+  /** Alias for openAsk. */
+  totalSubAmount: string;
+  /** Alias for openAskWeighted. */
+  expected: string;
+  receivedGoalCredit: string;
+  unpaidCommitment: string;
+  unpaidCommitmentWeighted: string;
+  openAsk: string;
+  openAskWeighted: string;
+  goal: string | null;
+  goalGap: string | null;
+  /** Shared forecast contribution identifiers represented by this combined total. */
+  contributionIds: string[];
 }
 
 export interface ProjectionsByFyEntity {
   rows: ProjectionByFyEntityRow[];
+  combinedRows: ProjectionCombinedFyRow[];
+  diagnostics: ProjectionForecastDiagnostic[];
 }
 
 export interface TopPriorityAffiliate {
@@ -1346,6 +1415,7 @@ export type FiscalYearCategoryBreakdownOpenPipeline = {
  */
 export interface FiscalYearCategoryBreakdown {
   goal: string | null;
+  goalGap: string | null;
   received: FiscalYearCategoryBreakdownReceived;
   openPipeline: FiscalYearCategoryBreakdownOpenPipeline;
 }
@@ -1446,6 +1516,8 @@ export interface FiscalYearReportTotals {
   openWeighted: string;
   /** received + committedWeighted + openWeighted — matches the dashboard bar's projection. */
   weightedProjection: string;
+  /** Non-negative goal less weightedProjection; null if no goal is set. */
+  goalGap: string | null;
   /** Fundraising goal for the FY + track; null if not set. */
   goal: string | null;
 }
@@ -2540,8 +2612,11 @@ export type OpportunityOrPledgeDetail = OpportunityOrPledge & ({
   readonly plannedGoalCreditAmount?: string;
   /** Cost-reimbursement only (null otherwise): awardedAmount (ceiling) minus plannedCollectionAmount, clamped at 0. INFORMATIONAL ONLY — never a drawdown balance, never spawns tasks or workflow. */
   readonly unplannedAwardCapacity?: string | null;
-  /** Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Always true for un-won records. */
-  readonly planningComplete?: boolean;
+  /**
+   * Post-win planning-completeness signal (guidance badge, never a write block). Fixed commitment: allocations exist AND an installment schedule is entered. Cost reimbursement: allocations exist AND every allocation has fiscal year, amount, reimbursementType, recipient entity, and intended use set (a project-tagged use also needs its fundable project; the restriction axes are NOT NULL with defaults, so they are always coded). Null for pre-award/open records; those records have no planning gaps.
+   * @nullable
+   */
+  readonly planningComplete?: boolean | null;
   /** Human-readable list of the specific gaps behind planningComplete=false (empty when complete). */
   readonly planningGaps?: readonly string[];
   auditClose: PledgeAuditCloseResolution;
@@ -12231,6 +12306,10 @@ on those entities are included. Comma-separated form supported.
 
  */
 entityId?: string[];
+/**
+ * Optional active forecast track for diagnostics: revenue or loan_capital.
+ */
+category?: FundraisingCategory;
 };
 
 export type GetFiscalYearBreakdownParams = {

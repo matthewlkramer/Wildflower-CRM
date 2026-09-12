@@ -48,19 +48,21 @@ export const GetDashboardSummaryResponse = zod.object({
 }),
   "revenue": zod.object({
   "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
-  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
-  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
-  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
+  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × parent.win_probability) for status=\'open\', NON-write-off, unarchived opps (of this category) with grant_year = this FY.'),
+  "committed": zod.string().describe('Per-pledge UNPAID remainder (at face value) for status=\'pledge\', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
+  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s current win_probability for status=\'pledge\', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
   "received": zod.string().describe('SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).'),
+  "goalGap": zod.string().nullable().describe('Non-negative goal less received + weighted unpaid commitments + weighted open asks; null if no goal is set.'),
   "writtenOff": zod.string().describe('SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own \'written off\' line. NOT folded into committed\/received — CRM ≠ GL.'),
   "goal": zod.string().nullable().describe('Fundraising goal for the FY+category; null if not set.')
 }).describe('Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n'),
   "loanCapital": zod.object({
   "openPipelineAsk": zod.string().describe('SUM(pledge_allocations.sub_amount) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
-  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × COALESCE(parent.win_probability, 1)) for status=\'open\', NON-write-off opps (of this category) with grant_year = this FY.'),
-  "committed": zod.string().describe('Per-pledge UNPAID remainder (at 100%) for status=\'pledge\', NON-write-off opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
-  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s win_probability (0.90 non-conditional \/ 0.75 conditional) for status=\'pledge\', NON-write-off opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
+  "openPipelineWeighted": zod.string().describe('SUM(pledge_allocations.sub_amount × parent.win_probability) for status=\'open\', NON-write-off, unarchived opps (of this category) with grant_year = this FY.'),
+  "committed": zod.string().describe('Per-pledge UNPAID remainder (at face value) for status=\'pledge\', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status=\'open\' only).'),
+  "committedWeighted": zod.string().describe('Per-pledge UNPAID remainder discounted by the pledge\'s current win_probability for status=\'pledge\', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.'),
   "received": zod.string().describe('SUM(gift_allocations.sub_amount) for allocations of this category with grant_year = this FY (loan_capital = loan_fund_investment gifts; revenue = everything else).'),
+  "goalGap": zod.string().nullable().describe('Non-negative goal less received + weighted unpaid commitments + weighted open asks; null if no goal is set.'),
   "writtenOff": zod.string().describe('SUM(pledge_allocations.sub_amount) for is_write_off pledges (of this category) with grant_year = this FY. Allocations are NEGATIVE, so this is a non-positive number, rendered as its own \'written off\' line. NOT folded into committed\/received — CRM ≠ GL.'),
   "goal": zod.string().nullable().describe('Fundraising goal for the FY+category; null if not set.')
 }).describe('Fundraising metrics for one category (revenue OR loan_capital) within a\nfiscal year. All money values are decimal strings (PostgreSQL numeric) to\npreserve precision — format with `formatCurrency` on the client.\n')
@@ -68,15 +70,27 @@ export const GetDashboardSummaryResponse = zod.object({
 })
 
 /**
- * Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
-excludes abandoned allocation rows, and groups remaining rows by
-(grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
-(defaulting to 1 when null). Both grouping keys may be null.
+ * Returns the shared allocation-grain forecast for each (grantYear, entityId,
+category) bucket. `receivedGoalCredit` is received gift allocation credit;
+`unpaidCommitment` and `unpaidCommitmentWeighted` are face and
+probability-weighted unpaid written commitments; `openAsk` and
+`openAskWeighted` are the face and weighted open asks. `goalGap` is the
+non-negative gap after the weighted projection. `totalSubAmount` and
+`expected` remain aliases for the open-ask columns for existing clients.
+Archived opportunities are excluded, while null FY/entity buckets remain
+ visible. Current and next FY are returned as zero-valued buckets when
+ they have no allocations. `combinedRows` is the server-owned
+ all-recipient total for each known FY/category and is calculated with
+ the same per-opportunity payment cap as Dashboard and FY Report.
+ Recipient cells in `rows` are comparisons and must not be summed to
+ reconstruct `combinedRows`. `diagnostics` explains active, unarchived
+ opportunities omitted wholly or partly from known forecast buckets.
 
  * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
  */
 export const GetProjectionsByFyEntityQueryParams = zod.object({
-  "entityId": zod.array(zod.coerce.string()).optional().describe('Optional set of `entities.id` slugs. When provided, only allocations\non those entities are included. Comma-separated form supported.\n')
+  "entityId": zod.array(zod.coerce.string()).optional().describe('Optional set of `entities.id` slugs. When provided, only allocations\non those entities are included. Comma-separated form supported.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).optional().describe('Optional active forecast track for diagnostics: revenue or loan_capital.')
 })
 
 export const GetProjectionsByFyEntityResponse = zod.object({
@@ -86,7 +100,38 @@ export const GetProjectionsByFyEntityResponse = zod.object({
   "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
   "allocationCount": zod.number(),
   "totalSubAmount": zod.string().describe('SUM(sub_amount) for the group, as numeric string.'),
-  "expected": zod.string().describe('SUM(sub_amount × COALESCE(parent.win_probability, 1)) for the group, as numeric string.')
+  "expected": zod.string().describe('Legacy alias for openAskWeighted, as a numeric string.'),
+  "receivedGoalCredit": zod.string().describe('Received gift allocation credit for the bucket.'),
+  "unpaidCommitment": zod.string().describe('Face-value unpaid written commitment for the bucket.'),
+  "unpaidCommitmentWeighted": zod.string().describe('Probability-weighted unpaid written commitment.'),
+  "openAsk": zod.string().describe('Face-value open ask for the bucket.'),
+  "openAskWeighted": zod.string().describe('Probability-weighted open ask for the bucket.'),
+  "goal": zod.string().nullable().describe('Goal for the FY\/entity\/category bucket.'),
+  "goalGap": zod.string().nullable().describe('Non-negative goal less weighted projection; null when no goal is set.'),
+  "contributionIds": zod.array(zod.string()).describe('Shared forecast contribution identifiers represented by this recipient comparison cell.')
+})),
+  "combinedRows": zod.array(zod.object({
+  "grantYear": zod.string().nullable(),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
+  "totalSubAmount": zod.string().describe('Alias for openAsk.'),
+  "expected": zod.string().describe('Alias for openAskWeighted.'),
+  "receivedGoalCredit": zod.string(),
+  "unpaidCommitment": zod.string(),
+  "unpaidCommitmentWeighted": zod.string(),
+  "openAsk": zod.string(),
+  "openAskWeighted": zod.string(),
+  "goal": zod.string().nullable(),
+  "goalGap": zod.string().nullable(),
+  "contributionIds": zod.array(zod.string()).describe('Shared forecast contribution identifiers represented by this combined total.')
+}).describe('Server-owned all-recipient forecast for one known fiscal year or the\nexplicit unknown fiscal-year bucket and category. These totals use the same per-opportunity payment cap as\nDashboard and FY Report; recipient comparison cells are not additive.\n')),
+  "diagnostics": zod.array(zod.object({
+  "opportunityId": zod.string(),
+  "opportunityName": zod.string().nullable(),
+  "allocationId": zod.string().nullish(),
+  "grantYear": zod.string().nullish(),
+  "entityId": zod.string().nullish(),
+  "reasons": zod.array(zod.enum(['missing_amount', 'missing_fiscal_year', 'missing_recipient', 'missing_reimbursement_type', 'no_allocations', 'unused_capacity', 'direct_reimbursement_excluded', 'zero_weight_early_prospect'])),
+  "message": zod.string().nullish().describe('Additional scope-aware explanation, including when a known-year amount is included in all-recipient totals but omitted from a selected-recipient forecast because its recipient is missing.')
 }))
 })
 
@@ -117,6 +162,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
 }),
   "revenue": zod.object({
   "goal": zod.string().nullable(),
+  "goalGap": zod.string().nullable(),
   "received": zod.object({
   "total": zod.string().describe('SUM(sub_amount) across the rows (numeric string).'),
   "rows": zod.array(zod.object({
@@ -172,6 +218,7 @@ export const GetFiscalYearBreakdownResponse = zod.object({
 }).describe('Per-category (revenue OR loan_capital) supporting detail for one FY.'),
   "loanCapital": zod.object({
   "goal": zod.string().nullable(),
+  "goalGap": zod.string().nullable(),
   "received": zod.object({
   "total": zod.string().describe('SUM(sub_amount) across the rows (numeric string).'),
   "rows": zod.array(zod.object({
@@ -264,6 +311,7 @@ export const GetFiscalYearReportResponse = zod.object({
   "openAsk": zod.string().describe('SUM of open rows\' amount (ask).'),
   "openWeighted": zod.string().describe('SUM of open rows\' weightedAmount — the dashboard bar\'s Weighted open pipeline segment.'),
   "weightedProjection": zod.string().describe('received + committedWeighted + openWeighted — matches the dashboard bar\'s projection.'),
+  "goalGap": zod.string().nullable().describe('Non-negative goal less weightedProjection; null if no goal is set.'),
   "goal": zod.string().nullable().describe('Fundraising goal for the FY + track; null if not set.')
 }).describe('Per-bucket reconciling totals for the FY + track. `received`,\n`committedWeighted` and `openWeighted` are the three segments of the\ndashboard progress-to-goal bar; `weightedProjection` is their sum.\n'),
   "rows": zod.array(zod.object({

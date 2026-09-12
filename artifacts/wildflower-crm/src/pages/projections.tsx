@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
+import { Link } from "wouter";
 import {
   useGetProjectionsByFyEntity,
   useListEntities,
@@ -8,8 +8,15 @@ import {
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
   type FundraisingCategory,
+  type ProjectionByFyEntityRow,
+  type ProjectionCombinedFyRow,
+  type ProjectionForecastDiagnostic,
 } from "@workspace/api-client-react";
-import { formatCurrency } from "@/lib/format";
+import {
+  currentFiscalYearEndYear,
+  currentFiscalYearSlug,
+  formatCurrency,
+} from "@/lib/format";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import {
   Table,
@@ -21,31 +28,29 @@ import {
 } from "@/components/ui/table";
 import { SkeletonRows } from "@/components/ui/skeleton";
 
-const UNBUCKETED = "__unbucketed__";
-
-function toNum(s: string | null | undefined): number {
-  if (s === null || s === undefined) return 0;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : 0;
-}
+const UNKNOWN_BUCKET = "__unknown__";
+type ProjectionCombinedForecastRow = ProjectionCombinedFyRow & {
+  weightedProjection?: string | null;
+};
 
 export default function Projections() {
-  // Global entity filter (header dropdown). When set, the projections grid
-  // restricts to allocations on the selected entities.
   const { selected: globalEntityIds } = useEntityFilter();
+  const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const projParams = useMemo(
     () =>
-      globalEntityIds.length > 0
-        ? { entityId: [...globalEntityIds].sort() }
+      globalEntityIds.length > 0 || category
+        ? {
+            ...(globalEntityIds.length > 0
+              ? { entityId: [...globalEntityIds].sort() }
+              : {}),
+            category,
+          }
         : undefined,
-    [globalEntityIds],
+    [globalEntityIds, category],
   );
   const proj = useGetProjectionsByFyEntity(projParams, {
     query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
-  // Loan-fund capital projects as a track parallel to revenue. The toggle
-  // filters the grid to one category; the two are never mixed.
-  const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
   });
@@ -53,126 +58,95 @@ export default function Projections() {
     query: { queryKey: getListFiscalYearsQueryKey() },
   });
 
-  const { fyRows, entityCols, cell, fyTotals, entityTotals, grandExpected } =
-    useMemo(() => {
-      const rows = (proj.data?.rows ?? []).filter((r) => r.category === category);
+  const { fyRows, entityCols, cell } = useMemo(() => {
+    const rows = (proj.data?.rows ?? []).filter((r) => r.category === category);
+    const fySeen = new Set<string>();
+    const entSeen = new Set<string>();
+    const cell = new Map<string, ProjectionByFyEntityRow>();
+    for (const row of rows) {
+      const fy = row.grantYear ?? UNKNOWN_BUCKET;
+      const ent = row.entityId ?? UNKNOWN_BUCKET;
+      fySeen.add(fy);
+      entSeen.add(ent);
+      cell.set(`${fy}|${ent}`, row);
+    }
+    const currentFy = currentFiscalYearSlug();
+    const nextFy = `fy${currentFiscalYearEndYear() + 1}`;
+    const fiscalYearEnd = (id: string) => {
+      const year = Number(id.match(/\d{4}/)?.[0]);
+      return Number.isFinite(year) ? year : -Infinity;
+    };
+    const fyRows = Array.from(fySeen).sort((a, b) => {
+      const priority = (id: string) =>
+        id === currentFy
+          ? 0
+          : id === nextFy
+            ? 1
+            : id === UNKNOWN_BUCKET
+              ? 3
+              : 2;
+      const priorityDifference = priority(a) - priority(b);
+      if (priorityDifference !== 0) return priorityDifference;
+      if (a === UNKNOWN_BUCKET || b === UNKNOWN_BUCKET) return 0;
+      return fiscalYearEnd(b) - fiscalYearEnd(a) || a.localeCompare(b);
+    });
+    const entityById = new Map(
+      (entitiesQ.data ?? []).map((e) => [e.id, e.name] as const),
+    );
+    const entityCols = Array.from(entSeen).sort((a, b) => {
+      if (a === UNKNOWN_BUCKET && b !== UNKNOWN_BUCKET) return 1;
+      if (b === UNKNOWN_BUCKET && a !== UNKNOWN_BUCKET) return -1;
+      const na = entityById.get(a) ?? a;
+      const nb = entityById.get(b) ?? b;
+      return na.localeCompare(nb);
+    });
+    return { fyRows, entityCols, cell };
+  }, [proj.data, entitiesQ.data, category]);
 
-      // Which fiscal years and which entities actually appear in the data?
-      const fySeen = new Set<string>();
-      const entSeen = new Set<string>();
-      for (const r of rows) {
-        fySeen.add(r.grantYear ?? UNBUCKETED);
-        entSeen.add(r.entityId ?? UNBUCKETED);
-      }
-
-      // Order fiscal years by their slug ("fyNNNN"); the __unbucketed__
-      // sentinel is pinned to the end.
-      const fyRows = Array.from(fySeen).sort((a, b) => {
-        if (a === UNBUCKETED && b !== UNBUCKETED) return 1;
-        if (b === UNBUCKETED && a !== UNBUCKETED) return -1;
-        return a.localeCompare(b);
-      });
-
-      // Order entity columns by the catalog's natural name order, falling back
-      // to slug if the catalog hasn't loaded yet. Unknown / null pinned last.
-      const entityById = new Map(
-        (entitiesQ.data ?? []).map((e) => [e.id, e.name] as const),
-      );
-      const entityCols = Array.from(entSeen).sort((a, b) => {
-        if (a === UNBUCKETED && b !== UNBUCKETED) return 1;
-        if (b === UNBUCKETED && a !== UNBUCKETED) return -1;
-        const na = entityById.get(a) ?? a;
-        const nb = entityById.get(b) ?? b;
-        return na.localeCompare(nb);
-      });
-
-      const cell = new Map<string, { ask: number; expected: number; n: number }>();
-      const fyTotals = new Map<string, { ask: number; expected: number; n: number }>();
-      const entityTotals = new Map<string, { ask: number; expected: number; n: number }>();
-      let grandExpected = 0;
-      for (const r of rows) {
-        const fy = r.grantYear ?? UNBUCKETED;
-        const ent = r.entityId ?? UNBUCKETED;
-        const ask = toNum(r.totalSubAmount);
-        const expected = toNum(r.expected);
-        const n = r.allocationCount;
-        const key = `${fy}|${ent}`;
-        const c = cell.get(key) ?? { ask: 0, expected: 0, n: 0 };
-        c.ask += ask;
-        c.expected += expected;
-        c.n += n;
-        cell.set(key, c);
-        const ft = fyTotals.get(fy) ?? { ask: 0, expected: 0, n: 0 };
-        ft.ask += ask;
-        ft.expected += expected;
-        ft.n += n;
-        fyTotals.set(fy, ft);
-        const et = entityTotals.get(ent) ?? { ask: 0, expected: 0, n: 0 };
-        et.ask += ask;
-        et.expected += expected;
-        et.n += n;
-        entityTotals.set(ent, et);
-        grandExpected += expected;
-      }
-      return { fyRows, entityCols, cell, fyTotals, entityTotals, grandExpected };
-    }, [proj.data, entitiesQ.data, category]);
+  const combinedRows = useMemo(
+    () =>
+      (proj.data?.combinedRows ?? []).filter(
+        (row) => row.category === category,
+      ),
+    [proj.data?.combinedRows, category],
+  );
 
   const entityName = (id: string) => {
-    if (id === UNBUCKETED) return "Unassigned";
-    return (entitiesQ.data ?? []).find((e) => e.id === id)?.name ?? id;
+    if (id === UNKNOWN_BUCKET) return "Unknown recipient";
+    const name = (entitiesQ.data ?? []).find((e) => e.id === id)?.name;
+    return name ?? `Unknown recipient (${id})`;
   };
   const fyLabel = (id: string) => {
-    if (id === UNBUCKETED) return "Unassigned";
-    return (fyQ.data ?? []).find((f) => f.id === id)?.label ?? id;
+    if (id === UNKNOWN_BUCKET) return "Unknown fiscal year";
+    const label = (fyQ.data ?? []).find((f) => f.id === id)?.label;
+    return label ?? `Unknown fiscal year (${id})`;
   };
 
   const isLoading = proj.isLoading;
   const isError = proj.isError;
   const error = proj.error;
 
-  const ts = useTableState("projections", { key: "fy", dir: "asc" });
-  const sortedFyRows = useMemo(() => {
-    // Build a sortable record per FY. The fy accessor returns the row's
-    // original index so the default sort preserves upstream ordering
-    // (special buckets like __unbucketed__ already pinned to the end).
-    const records = fyRows.map((fy, idx) => {
-      const rec: Record<string, unknown> = {
-        __fy: fy,
-        __order: idx,
-        rowTotal: fyTotals.get(fy)?.expected ?? null,
-      };
-      for (const ent of entityCols) {
-        rec[`ent_${ent}`] = cell.get(`${fy}|${ent}`)?.expected ?? null;
-      }
-      return rec;
-    });
-    const accessors: Record<string, (r: Record<string, unknown>) => unknown> = {
-      fy: (r) => r.__order as number,
-      rowTotal: (r) => r.rowTotal as number | null,
-    };
-    for (const ent of entityCols) {
-      accessors[`ent_${ent}`] = (r) => r[`ent_${ent}`] as number | null;
-    }
-    return sortRows(records, accessors, ts.sort).map((r) => r.__fy as string);
-  }, [fyRows, entityCols, cell, fyTotals, ts.sort]);
-
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Projections</h1>
+        <h1 className="text-3xl font-serif font-bold text-foreground">
+          Projections
+        </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Open-pipeline scope from <code className="text-xs">pledge_allocations</code>,
-          grouped by fiscal year × fund entity. <span className="font-medium">Expected</span>{" "}
-          weights each allocation's sub-amount by the parent opportunity's win probability
-          (defaulting to 1 when unset).
+          Plan expected fundraising by fiscal year and recipient. The forecast
+          separates grants and revenue from loan capital, keeps historical years
+          visible, and clearly identifies unknown information.
         </p>
       </div>
 
-      <div className="flex items-center gap-1" data-testid="projections-category-toggle">
-        {([
-          { value: "revenue" as const, label: "Revenue / Gifts" },
-          { value: "loan_capital" as const, label: "Loan Capital" },
-        ]).map((c) => (
+      <div
+        className="flex items-center gap-1"
+        data-testid="projections-category-toggle"
+      >
+        {[
+          { value: "revenue" as const, label: "Grants / Revenue" },
+          { value: "loan_capital" as const, label: "Loans / Loan Capital" },
+        ].map((c) => (
           <button
             key={c.value}
             type="button"
@@ -189,86 +163,326 @@ export default function Projections() {
         ))}
       </div>
 
+      <ForecastTotals
+        rows={combinedRows}
+        fiscalYears={fyQ.data ?? []}
+        category={category}
+      />
+
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <SortableTH colKey="fy" {...ts}>Fiscal year</SortableTH>
+              <TableHead>Fiscal year</TableHead>
               {entityCols.map((e) => (
-                <SortableTH key={e} colKey={`ent_${e}`} align="right" {...ts} className="whitespace-nowrap">
+                <TableHead key={e} className="whitespace-nowrap">
                   {entityName(e)}
-                </SortableTH>
+                </TableHead>
               ))}
-              <SortableTH colKey="rowTotal" align="right" {...ts} className="whitespace-nowrap">Row total</SortableTH>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <SkeletonRows cols={Math.max(entityCols.length + 2, 2)} />
+              <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
             ) : isError ? (
               <TableRow>
                 <TableCell
-                  colSpan={Math.max(entityCols.length + 2, 2)}
+                  colSpan={Math.max(entityCols.length + 1, 2)}
                   className="text-center h-24 text-destructive"
                 >
-                  {error instanceof Error ? error.message : "Failed to load projections."}
+                  {error instanceof Error
+                    ? error.message
+                    : "Failed to load projections."}
                 </TableCell>
               </TableRow>
             ) : fyRows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={Math.max(entityCols.length + 2, 2)}
+                  colSpan={Math.max(entityCols.length + 1, 2)}
                   className="text-center h-24 text-muted-foreground"
                 >
-                  No open allocations.
+                  No forecast information is available.
                 </TableCell>
               </TableRow>
             ) : (
               <>
-                {sortedFyRows.map((fy) => {
-                  const rowTotal = fyTotals.get(fy);
+                {fyRows.map((fy) => {
                   return (
                     <TableRow key={fy} data-testid={`row-projection-${fy}`}>
                       <TableCell className="font-medium whitespace-nowrap">
                         {fyLabel(fy)}
                       </TableCell>
                       {entityCols.map((ent) => {
-                        const c = cell.get(`${fy}|${ent}`);
+                        const row = cell.get(`${fy}|${ent}`);
                         return (
                           <TableCell
                             key={ent}
-                            className="text-right tabular-nums"
+                            className="align-top"
                             data-testid={`cell-${fy}-${ent}`}
                           >
-                            {c ? formatCurrency(c.expected) : "—"}
+                            {row ? <ProjectionCell row={row} /> : "—"}
                           </TableCell>
                         );
                       })}
-                      <TableCell className="text-right font-medium tabular-nums">
-                        {rowTotal ? formatCurrency(rowTotal.expected) : "—"}
-                      </TableCell>
                     </TableRow>
                   );
                 })}
-                <TableRow className="bg-muted/30 font-medium">
-                  <TableCell>Column total</TableCell>
-                  {entityCols.map((ent) => {
-                    const t = entityTotals.get(ent);
-                    return (
-                      <TableCell key={ent} className="text-right tabular-nums">
-                        {t ? formatCurrency(t.expected) : "—"}
-                      </TableCell>
-                    );
-                  })}
-                  <TableCell className="text-right tabular-nums">
-                    {formatCurrency(grandExpected)}
-                  </TableCell>
-                </TableRow>
               </>
             )}
           </TableBody>
         </Table>
       </div>
+      {entityCols.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Recipient comparisons are useful for context, but they may not add up
+          to the total because payment credit is capped once per opportunity
+          within the selected recipient scope.
+        </p>
+      ) : null}
+      <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
     </div>
+  );
+}
+
+function ProjectionCell({ row }: { row: ProjectionByFyEntityRow }) {
+  const money = (value: string | null | undefined) =>
+    value == null ? "—" : formatCurrency(value);
+  return (
+    <div className="min-w-[15rem] space-y-1 text-right text-xs tabular-nums">
+      <ProjectionValue
+        label="Received goal credit"
+        value={money(row.receivedGoalCredit)}
+      />
+      <ProjectionValue
+        label="Face-value unpaid commitments"
+        value={money(row.unpaidCommitment)}
+      />
+      <ProjectionValue
+        label="Probability-weighted unpaid commitments"
+        value={money(row.unpaidCommitmentWeighted)}
+      />
+      <ProjectionValue
+        label="Probability-weighted open asks"
+        value={money(row.openAskWeighted)}
+      />
+      <ProjectionValue label="Goal" value={money(row.goal)} />
+      <ProjectionValue label="Goal gap" value={money(row.goalGap)} />
+    </div>
+  );
+}
+
+function ProjectionValue({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-left text-muted-foreground">{label}</span>
+      <span className="shrink-0 font-medium text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function forecastTotal(row: ProjectionCombinedForecastRow): string {
+  if (row.weightedProjection == null) return "—";
+  const amount = Number(row.weightedProjection);
+  if (!Number.isFinite(amount)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
+function ForecastTotals({
+  rows,
+  fiscalYears,
+  category,
+}: {
+  rows: ProjectionCombinedForecastRow[];
+  fiscalYears: { id: string; label: string }[];
+  category: FundraisingCategory;
+}) {
+  const currentFy = currentFiscalYearSlug();
+  const nextFy = `fy${currentFiscalYearEndYear() + 1}`;
+  const rowByYear = new Map(rows.map((row) => [row.grantYear, row]));
+  const fiscalYearLabel = (id: string | null) => {
+    if (id == null) return "Unknown fiscal year";
+    return (
+      fiscalYears.find((fiscalYear) => fiscalYear.id === id)?.label ??
+      `Unknown fiscal year (${id})`
+    );
+  };
+  const orderedRows = [currentFy, nextFy]
+    .map((year) => rowByYear.get(year))
+    .filter((row): row is ProjectionCombinedFyRow => row != null);
+  if (orderedRows.length === 0) return null;
+
+  return (
+    <section
+      className="space-y-3 rounded-md border bg-card p-4"
+      data-testid="projection-total-forecast"
+    >
+      <div>
+        <h2 className="font-serif text-lg font-semibold">
+          Total forecast for selected recipients —{" "}
+          {category === "revenue" ? "Grants / Revenue" : "Loans / Loan Capital"}
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          These totals are the authoritative forecast for the selected recipient
+          scope. Each opportunity contributes payment credit only once.
+        </p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        {orderedRows.map((row) => (
+          <div
+            key={row.grantYear}
+            className="rounded-md border p-3"
+            data-testid={`projection-total-${row.grantYear}`}
+          >
+            <h3 className="mb-2 font-medium">
+              {fiscalYearLabel(row.grantYear)}
+            </h3>
+            <div className="space-y-1 text-right text-xs tabular-nums">
+              <div data-testid="projection-total-amount">
+                <ProjectionValue
+                  label="Total forecast"
+                  value={forecastTotal(row)}
+                />
+              </div>
+              <ProjectionValue
+                label="Received goal credit"
+                value={formatCurrency(row.receivedGoalCredit)}
+              />
+              <ProjectionValue
+                label="Face-value unpaid commitments"
+                value={formatCurrency(row.unpaidCommitment)}
+              />
+              <ProjectionValue
+                label="Probability-weighted unpaid commitments"
+                value={formatCurrency(row.unpaidCommitmentWeighted)}
+              />
+              <ProjectionValue
+                label="Probability-weighted open asks"
+                value={formatCurrency(row.openAskWeighted)}
+              />
+              <ProjectionValue
+                label="Goal"
+                value={row.goal == null ? "—" : formatCurrency(row.goal)}
+              />
+              <ProjectionValue
+                label="Goal gap"
+                value={row.goalGap == null ? "—" : formatCurrency(row.goalGap)}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const OMISSION_REASON_LABELS: Record<string, string> = {
+  missing_amount: "Amount is missing",
+  missing_fiscal_year: "Fiscal year is missing",
+  missing_recipient: "Recipient is missing",
+  missing_reimbursement_type: "Reimbursement type is missing",
+  no_allocations: "No forecast information is recorded",
+  unused_capacity: "Cost-reimbursement unused capacity",
+  direct_reimbursement_excluded:
+    "Direct reimbursement is excluded from the forecast",
+  zero_weight_early_prospect:
+    "Early prospect has zero probability (weighted amount is $0)",
+};
+
+const NEEDS_ATTENTION_REASONS = new Set([
+  "missing_amount",
+  "missing_fiscal_year",
+  "missing_recipient",
+  "missing_reimbursement_type",
+  "no_allocations",
+]);
+
+const INFORMATION_REASONS = new Set([
+  "unused_capacity",
+  "direct_reimbursement_excluded",
+  "zero_weight_early_prospect",
+]);
+
+function ForecastOmissions({
+  diagnostics,
+}: {
+  diagnostics: ProjectionForecastDiagnostic[];
+}) {
+  if (diagnostics.length === 0) return null;
+  const needsAttention = diagnostics.filter((diagnostic) =>
+    diagnostic.reasons.some((reason) => NEEDS_ATTENTION_REASONS.has(reason)),
+  );
+  const information = diagnostics.filter((diagnostic) =>
+    diagnostic.reasons.some((reason) => INFORMATION_REASONS.has(reason)),
+  );
+  const renderDiagnostic = (diagnostic: ProjectionForecastDiagnostic) => (
+    <li
+      key={`${diagnostic.opportunityId}-${diagnostic.allocationId ?? "opportunity"}`}
+      className="rounded-md border p-2"
+    >
+      <Link
+        href={`/opportunities/${diagnostic.opportunityId}`}
+        className="font-medium text-foreground hover:underline"
+      >
+        {diagnostic.opportunityName ?? diagnostic.opportunityId}
+      </Link>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {diagnostic.message ? <div>{diagnostic.message}</div> : null}
+        <div>
+          {diagnostic.reasons
+            .map(
+              (reason) =>
+                OMISSION_REASON_LABELS[reason] ?? "Additional forecast detail",
+            )
+            .join("; ")}
+        </div>
+      </div>
+    </li>
+  );
+  return (
+    <section
+      className="space-y-3 rounded-md border border-amber-300 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/20"
+      data-testid="projection-omissions"
+    >
+      <div>
+        {needsAttention.length > 0 ? (
+          <div data-testid="projection-needs-attention">
+            <h2 className="font-serif text-lg font-semibold">
+              Needs attention
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              These records are missing details needed to place them in a
+              forecast. A known-year amount with an unknown recipient can still
+              count in the all-recipients total.
+            </p>
+            <ul className="mt-2 grid gap-2 md:grid-cols-2">
+              {needsAttention.map(renderDiagnostic)}
+            </ul>
+          </div>
+        ) : null}
+        {information.length > 0 ? (
+          <div
+            className={
+              needsAttention.length > 0
+                ? "border-t border-amber-300 pt-3 dark:border-amber-900"
+                : undefined
+            }
+            data-testid="projection-information"
+          >
+            <h2 className="font-serif text-lg font-semibold">Information</h2>
+            <p className="text-xs text-muted-foreground">
+              These notes explain forecast treatment. A known-year amount with
+              an unknown recipient can still count in the all-recipients total.
+            </p>
+            <ul className="mt-2 grid gap-2 md:grid-cols-2">
+              {information.map(renderDiagnostic)}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }

@@ -22,7 +22,8 @@
  *     reimbursementType, recipient entity, and intended use (a project-tagged
  *     use also needs its fundable project; the restriction axes are NOT NULL
  *     with defaults, so they are always coded and never a gap). Vacuously
- *     complete for un-won records.
+ *     complete for un-won records. Un-won records deliberately return
+ *     `planningComplete: null` (planning has not started yet), with no gaps.
  *
  * Never persisted — no stored columns, no route-local twins.
  */
@@ -49,7 +50,7 @@ export interface PlanningDerived {
   plannedCollectionAmount: string;
   plannedGoalCreditAmount: string;
   unplannedAwardCapacity: string | null;
-  planningComplete: boolean;
+  planningComplete: boolean | null;
   planningGaps: string[];
 }
 
@@ -92,7 +93,9 @@ export function derivePledgePlanning(input: PlanningInput): PlanningDerived {
 
   const awardedNum = Number(input.awardedAmount ?? 0);
   const unplannedAwardCapacity = isCostReimbursement
-    ? money(Math.max(0, (Number.isFinite(awardedNum) ? awardedNum : 0) - planned))
+    ? money(
+        Math.max(0, (Number.isFinite(awardedNum) ? awardedNum : 0) - planned),
+      )
     : null;
 
   // Planning completeness is a POST-WIN signal only.
@@ -130,7 +133,9 @@ export function derivePledgePlanning(input: PlanningInput): PlanningDerived {
       }
     } else {
       if (input.expectedPaymentCount === 0) {
-        gaps.push("No installment schedule entered — add the expected payments.");
+        gaps.push(
+          "No installment schedule entered — add the expected payments.",
+        );
       }
     }
   }
@@ -139,7 +144,10 @@ export function derivePledgePlanning(input: PlanningInput): PlanningDerived {
     plannedCollectionAmount: money(planned),
     plannedGoalCreditAmount: money(goalCredit),
     unplannedAwardCapacity,
-    planningComplete: gaps.length === 0,
+    // `false` means a won record has an incomplete plan. For an open/pre-award
+    // record completeness is not applicable yet, rather than incorrectly
+    // reporting that the plan is complete.
+    planningComplete: won ? gaps.length === 0 : null,
     planningGaps: gaps,
   };
 }

@@ -120,10 +120,21 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
 
 
 /**
- * Joins `pledge_allocations` to its parent `opportunities_and_pledges` where status='open',
-excludes abandoned allocation rows, and groups remaining rows by
-(grantYear, entityId). `expected` weights `sub_amount` by the parent opp's `win_probability`
-(defaulting to 1 when null). Both grouping keys may be null.
+ * Returns the shared allocation-grain forecast for each (grantYear, entityId,
+category) bucket. `receivedGoalCredit` is received gift allocation credit;
+`unpaidCommitment` and `unpaidCommitmentWeighted` are face and
+probability-weighted unpaid written commitments; `openAsk` and
+`openAskWeighted` are the face and weighted open asks. `goalGap` is the
+non-negative gap after the weighted projection. `totalSubAmount` and
+`expected` remain aliases for the open-ask columns for existing clients.
+Archived opportunities are excluded, while null FY/entity buckets remain
+ visible. Current and next FY are returned as zero-valued buckets when
+ they have no allocations. `combinedRows` is the server-owned
+ all-recipient total for each known FY/category and is calculated with
+ the same per-opportunity payment cap as Dashboard and FY Report.
+ Recipient cells in `rows` are comparisons and must not be summed to
+ reconstruct `combinedRows`. `diagnostics` explains active, unarchived
+ opportunities omitted wholly or partly from known forecast buckets.
 
  * @summary Open-pipeline pledge_allocations aggregated by (grantYear, entityId).
  */
