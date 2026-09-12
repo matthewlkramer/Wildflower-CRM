@@ -189,7 +189,6 @@ type DepositRow = {
     dateReceived: string | null;
     donorbox: boolean;
     grantLetter: boolean;
-    codingForm: boolean;
     recordComplete: boolean;
     linkedChargeIds: string[];
     linkedStagedPaymentIds: string[];
@@ -1102,7 +1101,7 @@ router.get(
               ) ORDER BY ga.id)
               FROM gift_allocations ga WHERE ga.gift_id = g.id
             ), '[]'::jsonb),
-            'donorbox', false, 'grantLetter', false, 'codingForm', false,
+            'donorbox', false, 'grantLetter', false,
             'recordComplete', (g.organization_id IS NOT NULL OR g.individual_giver_person_id IS NOT NULL OR g.household_id IS NOT NULL)
               AND EXISTS (SELECT 1 FROM gift_allocations ga WHERE ga.gift_id = g.id),
             'linkedChargeIds', COALESCE((

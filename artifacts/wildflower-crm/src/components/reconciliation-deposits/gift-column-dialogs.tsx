@@ -162,7 +162,7 @@ export function CreateStandaloneGiftDialog({
   onOpenChange: (open: boolean) => void;
   recordLabel: string;
   preview: EvidencePreview | null;
-  /** e.g. a coding-form suggestion carried over from the lookup dialog. */
+  /** Optional designation suggestion carried over from the lookup dialog. */
   contextNote?: string | null;
   /** Evidence-known editable defaults; blank means "server derives it". */
   prefill: CreateGiftPrefill | null;

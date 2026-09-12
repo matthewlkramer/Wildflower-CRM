@@ -58,7 +58,6 @@ tags:
   - { name: reconciliation }
   - { name: grant-leads }
   - { name: cleanup-queue }
-  - { name: coding-form-rows }
   - { name: admin }
   - { name: search }
 
@@ -508,7 +507,6 @@ paths:
             description: "Item is no longer open (already resolved or dismissed).",
           }
 
-  # ─── Coding-form import (one-time donation coding-form reconciliation) ───────
   /reconciliation/deposits/{bankDepositId}/split-gift-across-stripe-charges:
     post:
       operationId: splitGiftAcrossStripeCharges
@@ -558,464 +556,6 @@ paths:
           {
             description: The gift or payout is not safe to split automatically.,
           }
-
-  /coding-form-rows:
-    get:
-      operationId: listCodingFormRows
-      tags: [coding-form-rows]
-      summary: >-
-        Parsed donation coding-form rows for the one-time import review. Each row
-        carries its proposed donor + opportunity/gift match and a LIVE
-        per-attribute cross-check (new/same/conflict) against current CRM state.
-        Admin only.
-      parameters:
-        - {
-            name: status,
-            in: query,
-            schema: { $ref: "#/components/schemas/CodingFormRowStatus" },
-            description: "Filter by apply status. Omit for all.",
-          }
-        - {
-            name: source,
-            in: query,
-            schema: { type: string, enum: [fy24, fy25, fy26, fy27, girasol] },
-            description: "Filter by source sheet.",
-          }
-        - {
-            name: matchTier,
-            in: query,
-            schema: { type: string, enum: [high, suggested, none] },
-            description: "Filter by match confidence tier.",
-          }
-        - {
-            name: hasDriveLink,
-            in: query,
-            schema: { type: boolean },
-            description: "When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).",
-          }
-        - { $ref: "#/components/parameters/Limit" }
-        - { $ref: "#/components/parameters/Page" }
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema: { $ref: "#/components/schemas/CodingFormRowList" },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-grant-agreements-summary:
-    get:
-      operationId: getCodingFormGrantAgreementsSummary
-      tags: [coding-form-rows]
-      summary: >-
-        Grant-agreement backfill progress — counts by derived grant-agreement
-        status (na / no_match / ready / imported / conflict / failed) across the
-        rows that carry a Drive link. Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      {
-                        $ref: "#/components/schemas/CodingFormGrantAgreementsSummary",
-                      },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows-summary:
-    get:
-      operationId: getCodingFormSummary
-      tags: [coding-form-rows]
-      summary: >-
-        Aggregate counts by status and source plus the "needs a decision" summary
-        — spreadsheet attributes with no existing schema home, with row counts.
-        Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema: { $ref: "#/components/schemas/CodingFormSummary" },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows/{id}:
-    get:
-      operationId: getCodingFormRow
-      tags: [coding-form-rows]
-      summary: One parsed coding-form row with its full live cross-check. Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/CodingFormRow" } },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /coding-form-rows/{id}/match:
-    patch:
-      operationId: setCodingFormMatch
-      tags: [coding-form-rows]
-      summary: >-
-        Set or override the donor (XOR — at most one donor FK) and the matched
-        opportunity/gift for a row. Stamps matchConfirmedAt. Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      requestBody:
-        required: true
-        content:
-          {
-            application/json:
-              {
-                schema: { $ref: "#/components/schemas/SetCodingFormMatchBody" },
-              },
-          }
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/CodingFormRow" } },
-              },
-          }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /coding-form-rows/{id}/rematch:
-    post:
-      operationId: rematchCodingFormRow
-      tags: [coding-form-rows]
-      summary: >-
-        Recompute the proposed donor/opportunity/gift match from the matcher,
-        clearing any prior human confirmation. Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/CodingFormRow" } },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /coding-form-rows/rematch-pending:
-    post:
-      operationId: rematchPendingCodingFormRows
-      tags: [coding-form-rows]
-      summary: >-
-        Bulk re-run the matcher over every row that is still pending AND has
-        never been human-confirmed (rematch clears confirmations, so confirmed
-        or applied rows are never touched). Adds the exact-amount same-donor
-        ±90-day gift proposal pass. Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      { $ref: "#/components/schemas/CodingFormRematchSummary" },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows/{id}/confirm-match:
-    post:
-      operationId: confirmCodingFormMatch
-      tags: [coding-form-rows]
-      summary: >-
-        Approve the row's CURRENT proposed donor/opportunity/gift link as-is:
-        stamps matchConfirmedAt + the confirming user WITHOUT rewriting the
-        proposal (matchMethod/matchTier keep their auto provenance). A confirmed
-        row is excluded from every bulk rematch pass. 409 when the row has no
-        donor match to confirm. Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/CodingFormRow" } },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          { description: "Nothing to confirm — the row has no matched donor." }
-  /coding-form-rows/confirm-matched:
-    post:
-      operationId: confirmMatchedCodingFormRows
-      tags: [coding-form-rows]
-      summary: >-
-        Bulk-approve every still-pending, never-confirmed row that has BOTH a
-        matched donor AND a matched gift (the auto-matcher's exactly-one
-        proposals). Stamps matchConfirmedAt + the confirming user; never touches
-        rows a human already confirmed, applied, or skipped, and never rewrites
-        the proposal itself. Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      { $ref: "#/components/schemas/CodingFormConfirmSummary" },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows/apply-decided:
-    post:
-      operationId: applyDecidedCodingFormRows
-      tags: [coding-form-rows]
-      summary: >-
-        Bulk-apply every still-pending row whose match has been confirmed AND
-        that carries stored per-attribute decisions: each row goes through the
-        SAME apply path as the per-row Apply (compare-don't-clobber, idempotent,
-        reporting task / allocation / address / gift-tag writes). Rows whose
-        approved attributes are no longer actionable are counted (not errors);
-        per-row failures are summarized, never thrown. Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      {
-                        $ref: "#/components/schemas/CodingFormApplyDecidedSummary",
-                      },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows/{id}/apply:
-    post:
-      operationId: applyCodingFormRow
-      tags: [coding-form-rows]
-      summary: >-
-        Apply approved attributes for a row through the normal create/update paths
-        (reporting-deadline task, allocation restriction/intended-usage/purpose,
-        donor address). Compare-don't-clobber: only fills missing or
-        reviewer-approved conflicts. Idempotent — re-running never duplicates.
-        Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      requestBody:
-        required: true
-        content:
-          {
-            application/json:
-              {
-                schema: { $ref: "#/components/schemas/ApplyCodingFormRowBody" },
-              },
-          }
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      { $ref: "#/components/schemas/CodingFormApplyResult" },
-                  },
-              },
-          }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          {
-            description: "Row cannot be applied (e.g. no confirmed donor match).",
-          }
-  /coding-form-rows/{id}/skip:
-    post:
-      operationId: skipCodingFormRow
-      tags: [coding-form-rows]
-      summary: Mark a row as skipped (intentionally not imported). Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/CodingFormRow" } },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /coding-form-rows/{id}/pull-grant-agreement:
-    post:
-      operationId: pullGrantAgreement
-      tags: [coding-form-rows]
-      summary: >-
-        Pull this row's grant-agreement file (PDF, image, or Word doc) from Google
-        Drive and attach it to the matched OPPORTUNITY/PLEDGE — or, when the row
-        has no matched opportunity, to the matched GIFT — via the normal
-        grant-letter flow. Idempotent
-        (already-imported → noop). Never silently overwrites an existing grant
-        letter — a different existing letter is a 409 conflict unless replace=true.
-        A Drive fetch failure is recorded on the row and returned as a `failed`
-        outcome (200). Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      requestBody:
-        required: false
-        content:
-          {
-            application/json:
-              {
-                schema: { $ref: "#/components/schemas/PullGrantAgreementBody" },
-              },
-          }
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      { $ref: "#/components/schemas/PullGrantAgreementResult" },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          {
-            description: "No Drive link, no matched opportunity/gift, or an existing grant letter would be overwritten without replace=true.",
-          }
-  /coding-form-rows/pull-grant-agreements:
-    post:
-      operationId: pullGrantAgreementsBulk
-      tags: [coding-form-rows]
-      summary: >-
-        Bulk grant-agreement pull: attach every actionable row's Drive file to
-        its matched opportunity-else-gift. Only owner-vetted rows are attempted
-        (human-confirmed match or applied row; skipped rows are excluded — pull
-        those per-row if genuinely wanted). Attempts rows whose derived status
-        is ready or failed (re-runs retry recorded transient failures); skips
-        na/no_match/imported, and NEVER replaces an existing letter (conflicts
-        are counted and left for per-row review with replace=true). Per-row
-        failures are recorded on the rows and summarized, never thrown.
-        Admin only.
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      {
-                        $ref: "#/components/schemas/CodingFormBulkPullSummary",
-                      },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-  /coding-form-rows/{id}/reinterpret:
-    post:
-      operationId: reinterpretCodingFormRow
-      tags: [coding-form-rows]
-      summary: >-
-        AI-reinterpret ONE row (normalize donor name, re-parse the address blob,
-        reinterpret the report answer, flag junk fields). Always re-runs, even
-        when a payload already exists. A model/validation failure is recorded on
-        the row (aiError) and returned in the response — never thrown; the prior
-        payload is left untouched. Admin only.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      {
-                        $ref: "#/components/schemas/CodingFormReinterpretResult",
-                      },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
-        "404": { $ref: "#/components/responses/NotFound" }
-  /coding-form-rows/reinterpret:
-    post:
-      operationId: reinterpretCodingFormRows
-      tags: [coding-form-rows]
-      summary: >-
-        Bulk AI reinterpretation over PENDING rows (applied/skipped rows are
-        settled). Default only fills gaps — rows with no stored payload yet
-        (including prior failures); force=true re-runs every pending row.
-        Rate-limit-aware, concurrency 2; per-row failures are recorded on the
-        rows and summarized, never thrown. Admin only.
-      requestBody:
-        required: false
-        content:
-          {
-            application/json:
-              {
-                schema:
-                  {
-                    $ref: "#/components/schemas/ReinterpretCodingFormRowsBody",
-                  },
-              },
-          }
-      responses:
-        "200":
-          {
-            description: OK,
-            content:
-              {
-                application/json:
-                  {
-                    schema:
-                      {
-                        $ref: "#/components/schemas/CodingFormReinterpretSummary",
-                      },
-                  },
-              },
-          }
-        "403": { $ref: "#/components/responses/Forbidden" }
 
   # ─── Email intelligence proposals ──────────────────────────────────────────
   /email-proposals:
@@ -4634,13 +4174,6 @@ paths:
             in: query,
             required: false,
             description: "When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).",
-            schema: { type: boolean },
-          }
-        - {
-            name: codingForm,
-            in: query,
-            required: false,
-            description: "When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.",
             schema: { type: boolean },
           }
         - name: campaignSlugs
@@ -15656,7 +15189,7 @@ components:
     OpportunityOrPledge:
       type: object
       required:
-        [id, conditionsMet, writtenPledge, loanOrGrant, createdAt, updatedAt]
+        [id, conditionsMet, writtenPledge, reportingRequired, loanOrGrant, createdAt, updatedAt]
       properties:
         id: { type: string }
         name: { type: string, nullable: true }
@@ -15790,6 +15323,12 @@ components:
         applicationDeadline: { type: string, format: date, nullable: true }
         paymentDetails: { type: string, nullable: true }
         usageNotes: { type: string, nullable: true }
+        reportingRequired:
+          {
+            type: boolean,
+            nullable: true,
+            description: "CRM-native statement that this opportunity or award requires one or more donor reports. Null means the historical record has not been reviewed and blocks linked gifts from accounting export. When true, a reporting-deadline task is also required.",
+          }
         copperPledgeId: { type: string, nullable: true }
         commitmentPath:
           allOf:
@@ -16015,6 +15554,7 @@ components:
           additionalProperties: { type: string }
     CreateOpportunityOrPledgeBody:
       type: object
+      required: [reportingRequired]
       properties:
         name: { type: string }
         organizationId: { type: string }
@@ -16050,6 +15590,11 @@ components:
         applicationDeadline: { type: string, format: date }
         paymentDetails: { type: string }
         usageNotes: { type: string }
+        reportingRequired:
+          {
+            type: boolean,
+            description: "Explicit yes/no decision about whether the opportunity or award requires donor reporting.",
+          }
         copperPledgeId: { type: string }
         grantLetterUrl: { type: string }
         grantLetterFilename: { type: string }
@@ -16100,6 +15645,11 @@ components:
         applicationDeadline: { type: string, format: date, nullable: true }
         paymentDetails: { type: string, nullable: true }
         usageNotes: { type: string, nullable: true }
+        reportingRequired:
+          {
+            type: boolean,
+            description: "Whether the opportunity or award requires donor reporting.",
+          }
         copperPledgeId: { type: string, nullable: true }
         grantLetterUrl: { type: string, nullable: true }
         grantLetterFilename: { type: string, nullable: true }
@@ -16561,7 +16111,7 @@ components:
           {
             type: string,
             nullable: true,
-            description: "Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns.",
+            description: "Comma-separated free-text tags. Historical records may contain prefixed legacy coding-form reference attributes (circle, series, notes, memo).",
           }
         thankYouSentAt:
           {
@@ -16627,12 +16177,6 @@ components:
             type: boolean,
             readOnly: true,
             description: "True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list.",
-          }
-        codingForm:
-          {
-            type: boolean,
-            readOnly: true,
-            description: "True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = 'applied' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list.",
           }
         organizationPriority:
           {
@@ -17588,13 +17132,35 @@ components:
             items: { type: string },
             description: "Ambiguities surfaced for human review (e.g. payer_type_assumed, project_location_missing, loan_no_revenue_account). A complete gift derives with zero flags.",
           }
+    RevenueExtractorBlockingIssue:
+      type: object
+      required: [giftId, messages]
+      description: |
+        A CRM gift that must be corrected or reviewed before the selected
+        accounting export can be downloaded. The report remains available as a
+        preview while these issues are present; export is blocked.
+      properties:
+        giftId: { type: string }
+        giftName: { type: string, nullable: true }
+        messages:
+          type: array
+          items: { type: string }
     RevenueExtractorReport:
       type: object
-      required: [startDate, endDate, generatedAt, rows]
+      required:
+        [startDate, endDate, generatedAt, readyToExport, blockingIssues, rows]
       properties:
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }
         generatedAt: { type: string, format: date-time }
+        readyToExport:
+          {
+            type: boolean,
+            description: "True only when every in-range gift is bookable, every derived coding row has no unresolved flag, and no CRM/QuickBooks coding disagreement remains.",
+          }
+        blockingIssues:
+          type: array
+          items: { $ref: "#/components/schemas/RevenueExtractorBlockingIssue" }
         rows:
           type: array
           items: { $ref: "#/components/schemas/RevenueExtractorRow" }
@@ -20094,19 +19660,27 @@ components:
         - missing_amount
         - missing_date
         - no_allocations
+        - missing_allocation_amount
         - missing_entity
         - missing_fiscal_year
         - missing_intended_usage
         - missing_fundable_project
         - missing_restriction_evidence
+        - missing_restriction_language
+        - missing_reporting_requirement_decision
         - missing_reporting_deadline
       description: |
         A single failing item of the bookable-gift standard. missing_donor: not exactly
         one donor. missing_amount / missing_date: header value absent. no_allocations:
-        gift has no allocation rows. missing_entity / missing_fiscal_year /
+        gift has no allocation rows. missing_allocation_amount: an allocation has no amount.
+        missing_entity / missing_fiscal_year /
         missing_intended_usage: an allocation lacks that field. missing_fundable_project:
         a project-usage allocation has no fundable project. missing_restriction_evidence:
         a donor_restricted gift has neither a grant letter nor an online-source link.
+        missing_restriction_language: a donor_restricted allocation does not contain
+        the exact governing source sentence in purposeVerbatim.
+        missing_reporting_requirement_decision: the linked opportunity's reporting
+        requirement has not yet been explicitly reviewed.
         missing_reporting_deadline: the linked opportunity requires a written report but
         no reporting_deadline task exists.
     IncompleteGift:
@@ -20917,11 +20491,6 @@ components:
             type: boolean,
             description: "True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge).",
           }
-        codingForm:
-          {
-            type: boolean,
-            description: "True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge).",
-          }
         qboRecords:
           type: array
           description: "Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship."
@@ -20929,7 +20498,7 @@ components:
         recordComplete:
           {
             type: boolean,
-            description: "True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.",
+            description: "True when the gift satisfies the canonical CRM record-completeness predicate. Exposed per-gift so the UI can highlight incomplete records without reproducing the rule.",
           }
         allocations:
           type: array
@@ -23148,614 +22717,6 @@ components:
             maxLength: 20000,
             description: "Replacement shared working text for this cleanup item.",
           }
-    CodingFormRowStatus:
-      type: string
-      enum: [pending, applied, skipped]
-    CrossCheckStatus:
-      type: string
-      enum: [new, same, conflict, na]
-      description: "new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute."
-    CodingFormCrossCheck:
-      type: object
-      required: [attribute, label, status, applicable]
-      properties:
-        attribute:
-          {
-            type: string,
-            enum:
-              [
-                reportDeadline,
-                restrictionDescription,
-                purposeVerbatim,
-                otherRestriction,
-                timeRestriction,
-                intendedUsage,
-                regionalRestriction,
-                allocationEntity,
-                address,
-                circle,
-                seriesType,
-                additionalNotes,
-                internalMemo,
-              ],
-            description: "Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes.",
-          }
-        label: { type: string, description: "Human-readable attribute name." }
-        status: { $ref: "#/components/schemas/CrossCheckStatus" }
-        applicable:
-          {
-            type: boolean,
-            description: "False when the sheet has nothing to import for this attribute.",
-          }
-        sheetValue:
-          {
-            type: string,
-            nullable: true,
-            description: "The spreadsheet value (display form).",
-          }
-        crmValue:
-          {
-            type: string,
-            nullable: true,
-            description: "The current CRM value (display form).",
-          }
-        targetType:
-          {
-            type: string,
-            nullable: true,
-            description: "What an apply would write to (task / allocation / address).",
-          }
-        targetId:
-          {
-            type: string,
-            nullable: true,
-            description: "Id of the existing target, when one was resolved.",
-          }
-        decision:
-          {
-            type: string,
-            nullable: true,
-            enum: [apply, skip],
-            description: "The reviewer's stored decision for this attribute, if any.",
-          }
-        overrideValue:
-          {
-            type: string,
-            nullable: true,
-            description: "Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh.",
-          }
-        blockedReason:
-          {
-            type: string,
-            nullable: true,
-            description: "Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match).",
-          }
-        willWrite:
-          {
-            type: string,
-            nullable: true,
-            description: "EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same / not applicable / blocked).",
-          }
-        willWriteTo:
-          {
-            type: string,
-            nullable: true,
-            description: "Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op.",
-          }
-    CodingFormNeedsDecision:
-      type: object
-      required: [attribute, label]
-      properties:
-        attribute: { type: string }
-        label: { type: string }
-        value:
-          {
-            type: string,
-            nullable: true,
-            description: "The captured spreadsheet value with no schema home.",
-          }
-    CodingFormRow:
-      type: object
-      required:
-        [
-          id,
-          source,
-          sourceRowIndex,
-          status,
-          crossChecks,
-          needsDecision,
-          createdAt,
-          updatedAt,
-        ]
-      properties:
-        id: { type: string }
-        source: { type: string }
-        sourceRowIndex: { type: integer }
-        status: { $ref: "#/components/schemas/CodingFormRowStatus" }
-        donorNameRaw: { type: string, nullable: true }
-        internalMemo: { type: string, nullable: true }
-        amount: { type: string, nullable: true }
-        donationDate: { type: string, nullable: true }
-        restrictionLanguage: { type: string, nullable: true }
-        donorNameAddressRaw: { type: string, nullable: true }
-        reportRequired: { type: boolean, nullable: true }
-        reportDueDate: { type: string, nullable: true }
-        intendedUsageSuggested: { type: string, nullable: true }
-        driveLink: { type: string, nullable: true }
-        organizationId: { type: string, nullable: true }
-        individualGiverPersonId: { type: string, nullable: true }
-        householdId: { type: string, nullable: true }
-        donorName:
-          {
-            type: string,
-            nullable: true,
-            description: "Resolved display name of the matched donor.",
-          }
-        matchedOpportunityId: { type: string, nullable: true }
-        matchedOpportunityName: { type: string, nullable: true }
-        matchedGiftId: { type: string, nullable: true }
-        matchedGiftName:
-          {
-            type: string,
-            nullable: true,
-            readOnly: true,
-            description: "Display name of the matched gift (read-time join, like matchedOpportunityName).",
-          }
-        matchScore: { type: integer, nullable: true }
-        matchMethod: { type: string, nullable: true }
-        matchTier: { type: string, nullable: true }
-        matchConfirmedAt: { type: string, nullable: true }
-        giftCandidates:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormGiftCandidate" },
-            description: "LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift's own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift's donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount/date is set.",
-          }
-        crossChecks:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormCrossCheck" },
-          }
-        needsDecision:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormNeedsDecision" },
-          }
-        grantAgreement:
-          { $ref: "#/components/schemas/CodingFormGrantAgreement" }
-        aiInterpretation:
-          {
-            allOf:
-              [{ $ref: "#/components/schemas/CodingFormAiInterpretation" }],
-            nullable: true,
-            description: "The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation).",
-          }
-        aiInterpretedAt:
-          {
-            type: string,
-            nullable: true,
-            description: "When the current AI payload was produced.",
-          }
-        aiModel:
-          {
-            type: string,
-            nullable: true,
-            description: "Model that produced the current AI payload.",
-          }
-        aiError:
-          {
-            type: string,
-            nullable: true,
-            description: "Last AI reinterpretation failure for this row (cleared on success).",
-          }
-        appliedAt: { type: string, nullable: true }
-        appliedTaskId: { type: string, nullable: true }
-        appliedAddressId: { type: string, nullable: true }
-        appliedAllocationId: { type: string, nullable: true }
-        createdAt: { type: string }
-        updatedAt: { type: string }
-    CodingFormRowList:
-      type: object
-      required: [data, pagination]
-      properties:
-        data:
-          { type: array, items: { $ref: "#/components/schemas/CodingFormRow" } }
-        pagination: { $ref: "#/components/schemas/Pagination" }
-    CodingFormCount:
-      type: object
-      required: [key, count]
-      properties:
-        key: { type: string }
-        count: { type: integer }
-    CodingFormSummary:
-      type: object
-      required: [total, byStatus, bySource, needsDecision]
-      properties:
-        total: { type: integer }
-        byStatus:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormCount" },
-          }
-        bySource:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormCount" },
-          }
-        needsDecision:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormCount" },
-            description: "Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each.",
-          }
-    CodingFormGiftCandidate:
-      type: object
-      required: [id]
-      description: "A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift."
-      properties:
-        id: { type: string }
-        name: { type: string, nullable: true }
-        amount: { type: string, nullable: true }
-        dateReceived: { type: string, nullable: true }
-        organizationId:
-          {
-            type: string,
-            nullable: true,
-            description: "The candidate gift's donor org (donor XOR — at most one of the three is set).",
-          }
-        individualGiverPersonId: { type: string, nullable: true }
-        householdId: { type: string, nullable: true }
-    CodingFormRematchSummary:
-      type: object
-      required: [scanned, updated, giftMatches]
-      description: "Result of the bulk rematch-pending pass."
-      properties:
-        scanned:
-          {
-            type: integer,
-            description: "Rows examined (status pending AND never human-confirmed).",
-          }
-        updated:
-          {
-            type: integer,
-            description: "Rows whose proposal was rewritten by the matcher.",
-          }
-        giftMatches:
-          {
-            type: integer,
-            description: "Rows that now carry a proposed matchedGiftId.",
-          }
-    CodingFormConfirmSummary:
-      type: object
-      required: [scanned, confirmed]
-      description: "Result of the bulk confirm-matched pass."
-      properties:
-        scanned:
-          {
-            type: integer,
-            description: "Rows examined (status pending, never human-confirmed, with a matched donor AND gift).",
-          }
-        confirmed: { type: integer, description: "Rows stamped as confirmed." }
-    CodingFormApplyDecidedSummary:
-      type: object
-      required:
-        [scanned, applied, alreadyApplied, nothingToApply, failed, failures]
-      description: "Result of the bulk apply-decided pass over pending, match-confirmed rows with stored decisions."
-      properties:
-        scanned:
-          {
-            type: integer,
-            description: "Rows examined (status pending, match confirmed, non-empty stored decisions).",
-          }
-        applied:
-          {
-            type: integer,
-            description: "Rows applied in this pass (now status applied).",
-          }
-        alreadyApplied:
-          {
-            type: integer,
-            description: "Idempotent no-ops (row already applied).",
-          }
-        nothingToApply:
-          {
-            type: integer,
-            description: "Rows whose approved attributes were no longer actionable — left pending for per-row review.",
-          }
-        failed:
-          {
-            type: integer,
-            description: "Rows that errored mid-apply (see failures); left pending.",
-          }
-        failures:
-          type: array
-          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
-    SetCodingFormMatchBody:
-      type: object
-      description: "Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field."
-      properties:
-        organizationId: { type: string, nullable: true }
-        individualGiverPersonId: { type: string, nullable: true }
-        householdId: { type: string, nullable: true }
-        matchedOpportunityId: { type: string, nullable: true }
-        matchedGiftId: { type: string, nullable: true }
-    ApplyCodingFormRowBody:
-      type: object
-      required: [decisions]
-      description: "Per-attribute apply/skip decisions plus optional override values. Only attributes set to 'apply' are written; everything else is left untouched."
-      properties:
-        decisions:
-          type: object
-          additionalProperties: { type: string, enum: [apply, skip] }
-          description: "Map of cross-check attribute → apply | skip."
-        overrides:
-          type: object
-          additionalProperties: { type: string }
-          description: "Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them."
-    CodingFormApplyResult:
-      type: object
-      required: [row, applied, skipped]
-      properties:
-        row: { $ref: "#/components/schemas/CodingFormRow" }
-        applied:
-          {
-            type: array,
-            items: { type: string },
-            description: "Attributes written in this apply.",
-          }
-        skipped:
-          {
-            type: array,
-            items: { type: string },
-            description: "Attributes intentionally left untouched (same / skip / blocked).",
-          }
-    CodingFormGrantAgreementStatus:
-      type: string
-      enum: [na, no_match, ready, imported, conflict, failed]
-      description: >-
-        na = no Drive link; no_match = link but no matched opportunity OR gift;
-        ready = will attach; imported = already attached by this backfill;
-        conflict = the matched target already has a DIFFERENT grant letter;
-        failed = the last fetch/upload attempt errored (see error).
-    CodingFormGrantAgreement:
-      type: object
-      required: [status]
-      description: "Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift."
-      properties:
-        status: { $ref: "#/components/schemas/CodingFormGrantAgreementStatus" }
-        targetType:
-          {
-            type: string,
-            nullable: true,
-            enum: [opportunity, gift],
-            description: "Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.",
-          }
-        driveFileId:
-          {
-            type: string,
-            nullable: true,
-            description: "File id extracted from the captured Drive link.",
-          }
-        importedUrl:
-          {
-            type: string,
-            nullable: true,
-            description: "Object-storage url of the file this backfill attached.",
-          }
-        importedFilename: { type: string, nullable: true }
-        importedAt: { type: string, nullable: true }
-        oppExistingUrl:
-          {
-            type: string,
-            nullable: true,
-            description: "The TARGET's (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict/imported display).",
-          }
-        oppExistingFilename: { type: string, nullable: true }
-        error:
-          {
-            type: string,
-            nullable: true,
-            description: "Last recorded fetch/upload error for this row.",
-          }
-    PullGrantAgreementBody:
-      type: object
-      description: "Pull the Drive file onto the matched opportunity. Set replace=true to overwrite an existing grant letter."
-      properties:
-        replace:
-          {
-            type: boolean,
-            description: "Overwrite an existing grant letter (resolve a conflict). Defaults to false.",
-          }
-    PullGrantAgreementResult:
-      type: object
-      required: [row, outcome, replaced]
-      properties:
-        row: { $ref: "#/components/schemas/CodingFormRow" }
-        outcome:
-          {
-            type: string,
-            enum: [imported, already_imported, failed],
-            description: "imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error).",
-          }
-        replaced:
-          {
-            type: boolean,
-            description: "True when an existing grant letter was overwritten.",
-          }
-        error:
-          {
-            type: string,
-            nullable: true,
-            description: "Human-readable failure reason when outcome=failed.",
-          }
-    CodingFormGrantAgreementsSummary:
-      type: object
-      required: [totalWithLink, byStatus]
-      properties:
-        totalWithLink:
-          {
-            type: integer,
-            description: "Rows carrying a grant-agreement Drive link.",
-          }
-        byStatus:
-          {
-            type: array,
-            items: { $ref: "#/components/schemas/CodingFormCount" },
-            description: "Count per derived grant-agreement status. Includes a synthetic `held` key: ready/failed rows the bulk pull will NOT attempt (skipped, or match not confirmed/applied) — pull those per-row if genuinely wanted.",
-          }
-    CodingFormBulkPullSummary:
-      type: object
-      required:
-        [
-          totalWithLink,
-          attempted,
-          imported,
-          alreadyImported,
-          conflict,
-          noMatch,
-          failed,
-          failures,
-        ]
-      description: "Result of the bulk grant-agreement pull pass."
-      properties:
-        totalWithLink:
-          {
-            type: integer,
-            description: "Owner-vetted rows carrying a Drive link (scanned by this pass).",
-          }
-        attempted:
-          {
-            type: integer,
-            description: "Rows whose derived status was ready/failed — a pull was attempted.",
-          }
-        imported:
-          { type: integer, description: "Letters attached in this pass." }
-        alreadyImported:
-          {
-            type: integer,
-            description: "Idempotent no-ops (letter already attached by this backfill).",
-          }
-        conflict:
-          {
-            type: integer,
-            description: "Targets holding a DIFFERENT letter — left for per-row review with replace=true.",
-          }
-        noMatch:
-          {
-            type: integer,
-            description: "Rows with a link but no matched opportunity or gift.",
-          }
-        failed:
-          {
-            type: integer,
-            description: "Drive/upload failures (recorded on the rows; see failures).",
-          }
-        failures:
-          type: array
-          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
-    CodingFormRowFailure:
-      type: object
-      required: [rowId, error]
-      properties:
-        rowId: { type: string }
-        error: { type: string }
-    CodingFormAiInterpretation:
-      type: object
-      required:
-        [donorName, address, reportRequired, reportDueDate, junkFields, notes]
-      description: "One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize/suppress — it never maps circles to regions/entities."
-      properties:
-        donorName:
-          {
-            type: string,
-            nullable: true,
-            description: "Normalized donor display name (typo-fixed); null when the raw name needs no fixing.",
-          }
-        address:
-          type: object
-          nullable: true
-          required: [street, city, state, postal, country]
-          description: "Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address."
-          properties:
-            street: { type: string, nullable: true }
-            city: { type: string, nullable: true }
-            state: { type: string, nullable: true }
-            postal: { type: string, nullable: true }
-            country: { type: string, nullable: true }
-        reportRequired:
-          {
-            type: boolean,
-            nullable: true,
-            description: "Reinterpreted 'written report required?' answer; null when ambiguous.",
-          }
-        reportDueDate:
-          {
-            type: string,
-            nullable: true,
-            description: "YYYY-MM-DD when the raw answer states an explicit due date.",
-          }
-        junkFields:
-          type: array
-          items:
-            {
-              type: string,
-              enum:
-                [
-                  internalMemo,
-                  restrictionLanguage,
-                  additionalNotes,
-                  circleRaw,
-                  seriesTypeRaw,
-                  donorNameAddressRaw,
-                  reportRequiredRaw,
-                ],
-            }
-          description: "Row fields the AI flagged as junk/redundant (suppressed from tag/notes/address writes and cross-checks)."
-        notes:
-          {
-            type: string,
-            nullable: true,
-            description: "One-sentence rationale for the reviewer.",
-          }
-    CodingFormReinterpretResult:
-      type: object
-      required: [row, ok, error]
-      properties:
-        row: { $ref: "#/components/schemas/CodingFormRow" }
-        ok:
-          {
-            type: boolean,
-            description: "False when the model call or validation failed (see error; also recorded on the row as aiError).",
-          }
-        error: { type: string, nullable: true }
-    ReinterpretCodingFormRowsBody:
-      type: object
-      description: "Bulk AI reinterpretation options."
-      properties:
-        force:
-          {
-            type: boolean,
-            description: "Re-run every pending row, not just rows without a stored payload. Defaults to false.",
-          }
-        limit:
-          {
-            type: integer,
-            minimum: 1,
-            maximum: 200,
-            description: "Cap the number of rows processed in this pass (rows without a recorded failure first). Callers chunk with this to keep each request short; omit for the full set.",
-          }
-    CodingFormReinterpretSummary:
-      type: object
-      required: [total, succeeded, failed, failures]
-      description: "Result of the bulk AI reinterpretation pass."
-      properties:
-        total:
-          { type: integer, description: "Pending rows selected for this pass." }
-        succeeded: { type: integer }
-        failed: { type: integer }
-        failures:
-          type: array
-          items: { $ref: "#/components/schemas/CodingFormRowFailure" }
     ResolveStagedPaymentBody:
       type: object
       description: "Set exactly one donor FK (donor XOR). Null the others. Optionally record a payment intermediary."

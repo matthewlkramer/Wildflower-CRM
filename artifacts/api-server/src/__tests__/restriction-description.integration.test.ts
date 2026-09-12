@@ -99,6 +99,7 @@ async function seedGift(): Promise<string> {
 async function seedOpp(): Promise<string> {
   const r = await api("POST", "/opportunities-and-pledges", {
     name: `${RUN} opp`,
+    reportingRequired: false,
     organizationId: ORG_ID,
   });
   expect(r.status).toBe(201);

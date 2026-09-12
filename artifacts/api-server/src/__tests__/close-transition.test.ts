@@ -91,6 +91,7 @@ describe("CreateOpportunityOrPledgeBodyRefined (create = close from nothing)", (
       name: "Test opp",
       organizationId: "org-1",
       lossType: "lost",
+      reportingRequired: false,
     });
     expect(out.success).toBe(false);
     if (!out.success) {
@@ -104,6 +105,7 @@ describe("CreateOpportunityOrPledgeBodyRefined (create = close from nothing)", (
       organizationId: "org-1",
       lossType: "lost",
       actualCompletionDate: "2026-07-13",
+      reportingRequired: false,
     });
     expect(out.success).toBe(true);
   });
@@ -112,7 +114,16 @@ describe("CreateOpportunityOrPledgeBodyRefined (create = close from nothing)", (
     const out = CreateOpportunityOrPledgeBodyRefined.safeParse({
       name: "Test opp",
       organizationId: "org-1",
+      reportingRequired: false,
     });
     expect(out.success).toBe(true);
+  });
+
+  it("requires an explicit donor-reporting decision on every new opportunity", () => {
+    const out = CreateOpportunityOrPledgeBodyRefined.safeParse({
+      name: "Test opp",
+      organizationId: "org-1",
+    });
+    expect(out.success).toBe(false);
   });
 });

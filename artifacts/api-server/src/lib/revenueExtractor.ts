@@ -36,7 +36,14 @@ import {
 } from "@workspace/api-zod";
 import { maskName, type Viewer } from "./identityVisibility";
 import { loadEntityCodingRules } from "./revenueCoding";
-import { derivedProcessorFeeForGift } from "./giftPaymentSummary";
+import {
+  derivedProcessorFeeForGift,
+  giftIsOffBooksExpr,
+} from "./giftPaymentSummary";
+import {
+  BOOKABLE_REASON_LABELS,
+  deriveGiftBookable,
+} from "./bookableGift";
 import { qbLedgerSoleGiftIdForPayment } from "./paymentApplications";
 import { deriveGiftTypeExpr } from "./giftTypeDerived";
 import { personDisplayNameSql } from "./personNameSql";
@@ -91,6 +98,12 @@ export interface RevenueExtractorReport {
   startDate: string;
   endDate: string;
   generatedAt: string;
+  readyToExport: boolean;
+  blockingIssues: Array<{
+    giftId: string;
+    giftName: string | null;
+    messages: string[];
+  }>;
   rows: RevenueExtractorRow[];
 }
 
@@ -137,6 +150,8 @@ export async function buildRevenueExtractorReport(
   const gifts = await db
     .select({
       id: giftsAndPayments.id,
+      name: giftsAndPayments.name,
+      amount: giftsAndPayments.amount,
       dateReceived: giftsAndPayments.dateReceived,
       details: giftsAndPayments.details,
       memoDescription: giftsAndPayments.memoDescription,
@@ -150,8 +165,10 @@ export async function buildRevenueExtractorReport(
       loanOrGrant: giftsAndPayments.loanOrGrant,
       giftType: deriveGiftTypeExpr(),
       processorFee: derivedProcessorFeeForGift(),
+      isOffBooks: giftIsOffBooksExpr(),
       oppGrantLetterUrl: opportunitiesAndPledges.grantLetterUrl,
       oppWrittenPledge: opportunitiesAndPledges.writtenPledge,
+      reportingRequired: opportunitiesAndPledges.reportingRequired,
       // Donor display + masking helpers.
       organizationName: organizations.name,
       organizationAnonymous: organizations.anonymous,
@@ -179,7 +196,14 @@ export async function buildRevenueExtractorReport(
     );
 
   if (gifts.length === 0) {
-    return { startDate, endDate, generatedAt: new Date().toISOString(), rows: [] };
+    return {
+      startDate,
+      endDate,
+      generatedAt: new Date().toISOString(),
+      readyToExport: true,
+      blockingIssues: [],
+      rows: [],
+    };
   }
 
   const giftIds = gifts.map((g) => g.id);
@@ -370,15 +394,87 @@ export async function buildRevenueExtractorReport(
     allocsByGift.set(a.giftId, list);
   }
 
+  // Export is a controlled handoff, not a second place to fix CRM data. Build
+  // one blocker list per gift from the same bookable-gift standard used by the
+  // reconciliation workbench, then add export-specific reconciliation checks.
+  const blockingByGift = new Map<
+    string,
+    { giftName: string | null; messages: Set<string> }
+  >();
+  const addBlockingMessage = (
+    giftId: string,
+    giftName: string | null,
+    message: string,
+  ) => {
+    const issue = blockingByGift.get(giftId) ?? {
+      giftName,
+      messages: new Set<string>(),
+    };
+    issue.messages.add(message);
+    blockingByGift.set(giftId, issue);
+  };
+
+  for (const g of gifts) {
+    const giftAllocs = allocsByGift.get(g.id) ?? [];
+    const { reasons } = deriveGiftBookable({
+      organizationId: g.organizationId,
+      individualGiverPersonId: g.individualGiverPersonId,
+      householdId: g.householdId,
+      amount: g.amount,
+      dateReceived: g.dateReceived,
+      // Grant agreements belong on the opportunity when one is linked; either
+      // location is valid evidence for the resulting gift.
+      grantLetterUrl: g.grantLetterUrl || g.oppGrantLetterUrl,
+      sourceRecordUrl: g.sourceRecordUrl,
+      isOffBooks: Boolean(g.isOffBooks),
+      allocations: giftAllocs.map((a) => ({
+        subAmount: a.subAmount,
+        entityId: a.entityId,
+        grantYear: a.grantYear,
+        intendedUsage: a.intendedUsage,
+        fundableProjectId: a.fundableProjectId,
+        regionalRestrictionType: a.regionalRestrictionType,
+        otherRestrictionType: a.otherRestrictionType,
+        timeRestrictionType: a.timeRestrictionType,
+        purposeVerbatim: a.purposeVerbatim,
+      })),
+      hasOpportunity: Boolean(g.opportunityId),
+      reportRequired: g.reportingRequired,
+      hasReportingDeadlineTask: Boolean(
+        g.opportunityId && reportingOppIds.has(g.opportunityId),
+      ),
+    });
+    for (const reason of reasons) {
+      addBlockingMessage(g.id, g.name, BOOKABLE_REASON_LABELS[reason]);
+    }
+
+    if (!g.isOffBooks && g.amount != null && giftAllocs.length > 0) {
+      const giftCents = Math.round(Number(g.amount) * 100);
+      const allocationCents = giftAllocs.reduce(
+        (sum, a) => sum + Math.round(Number(a.subAmount ?? 0) * 100),
+        0,
+      );
+      if (
+        Number.isFinite(giftCents) &&
+        Number.isFinite(allocationCents) &&
+        giftCents !== allocationCents
+      ) {
+        addBlockingMessage(
+          g.id,
+          g.name,
+          `Allocation total (${(allocationCents / 100).toFixed(2)}) does not match gift amount (${(giftCents / 100).toFixed(2)})`,
+        );
+      }
+    }
+  }
+
   const rows: RevenueExtractorRow[] = [];
 
   for (const g of gifts) {
     const donorKind = donorKindOf(g);
     const name = maskDonorName(g, viewer);
     const hasGrantLetter = !!(g.grantLetterUrl || g.oppGrantLetterUrl);
-    const hasReportingRequirement = !!(
-      g.opportunityId && reportingOppIds.has(g.opportunityId)
-    );
+    const hasReportingRequirement = Boolean(g.reportingRequired);
     // A gift is a pledge installment only when its linked opportunity is a
     // written pledge — not merely any opportunity-linked gift.
     const isPledgePayment = !!(g.oppWrittenPledge && g.opportunityId);
@@ -434,6 +530,7 @@ export async function buildRevenueExtractorReport(
         purposeVerbatim: a.purposeVerbatim,
       };
       const coding = deriveRevenueCoding(input, rules);
+      const questionText = questionsFromFlags(coding.flags);
 
       const deferred = deriveDeferredRevenue(txFyStart, a.fyStartDate);
 
@@ -442,6 +539,15 @@ export async function buildRevenueExtractorReport(
         ((qb.objectCode != null && qb.objectCode !== coding.objectCode) ||
           (qb.location != null && qb.location !== coding.location) ||
           (qb.revenueClass != null && qb.revenueClass !== coding.revenueClass));
+
+      if (questionText) addBlockingMessage(g.id, g.name, questionText);
+      if (disagreement) {
+        addBlockingMessage(
+          g.id,
+          g.name,
+          "CRM coding differs from the linked QuickBooks coding; Finance must review the difference",
+        );
+      }
 
       rows.push({
         rowKey: `${g.id}:${a.id}`,
@@ -464,7 +570,7 @@ export async function buildRevenueExtractorReport(
         suggestedClass: coding.revenueClass,
         deferredRevenue: deferred === "yes" ? "Yes" : deferred === "no" ? "No" : "",
         restrictionEvidence: coding.restrictionEvidence,
-        questionsFlags: questionsFromFlags(coding.flags),
+        questionsFlags: questionText,
         notes: g.details,
         sourceFile: g.sourceRecordUrl || REVENUE_EXTRACTOR_SOURCE_FILE,
         qbObjectCode: qb?.objectCode ?? null,
@@ -535,10 +641,20 @@ export async function buildRevenueExtractorReport(
     }
   }
 
+  const blockingIssues = [...blockingByGift.entries()]
+    .map(([giftId, issue]) => ({
+      giftId,
+      giftName: issue.giftName,
+      messages: [...issue.messages],
+    }))
+    .sort((a, b) => (a.giftName ?? a.giftId).localeCompare(b.giftName ?? b.giftId));
+
   return {
     startDate,
     endDate,
     generatedAt: new Date().toISOString(),
+    readyToExport: blockingIssues.length === 0,
+    blockingIssues,
     rows,
   };
 }

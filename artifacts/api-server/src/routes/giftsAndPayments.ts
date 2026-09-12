@@ -190,13 +190,6 @@ const donorJoinSelect = {
   donorboxBacked: sql<boolean>`${sql.raw(
     donorboxBackedExistsSql(`"gifts_and_payments"."id"`),
   )}`.as("donorbox_backed"),
-  // Coding-form badge — true when an APPLIED coding_form_rows row is matched
-  // to this gift. Same authority as the workbench coding badge.
-  codingForm: sql<boolean>`EXISTS (
-    SELECT 1 FROM coding_form_rows cfr
-    WHERE cfr.matched_gift_id = ${giftsAndPayments.id}
-      AND cfr.status = 'applied'
-  )`.as("coding_form"),
   // Task #448 — settled amount + processor fees derived at read time from the
   // gift's LINKED payments (QuickBooks + Stripe + non-stripe Donorbox), via the
   // one shared {settledGross, totalFees} helper. Replaces the now-dropped header
@@ -448,12 +441,6 @@ async function buildGiftsListWhere(
     if (req.query.donorboxBacked === "true") {
       filters.push(
         sql.raw(donorboxBackedExistsSql(`"gifts_and_payments"."id"`)),
-      );
-    }
-    // Coding-form filter — keeps only gifts with an APPLIED coding_form_rows row.
-    if (req.query.codingForm === "true") {
-      filters.push(
-        sql`EXISTS (SELECT 1 FROM coding_form_rows cfr WHERE cfr.matched_gift_id = ${giftsAndPayments.id} AND cfr.status = 'applied')`,
       );
     }
     {

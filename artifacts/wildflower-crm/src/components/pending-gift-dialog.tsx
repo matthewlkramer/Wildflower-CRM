@@ -18,6 +18,13 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   DonorFieldPicker,
@@ -48,6 +55,9 @@ export function PendingGiftDialog({
   const [amount, setAmount] = useState("");
   const [commitmentDate, setCommitmentDate] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
+  const [reportingRequired, setReportingRequired] = useState<"yes" | "no" | "">(
+    "",
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -57,6 +67,7 @@ export function PendingGiftDialog({
     setAmount("");
     setCommitmentDate(new Date().toISOString().slice(0, 10));
     setExpectedDate("");
+    setReportingRequired("");
   }, [open, donor.id, donor.type]);
 
   const sourceKind = routingKind(donorType);
@@ -109,6 +120,7 @@ export function PendingGiftDialog({
     name.trim().length > 0 &&
     validAmount &&
     !!commitmentDate &&
+    !!reportingRequired &&
     !!effectiveDonor &&
     !routing.isLoading &&
     !requiresDecision &&
@@ -127,6 +139,7 @@ export function PendingGiftDialog({
         commitmentPath: "gift",
         verbalCommitmentAt: commitmentDate,
         awardedAmount: amount,
+        reportingRequired: reportingRequired === "yes",
         ...(expectedDate ? { projectedCloseDate: expectedDate } : {}),
       },
     });
@@ -230,6 +243,23 @@ export function PendingGiftDialog({
               onChange={(event) => setExpectedDate(event.target.value)}
               data-testid="input-pending-gift-expected-date"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Donor reporting required</Label>
+            <Select
+              value={reportingRequired}
+              onValueChange={(value) =>
+                setReportingRequired(value as "yes" | "no")
+              }
+            >
+              <SelectTrigger data-testid="select-pending-gift-reporting-required">
+                <SelectValue placeholder="Choose yes or no" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">No</SelectItem>
+                <SelectItem value="yes">Yes</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 

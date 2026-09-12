@@ -2338,6 +2338,8 @@ export interface OpportunityOrPledge {
   applicationDeadline?: string | null;
   paymentDetails?: string | null;
   usageNotes?: string | null;
+  /** CRM-native statement that this opportunity or award requires one or more donor reports. Null means the historical record has not been reviewed and blocks linked gifts from accounting export. When true, a reporting-deadline task is also required. */
+  reportingRequired: boolean | null;
   copperPledgeId?: string | null;
   /** The positive outcome the donor verbally confirmed; not itself an actual pledge or gift. */
   readonly commitmentPath?: OpportunityCommitmentPath | null;
@@ -2524,7 +2526,7 @@ export interface GiftOrPayment {
   loanOrGrant?: LoanOrGrant;
   /** Two-lane reconciliation status (INV-4), derived read-only from quickbooksTieStatus + Donor XOR. funding mirrors the QB tie; crmRecord is always confirmed (a gift is itself the confirmed CRM record). Present on list/detail reads, omitted from bare mutation responses. */
   readonly reconciliationLanes?: ReconciliationLanes;
-  /** Comma-separated free-text tags. The coding-form apply step appends its reference attributes (circle, series, notes, memo) here as prefixed entries — there are no dedicated coding-form columns. */
+  /** Comma-separated free-text tags. Historical records may contain prefixed legacy coding-form reference attributes (circle, series, notes, memo). */
   tags?: string | null;
   /** Date the linked thank-you email was sent. Snapshot of emailMessages.sentAt at link time. */
   thankYouSentAt?: string | null;
@@ -2548,8 +2550,6 @@ export interface GiftOrPayment {
   readonly quickbooksStagedPaymentId?: string | null;
   /** True when a Donorbox donation backs this gift — a counted cash-application ledger row that is Donorbox-sourced directly, or Stripe-sourced where the charge has a Donorbox donation behind it. Same authority as the workbench Donorbox badge (donorboxBackedExistsSql). LIST-populated; drives the Donorbox badge on the gifts list. */
   readonly donorboxBacked?: boolean;
-  /** True when an APPLIED Donation Revenue Coding Form row is matched to this gift (coding_form_rows.status = 'applied' AND matched_gift_id = this gift). LIST-populated; drives the coding badge on the gifts list. */
-  readonly codingForm?: boolean;
   readonly organizationPriority?: Priority | null;
   readonly individualGiverPersonPriority?: Priority | null;
   /** Distinct entity_id values from gift_allocations. */
@@ -2675,6 +2675,8 @@ export interface CreateOpportunityOrPledgeBody {
   applicationDeadline?: string;
   paymentDetails?: string;
   usageNotes?: string;
+  /** Explicit yes/no decision about whether the opportunity or award requires donor reporting. */
+  reportingRequired: boolean;
   copperPledgeId?: string;
   grantLetterUrl?: string;
   grantLetterFilename?: string;
@@ -2708,6 +2710,8 @@ export interface UpdateOpportunityOrPledgeBody {
   applicationDeadline?: string | null;
   paymentDetails?: string | null;
   usageNotes?: string | null;
+  /** Whether the opportunity or award requires donor reporting. */
+  reportingRequired?: boolean;
   copperPledgeId?: string | null;
   grantLetterUrl?: string | null;
   grantLetterFilename?: string | null;
@@ -3598,6 +3602,18 @@ export interface RevenueCodingPreview {
 }
 
 /**
+ * A CRM gift that must be corrected or reviewed before the selected
+accounting export can be downloaded. The report remains available as a
+preview while these issues are present; export is blocked.
+
+ */
+export interface RevenueExtractorBlockingIssue {
+  giftId: string;
+  giftName?: string | null;
+  messages: string[];
+}
+
+/**
  * One Revenue Extractor line — either a gift allocation (isFeeLine=false) or a
 separate negative processor-fee line for a gift (isFeeLine=true). The 19
 report columns are the fields objectCode..sourceFile; the remaining fields
@@ -3664,6 +3680,9 @@ export interface RevenueExtractorReport {
   startDate: string;
   endDate: string;
   generatedAt: string;
+  /** True only when every in-range gift is bookable, every derived coding row has no unresolved flag, and no CRM/QuickBooks coding disagreement remains. */
+  readyToExport: boolean;
+  blockingIssues: RevenueExtractorBlockingIssue[];
   rows: RevenueExtractorRow[];
 }
 
@@ -5184,10 +5203,15 @@ Lets the UI show "already matched" context instead of an empty result.
 /**
  * A single failing item of the bookable-gift standard. missing_donor: not exactly
 one donor. missing_amount / missing_date: header value absent. no_allocations:
-gift has no allocation rows. missing_entity / missing_fiscal_year /
+gift has no allocation rows. missing_allocation_amount: an allocation has no amount.
+missing_entity / missing_fiscal_year /
 missing_intended_usage: an allocation lacks that field. missing_fundable_project:
 a project-usage allocation has no fundable project. missing_restriction_evidence:
 a donor_restricted gift has neither a grant letter nor an online-source link.
+missing_restriction_language: a donor_restricted allocation does not contain
+the exact governing source sentence in purposeVerbatim.
+missing_reporting_requirement_decision: the linked opportunity's reporting
+requirement has not yet been explicitly reviewed.
 missing_reporting_deadline: the linked opportunity requires a written report but
 no reporting_deadline task exists.
 
@@ -5200,11 +5224,14 @@ export const BookableReason = {
   missing_amount: 'missing_amount',
   missing_date: 'missing_date',
   no_allocations: 'no_allocations',
+  missing_allocation_amount: 'missing_allocation_amount',
   missing_entity: 'missing_entity',
   missing_fiscal_year: 'missing_fiscal_year',
   missing_intended_usage: 'missing_intended_usage',
   missing_fundable_project: 'missing_fundable_project',
   missing_restriction_evidence: 'missing_restriction_evidence',
+  missing_restriction_language: 'missing_restriction_language',
+  missing_reporting_requirement_decision: 'missing_reporting_requirement_decision',
   missing_reporting_deadline: 'missing_reporting_deadline',
 } as const;
 
@@ -5838,11 +5865,9 @@ export interface WorkbenchClusterGift {
   donorbox?: boolean;
   /** True when a grant/award letter file is attached — the gift's own upload or its linked pledge's letter (renders the letter badge). */
   grantLetter?: boolean;
-  /** True when an APPLIED Donation Revenue Coding Form row is matched to this gift (renders the coding badge). */
-  codingForm?: boolean;
   /** Derived QBO evidence rollup for deposit-workbench display. This is not a persisted gift↔QBO relationship. */
   qboRecords?: WorkbenchDepositNodeQbRecord[];
-  /** True when the gift satisfies the canonical record-completeness predicate: donorbox-backed OR an applied coding-form row is matched OR (donor identified AND every allocation has an entity link). Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
+  /** True when the gift satisfies the canonical CRM record-completeness predicate. Exposed per-gift so the UI can highlight incomplete records without reproducing the rule. */
   recordComplete?: boolean;
   /** The gift's allocations (amount + purpose), straight from gift_allocations, for sub-card display in the deposit workbench. */
   allocations?: WorkbenchClusterGiftAllocationsItem[];
@@ -7558,439 +7583,6 @@ export interface UpdateCleanupItemBody {
    * @maxLength 20000
    */
   note: string;
-}
-
-export type CodingFormRowStatus = typeof CodingFormRowStatus[keyof typeof CodingFormRowStatus];
-
-
-export const CodingFormRowStatus = {
-  pending: 'pending',
-  applied: 'applied',
-  skipped: 'skipped',
-} as const;
-
-/**
- * new = CRM empty (safe to fill); same = already matches; conflict = differs (needs a human choice); na = nothing to import for this attribute.
- */
-export type CrossCheckStatus = typeof CrossCheckStatus[keyof typeof CrossCheckStatus];
-
-
-export const CrossCheckStatus = {
-  new: 'new',
-  same: 'same',
-  conflict: 'conflict',
-  na: 'na',
-} as const;
-
-/**
- * Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes.
- */
-export type CodingFormCrossCheckAttribute = typeof CodingFormCrossCheckAttribute[keyof typeof CodingFormCrossCheckAttribute];
-
-
-export const CodingFormCrossCheckAttribute = {
-  reportDeadline: 'reportDeadline',
-  restrictionDescription: 'restrictionDescription',
-  purposeVerbatim: 'purposeVerbatim',
-  otherRestriction: 'otherRestriction',
-  timeRestriction: 'timeRestriction',
-  intendedUsage: 'intendedUsage',
-  regionalRestriction: 'regionalRestriction',
-  allocationEntity: 'allocationEntity',
-  address: 'address',
-  circle: 'circle',
-  seriesType: 'seriesType',
-  additionalNotes: 'additionalNotes',
-  internalMemo: 'internalMemo',
-} as const;
-
-/**
- * The reviewer's stored decision for this attribute, if any.
- */
-export type CodingFormCrossCheckDecision = typeof CodingFormCrossCheckDecision[keyof typeof CodingFormCrossCheckDecision] | null;
-
-
-export const CodingFormCrossCheckDecision = {
-  apply: 'apply',
-  skip: 'skip',
-} as const;
-
-export interface CodingFormCrossCheck {
-  /** Which importable attribute this row describes. restrictionDescription = plain-language summary; purposeVerbatim = exact source language; otherRestriction / timeRestriction = restriction axes. */
-  attribute: CodingFormCrossCheckAttribute;
-  /** Human-readable attribute name. */
-  label: string;
-  status: CrossCheckStatus;
-  /** False when the sheet has nothing to import for this attribute. */
-  applicable: boolean;
-  /** The spreadsheet value (display form). */
-  sheetValue?: string | null;
-  /** The current CRM value (display form). */
-  crmValue?: string | null;
-  /** What an apply would write to (task / allocation / address). */
-  targetType?: string | null;
-  /** Id of the existing target, when one was resolved. */
-  targetId?: string | null;
-  /** The reviewer's stored decision for this attribute, if any. */
-  decision?: CodingFormCrossCheckDecision;
-  /** Reviewer-entered override value for this attribute. When set, Apply writes this instead of the sheet-derived value. Persisted on the row and returned so the UI can pre-fill override inputs after page refresh. */
-  overrideValue?: string | null;
-  /** Why this attribute can't be auto-applied (e.g. ambiguous allocation, no confirmed match). */
-  blockedReason?: string | null;
-  /** EXACT value Apply would write (display form), already reflecting any stored override. Null when apply would be a no-op (same / not applicable / blocked). */
-  willWrite?: string | null;
-  /** Human description of the destination record + field Apply would write to, including whether it creates vs overwrites. Null when apply would be a no-op. */
-  willWriteTo?: string | null;
-}
-
-export interface CodingFormNeedsDecision {
-  attribute: string;
-  label: string;
-  /** The captured spreadsheet value with no schema home. */
-  value?: string | null;
-}
-
-/**
- * A live exact-amount gift candidate for an unresolved coding-form row. The donor FKs let the record-first matcher INHERIT the donor from the picked gift.
- */
-export interface CodingFormGiftCandidate {
-  id: string;
-  name?: string | null;
-  amount?: string | null;
-  dateReceived?: string | null;
-  /** The candidate gift's donor org (donor XOR — at most one of the three is set). */
-  organizationId?: string | null;
-  individualGiverPersonId?: string | null;
-  householdId?: string | null;
-}
-
-/**
- * na = no Drive link; no_match = link but no matched opportunity OR gift; ready = will attach; imported = already attached by this backfill; conflict = the matched target already has a DIFFERENT grant letter; failed = the last fetch/upload attempt errored (see error).
- */
-export type CodingFormGrantAgreementStatus = typeof CodingFormGrantAgreementStatus[keyof typeof CodingFormGrantAgreementStatus];
-
-
-export const CodingFormGrantAgreementStatus = {
-  na: 'na',
-  no_match: 'no_match',
-  ready: 'ready',
-  imported: 'imported',
-  conflict: 'conflict',
-  failed: 'failed',
-} as const;
-
-/**
- * Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched.
- */
-export type CodingFormGrantAgreementTargetType = typeof CodingFormGrantAgreementTargetType[keyof typeof CodingFormGrantAgreementTargetType] | null;
-
-
-export const CodingFormGrantAgreementTargetType = {
-  opportunity: 'opportunity',
-  gift: 'gift',
-} as const;
-
-/**
- * Derived (live) grant-agreement backfill view for a coding-form row. The letter attaches to the matched opportunity when one exists, else the matched gift.
- */
-export interface CodingFormGrantAgreement {
-  status: CodingFormGrantAgreementStatus;
-  /** Where the letter goes: the matched opportunity when one exists, else the matched gift; null when neither is matched. */
-  targetType?: CodingFormGrantAgreementTargetType;
-  /** File id extracted from the captured Drive link. */
-  driveFileId?: string | null;
-  /** Object-storage url of the file this backfill attached. */
-  importedUrl?: string | null;
-  importedFilename?: string | null;
-  importedAt?: string | null;
-  /** The TARGET's (opportunity or gift — names kept for API compatibility) current grant-letter url (for conflict/imported display). */
-  oppExistingUrl?: string | null;
-  oppExistingFilename?: string | null;
-  /** Last recorded fetch/upload error for this row. */
-  error?: string | null;
-}
-
-export type CodingFormAiInterpretationJunkFieldsItem = typeof CodingFormAiInterpretationJunkFieldsItem[keyof typeof CodingFormAiInterpretationJunkFieldsItem];
-
-
-export const CodingFormAiInterpretationJunkFieldsItem = {
-  internalMemo: 'internalMemo',
-  restrictionLanguage: 'restrictionLanguage',
-  additionalNotes: 'additionalNotes',
-  circleRaw: 'circleRaw',
-  seriesTypeRaw: 'seriesTypeRaw',
-  donorNameAddressRaw: 'donorNameAddressRaw',
-  reportRequiredRaw: 'reportRequiredRaw',
-} as const;
-
-/**
- * Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address.
- */
-export type CodingFormAiInterpretationAddress = {
-  street: string | null;
-  city: string | null;
-  state: string | null;
-  postal: string | null;
-  country: string | null;
-} | null;
-
-/**
- * One Zod-validated AI reinterpretation payload. Downstream reads are EFFECTIVE (AI ?? parsed ?? raw); the AI may only normalize/suppress — it never maps circles to regions/entities.
- */
-export interface CodingFormAiInterpretation {
-  /** Normalized donor display name (typo-fixed); null when the raw name needs no fixing. */
-  donorName: string | null;
-  /** Structured address re-parsed from the free-text name+address blob; null when the blob holds no usable address. */
-  address: CodingFormAiInterpretationAddress;
-  /** Reinterpreted 'written report required?' answer; null when ambiguous. */
-  reportRequired: boolean | null;
-  /** YYYY-MM-DD when the raw answer states an explicit due date. */
-  reportDueDate: string | null;
-  /** Row fields the AI flagged as junk/redundant (suppressed from tag/notes/address writes and cross-checks). */
-  junkFields: CodingFormAiInterpretationJunkFieldsItem[];
-  /** One-sentence rationale for the reviewer. */
-  notes: string | null;
-}
-
-export interface CodingFormRow {
-  id: string;
-  source: string;
-  sourceRowIndex: number;
-  status: CodingFormRowStatus;
-  donorNameRaw?: string | null;
-  internalMemo?: string | null;
-  amount?: string | null;
-  donationDate?: string | null;
-  restrictionLanguage?: string | null;
-  donorNameAddressRaw?: string | null;
-  reportRequired?: boolean | null;
-  reportDueDate?: string | null;
-  intendedUsageSuggested?: string | null;
-  driveLink?: string | null;
-  organizationId?: string | null;
-  individualGiverPersonId?: string | null;
-  householdId?: string | null;
-  /** Resolved display name of the matched donor. */
-  donorName?: string | null;
-  matchedOpportunityId?: string | null;
-  matchedOpportunityName?: string | null;
-  matchedGiftId?: string | null;
-  /** Display name of the matched gift (read-time join, like matchedOpportunityName). */
-  readonly matchedGiftName?: string | null;
-  matchScore?: number | null;
-  matchMethod?: string | null;
-  matchTier?: string | null;
-  matchConfirmedAt?: string | null;
-  /** LIVE (never persisted) exact-amount gift candidates within ±90 days of the donation date (gift's own date OR its counted QuickBooks payment date, whichever is closer). Same-donor when the row has a donor; donor-agnostic for the record-first pass (the picked gift's donor FKs are inherited). Populated only while the row is unresolved (no matched gift, not confirmed) so an ambiguous row shows the reviewer the choices instead of hiding them. Empty when a gift is already matched or no amount/date is set. */
-  giftCandidates?: CodingFormGiftCandidate[];
-  crossChecks: CodingFormCrossCheck[];
-  needsDecision: CodingFormNeedsDecision[];
-  grantAgreement?: CodingFormGrantAgreement;
-  /** The VALIDATED AI reinterpretation payload for this row (null when never run or the stored payload failed validation). */
-  aiInterpretation?: CodingFormAiInterpretation | null;
-  /** When the current AI payload was produced. */
-  aiInterpretedAt?: string | null;
-  /** Model that produced the current AI payload. */
-  aiModel?: string | null;
-  /** Last AI reinterpretation failure for this row (cleared on success). */
-  aiError?: string | null;
-  appliedAt?: string | null;
-  appliedTaskId?: string | null;
-  appliedAddressId?: string | null;
-  appliedAllocationId?: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CodingFormRowList {
-  data: CodingFormRow[];
-  pagination: Pagination;
-}
-
-export interface CodingFormCount {
-  key: string;
-  count: number;
-}
-
-export interface CodingFormSummary {
-  total: number;
-  byStatus: CodingFormCount[];
-  bySource: CodingFormCount[];
-  /** Spreadsheet attributes with no existing schema home, with the number of rows carrying a value for each. */
-  needsDecision: CodingFormCount[];
-}
-
-/**
- * Result of the bulk rematch-pending pass.
- */
-export interface CodingFormRematchSummary {
-  /** Rows examined (status pending AND never human-confirmed). */
-  scanned: number;
-  /** Rows whose proposal was rewritten by the matcher. */
-  updated: number;
-  /** Rows that now carry a proposed matchedGiftId. */
-  giftMatches: number;
-}
-
-/**
- * Result of the bulk confirm-matched pass.
- */
-export interface CodingFormConfirmSummary {
-  /** Rows examined (status pending, never human-confirmed, with a matched donor AND gift). */
-  scanned: number;
-  /** Rows stamped as confirmed. */
-  confirmed: number;
-}
-
-export interface CodingFormRowFailure {
-  rowId: string;
-  error: string;
-}
-
-/**
- * Result of the bulk apply-decided pass over pending, match-confirmed rows with stored decisions.
- */
-export interface CodingFormApplyDecidedSummary {
-  /** Rows examined (status pending, match confirmed, non-empty stored decisions). */
-  scanned: number;
-  /** Rows applied in this pass (now status applied). */
-  applied: number;
-  /** Idempotent no-ops (row already applied). */
-  alreadyApplied: number;
-  /** Rows whose approved attributes were no longer actionable — left pending for per-row review. */
-  nothingToApply: number;
-  /** Rows that errored mid-apply (see failures); left pending. */
-  failed: number;
-  failures: CodingFormRowFailure[];
-}
-
-/**
- * Set the donor (XOR — at most one of the three donor FKs) and optionally the matched opportunity/gift. Null clears a field.
- */
-export interface SetCodingFormMatchBody {
-  organizationId?: string | null;
-  individualGiverPersonId?: string | null;
-  householdId?: string | null;
-  matchedOpportunityId?: string | null;
-  matchedGiftId?: string | null;
-}
-
-/**
- * Map of cross-check attribute → apply | skip.
- */
-export type ApplyCodingFormRowBodyDecisions = {[key: string]: 'apply' | 'skip'};
-
-/**
- * Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them.
- */
-export type ApplyCodingFormRowBodyOverrides = {[key: string]: string};
-
-/**
- * Per-attribute apply/skip decisions plus optional override values. Only attributes set to 'apply' are written; everything else is left untouched.
- */
-export interface ApplyCodingFormRowBody {
-  /** Map of cross-check attribute → apply | skip. */
-  decisions: ApplyCodingFormRowBodyDecisions;
-  /** Optional per-attribute override values. When set for an attribute, Apply writes the override instead of the sheet-derived value. Persisted on the row alongside decisions so bulk apply-decided can use them. */
-  overrides?: ApplyCodingFormRowBodyOverrides;
-}
-
-export interface CodingFormApplyResult {
-  row: CodingFormRow;
-  /** Attributes written in this apply. */
-  applied: string[];
-  /** Attributes intentionally left untouched (same / skip / blocked). */
-  skipped: string[];
-}
-
-/**
- * Pull the Drive file onto the matched opportunity. Set replace=true to overwrite an existing grant letter.
- */
-export interface PullGrantAgreementBody {
-  /** Overwrite an existing grant letter (resolve a conflict). Defaults to false. */
-  replace?: boolean;
-}
-
-/**
- * imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error).
- */
-export type PullGrantAgreementResultOutcome = typeof PullGrantAgreementResultOutcome[keyof typeof PullGrantAgreementResultOutcome];
-
-
-export const PullGrantAgreementResultOutcome = {
-  imported: 'imported',
-  already_imported: 'already_imported',
-  failed: 'failed',
-} as const;
-
-export interface PullGrantAgreementResult {
-  row: CodingFormRow;
-  /** imported = attached now; already_imported = idempotent noop; failed = fetch/upload error (see error). */
-  outcome: PullGrantAgreementResultOutcome;
-  /** True when an existing grant letter was overwritten. */
-  replaced: boolean;
-  /** Human-readable failure reason when outcome=failed. */
-  error?: string | null;
-}
-
-export interface CodingFormGrantAgreementsSummary {
-  /** Rows carrying a grant-agreement Drive link. */
-  totalWithLink: number;
-  /** Count per derived grant-agreement status. Includes a synthetic `held` key: ready/failed rows the bulk pull will NOT attempt (skipped, or match not confirmed/applied) — pull those per-row if genuinely wanted. */
-  byStatus: CodingFormCount[];
-}
-
-/**
- * Result of the bulk grant-agreement pull pass.
- */
-export interface CodingFormBulkPullSummary {
-  /** Owner-vetted rows carrying a Drive link (scanned by this pass). */
-  totalWithLink: number;
-  /** Rows whose derived status was ready/failed — a pull was attempted. */
-  attempted: number;
-  /** Letters attached in this pass. */
-  imported: number;
-  /** Idempotent no-ops (letter already attached by this backfill). */
-  alreadyImported: number;
-  /** Targets holding a DIFFERENT letter — left for per-row review with replace=true. */
-  conflict: number;
-  /** Rows with a link but no matched opportunity or gift. */
-  noMatch: number;
-  /** Drive/upload failures (recorded on the rows; see failures). */
-  failed: number;
-  failures: CodingFormRowFailure[];
-}
-
-export interface CodingFormReinterpretResult {
-  row: CodingFormRow;
-  /** False when the model call or validation failed (see error; also recorded on the row as aiError). */
-  ok: boolean;
-  error: string | null;
-}
-
-/**
- * Bulk AI reinterpretation options.
- */
-export interface ReinterpretCodingFormRowsBody {
-  /** Re-run every pending row, not just rows without a stored payload. Defaults to false. */
-  force?: boolean;
-  /**
-   * Cap the number of rows processed in this pass (rows without a recorded failure first). Callers chunk with this to keep each request short; omit for the full set.
-   * @minimum 1
-   * @maximum 200
-   */
-  limit?: number;
-}
-
-/**
- * Result of the bulk AI reinterpretation pass.
- */
-export interface CodingFormReinterpretSummary {
-  /** Pending rows selected for this pass. */
-  total: number;
-  succeeded: number;
-  failed: number;
-  failures: CodingFormRowFailure[];
 }
 
 /**
@@ -10774,54 +10366,6 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
-export type ListCodingFormRowsParams = {
-/**
- * Filter by apply status. Omit for all.
- */
-status?: CodingFormRowStatus;
-/**
- * Filter by source sheet.
- */
-source?: ListCodingFormRowsSource;
-/**
- * Filter by match confidence tier.
- */
-matchTier?: ListCodingFormRowsMatchTier;
-/**
- * When true, only rows carrying a grant-agreement Drive link (the grant-agreement backfill queue).
- */
-hasDriveLink?: boolean;
-/**
- * @minimum 1
- * @maximum 10000
- */
-limit?: LimitParameter;
-/**
- * @minimum 1
- */
-page?: PageParameter;
-};
-
-export type ListCodingFormRowsSource = typeof ListCodingFormRowsSource[keyof typeof ListCodingFormRowsSource];
-
-
-export const ListCodingFormRowsSource = {
-  fy24: 'fy24',
-  fy25: 'fy25',
-  fy26: 'fy26',
-  fy27: 'fy27',
-  girasol: 'girasol',
-} as const;
-
-export type ListCodingFormRowsMatchTier = typeof ListCodingFormRowsMatchTier[keyof typeof ListCodingFormRowsMatchTier];
-
-
-export const ListCodingFormRowsMatchTier = {
-  high: 'high',
-  suggested: 'suggested',
-  none: 'none',
-} as const;
-
 export type ListEmailProposalsParams = {
 kind?: EmailProposalKind;
 status?: EmailProposalStatus;
@@ -11700,10 +11244,6 @@ worklist?: ListGiftsAndPaymentsWorklist;
  * When true, return only gifts backed by a Donorbox donation (same authority as the Donorbox badge).
  */
 donorboxBacked?: boolean;
-/**
- * When true, return only gifts that have an APPLIED Donation Revenue Coding Form row matched to them.
- */
-codingForm?: boolean;
 /**
  * Filter to gifts whose campaign_slug is in the given set (OR). Repeat or comma-separate.
  */

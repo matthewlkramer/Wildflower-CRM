@@ -13,7 +13,6 @@ import {
   getGetGiftOrPaymentQueryKey,
   getGetGiftOrPaymentQueryOptions,
   getGetReconciliationGraphQueryOptions,
-  getListCodingFormRowsQueryKey,
   getListDonorboxReviewQueryKey,
   useConfirmSettlementLink,
   useConfirmStagedPaymentMatch,
@@ -42,7 +41,6 @@ import {
   useListWorkbenchDeposits,
   useImportManualBankReport,
   useListWorkbenchRecentChanges,
-  useListCodingFormRows,
   useListDonorboxReview,
   useListDepositCandidatePayouts,
   useLinkPayoutDeposit,
@@ -70,7 +68,6 @@ import {
   useRevertStripeStagedCharge,
   type GiftOrPayment,
   type GiftOrPaymentDetail,
-  type CodingFormRow,
   type DonorboxReviewRow,
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
@@ -98,7 +95,6 @@ import {
   type PickOptions,
 } from "@/components/reconciliation-bundles/ResolveTieDialog";
 import {
-  CodingFormLookupDialog,
   DonorboxSearchDialog,
   DonorResolveDialog,
   ExcludeReasonDialog,
@@ -319,11 +315,6 @@ export default function ReconciliationDepositsPage() {
   const [donorboxSearch, setDonorboxSearch] = useState("");
   const [donorboxLinkRow, setDonorboxLinkRow] =
     useState<DonorboxReviewRow | null>(null);
-  const [codingFormFor, setCodingFormFor] = useState<{
-    anchor: AnchorRef;
-    preview: EvidencePreview;
-  } | null>(null);
-  const [codingHint, setCodingHint] = useState<CodingFormRow | null>(null);
   const [createFor, setCreateFor] = useState<{
     anchor: AnchorRef;
     preview: EvidencePreview;
@@ -470,14 +461,6 @@ export default function ReconciliationDepositsPage() {
     query: {
       enabled: donorboxFor != null,
       queryKey: getListDonorboxReviewQueryKey(donorboxParams),
-    },
-  });
-  const codingFormParams = { status: "pending" as const, limit: 500, page: 1 };
-  const codingFormRows = useListCodingFormRows(codingFormParams, {
-    query: {
-      enabled:
-        codingFormFor != null && canManageAccounting && me?.role === "admin",
-      queryKey: getListCodingFormRowsQueryKey(codingFormParams),
     },
   });
   const candidatePayouts = useListDepositCandidatePayouts(linkPayoutFor ?? "", {
@@ -1037,19 +1020,6 @@ export default function ReconciliationDepositsPage() {
     invalidate();
   };
 
-  const handleUseCodingForm = (
-    row: CodingFormRow,
-    mode: "identify" | "create",
-  ) => {
-    if (!codingFormFor) return;
-    setCodingHint(row);
-    if (mode === "create") {
-      setCreateFor({ ...codingFormFor, prefill: null });
-    } else {
-      setIdentifyFor(codingFormFor);
-    }
-    setCodingFormFor(null);
-  };
   const handleDonor = async (type: DonorType, id: string) => {
     const target = identifyFor;
     if (!target) return;
@@ -1140,7 +1110,6 @@ export default function ReconciliationDepositsPage() {
         });
       }
       setCreateFor(null);
-      setCodingHint(null);
       invalidate();
       toast({
         title: "Gift created",
@@ -1999,8 +1968,6 @@ export default function ReconciliationDepositsPage() {
       setDonorboxFor({ anchor, preview });
       setDonorboxSearch("");
     },
-    openCodingFormLookup: (anchor, preview) =>
-      setCodingFormFor({ anchor, preview }),
     openExclude: setExcludeFor,
     reInclude: (anchor) =>
       void (
@@ -2132,7 +2099,6 @@ export default function ReconciliationDepositsPage() {
     },
     isFinanceOrAdmin:
       canManageAccounting && (me?.role === "finance" || me?.role === "admin"),
-    canUseCodingForm: canManageAccounting && me?.role === "admin",
     openQbDetail: (record, linkage) => setQbDetailFor({ record, linkage }),
     rejectChargeQbTie: (chargeId) => void handleRejectChargeQbTie(chargeId),
     openRevertChargeQbTie: (chargeId, label) =>
@@ -3015,30 +2981,6 @@ export default function ReconciliationDepositsPage() {
         }}
         onCreate={(row) => void handleCreateFromDonorbox(row)}
       />
-      <CodingFormLookupDialog
-        open={codingFormFor != null}
-        onOpenChange={(open) => {
-          if (!open) setCodingFormFor(null);
-        }}
-        rows={(codingFormRows.data?.data ?? [])
-          .filter((row) => {
-            if (!codingFormFor) return false;
-            const amountMatches =
-              !codingFormFor.preview.amount ||
-              codingFormFor.preview.amount === "—" ||
-              row.amount == null ||
-              codingFormFor.preview.amount.includes(row.amount);
-            const dateMatches =
-              !codingFormFor.preview.date ||
-              codingFormFor.preview.date === "—" ||
-              row.donationDate == null ||
-              codingFormFor.preview.date.includes(row.donationDate);
-            return amountMatches || dateMatches;
-          })
-          .slice(0, 50)}
-        busy={busy || codingFormRows.isFetching}
-        onUse={handleUseCodingForm}
-      />
       <UnlinkChooserDialog
         open={unlinkChooserFor != null}
         onOpenChange={(open) => {
@@ -3061,16 +3003,11 @@ export default function ReconciliationDepositsPage() {
         onOpenChange={(open) => {
           if (!open) {
             setCreateFor(null);
-            setCodingHint(null);
           }
         }}
         recordLabel={createFor?.anchor.label ?? ""}
         preview={createFor?.preview ?? null}
-        contextNote={
-          codingHint
-            ? `Coding form suggests ${codingHint.donorName ?? codingHint.donorNameRaw ?? "an unidentified donor"}${codingHint.intendedUsageSuggested ? ` · purpose: ${codingHint.intendedUsageSuggested}` : ""}.`
-            : null
-        }
+        contextNote={null}
         prefill={createFor?.prefill ?? null}
         busy={busy}
         onSubmit={(type, id, overrides) =>
@@ -3130,17 +3067,12 @@ export default function ReconciliationDepositsPage() {
         onOpenChange={(open) => {
           if (!open) {
             setIdentifyFor(null);
-            setCodingHint(null);
           }
         }}
         mode="identify"
         recordLabel={identifyFor?.anchor.label ?? ""}
         preview={identifyFor?.preview ?? null}
-        contextNote={
-          codingHint
-            ? `Coding form suggests ${codingHint.donorName ?? codingHint.donorNameRaw ?? "an unidentified donor"}${codingHint.intendedUsageSuggested ? ` · purpose: ${codingHint.intendedUsageSuggested}` : ""}.`
-            : null
-        }
+        contextNote={null}
         busy={busy}
         onSubmit={(type, id) => void handleDonor(type, id)}
       />

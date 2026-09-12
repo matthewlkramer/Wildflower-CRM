@@ -899,17 +899,6 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                     </a>
                   </Row>
                 ) : null}
-                {gift.codingForm ? (
-                  <Row label="Coding form">
-                    <Link
-                      href="/coding-form-import"
-                      className="text-primary hover:underline"
-                      data-testid="gift-coding-form-link"
-                    >
-                      View coding form
-                    </Link>
-                  </Row>
-                ) : null}
                 {gift.donorbox ? (
                   <Row label="Donorbox donation">
                     <a

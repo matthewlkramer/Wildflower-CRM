@@ -357,9 +357,17 @@ describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
     expect(await readGiftLoanOrGrant(ids[0])).toBe("loan");
   });
 
+  it("requires an explicit reporting decision for new opportunities", async () => {
+    const response = await send("POST", "/api/opportunities-and-pledges", {
+      name: `${RUN} missing reporting decision`, organizationId: ORG_ID,
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("opportunity create takes loanOrGrant directly (default grant) and scrubs the legacy field", async () => {
     const loan = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} loan opp`,
+      reportingRequired: false,
       organizationId: ORG_ID,
       loanOrGrant: "loan",
     });
@@ -371,6 +379,7 @@ describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
 
     const grant = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} grant opp`,
+      reportingRequired: false,
       organizationId: ORG_ID,
       loanOrGrant: "grant",
     });
@@ -379,6 +388,7 @@ describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
 
     const omitted = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} default opp`,
+      reportingRequired: false,
       organizationId: ORG_ID,
     });
     expect(omitted.json.loanOrGrant).toBe("grant");
@@ -388,6 +398,7 @@ describe.skipIf(!HAS_DB)("loan_or_grant authoritative writes", () => {
   it("opportunity patch flips loan_or_grant via loanOrGrant", async () => {
     const created = await send("POST", "/api/opportunities-and-pledges", {
       name: `${RUN} flip opp`,
+      reportingRequired: false,
       organizationId: ORG_ID,
       loanOrGrant: "grant",
     });

@@ -1,3 +1,5 @@
+export {};
+
 /**
  * RETIRED (Task #451): quickbooks_tie_status is no longer a stored column —
  * it is derived LIVE at query time by deriveGiftQbTieLiveExpr(). There is

@@ -1875,19 +1875,21 @@ router.patch(
       .where(eq(opportunitiesAndPledges.id, id))
       .then((r) => r[0]);
 
-    // Reporting-deadline prompt side-channel: when this PATCH flips
-    // status into a state with grant-reporting obligations (pledge or
-    // cash_in) AND no reporting_deadline tasks exist yet for this
-    // opp, surface a flag so the frontend can open the "set deadlines"
-    // dialog. Idempotent — once the user creates the first
-    // reporting_deadline task the flag goes away on subsequent
-    // PATCHes.
+    // Reporting-deadline prompt side-channel: prompt only when the CRM-native
+    // reportingRequired flag is true and this PATCH either makes the award
+    // reportable (pledge/cash_in) or newly turns that flag on. Idempotent — once
+    // the user creates the first reporting_deadline task the prompt goes away.
     let promptForReportingDeadlines = false;
     const newStatus = (final ?? row).status;
     const becameReportable =
       (newStatus === "pledge" || newStatus === "cash_in") &&
       existing.status !== newStatus;
-    if (becameReportable) {
+    const reportingBecameRequired =
+      body.reportingRequired === true && !existing.reportingRequired;
+    if (
+      (final ?? row).reportingRequired &&
+      (becameReportable || reportingBecameRequired)
+    ) {
       const [{ value: existingCount } = { value: 0 }] = await db
         .select({ value: count() })
         .from(tasks)

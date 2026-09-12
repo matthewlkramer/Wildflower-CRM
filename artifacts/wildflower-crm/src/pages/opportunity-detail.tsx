@@ -238,8 +238,8 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
         ]);
         toast({ title: `${recordLabel} updated` });
         // The server sets `promptForReportingDeadlines` on the PATCH
-        // response only when status flipped into pledge/cash_in AND
-        // there are zero existing reporting_deadline tasks on this opp.
+        // response only when reporting is required and the record just became
+        // reportable (or reporting was newly marked required) with no deadline.
         // Treat the flag as transient — opening the dialog is the
         // entire UX; ignored if the user dismisses.
         const prompt = response?.promptForReportingDeadlines;
@@ -1287,6 +1287,26 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                     }
                     onCleared={() =>
                       patch({ grantLetterUrl: null, grantLetterFilename: null })
+                    }
+                  />
+                </Row>
+                <Row label="Donor reporting required">
+                  <InlineEditBoolean
+                    label="Donor reporting required"
+                    testIdBase="opp-reporting-required"
+                    value={opp.reportingRequired ?? null}
+                    display={
+                      opp.reportingRequired == null
+                        ? "Not reviewed"
+                        : opp.reportingRequired
+                          ? "Yes"
+                          : "No"
+                    }
+                    trueLabel="Yes"
+                    falseLabel="No"
+                    allowNull={false}
+                    onSave={(next) =>
+                      patch({ reportingRequired: next ?? false })
                     }
                   />
                 </Row>

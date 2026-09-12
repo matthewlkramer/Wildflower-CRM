@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import {
   useGetRevenueExtractorReport,
   getGetRevenueExtractorReportQueryKey,
@@ -94,6 +95,8 @@ export default function RevenueExtractor() {
   );
 
   const rows = data?.rows ?? [];
+  const blockingIssues = data?.blockingIssues ?? [];
+  const readyToExport = data?.readyToExport ?? false;
   const disagreementCount = rows.filter((r) => r.codingDisagreement).length;
 
   const rangeInvalid =
@@ -120,6 +123,15 @@ export default function RevenueExtractor() {
   }
 
   function exportCsv() {
+    if (!readyToExport) {
+      toast({
+        title: "Resolve the blocking issues first",
+        description:
+          "The preview shows what needs attention. The CSV will be available once every gift is ready for accounting.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (rows.length === 0) {
       toast({
         title: "Nothing to export",
@@ -198,7 +210,7 @@ export default function RevenueExtractor() {
         <Button
           variant="outline"
           onClick={exportCsv}
-          disabled={rows.length === 0}
+          disabled={rows.length === 0 || !readyToExport}
           data-testid="button-revenue-extractor-export"
         >
           <Download className="mr-2 h-4 w-4" />
@@ -227,7 +239,50 @@ export default function RevenueExtractor() {
             {disagreementCount === 1 ? "" : "s"}
           </Badge>
         ) : null}
+        {blockingIssues.length > 0 ? (
+          <Badge
+            variant="outline"
+            className="border-destructive/50 text-destructive"
+            data-testid="badge-revenue-extractor-blocked"
+          >
+            <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+            Export blocked: {blockingIssues.length} gift
+            {blockingIssues.length === 1 ? "" : "s"} need attention
+          </Badge>
+        ) : rows.length > 0 ? (
+          <Badge variant="outline" data-testid="badge-revenue-extractor-ready">
+            Ready for Finance export
+          </Badge>
+        ) : null}
       </div>
+
+      {blockingIssues.length > 0 ? (
+        <div
+          className="rounded-md border border-destructive/30 bg-destructive/5 p-4"
+          data-testid="revenue-extractor-blocking-issues"
+        >
+          <h2 className="text-sm font-semibold">Fix before exporting</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            The table is a preview. No accounting CSV can be downloaded until
+            these CRM records are complete and reviewed.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm">
+            {blockingIssues.map((issue) => (
+              <li key={issue.giftId}>
+                <Link
+                  href={`/gifts/${issue.giftId}`}
+                  className="font-medium underline underline-offset-2"
+                >
+                  {issue.giftName || issue.giftId}
+                </Link>
+                <span className="text-muted-foreground">
+                  {` — ${issue.messages.join("; ")}`}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Table */}
       <div className="overflow-x-auto rounded-md border">

@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-02
+last_verified: 2026-09-12
 ---
 
 # Reconciliation Workbench Business Rules
@@ -25,7 +25,7 @@ Each workbench row represents a set of potentially related evidence across three
 
 1. **Accounting evidence** — normally QuickBooks records
 2. **Transaction evidence** — Stripe charges or other records showing that money moved
-3. **CRM evidence** — gifts, allocations, donors, coding forms, grant letters, and related fundraising records
+3. **CRM evidence** — gifts, allocations, donors, grant letters, source records, reporting tasks, and related fundraising records
 
 A row has:
 
@@ -232,19 +232,17 @@ Completeness applies to CRM gifts/payments. A pledge by itself is never complete
 
 The gift has a valid linked Donorbox record containing the required donor and purpose information.
 
-## 3.2 Completed coding-form path
+## 3.2 CRM-native coding path
 
-The gift has:
+Historical coding forms are not a live completeness path. They are one-time
+source evidence used by a reviewed historical correction migration. A current
+gift is complete only from the CRM's gift, allocation, opportunity, document,
+and task records.
 
-* A linked coding form
-* The coding form is complete
-* All fields required by the coding form have been completed
-* A grant letter is attached when such a letter exists
-* A grant letter is required when known donor restrictions make supporting documentation necessary
-
-The mere existence of a coding-form record, or the presence of one populated coding-form field, does not make the gift complete.
-
-A partially completed coding form does not satisfy this path.
+The live CRM fields must capture the donor, amount/date, recipient entity,
+fiscal year, intended use, restriction axes, exact governing restriction
+language, and required supporting evidence. If the linked opportunity says
+donor reporting is required, at least one reporting-deadline task must exist.
 
 ## 3.3 Donor, allocations, and supporting-document path
 
@@ -278,7 +276,6 @@ The API should expose how each gift became complete:
 ```ts
 satisfiedBy:
   | "donorbox"
-  | "completed_coding_form"
   | "donor_allocations_and_supporting_documents"
   | null;
 ```
@@ -286,7 +283,6 @@ satisfiedBy:
 This may be displayed as:
 
 * Complete · Donorbox
-* Complete · completed coding form
 * Complete · donor and allocations
 * Complete · donor, allocations, and grant letter
 
@@ -524,7 +520,7 @@ Potentially relevant information for manual transcription includes:
 
 # 8. CRM Column
 
-The CRM column represents gifts, donors, allocations, coding forms, grant letters, and related fundraising information.
+The CRM column represents gifts, donors, allocations, grant letters, source records, reporting tasks, and related fundraising information.
 
 CRM state should describe both:
 
@@ -545,7 +541,7 @@ This mirrors the transaction and QuickBooks columns.
 | `partial_gift_surplus`     | Some CRM gift amount is not covered by linked live transaction or accounting evidence                                     |
 | `partial_external_surplus` | Linked live transaction or accounting evidence exceeds the CRM gift amount or scope                                       |
 | `mixed`                    | Competing unit- and bundle-level CRM representations overlap                                                              |
-| `conflict`                 | CRM information materially contradicts Donorbox, a completed coding form, a grant letter, or another authoritative record |
+| `conflict`                 | CRM information materially contradicts Donorbox, a grant letter, a donor designation, or another authoritative record     |
 | `pledge_link_broken`       | A payment relationship expected from a pledge allocation has been disconnected and requires repair                        |
 
 Lost or dormant CRM records never render as CRM cards: CRM cards represent only gifts believed won. Marking a gift lost or dormant (see 8.2) removes its card from the workbench.
@@ -595,7 +591,7 @@ Mixed requires competing or overlapping CRM representations.
 | Move CRM card to a new row                | The card belongs in the workbench but not with the current evidence set                   |
 | Group allocations into one gift           | Multiple records represent one intended CRM gift                                          |
 | Split allocations into separate gifts     | One gift contains allocations that belong to distinct gifts                               |
-| Compare source documents                  | Conflict involving Donorbox, coding form, grant letter, or another source                 |
+| Compare source documents                  | Conflict involving Donorbox, a grant letter, donor designation, or another source         |
 | Mark gift lost                            | No live payment is linked and the donor relationship is no longer expected to close       |
 | Mark gift dormant                         | No live payment is linked but future payment remains possible                             |
 | Repair pledge allocation link             | Pledge link broken                                                                        |
@@ -662,7 +658,7 @@ The UI label may be written from the perspective of the card where the user init
 Enrichment actions add or improve information without changing which cards are related.
 
 * Complete CRM gift
-* Complete coding form
+* Complete CRM coding and restriction evidence
 * Attach grant letter
 * Fill out QuickBooks from CRM (not built — display only; manual transcription in QuickBooks, see 7.4)
 * Add missing restriction information

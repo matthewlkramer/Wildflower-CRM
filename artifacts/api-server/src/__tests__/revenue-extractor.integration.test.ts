@@ -77,7 +77,7 @@ interface ReportRow {
 
 async function getReport(qs: string): Promise<{
   status: number;
-  json: { rows?: ReportRow[]; error?: string };
+  json: { rows?: ReportRow[]; error?: string; readyToExport?: boolean; blockingIssues?: Array<{ giftId: string; messages: string[] }> };
 }> {
   const res = await fetch(`${baseUrl}/api/revenue-extractor${qs}`);
   let json: unknown = null;
@@ -183,6 +183,45 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("revenue extractor export completeness", () => {
+  it("uses the CRM reporting decision and tasks to resolve export blockers", async () => {
+    const { opportunitiesAndPledges, tasks } = await import("@workspace/db");
+    const oppId = `${RUN}_reporting`;
+    const taskId = `${RUN}_deadline`;
+    await db.insert(opportunitiesAndPledges).values({
+      id: oppId, name: "Test reporting obligation", organizationId: ORG_ID,
+    });
+    await db.update(schema.giftsAndPayments).set({ opportunityId: oppId })
+      .where(eqFn(schema.giftsAndPayments.id, GIFT_START_EDGE));
+    const messages = async () => {
+      const { status, json } = await getReport(`?startDate=${START}&endDate=${END}`);
+      expect(status).toBe(200);
+      expect(json.readyToExport).toBe(false);
+      return json.blockingIssues?.find((issue) => issue.giftId === GIFT_START_EDGE)?.messages ?? [];
+    };
+    try {
+      expect(await messages()).toContain("Donor reporting requirement has not been reviewed");
+      await db.update(opportunitiesAndPledges).set({ reportingRequired: true })
+        .where(eqFn(opportunitiesAndPledges.id, oppId));
+      const required = await messages();
+      expect(required).not.toContain("Donor reporting requirement has not been reviewed");
+      expect(required).toContain("Reporting deadline task missing");
+      await db.insert(tasks).values({
+        id: taskId, title: "Test donor report", kind: "reporting_deadline",
+        opportunityIds: [oppId], dueDate: "2097-06-01", createdByUserId: ADMIN_ID,
+      });
+      expect(await messages()).not.toContain("Reporting deadline task missing");
+      await db.delete(tasks).where(eqFn(tasks.id, taskId));
+      await db.update(opportunitiesAndPledges).set({ reportingRequired: false })
+        .where(eqFn(opportunitiesAndPledges.id, oppId));
+      expect(await messages()).not.toContain("Reporting deadline task missing");
+    } finally {
+      await db.delete(tasks).where(eqFn(tasks.id, taskId));
+      await db.update(schema.giftsAndPayments).set({ opportunityId: null })
+        .where(eqFn(schema.giftsAndPayments.id, GIFT_START_EDGE));
+      await db.delete(opportunitiesAndPledges).where(eqFn(opportunitiesAndPledges.id, oppId));
+    }
+  });
+
   it("returns EVERY in-range allocation row — no pagination or cap truncation", async () => {
     const { status, json } = await getReport(
       `?startDate=${START}&endDate=${END}`,
