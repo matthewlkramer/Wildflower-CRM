@@ -23,10 +23,13 @@ import type {
   BadRequestResponse,
   CreateMeetingNoteBody,
   ListMeetingNotesParams,
+  MeetingArtifact,
+  MeetingFollowUpDraft,
   MeetingNextStepsResult,
   MeetingNote,
   MeetingNoteList,
   NotFoundResponse,
+  ProcessMeetingMediaBody,
   PromoteActionItemBody,
   Task,
   UpdateMeetingNoteBody
@@ -512,4 +515,143 @@ export const useGenerateMeetingNextSteps = <TError = ErrorType<NotFoundResponse>
         TContext
       > => {
       return useMutation(getGenerateMeetingNextStepsMutationOptions(options));
+    }
+    /**
+ * @summary Draft an editable follow-up email from a saved meeting note. Nothing is sent.
+ */
+export const getDraftMeetingFollowUpUrl = (id: string,) => {
+
+
+
+
+  return `/api/meeting-notes/${id}/draft-follow-up`
+}
+
+export const draftMeetingFollowUp = async (id: string, options?: RequestInit): Promise<MeetingFollowUpDraft> => {
+
+  return customFetch<MeetingFollowUpDraft>(getDraftMeetingFollowUpUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getDraftMeetingFollowUpMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftMeetingFollowUp>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof draftMeetingFollowUp>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['draftMeetingFollowUp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof draftMeetingFollowUp>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  draftMeetingFollowUp(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DraftMeetingFollowUpMutationResult = NonNullable<Awaited<ReturnType<typeof draftMeetingFollowUp>>>
+
+    export type DraftMeetingFollowUpMutationError = ErrorType<NotFoundResponse | void>
+
+    /**
+ * @summary Draft an editable follow-up email from a saved meeting note. Nothing is sent.
+ */
+export const useDraftMeetingFollowUp = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof draftMeetingFollowUp>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof draftMeetingFollowUp>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDraftMeetingFollowUpMutationOptions(options));
+    }
+    /**
+ * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ */
+export const getProcessMeetingMediaUrl = () => {
+
+
+
+
+  return `/api/meeting-media/process`
+}
+
+export const processMeetingMedia = async (processMeetingMediaBody: ProcessMeetingMediaBody, options?: RequestInit): Promise<MeetingArtifact> => {
+
+  return customFetch<MeetingArtifact>(getProcessMeetingMediaUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      processMeetingMediaBody,)
+  }
+);}
+
+
+
+
+export const getProcessMeetingMediaMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof processMeetingMedia>>, TError,{data: BodyType<ProcessMeetingMediaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof processMeetingMedia>>, TError,{data: BodyType<ProcessMeetingMediaBody>}, TContext> => {
+
+const mutationKey = ['processMeetingMedia'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof processMeetingMedia>>, {data: BodyType<ProcessMeetingMediaBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  processMeetingMedia(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ProcessMeetingMediaMutationResult = NonNullable<Awaited<ReturnType<typeof processMeetingMedia>>>
+    export type ProcessMeetingMediaMutationBody = BodyType<ProcessMeetingMediaBody>
+    export type ProcessMeetingMediaMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ */
+export const useProcessMeetingMedia = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof processMeetingMedia>>, TError,{data: BodyType<ProcessMeetingMediaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof processMeetingMedia>>,
+        TError,
+        {data: BodyType<ProcessMeetingMediaBody>},
+        TContext
+      > => {
+      return useMutation(getProcessMeetingMediaMutationOptions(options));
     }

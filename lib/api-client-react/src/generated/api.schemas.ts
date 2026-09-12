@@ -9142,17 +9142,53 @@ export interface MeetingActionItem {
   promotedTaskId?: string | null;
 }
 
+export type MeetingArtifactKind = typeof MeetingArtifactKind[keyof typeof MeetingArtifactKind];
+
+
+export const MeetingArtifactKind = {
+  handwritten_notes: 'handwritten_notes',
+  audio_recording: 'audio_recording',
+} as const;
+
+export interface MeetingArtifact {
+  id: string;
+  kind: MeetingArtifactKind;
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  transcript: string;
+  createdAt: string;
+}
+
+export interface ProcessMeetingMediaBody {
+  kind: MeetingArtifactKind;
+  /** Normalized /objects/... path in private object storage. */
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface MeetingFollowUpDraft {
+  recipients: string[];
+  subject: string;
+  body: string;
+}
+
 export interface MeetingNote {
   id: string;
   title?: string | null;
   meetingDate: string;
   attendees?: string[] | null;
+  manualNotes?: string | null;
   /** Always null when summaryOnly is true. */
   rawTranscript?: string | null;
   /** Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert. */
   summaryOnly: boolean;
   aiSummary?: string | null;
   actionItems?: MeetingActionItem[] | null;
+  artifacts?: MeetingArtifact[];
   creatorUserId: string;
   personId?: string | null;
   organizationId?: string | null;
@@ -9182,13 +9218,16 @@ export interface MeetingNextStepsResult {
 }
 
 /**
- * Exactly one of personId / funderId / householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow).
+ * Exactly one of personId / organizationId / householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process.
  */
 export interface CreateMeetingNoteBody {
   /** Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems. */
   transcript?: string;
   /** Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript. */
   summary?: string;
+  /** Verbatim notes typed during or after the meeting. */
+  manualNotes?: string;
+  artifacts?: MeetingArtifact[];
   title?: string;
   /** Defaults to now if omitted. */
   meetingDate?: string;
@@ -9203,8 +9242,10 @@ export interface UpdateMeetingNoteBody {
   title?: string | null;
   meetingDate?: string;
   attendees?: string[] | null;
+  manualNotes?: string | null;
   aiSummary?: string | null;
   actionItems?: MeetingActionItem[] | null;
+  artifacts?: MeetingArtifact[];
   personId?: string | null;
   organizationId?: string | null;
   householdId?: string | null;

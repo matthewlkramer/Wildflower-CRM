@@ -66,7 +66,10 @@ export function validateOppProjectedCloseTiming(
     state.projectedCloseDate != null &&
     state.projectedCloseMonthsOut != null
   ) {
-    issues.push({ path: "projectedCloseDate", message: PROJECTED_CLOSE_MODE_MESSAGE });
+    issues.push({
+      path: "projectedCloseDate",
+      message: PROJECTED_CLOSE_MODE_MESSAGE,
+    });
   }
   if (
     state.projectedCloseMonthsOut != null &&
@@ -84,7 +87,10 @@ export function validateOppProjectedCloseTiming(
       state.stage as (typeof ROLLING_CLOSE_ALLOWED_STAGES)[number],
     )
   ) {
-    issues.push({ path: "projectedCloseMonthsOut", message: ROLLING_CLOSE_STAGE_MESSAGE });
+    issues.push({
+      path: "projectedCloseMonthsOut",
+      message: ROLLING_CLOSE_STAGE_MESSAGE,
+    });
   }
   return issues;
 }
@@ -259,22 +265,27 @@ export function validateMeetingContactInvariants(
 export const CreateMeetingNoteBodyRefined = CreateMeetingNoteBody.superRefine(
   (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
     issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
-    // Exactly one of transcript / summary. Both routes are mutually
-    // exclusive: transcript runs through AI; summary is stored verbatim.
+    // `summary` is the legacy hand-note path and remains mutually exclusive
+    // with transcript/manualNotes. The meeting workspace may combine typed
+    // notes with one or more processed source transcripts.
     const hasT =
       typeof b.transcript === "string" && b.transcript.trim().length > 0;
     const hasS = typeof b.summary === "string" && b.summary.trim().length > 0;
-    if (!hasT && !hasS) {
+    const hasM =
+      typeof b.manualNotes === "string" && b.manualNotes.trim().length > 0;
+    const hasArtifacts = Array.isArray(b.artifacts) && b.artifacts.length > 0;
+    if (!hasT && !hasS && !hasM && !hasArtifacts) {
       ctx.addIssue({
         code: "custom",
         path: ["transcript"],
-        message: "Either transcript or summary is required.",
+        message: "Meeting notes, a transcript, or a source file is required.",
       });
-    } else if (hasT && hasS) {
+    } else if (hasS && (hasT || hasM || hasArtifacts)) {
       ctx.addIssue({
         code: "custom",
         path: ["summary"],
-        message: "Provide either transcript or summary, not both.",
+        message:
+          "The legacy summary field cannot be combined with meeting-workspace content.",
       });
     }
   },

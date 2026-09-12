@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  CreateMeetingNoteBodyRefined,
   validateMeetingContactInvariants,
   MEETING_CONTACT_XOR_MESSAGE,
 } from "@workspace/api-zod";
@@ -28,4 +29,41 @@ describe("meeting-notes contact XOR", () => {
       if (!ok) expect(issues[0]?.message).toBe(MEETING_CONTACT_XOR_MESSAGE);
     });
   }
+});
+
+describe("meeting workspace content", () => {
+  const base = { personId: "p1", title: "Donor call" };
+
+  it("accepts live staff notes without requiring a transcript", () => {
+    expect(
+      CreateMeetingNoteBodyRefined.safeParse({
+        ...base,
+        manualNotes: "Discussed a possible fall visit.",
+      }).success,
+    ).toBe(true);
+  });
+
+  it("accepts an OCR or recording artifact without requiring duplicate text fields", () => {
+    expect(
+      CreateMeetingNoteBodyRefined.safeParse({
+        ...base,
+        artifacts: [
+          {
+            id: "artifact-1",
+            kind: "handwritten_notes",
+            objectPath: "/objects/uploads/note.jpg",
+            fileName: "note.jpg",
+            mimeType: "image/jpeg",
+            sizeBytes: 1200,
+            transcript: "Call in October.",
+            createdAt: "2026-09-12T12:00:00.000Z",
+          },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("still rejects a record with no meeting content", () => {
+    expect(CreateMeetingNoteBodyRefined.safeParse(base).success).toBe(false);
+  });
 });

@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { Link } from "wouter";
 import {
   useListCalendarEvents,
   useGetCurrentUser,
@@ -13,8 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Calendar, Video, Circle, NotebookPen } from "lucide-react";
-import { AddMeetingNoteDialog } from "@/components/meeting-notes-panel";
+import { Calendar, Video, NotebookPen } from "lucide-react";
 import { useUserNameMap } from "@/components/user-picker";
 
 /**
@@ -130,11 +130,10 @@ function MeetingsCard({
 /**
  * Dashboard widget: shows the caller's calendar events for the next 7 days
  * (scoped via `calendarUserId = me.id`, which is how the synced events are
- * keyed). Each row has four actions:
+ * keyed). Each row has three actions:
  *   - Open in Google Calendar (htmlLink deep-link)
  *   - Start Zoom/Meet/Teams (parsed from location/description)
- *   - Record (disabled placeholder — desktop integration TBD)
- *   - Notes (opens the AddMeetingNoteDialog prefilled from the event)
+ *   - Open the meeting workspace for preparation, notes, and recording
  */
 export default function UpcomingMeetingsCard() {
   const { data: me } = useGetCurrentUser();
@@ -221,28 +220,8 @@ function UpcomingMeetingRow({
   ev: CalendarEvent;
   ownerName?: string;
 }) {
-  const [notesOpen, setNotesOpen] = useState(false);
   const join = extractJoinUrl(ev);
   const title = ev.summary?.trim() || "(no title)";
-
-  // Prefill for the meeting-notes dialog: title from summary, meetingDate as
-  // <input type="datetime-local"> value (local time, no TZ suffix), attendees
-  // as a comma-joined string of the synced attendee emails.
-  const prefill = useMemo(() => {
-    const start = new Date(ev.startAt);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    const meetingDate = `${start.getFullYear()}-${pad(
-      start.getMonth() + 1,
-    )}-${pad(start.getDate())}T${pad(start.getHours())}:${pad(
-      start.getMinutes(),
-    )}`;
-    return {
-      title,
-      meetingDate,
-      attendees: (ev.attendeeEmails ?? []).join(", "),
-      calendarEventId: ev.id,
-    };
-  }, [ev.startAt, ev.attendeeEmails, title]);
 
   return (
     <li
@@ -335,48 +314,24 @@ function UpcomingMeetingRow({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
+                asChild
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 p-0"
-                disabled
-                aria-label="Record meeting (coming soon)"
-                data-testid={`button-record-${ev.id}`}
-              >
-                <Circle className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Record meeting (coming soon)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-8 w-8 p-0"
-                onClick={() => setNotesOpen(true)}
-                aria-label="Open meeting notes"
                 data-testid={`button-notes-${ev.id}`}
               >
-                <NotebookPen className="h-4 w-4" />
+                <Link
+                  href={`/meetings/${ev.id}`}
+                  aria-label="Open meeting workspace"
+                >
+                  <NotebookPen className="h-4 w-4" />
+                </Link>
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Open meeting notes</TooltipContent>
+            <TooltipContent>Open meeting workspace</TooltipContent>
           </Tooltip>
         </div>
       </TooltipProvider>
-      {/*
-        Dialog is rendered (mounted) per row but controlled via `open`, so it
-        only actually appears when the user clicks the notes button. The
-        dialog is unpinned — the user picks the contact via the in-dialog
-        picker (an event can match 0..N people/funders/households).
-      */}
-      <AddMeetingNoteDialog
-        unpinned
-        open={notesOpen}
-        onOpenChange={setNotesOpen}
-        prefill={prefill}
-        trigger={<span style={{ display: "none" }} />}
-      />
     </li>
   );
 }

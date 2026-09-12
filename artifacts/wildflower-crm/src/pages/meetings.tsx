@@ -1,21 +1,14 @@
 import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useDismissCalendarEventNotes,
   getListCalendarEventsQueryKey,
-  getGetMeetingNoteQueryKey,
-  getListNotesQueryKey,
-  useGetMeetingNote,
   useListCalendarEvents,
-  useListNotes,
   useListUsers,
   type CalendarEvent,
 } from "@workspace/api-client-react";
-import {
-  AddMeetingNoteDialog,
-  MeetingNoteRow,
-} from "@/components/meeting-notes-panel";
-import { userDisplayName, useUserNameMap } from "@/components/user-picker";
+import { userDisplayName } from "@/components/user-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,20 +22,12 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   AlertTriangle,
   CalendarCheck2,
   CheckCircle2,
   ExternalLink,
   NotebookPen,
   MessageSquareOff,
-  StickyNote,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -58,12 +43,6 @@ export function shouldShowNoNotesAction(
   event: Pick<CalendarEvent, "hasMeetingNotes">,
 ): boolean {
   return !event.hasMeetingNotes;
-}
-
-function localInputDate(value: string): string {
-  const date = new Date(value);
-  const pad = (number: number) => String(number).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 function meetingDate(event: CalendarEvent): string {
@@ -118,88 +97,6 @@ function StatusBadge({
   );
 }
 
-function ExistingNoteDialog({
-  eventId,
-  noteId,
-  open,
-  onOpenChange,
-}: {
-  eventId: string;
-  noteId?: string | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const userMap = useUserNameMap();
-  const note = useGetMeetingNote(noteId ?? "", {
-    query: {
-      enabled: open && Boolean(noteId),
-      queryKey: getGetMeetingNoteQueryKey(noteId ?? ""),
-    },
-  });
-  const linkedNotes = useListNotes(
-    { calendarEventId: eventId, limit: 100 },
-    {
-      query: {
-        enabled: open,
-        queryKey: getListNotesQueryKey({ calendarEventId: eventId, limit: 100 }),
-      },
-    },
-  );
-  const loading = (Boolean(noteId) && note.isLoading) || linkedNotes.isLoading;
-  const freeFormNotes = linkedNotes.data?.data ?? [];
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Meeting notes and next steps</DialogTitle>
-          <DialogDescription>
-            Review structured meeting notes, next steps, and free-form CRM notes
-            linked to this meeting.
-          </DialogDescription>
-        </DialogHeader>
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Loading notes…</p>
-        ) : note.data || freeFormNotes.length > 0 ? (
-          <div className="space-y-3">
-            {note.data ? (
-              <ul>
-                <MeetingNoteRow note={note.data} />
-              </ul>
-            ) : null}
-            {freeFormNotes.map((linkedNote) => (
-              <div
-                key={linkedNote.id}
-                className="space-y-2 rounded-md border p-3 text-sm"
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <StickyNote className="h-3.5 w-3.5 text-primary" />
-                  <Badge variant="secondary">CRM note</Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {userMap.get(linkedNote.authorUserId) ??
-                      linkedNote.authorUserId} · {meetingDateFromIso(linkedNote.createdAt)}
-                  </span>
-                </div>
-                <p className="whitespace-pre-wrap">{linkedNote.body}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-destructive">
-            The linked meeting note could not be loaded.
-          </p>
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function meetingDateFromIso(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 function MeetingRow({
   event,
   future,
@@ -213,18 +110,7 @@ function MeetingRow({
   dismissing: boolean;
   onNoNotes: () => void;
 }) {
-  const [notesOpen, setNotesOpen] = useState(false);
-  const [reviewOpen, setReviewOpen] = useState(false);
   const title = event.summary?.trim() || "(no title)";
-  const prefill = useMemo(
-    () => ({
-      title,
-      meetingDate: localInputDate(event.startAt),
-      attendees: (event.attendeeEmails ?? []).join(", "),
-      calendarEventId: event.id,
-    }),
-    [event.attendeeEmails, event.id, event.startAt, title],
-  );
 
   return (
     <div className="flex flex-col gap-3 border-b px-4 py-4 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
@@ -262,31 +148,20 @@ function MeetingRow({
               <MessageSquareOff className="mr-1 h-3.5 w-3.5" />
               {dismissing ? "Removing…" : "No notes"}
             </Button>
-            <Button size="sm" onClick={() => setNotesOpen(true)}>
-              <NotebookPen className="mr-1 h-3.5 w-3.5" /> Add notes
+            <Button asChild size="sm">
+              <Link href={`/meetings/${event.id}`}>
+                <NotebookPen className="mr-1 h-3.5 w-3.5" /> Open meeting
+              </Link>
             </Button>
           </>
         ) : (
-          <Button size="sm" onClick={() => setReviewOpen(true)}>
-            <NotebookPen className="mr-1 h-3.5 w-3.5" /> Review notes
+          <Button asChild size="sm">
+            <Link href={`/meetings/${event.id}`}>
+              <NotebookPen className="mr-1 h-3.5 w-3.5" /> Open meeting
+            </Link>
           </Button>
         )}
       </div>
-      <AddMeetingNoteDialog
-        unpinned
-        open={notesOpen}
-        onOpenChange={setNotesOpen}
-        prefill={prefill}
-        trigger={<span className="hidden" />}
-      />
-      {event.hasMeetingNotes ? (
-        <ExistingNoteDialog
-          eventId={event.id}
-          noteId={event.meetingNoteId}
-          open={reviewOpen}
-          onOpenChange={setReviewOpen}
-        />
-      ) : null}
     </div>
   );
 }
