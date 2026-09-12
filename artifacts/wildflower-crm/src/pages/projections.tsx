@@ -2,20 +2,24 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetProjectionsByFyEntity,
+  useGetFundingArrivalsByMonth,
   useListEntities,
   useListFiscalYears,
   getGetProjectionsByFyEntityQueryKey,
+  getGetFundingArrivalsByMonthQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
   type FundraisingCategory,
   type ProjectionByFyEntityRow,
   type ProjectionCombinedFyRow,
   type ProjectionForecastDiagnostic,
+  type GetFundingArrivalsByMonthParams,
 } from "@workspace/api-client-react";
 import {
   currentFiscalYearEndYear,
   currentFiscalYearSlug,
   formatCurrency,
+  formatDate,
 } from "@/lib/format";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import {
@@ -33,6 +37,7 @@ type ProjectionCombinedForecastRow = ProjectionCombinedFyRow;
 
 export default function Projections() {
   const { selected: globalEntityIds } = useEntityFilter();
+  const [view, setView] = useState<"annual" | "arrivals">("annual");
   const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const projParams = useMemo(
     () =>
@@ -49,6 +54,17 @@ export default function Projections() {
   const proj = useGetProjectionsByFyEntity(projParams, {
     query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
+
+  const monthlyParams: GetFundingArrivalsByMonthParams = useMemo(
+    () => ({
+      category,
+      ...(globalEntityIds.length > 0
+        ? { entityId: [...globalEntityIds].sort() }
+        : {}),
+    }),
+    [globalEntityIds, category],
+  );
+
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
   });
@@ -149,6 +165,7 @@ export default function Projections() {
             key={c.value}
             type="button"
             data-testid={`projections-category-${c.value}`}
+            aria-pressed={category === c.value}
             onClick={() => setCategory(c.value)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               category === c.value
@@ -161,84 +178,279 @@ export default function Projections() {
         ))}
       </div>
 
-      <ForecastTotals
-        rows={combinedRows}
-        fiscalYears={fyQ.data ?? []}
-        category={category}
-      />
+      <div className="flex gap-2" aria-label="Projection view">
+        {(
+          [
+            { value: "annual", label: "Annual forecast" },
+            { value: "arrivals", label: "Expected arrivals" },
+          ] as const
+        ).map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={view === option.value}
+            onClick={() => setView(option.value)}
+            data-testid={`projection-view-${option.value}`}
+            className={`rounded-md border px-3 py-2 text-sm ${view === option.value ? "bg-primary text-primary-foreground" : "bg-card"}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {view === "arrivals" ? (
+        <MonthlyCashOutlook params={monthlyParams} />
+      ) : (
+        <>
+          <ForecastTotals
+            rows={combinedRows}
+            fiscalYears={fyQ.data ?? []}
+            category={category}
+          />
 
+          <div className="rounded-md border bg-card overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fiscal year</TableHead>
+                  {entityCols.map((e) => (
+                    <TableHead key={e} className="whitespace-nowrap">
+                      {entityName(e)}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
+                ) : isError ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={Math.max(entityCols.length + 1, 2)}
+                      className="text-center h-24 text-destructive"
+                    >
+                      {error instanceof Error
+                        ? error.message
+                        : "Failed to load projections."}
+                    </TableCell>
+                  </TableRow>
+                ) : fyRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={Math.max(entityCols.length + 1, 2)}
+                      className="text-center h-24 text-muted-foreground"
+                    >
+                      No forecast information is available.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <>
+                    {fyRows.map((fy) => {
+                      return (
+                        <TableRow key={fy} data-testid={`row-projection-${fy}`}>
+                          <TableCell className="font-medium whitespace-nowrap">
+                            {fyLabel(fy)}
+                          </TableCell>
+                          {entityCols.map((ent) => {
+                            const row = cell.get(`${fy}|${ent}`);
+                            return (
+                              <TableCell
+                                key={ent}
+                                className="align-top"
+                                data-testid={`cell-${fy}-${ent}`}
+                              >
+                                {row ? <ProjectionCell row={row} /> : "—"}
+                              </TableCell>
+                            );
+                          })}
+                        </TableRow>
+                      );
+                    })}
+                  </>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {entityCols.length > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Recipient comparisons are useful for context, but they may not add
+              up to the total because payment credit is capped once per
+              opportunity within the selected recipient scope.
+            </p>
+          ) : null}
+          <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function MonthlyCashOutlook({
+  params,
+}: {
+  params: GetFundingArrivalsByMonthParams;
+}) {
+  const query = useGetFundingArrivalsByMonth(params, {
+    query: { queryKey: getGetFundingArrivalsByMonthQueryKey(params) },
+  });
+  if (query.isLoading) return <SkeletonRows cols={5} />;
+  if (query.isError)
+    return (
+      <p role="alert" className="text-destructive">
+        Could not load expected arrivals.{" "}
+        {query.error instanceof Error
+          ? query.error.message
+          : "Please try again."}
+      </p>
+    );
+  if (!query.data) return null;
+  const { months, items } = query.data;
+  const basisLabels = {
+    projected_close: "Projected close date",
+    explicit_payment: "Explicit payment date",
+    unscheduled: "Timing not estimated",
+    reimbursement_annual: "Annual reimbursement plan",
+  };
+  const money = (amount: string | null) =>
+    amount == null ? "Unknown" : formatCurrency(amount);
+  const monthLabel = (month: string) =>
+    new Intl.DateTimeFormat("en-US", {
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${month}-01T12:00:00Z`));
+  return (
+    <section className="space-y-5" data-testid="monthly-cash-outlook">
+      <div>
+        <h2 className="text-2xl font-serif font-bold">
+          Expected funding arrivals
+        </h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          One-time pipeline gifts default to their projected close date. An
+          explicit payment plan overrides that estimate. Prospective amounts are
+          weighted by the existing opportunity probability. Payment dates are
+          optional.
+        </p>
+        <p
+          className="text-xs text-muted-foreground mt-2"
+          id="monthly-cash-outlook-description"
+        >
+          Recorded payments cover the oldest installments first for planning;
+          this does not establish individual payment matches. Recipient filters
+          select whole records with matching allocations, so amounts may also
+          cover other recipients. Do not add separate recipient views together.
+          Past months show amounts still outstanding at their original expected
+          dates. Unknown amounts and undated rows are excluded from monthly
+          totals.
+        </p>
+      </div>
+      {months.length ? (
+        <div className="rounded-md border bg-card overflow-x-auto">
+          <Table
+            aria-label="Monthly expected arrivals"
+            aria-describedby="monthly-cash-outlook-description"
+          >
+            <TableHeader>
+              <TableRow>
+                <TableHead>Expected month</TableHead>
+                <TableHead className="text-right">Committed</TableHead>
+                <TableHead className="text-right">Prospective</TableHead>
+                <TableHead className="text-right">
+                  Prospective, weighted
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {months.map((month) => (
+                <TableRow
+                  key={month.month}
+                  data-testid={`row-monthly-${month.month}`}
+                >
+                  <TableCell>{monthLabel(month.month)}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(month.committedAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(month.prospectiveAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(month.prospectiveWeightedAmount)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <p className="rounded-md border bg-card p-4 text-muted-foreground">
+          No dated amounts are available for the selected scope. Any untimed
+          records appear below.
+        </p>
+      )}
       <div className="rounded-md border bg-card overflow-x-auto">
-        <Table>
+        <Table aria-label="Funding arrival details">
           <TableHeader>
             <TableRow>
-              <TableHead>Fiscal year</TableHead>
-              {entityCols.map((e) => (
-                <TableHead key={e} className="whitespace-nowrap">
-                  {entityName(e)}
-                </TableHead>
-              ))}
+              <TableHead>Opportunity / pledge</TableHead>
+              <TableHead>Expected receipt</TableHead>
+              <TableHead>Timing basis</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Weighted amount</TableHead>
+              <TableHead>Notes</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
-            ) : isError ? (
-              <TableRow>
-                <TableCell
-                  colSpan={Math.max(entityCols.length + 1, 2)}
-                  className="text-center h-24 text-destructive"
-                >
-                  {error instanceof Error
-                    ? error.message
-                    : "Failed to load projections."}
-                </TableCell>
-              </TableRow>
-            ) : fyRows.length === 0 ? (
-              <TableRow>
-                <TableCell
-                  colSpan={Math.max(entityCols.length + 1, 2)}
-                  className="text-center h-24 text-muted-foreground"
-                >
-                  No forecast information is available.
-                </TableCell>
-              </TableRow>
+            {items.length ? (
+              items.map((item) => (
+                <TableRow key={item.id} data-testid={`arrival-${item.id}`}>
+                  <TableCell className="min-w-48">
+                    <Link
+                      className="font-medium hover:underline"
+                      href={`/opportunities/${item.opportunityId}#payment-plan`}
+                    >
+                      {item.opportunityName ?? "Unnamed opportunity"}
+                    </Link>
+                    <div className="text-xs text-muted-foreground">
+                      {item.status === "pledge" ? "Committed" : "Prospective"}
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {item.expectedDate
+                      ? formatDate(item.expectedDate)
+                      : "Not estimated"}
+                  </TableCell>
+                  <TableCell>{basisLabels[item.basis]}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {money(item.amount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {item.basis === "reimbursement_annual"
+                      ? "Not included"
+                      : money(item.weightedAmount)}
+                  </TableCell>
+                  <TableCell className="min-w-64 text-xs text-muted-foreground">
+                    {item.overdue && (
+                      <strong className="block text-amber-700 dark:text-amber-400">
+                        Overdue expected payment
+                      </strong>
+                    )}
+                    {item.note}
+                  </TableCell>
+                </TableRow>
+              ))
             ) : (
-              <>
-                {fyRows.map((fy) => {
-                  return (
-                    <TableRow key={fy} data-testid={`row-projection-${fy}`}>
-                      <TableCell className="font-medium whitespace-nowrap">
-                        {fyLabel(fy)}
-                      </TableCell>
-                      {entityCols.map((ent) => {
-                        const row = cell.get(`${fy}|${ent}`);
-                        return (
-                          <TableCell
-                            key={ent}
-                            className="align-top"
-                            data-testid={`cell-${fy}-${ent}`}
-                          >
-                            {row ? <ProjectionCell row={row} /> : "—"}
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  );
-                })}
-              </>
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="text-center text-muted-foreground"
+                >
+                  No active funding records in this scope.
+                </TableCell>
+              </TableRow>
             )}
           </TableBody>
         </Table>
       </div>
-      {entityCols.length > 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Recipient comparisons are useful for context, but they may not add up
-          to the total because payment credit is capped once per opportunity
-          within the selected recipient scope.
-        </p>
-      ) : null}
-      <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
-    </div>
+    </section>
   );
 }
 

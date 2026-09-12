@@ -28,6 +28,7 @@ import {
   getForecastDiagnostics,
   getForecastMatrix,
   getGoalForecast,
+  getFundingArrivalsByMonth,
   type ForecastCategory,
 } from "../lib/goalForecast";
 
@@ -37,6 +38,22 @@ const personDisplayNameSql = personNameSqlFor(people);
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+router.get(
+  "/funding-arrivals-by-month",
+  asyncHandler(async (req, res) => {
+    const rawCategory = req.query.category;
+    if (!isFundraisingCategory(rawCategory)) {
+      return res.status(400).json({
+        error: "request_error",
+        message: "category must be revenue or loan_capital.",
+      });
+    }
+    const entityIds = parseEntityIdsParam(req.query.entityId ?? req.query.entityIds);
+    const result = await getFundingArrivalsByMonth(rawCategory, entityIds);
+    return res.json(result);
+  }),
+);
 
 // Wildflower fiscal year: July 1 — June 30 (Wildflower books in
 // America/Chicago). FY label = end-year. e.g. May 24 2026 → FY 2026

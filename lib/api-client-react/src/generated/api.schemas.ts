@@ -628,6 +628,53 @@ export const FundraisingCategory = {
   loan_capital: 'loan_capital',
 } as const;
 
+export interface FundingArrivalMonth {
+  /** @pattern ^[0-9]{4}-[0-9]{2}$ */
+  month: string;
+  committedAmount: string;
+  prospectiveAmount: string;
+  prospectiveWeightedAmount: string;
+  sourceRecordIds: string[];
+}
+
+export type FundingArrivalItemStatus = typeof FundingArrivalItemStatus[keyof typeof FundingArrivalItemStatus];
+
+
+export const FundingArrivalItemStatus = {
+  pledge: 'pledge',
+  open: 'open',
+} as const;
+
+export type FundingArrivalItemBasis = typeof FundingArrivalItemBasis[keyof typeof FundingArrivalItemBasis];
+
+
+export const FundingArrivalItemBasis = {
+  projected_close: 'projected_close',
+  explicit_payment: 'explicit_payment',
+  unscheduled: 'unscheduled',
+  reimbursement_annual: 'reimbursement_annual',
+} as const;
+
+export interface FundingArrivalItem {
+  id: string;
+  opportunityId: string;
+  opportunityName: string | null;
+  status: FundingArrivalItemStatus;
+  expectedDate: string | null;
+  amount: string | null;
+  weightedAmount: string | null;
+  basis: FundingArrivalItemBasis;
+  overdue: boolean;
+  note: string;
+}
+
+export interface FundingArrivalsByMonth {
+  category: FundraisingCategory;
+  asOfDate: string;
+  items: FundingArrivalItem[];
+  months: FundingArrivalMonth[];
+}
+
 /**
  * The single authoritative loan-vs-grant classification. Gifts derive their
 flag from `type` ('loan_fund_investment' → loan) because the gift type IS
@@ -11841,6 +11888,20 @@ empty list to include all entities.
 
  */
 entityIds?: string[];
+};
+
+export type GetFundingArrivalsByMonthParams = {
+/**
+ * Optional recipient entity IDs. Accepts comma-separated or repeated
+values. Scope selects a parent schedule once; it does not attribute
+or prorate an installment to an individual recipient.
+
+ */
+entityId?: string[];
+/**
+ * Funding track: revenue (grants and other non-loans) or loan_capital.
+ */
+category: FundraisingCategory;
 };
 
 export type GetProjectionsByFyEntityParams = {
