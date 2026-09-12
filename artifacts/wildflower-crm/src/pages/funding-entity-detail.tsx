@@ -36,7 +36,6 @@ import { TasksPanel } from "@/components/tasks-panel";
 import { DonorRecordActions } from "@/components/donor-record-actions";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import { OrganizationRelationshipSummaryCard } from "@/components/relationship-summary-card";
-import { RegionEnrichmentSuggestion } from "@/components/region-enrichment-suggestion";
 import {
   AttributeBadges,
   AttributeBadgeSelect,
@@ -475,10 +474,10 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       accent: true,
     },
     {
-      label: "Capacity",
+      label: "Annual capacity",
       value: (
         <InlineEditSelect
-          label="Capacity rating"
+          label="Potential annual giving to Wildflower"
           testIdBase="organization-capacity"
           value={org.capacityRating ?? null}
           options={CAPACITY_OPTIONS}
@@ -561,6 +560,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       left={
         <>
           <FieldCard title="Identity & engagement">
+            <p className="mb-3 text-xs text-muted-foreground">Priority is an overall judgment of future giving potential, informed by annual capacity, connection, enthusiasm, and fit. Capacity means potential annual giving to Wildflower; blank means not assessed. Relationship owner coordinates this donor relationship.</p>
             <div className="space-y-4">
               <AttributeBadges>
                 <AttributeBadgeSelect
@@ -597,7 +597,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                 />
               </AttributeBadges>
               <div className="space-y-1">
-                <Row label="Owner">
+                <Row label="Relationship owner">
                   <InlineEditUserPicker
                     testIdBase="organization-owner"
                     value={org.ownerUserId ?? null}
@@ -616,9 +616,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   />
                 </Row>
                 {canManageIdentity(org, viewer) && (
-                  <Row label="Anonymous">
+                  <Row label="Display as Anonymous in CRM">
                     <InlineEditBoolean
-                      label="Anonymous"
+                      label="Display as Anonymous in CRM"
                       testIdBase="organization-anonymous"
                       value={org.anonymous}
                       allowNull={false}
@@ -640,11 +640,11 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     value: org.website,
                     href: org.website,
                   },
-                  org.orgEmail && {
+                  org.primaryEmail && {
                     icon: Mail,
                     label: "Email",
-                    value: org.orgEmail,
-                    href: `mailto:${org.orgEmail}`,
+                    value: org.primaryEmail,
+                    href: `mailto:${org.primaryEmail}`,
                   },
                   org.linkedin && {
                     icon: Linkedin,
@@ -789,18 +789,14 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ interestsGovModels: next })}
                 />
               </TagEditRow>
-              <TagEditRow label="Regions">
+              <p className="text-xs text-muted-foreground">Places this organization is interested in funding. Office location belongs in Contact info; leave blank if unknown.</p>
+              <TagEditRow label="Funding regions">
                 <InlineEditMultiRegionPicker
                   testIdBase="organization-regions"
                   value={org.regionIds ?? []}
                   onSave={(next) => patch({ regionIds: next })}
                 />
               </TagEditRow>
-              <RegionEnrichmentSuggestion
-                entityType="organization"
-                entityId={org.id}
-                eligible={(org.regionIds?.length ?? 0) === 0}
-              />
               <div>
                 <div className="text-xs font-medium text-muted-foreground mb-1">
                   Priority areas notes
@@ -908,22 +904,13 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ website: next })}
                 />
               </Row>
-              <Row label="Email">
-                <InlineEditText
-                  label="Email"
-                  testIdBase="organization-email"
-                  value={org.orgEmail ?? null}
-                  display={org.orgEmail ?? "—"}
-                  onSave={(next) => patch({ orgEmail: next })}
-                />
-              </Row>
               <div className="flex items-baseline justify-between gap-2">
                 <span className="flex flex-col">
                   <span className="text-xs font-medium text-muted-foreground">
                     Domain
                   </span>
                   <span className="text-[10px] italic text-muted-foreground/70">
-                    auto-derived from email when blank
+                    Website domain, if known
                   </span>
                 </span>
                 <span className="text-right">

@@ -1,8 +1,10 @@
+import { CleanupWorkItemForm } from "@/components/cleanup-work-item-form";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListCleanupQueue,
+  useGetCurrentUser,
   getListCleanupQueueQueryKey,
   useUpdateCleanupItem,
   useResolveCleanupItem,
@@ -36,6 +38,7 @@ const STATUS_LABEL: Record<CleanupQueueStatus, string> = {
 const REASON_LABEL: Record<string, string> = {
   conditional_commitment_stage: "Conditional commitment",
   needs_research: "Research needed",
+  cleanup_project: "Cleanup project",
   issues_to_address: "Issue to address",
   donor_attribution_review: "Donor attribution",
   donor_attribution_auto_normalized: "Donor normalized",
@@ -86,8 +89,11 @@ export default function CleanupQueuePage() {
   const [status, setStatus] = useState<CleanupQueueStatus>("open");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftNote, setDraftNote] = useState("");
+  const [projectsOnly, setProjectsOnly] = useState(false);
+  const viewer = useGetCurrentUser();
+  const canWrite = !!viewer.data && viewer.data.role !== "read_only";
 
-  const params = { status, limit: 200 } as const;
+  const params = { status, limit: 200, ...(projectsOnly ? { reasonCode: "cleanup_project" } : {}) } as const;
   const { data, isLoading, isError } = useListCleanupQueue(params, {
     query: { queryKey: getListCleanupQueueQueryKey(params) },
   });
@@ -216,11 +222,11 @@ export default function CleanupQueuePage() {
           Cleanup Queue
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Review data-cleanup items and structured donor-attribution proposals.
-          Applying an attribution proposal changes CRM donor fields or an
-          intermediary default; it never edits accounting evidence.
+          Track shared cleanup projects, research, and flagged records. Keep the next step, person responsible, and source links in each item’s notes.
         </p>
       </div>
+
+      {canWrite ? <CleanupWorkItemForm onCreated={() => { setStatus("open"); void invalidate(); }} /> : null}
 
       <div className="flex flex-wrap items-center gap-3">
         <Select
@@ -236,7 +242,8 @@ export default function CleanupQueuePage() {
             <SelectItem value="dismissed">Dismissed</SelectItem>
           </SelectContent>
         </Select>
-        {status === "open" && highConfidenceCount > 0 ? (
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={projectsOnly} onChange={(event) => setProjectsOnly(event.target.checked)} />Cleanup projects only</label>
+        {canWrite && status === "open" && highConfidenceCount > 0 ? (
           <Button
             variant="outline"
             disabled={pending}
@@ -304,12 +311,12 @@ export default function CleanupQueuePage() {
                   </span>
                 </div>
 
-                <Link
+                {item.targetType === "work_item" ? <p className="font-medium break-words">{item.targetName}</p> : <Link
                   href={targetHref(item.targetType, item.targetId)}
                   className="font-medium text-primary hover:underline break-words"
                 >
                   {item.targetName ?? `${item.targetType} ${item.targetId}`}
-                </Link>
+                </Link>}
 
                 {summary ? (
                   <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
@@ -345,12 +352,12 @@ export default function CleanupQueuePage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-                    {item.note}
+                  <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+                    {(item.targetType === "work_item" ? item.note.split("\n").slice(1).join("\n").trim() : item.note).split(/(https?:\/\/[^\s]+)/g).map((part, index) => /^https?:\/\//i.test(part) ? <a key={index} className="text-primary underline break-all" href={part} target="_blank" rel="noreferrer">{part}</a> : part)}
                   </p>
                 )}
 
-                {!editing ? (
+                {!editing && canWrite ? (
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                     <Button
                       variant="ghost"

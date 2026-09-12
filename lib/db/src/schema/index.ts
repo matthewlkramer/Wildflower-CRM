@@ -83,3 +83,5 @@ export * from "./wildflowerUpdates";
 export * from "./fundraisingCampaigns";
 export * from "./newsletterHistory";
 export * from "./tripPlans";
+
+export * from "./newsletterPreferences";

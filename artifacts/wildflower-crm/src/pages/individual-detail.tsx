@@ -1,3 +1,4 @@
+import { NewsletterPreferencesCard } from "@/components/newsletter-preferences-card";
 import { useState } from "react";
 import { DetailSkeleton } from "@/components/ui/skeleton";
 import { Link, useLocation, useRoute } from "wouter";
@@ -465,10 +466,10 @@ function PersonView({ person }: { person: PersonDetail }) {
       accent: true,
     },
     {
-      label: "Capacity",
+      label: "Annual capacity",
       value: (
         <InlineEditSelect
-          label="Capacity rating"
+          label="Potential annual giving to Wildflower"
           testIdBase="person-capacity"
           value={person.capacityRating ?? null}
           options={CAPACITY_OPTIONS}
@@ -532,6 +533,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       left={
         <>
           <FieldCard title="Basics">
+            <p className="mb-3 text-xs text-muted-foreground">Priority is an overall judgment of future giving potential, informed by annual capacity, connection, enthusiasm, and fit. Capacity means potential annual giving to Wildflower; blank means not assessed. Relationship owner coordinates this donor relationship.</p>
             <div className="space-y-4">
               <AttributeBadges>
                 <AttributeBadgeSelect
@@ -551,7 +553,7 @@ function PersonView({ person }: { person: PersonDetail }) {
                 />
               </AttributeBadges>
               <div className="space-y-1">
-                <Row label="Owner">
+                <Row label="Relationship owner">
                   <InlineEditUserPicker
                     testIdBase="person-owner-header"
                     value={person.ownerUserId ?? null}
@@ -590,9 +592,9 @@ function PersonView({ person }: { person: PersonDetail }) {
                   />
                 </Row>
                 {canManageIdentity(person, viewer) && (
-                  <Row label="Anonymous">
+                  <Row label="Display as Anonymous in CRM">
                     <InlineEditBoolean
-                      label="Anonymous"
+                      label="Display as Anonymous in CRM"
                       testIdBase="person-anonymous"
                       value={person.anonymous}
                       trueLabel="Anonymous"
@@ -739,7 +741,7 @@ function PersonView({ person }: { person: PersonDetail }) {
                   onSave={(next) => patch({ interestsGovModels: next })}
                 />
               </TagEditRow>
-              <TagEditRow label="Regions">
+              <TagEditRow label="Funding regions">
                 <InlineEditMultiRegionPicker
                   testIdBase="person-regions"
                   value={person.regionIds ?? []}
@@ -920,54 +922,8 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard
-            title="Engagement"
-            empty={
-              person.newsletter == null &&
-              person.unsubscribedToNewsletter == null
-            }
-          >
-            {/* Owner lives in the header highlights bar, not here. */}
-            <div className="space-y-1">
-              <Row label="Newsletter">
-                <InlineEditBoolean
-                  label="Newsletter subscribed"
-                  testIdBase="person-newsletter"
-                  value={person.newsletter ?? null}
-                  trueLabel="Subscribed"
-                  falseLabel="Not subscribed"
-                  allowNull={false}
-                  display={
-                    person.unsubscribedToNewsletter
-                      ? "Unsubscribed"
-                      : person.newsletter == null
-                        ? "—"
-                        : person.newsletter
-                          ? "Subscribed"
-                          : "Not subscribed"
-                  }
-                  onSave={(next) => patch({ newsletter: next ?? false })}
-                />
-              </Row>
-              <Row label="Unsubscribed">
-                <InlineEditBoolean
-                  label="Unsubscribed to newsletter"
-                  testIdBase="person-unsubscribed"
-                  value={person.unsubscribedToNewsletter ?? null}
-                  allowNull={false}
-                  display={
-                    person.unsubscribedToNewsletter == null
-                      ? "—"
-                      : person.unsubscribedToNewsletter
-                        ? "Yes"
-                        : "No"
-                  }
-                  onSave={(next) =>
-                    patch({ unsubscribedToNewsletter: next ?? false })
-                  }
-                />
-              </Row>
-            </div>
+          <FieldCard title="Newsletter preferences">
+            <NewsletterPreferencesCard personId={person.id} />
           </FieldCard>
 
           <div className="px-1 text-xs text-muted-foreground">

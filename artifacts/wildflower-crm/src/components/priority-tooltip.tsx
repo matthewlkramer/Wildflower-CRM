@@ -13,7 +13,7 @@ const PRIORITY_TIERS: { label: string; desc: string }[] = [
     desc: "A strong prospect for a moderate to high level of support over the next 1–4 years.",
   },
   {
-    label: "Medium (default)",
+    label: "Medium",
     desc: "Could be strategic misalignment that might shift at some point, or limited capacity.",
   },
   {
@@ -50,6 +50,7 @@ export function PriorityTooltip({ className }: { className?: string }) {
         </span>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs space-y-1.5 p-3 text-left normal-case">
+        <p>Overall assessment of the strongest prospects for future giving, combining capacity, connection, enthusiasm, and organizational fit. Staff judgment; no automatic score.</p>
         {PRIORITY_TIERS.map((t) => (
           <div key={t.label} className="leading-snug">
             <span className="font-semibold">{t.label}</span>

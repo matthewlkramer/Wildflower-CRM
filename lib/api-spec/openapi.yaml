@@ -366,7 +366,7 @@ paths:
       tags: [cleanup-queue]
       summary: >-
         Flag a record for research — adds it to the Cleanup Queue with
-        reason_code='needs_research'. Idempotent against the
+        reason_code='needs_research' (or 'cleanup_project' for standalone work). Idempotent against the
         (target_type, target_id, reason_code) unique key: re-flagging an
         already-flagged record returns the existing item instead of creating a
         duplicate.
@@ -12400,6 +12400,41 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NewsletterContactList" }
 
+  /people/{id}/newsletter-preferences:
+    get:
+      operationId: listNewsletterPreferences
+      tags: [people]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Newsletter preference history and derived audience status.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, newsletter, unsubscribedToNewsletter]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/NewsletterPreferenceEvent" } }
+                  newsletter: { type: boolean }
+                  unsubscribedToNewsletter: { type: boolean }
+    post:
+      operationId: createNewsletterPreferenceEvent
+      tags: [people]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateNewsletterPreferenceEventBody" }
+      responses:
+        "201":
+          description: Preference evidence recorded. Only later affirmative consent can lift an opt-out.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NewsletterPreferenceEvent" }
+
   /people/{id}/newsletter-engagement:
     get:
       operationId: listPersonNewsletterEngagement
@@ -12739,9 +12774,35 @@ components:
             e_10000_plus,
           ],
       }
+    NewsletterPreferenceEvent:
+      type: object
+      required: [id, personId, eventType, recordedAt, source, sourceKey, evidence]
+      properties:
+        id: { type: string }
+        personId: { type: string }
+        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out, legacy_selected, legacy_opted_out] }
+        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event time if known. Never substitute import time. }
+        recordedAt: { type: string, format: date-time }
+        source: { type: string }
+        sourceKey: { type: string }
+        sourceUrl: { type: string, nullable: true }
+        evidence: { type: string }
+        recordedByUserId: { type: string, nullable: true }
+    CreateNewsletterPreferenceEventBody:
+      type: object
+      required: [eventType, source, evidence, requestId]
+      properties:
+        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out] }
+        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event date if known. Undated consent cannot lift an opt-out. }
+        source: { type: string, minLength: 1, maxLength: 200 }
+        sourceUrl: { type: string, maxLength: 2000, nullable: true }
+        evidence: { type: string, minLength: 1, maxLength: 4000 }
+        requestId: { type: string, minLength: 1, maxLength: 100, description: Stable unique ID for retrying this event submission. }
+
     CapacityRating:
       {
         type: string,
+        description: "Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.",
         enum:
           [
             tier_1k_10k,
@@ -12767,7 +12828,10 @@ components:
             "1-hostile",
           ],
       }
-    Priority: { type: string, enum: [top, high, medium, low] }
+    Priority:
+      type: string
+      enum: [top, high, medium, low]
+      description: Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.
     StrategicAlignment: { type: string, enum: [high, medium, low] }
     ActiveStatus: { type: string, enum: [active, defunct, spenddown] }
     OrganizationType:
@@ -14267,7 +14331,11 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
-        orgEmail: { type: string, nullable: true }
+        primaryEmail:
+          type: string
+          nullable: true
+          readOnly: true
+          description: Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
         website: { type: string, nullable: true }
@@ -14291,7 +14359,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true }
+        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
         parentOrganizationId: { type: string, nullable: true }
         anonymous:
           {
@@ -14419,7 +14487,6 @@ components:
         historicalNames: { type: array, items: { type: string } }
         details: { type: string }
         emailDomain: { type: string }
-        orgEmail: { type: string }
         ownerUserId: { type: string }
         tags: { type: string }
         website: { type: string }
@@ -14429,7 +14496,7 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string } }
+        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
         parentOrganizationId: { type: string }
         x: { type: string }
         linkedin: { type: string }
@@ -14473,7 +14540,6 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
-        orgEmail: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
         website: { type: string, nullable: true }
@@ -14497,7 +14563,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true }
+        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
         parentOrganizationId: { type: string, nullable: true }
         x: { type: string, nullable: true }
         linkedin: { type: string, nullable: true }
@@ -14839,7 +14905,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true }
+        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
         newsletter: { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf: { type: string, nullable: true }
@@ -14992,9 +15058,8 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string } }
-        newsletter: { type: boolean }
-        unsubscribedToNewsletter: { type: boolean }
+        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
         childrenAtWf: { type: string }
         meetingLink: { type: string }
         quickbooksCustomerId: { type: string }
@@ -15039,9 +15104,8 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true }
-        newsletter: { type: boolean }
-        unsubscribedToNewsletter: { type: boolean }
+        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
         childrenAtWf: { type: string, nullable: true }
         meetingLink: { type: string, nullable: true }
         assistantPersonId: { type: string, nullable: true }
@@ -22866,7 +22930,8 @@ components:
       type: object
       required: [targetType, targetId, note]
       description: >-
-        Flag a record for research. reason_code is always 'needs_research'.
+        Flag a record for research, or create a standalone cleanup/research project.
+        work_item uses reason_code 'cleanup_project'; record flags use 'needs_research'.
       properties:
         targetType:
           {
@@ -22881,20 +22946,21 @@ components:
                 gift,
                 staged_payment,
                 stripe_payout,
+                work_item,
               ],
-            description: "Kind of record being flagged.",
+            description: "Kind of record, or work_item for a standalone project.",
           }
         targetId:
           {
             type: string,
             minLength: 1,
-            description: "Id of the record being flagged.",
+            description: "Record id, or a stable client-generated UUID for a standalone project.",
           }
         note:
           {
             type: string,
             minLength: 1,
-            description: "What needs research / follow-up on this record.",
+            description: "Shared working notes. For work_item, the first line is the project title.",
           }
     UpdateCleanupItemBody:
       type: object

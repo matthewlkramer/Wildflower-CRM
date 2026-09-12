@@ -68,13 +68,14 @@ export const people = pgTable("people", {
   // cannot carry native PG FK constraints; integrity is enforced at write
   // time by the API layer.
   regionIds: text("region_ids").array(),
+  // Read-only projections from newsletter_preference_events (migration 0247).
+  // Audience membership is not consent; direct writes are forbidden.
   newsletter: boolean("newsletter").default(false).notNull(),
   unsubscribedToNewsletter: boolean("unsubscribed_to_newsletter")
     .default(false)
     .notNull(),
-  // Estimated giving capacity tier. Same enum as funders.capacity_rating
-  // so we can compare and roll up individuals + orgs against the same
-  // bands. Nullable: not every contact has been rated.
+  // Potential annual giving to Wildflower. Same bands as organizations.
+  // Null = not assessed; this is not net worth or a particular ask amount.
   capacityRating: capacityRatingEnum("capacity_rating"),
   // Estimated net worth for this individual. Decimal (2dp) with headroom for
   // very large estates (up to ~99T).

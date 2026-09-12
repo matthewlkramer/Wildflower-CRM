@@ -72,18 +72,18 @@ export const ListPeopleResponse = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
   "newsletter": zod.boolean(),
   "unsubscribedToNewsletter": zod.boolean(),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this individual maps to.'),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
   "anonymous": zod.boolean().describe('When true, hide the person\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lifetimeGiving": zod.string().nullish().describe('Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.'),
   "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across direct individual gifts and gifts to households the person belongs to.'),
@@ -126,18 +126,17 @@ export const CreatePersonBody = zod.object({
   "interestsThematic": zod.array(zod.string()).optional(),
   "interestsAges": zod.array(zod.string()).optional(),
   "interestsGovModels": zod.array(zod.string()).optional(),
-  "regionIds": zod.array(zod.string()).optional(),
-  "newsletter": zod.boolean().optional(),
-  "unsubscribedToNewsletter": zod.boolean().optional(),
+  "regionIds": zod.array(zod.string()).optional().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
+  "newsletter": zod.boolean().optional().describe('Staff audience selection. Records a staff addition\/removal event; never lifts an opt-out.'),
   "childrenAtWf": zod.string().optional(),
   "meetingLink": zod.string().optional(),
   "quickbooksCustomerId": zod.string().optional(),
   "assistantPersonId": zod.string().optional(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).optional(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).optional().describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.'),
   "netWorth": zod.string().optional().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).optional(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).optional(),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).optional(),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).optional().describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.'),
   "anonymous": zod.boolean().optional()
 })
 
@@ -172,18 +171,18 @@ export const GetPersonResponse = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
   "newsletter": zod.boolean(),
   "unsubscribedToNewsletter": zod.boolean(),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this individual maps to.'),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
   "anonymous": zod.boolean().describe('When true, hide the person\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lifetimeGiving": zod.string().nullish().describe('Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.'),
   "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across direct individual gifts and gifts to households the person belongs to.'),
@@ -285,18 +284,17 @@ export const UpdatePersonBody = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
-  "newsletter": zod.boolean().optional(),
-  "unsubscribedToNewsletter": zod.boolean().optional(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
+  "newsletter": zod.boolean().optional().describe('Staff audience selection. Records a staff addition\/removal event; never lifts an opt-out.'),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish(),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
   "anonymous": zod.boolean().optional()
 })
 
@@ -327,18 +325,18 @@ export const UpdatePersonResponse = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
   "newsletter": zod.boolean(),
   "unsubscribedToNewsletter": zod.boolean(),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this individual maps to.'),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
   "anonymous": zod.boolean().describe('When true, hide the person\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lifetimeGiving": zod.string().nullish().describe('Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.'),
   "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across direct individual gifts and gifts to households the person belongs to.'),
@@ -458,10 +456,10 @@ export const BulkUpdatePeopleBody = zod.object({
   "patch": zod.object({
   "ownerUserId": zod.string().nullish(),
   "currentHomeRegionId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
   "deceased": zod.boolean().optional(),
   "newsletter": zod.boolean().optional().describe('Newsletter subscription flag. Changes are mirrored out to Flodesk (precedence rules apply — a Flodesk unsubscribe still wins).'),
   "interestsThematic": zod.array(zod.string()).optional().describe('Thematic-interest tags on each person (people.interests_thematic). Combined with interestsThematicMode.'),
@@ -550,18 +548,18 @@ export const ArchivePersonResponse = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
   "newsletter": zod.boolean(),
   "unsubscribedToNewsletter": zod.boolean(),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this individual maps to.'),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
   "anonymous": zod.boolean().describe('When true, hide the person\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lifetimeGiving": zod.string().nullish().describe('Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.'),
   "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across direct individual gifts and gifts to households the person belongs to.'),
@@ -604,18 +602,18 @@ export const UnarchivePersonResponse = zod.object({
   "interestsThematic": zod.array(zod.string()).nullish(),
   "interestsAges": zod.array(zod.string()).nullish(),
   "interestsGovModels": zod.array(zod.string()).nullish(),
-  "regionIds": zod.array(zod.string()).nullish(),
+  "regionIds": zod.array(zod.string()).nullish().describe('Expressed funding interests; not home or office location. Blank means unknown.'),
   "newsletter": zod.boolean(),
   "unsubscribedToNewsletter": zod.boolean(),
   "childrenAtWf": zod.string().nullish(),
   "meetingLink": zod.string().nullish(),
   "assistantPersonId": zod.string().nullish(),
-  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).nullish(),
+  "capacityRating": zod.enum(['tier_1k_10k', 'tier_10k_50k', 'tier_50k_250k', 'tier_250k_1m', 'tier_1m_plus']).describe('Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.').nullish(),
   "netWorth": zod.string().nullish().describe('Estimated net worth for this individual. Decimal as string.'),
   "connectionStatus": zod.enum(['connected', 'have_a_connector', 'no_connection']).nullish(),
   "enthusiasm": zod.enum(['7-advocate', '6-supportive', '5-warm', '4-neutral', '3-cool', '2-unsupportive', '1-hostile']).nullish(),
   "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this individual maps to.'),
-  "priority": zod.enum(['top', 'high', 'medium', 'low']).nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
+  "priority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish().describe('Solicitation priority tier (top\/high\/medium\/low). The \'top\' band is surfaced as a star on the individuals table and on opportunities\/gifts where this person is the individual giver.'),
   "anonymous": zod.boolean().describe('When true, hide the person\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lifetimeGiving": zod.string().nullish().describe('Sum of direct individual gifts + all gifts to households the person belongs to. Decimal as string.'),
   "mostRecentGiftDate": zod.string().date().nullish().describe('Most recent date_received across direct individual gifts and gifts to households the person belongs to.'),
@@ -625,5 +623,49 @@ export const UnarchivePersonResponse = zod.object({
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
+})
+
+export const ListNewsletterPreferencesParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListNewsletterPreferencesResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "personId": zod.string(),
+  "eventType": zod.enum(['consent_given', 'staff_added', 'staff_removed', 'opted_out', 'legacy_selected', 'legacy_opted_out']),
+  "occurredAt": zod.string().datetime({}).nullish().describe('Actual event time if known. Never substitute import time.'),
+  "recordedAt": zod.string().datetime({}),
+  "source": zod.string(),
+  "sourceKey": zod.string(),
+  "sourceUrl": zod.string().nullish(),
+  "evidence": zod.string(),
+  "recordedByUserId": zod.string().nullish()
+})),
+  "newsletter": zod.boolean(),
+  "unsubscribedToNewsletter": zod.boolean()
+})
+
+export const CreateNewsletterPreferenceEventParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const createNewsletterPreferenceEventBodySourceMax = 200;
+
+export const createNewsletterPreferenceEventBodySourceUrlMax = 2000;
+
+export const createNewsletterPreferenceEventBodyEvidenceMax = 4000;
+
+export const createNewsletterPreferenceEventBodyRequestIdMax = 100;
+
+
+
+export const CreateNewsletterPreferenceEventBody = zod.object({
+  "eventType": zod.enum(['consent_given', 'staff_added', 'staff_removed', 'opted_out']),
+  "occurredAt": zod.string().datetime({}).nullish().describe('Actual event date if known. Undated consent cannot lift an opt-out.'),
+  "source": zod.string().min(1).max(createNewsletterPreferenceEventBodySourceMax),
+  "sourceUrl": zod.string().max(createNewsletterPreferenceEventBodySourceUrlMax).nullish(),
+  "evidence": zod.string().min(1).max(createNewsletterPreferenceEventBodyEvidenceMax),
+  "requestId": zod.string().min(1).max(createNewsletterPreferenceEventBodyRequestIdMax).describe('Stable unique ID for retrying this event submission.')
 })
 

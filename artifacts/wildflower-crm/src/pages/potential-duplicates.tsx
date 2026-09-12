@@ -177,7 +177,6 @@ function OrgMergeLauncher({
       },
       { key: "lastContacted", label: "Last contacted", display: (v) => formatDateShort(v as string | null) },
       { key: "website", label: "Website" },
-      { key: "orgEmail", label: "Org email" },
       { key: "linkedin", label: "LinkedIn" },
     ],
     [userNames],

@@ -52,7 +52,7 @@ const REFERENCE_TABLES = ["entities", "regions", "fiscal_years"];
 // recreated (the donor-routing trigger tests fail exactly that way). Each
 // listed file must be idempotent (CREATE OR REPLACE / DROP ... IF EXISTS,
 // guarded seeds) — they are re-applied on EVERY setup run, warm or cold.
-const PROGRAM_MIGRATIONS = ["0222_donor_attribution_phase_2.sql"];
+const PROGRAM_MIGRATIONS = ["0222_donor_attribution_phase_2.sql", "0247_newsletter_preference_history.sql"];
 
 function schemaHash(): string {
   const hash = createHash("sha256");

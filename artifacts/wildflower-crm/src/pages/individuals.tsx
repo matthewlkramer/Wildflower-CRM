@@ -126,9 +126,9 @@ const ENTHUSIASM_OPTIONS = [
 // flag so the three states are mutually exclusive (matches the detail
 // page + the server-side filter + Flodesk precedence).
 const NEWSLETTER_OPTIONS: MultiFilterOption[] = [
-  { value: "subscribed", label: "Subscribed" },
-  { value: "unsubscribed", label: "Unsubscribed" },
-  { value: "not_subscribed", label: "Not subscribed" },
+  { value: "subscribed", label: "Selected for newsletter" },
+  { value: "unsubscribed", label: "Opted out" },
+  { value: "not_subscribed", label: "Not selected" },
 ];
 type NewsletterStatus = "subscribed" | "unsubscribed" | "not_subscribed";
 function newsletterStatus(p: Person): NewsletterStatus {
@@ -352,7 +352,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
       cell: (p) => {
         const s = newsletterStatus(p);
         if (s === "subscribed")
-          return <Badge variant="outline">Subscribed</Badge>;
+          return <Badge variant="outline">Selected</Badge>;
         if (s === "unsubscribed")
           return (
             <Badge variant="outline" className="text-muted-foreground">

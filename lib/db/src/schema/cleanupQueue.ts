@@ -45,11 +45,14 @@ export interface CleanupProposal {
  * flag) each item; both states drop the item out of the default queue view.
  *
  * `targetType` is polymorphic (e.g. 'pledge', 'opportunity', 'organization',
- * 'person', 'gift') and intentionally has NO foreign key on `targetId` — this
+ * 'person', 'gift', 'work_item') and intentionally has NO foreign key on `targetId` — this
  * is historical review state, not a live relationship, and a row pointing at a
  * since-merged/deleted record is harmless. Keeping `targetId` as plain text
  * also keeps it out of the `mergeEntities` FK-inventory test (which only tracks
  * live FK references to organizations/people).
+ *
+ * Standalone work_item projects use a stable UUID as targetId and the first
+ * note line as the title; there is no separate task/status authority.
  *
  * The unique index on (target_type, target_id, reason_code) makes seeding
  * idempotent: re-running a seed for the same record + reason is a no-op.

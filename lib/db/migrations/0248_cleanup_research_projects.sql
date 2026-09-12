@@ -1,0 +1,9 @@
+-- Add the two requested shared follow-ups. Replays preserve all team edits
+-- and never reopen completed work. No donor or financial facts are changed.
+INSERT INTO cleanup_queue (id, target_type, target_id, reason_code, note)
+VALUES
+  ('cleanup_nr_historical_newsletter_evidence', 'work_item', 'historical_newsletter_evidence', 'cleanup_project',
+   E'Recover historical newsletter consent and opt-outs\n\nReview current and historical Flodesk data, the former Mailchimp account/exports, and Fillout / School Startup Journey source records. Preserve affirmative consent, staff-added membership, and opt-out evidence separately, with dates and source links when known. Do not infer consent from audience membership or turn record-update timestamps into consent dates. Match exact CRM email identities; review conflicts and unknown dates.\n\nNext step: identify the available Mailchimp and historical Flodesk records, then preview and review an evidence import. Keep this open until the historical-source review is complete. Owner and follow-up date: to be assigned.'),
+  ('cleanup_nr_historical_donation_coding', 'work_item', 'historical_donation_coding', 'cleanup_project',
+   E'Complete and review the historical donation-coding worksheet\n\nThe team is filling out the historical donation-coding worksheet prepared in the earlier CRM discussion. Collect completed responses, identify unresolved coding questions, and have Finance review the coding before applying approved corrections. Preserve links to the worksheet and supporting evidence and verify the resulting CRM records.\n\nWorksheet: https://docs.google.com/spreadsheets/d/1vfsIl2mwZMKJE3mZqDfPMGrtujkJZVI43XYRZxta12w/edit?usp=sharing\n\nNext step: track outstanding worksheet responses. Keep this open until reviewed corrections are applied and checked. Owner and follow-up date: to be assigned.')
+ON CONFLICT (target_type, target_id, reason_code) DO NOTHING;
