@@ -11,7 +11,6 @@ import { startSchoolSyncScheduler } from "./lib/schoolSyncScheduler";
 import { startTaskSuggestionScheduler } from "./lib/taskSuggestionScheduler";
 import { startEmailIntelRecoveryScheduler } from "./lib/emailIntelRecoveryScheduler";
 import { startDerivationHealthScheduler } from "./lib/derivationHealthScheduler";
-import { startCodingFormSyncScheduler } from "./lib/codingFormSyncScheduler";
 import { runTaskSuggestionBackfillIfDue } from "./lib/taskSuggestionBackfill";
 import { backfillIntelForUser } from "./lib/gmailBackfill";
 import { analyzePendingForUser } from "./lib/analyzePending";
@@ -48,7 +47,6 @@ app.listen(port, (err) => {
   startTaskSuggestionScheduler();
   startEmailIntelRecoveryScheduler();
   startDerivationHealthScheduler();
-  startCodingFormSyncScheduler();
   startGrantLeadSummaryScheduler();
 
   // One-time upfront task-suggestion backfill: ensures every non-low-priority

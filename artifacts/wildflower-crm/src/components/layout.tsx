@@ -30,7 +30,6 @@ import {
   ScrollText,
   CopyCheck,
   ListChecks,
-  FileSpreadsheet,
   Megaphone,
   Newspaper,
   CalendarCheck2,
@@ -121,7 +120,6 @@ const navItems: NavEntry[] = [
   { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
   { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
   { href: "/restriction-text-review", label: "Restriction Text Review", icon: ListChecks, adminOnly: true },
-  { href: "/coding-form-import", label: "Coding Form Import", icon: FileSpreadsheet, adminOnly: true },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";

@@ -88,6 +88,9 @@ unverified and confirm against code before relying on it.
   external-provider safety boundary.
 - [`media-mentions.md`](media-mentions.md) — canonical URL deduplication,
   deterministic relevance scoring, read filtering, and manual backfill rules.
+- [`crm-to-accounting-workflow.md`](crm-to-accounting-workflow.md) — ratified
+  CRM-native donation-coding workflow, team roles, accounting-export controls,
+  and the retirement gate for historical coding-form staging.
 
 ## Rules
 

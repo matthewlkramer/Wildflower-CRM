@@ -202,7 +202,9 @@ analytics and pledge paid-amount derivation.
   in the pg enum but are no longer written), `disbursement_model`
   (`fixed_commitment` default / `cost_reimbursement`), `award_closed_at` +
   `award_close_reason` (finance-permitted close of a cost-reimbursement
-  award), `loan_or_grant`, `conditional`/`conditions_met` header columns
+  award), `loan_or_grant`, `reporting_required` (nullable only for unreviewed
+  historical records; live CRM authority for whether reporting-deadline tasks
+  are mandatory), `conditional`/`conditions_met` header columns
   (write-deprecated — the live rollup derives from pledge allocations),
   write-off self-links (`is_write_off`, `write_off_of_pledge_id`), and
   `match_id` (matching-gift self-reference). The close-transition rule
@@ -248,13 +250,15 @@ analytics and pledge paid-amount derivation.
   `awaiting_settlement` (suppresses premature missing-QB flags), thank-you
   and grant-letter/acknowledgement file fields.
 - `gift_allocations` — actual received-money line items: entity,
-  `grant_year`, regions, intended usage, school/charter recipient FKs, the
+  `sub_amount`, `grant_year`, regions, intended usage, school/charter recipient FKs, the
   three restriction axes, `counts_toward_goal` (the sole home of the
   goal-counting signal), `reimbursement_type`, `seed_fund`,
   `school_support_type`, per-axis designation-type columns (provenance of who
   chose each scope dimension; the legacy restriction axes stay authoritative
   for revenue coding until a planned consolidation), and plan-vs-actual
-  provenance (`source_pledge_allocation_id`, `variance_reason`).
+  provenance (`source_pledge_allocation_id`, `variance_reason`), plus
+  `purpose_verbatim` for the exact governing donor language and
+  `restriction_description` for an internal summary.
   `display_usage` is a **trigger-maintained, read-only** label — never write
   it directly.
 

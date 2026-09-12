@@ -79,6 +79,7 @@ type FormState = {
   projectedCloseDate: string;
   projectedCloseMonthsOut: string;
   timingMode: "date" | "months";
+  reportingRequired: "yes" | "no" | "";
 };
 
 const EMPTY_FORM: FormState = {
@@ -91,6 +92,7 @@ const EMPTY_FORM: FormState = {
   projectedCloseDate: "",
   projectedCloseMonthsOut: "",
   timingMode: "date",
+  reportingRequired: "",
 };
 
 export function CreateOpportunityDialog({
@@ -213,6 +215,7 @@ export function CreateOpportunityDialog({
         ...(form.timingMode === "months" && monthsOut
           ? { projectedCloseMonthsOut: Number(monthsOut) }
           : {}),
+        reportingRequired: form.reportingRequired === "yes",
       },
     });
   }
@@ -471,6 +474,31 @@ export function CreateOpportunityDialog({
             </p>
           </div>
 
+          <div className="space-y-1.5">
+            <Label>Donor reporting required</Label>
+            <Select
+              value={form.reportingRequired}
+              onValueChange={(value) =>
+                setForm({
+                  ...form,
+                  reportingRequired: value as "yes" | "no",
+                })
+              }
+            >
+              <SelectTrigger data-testid="select-new-opportunity-reporting-required">
+                <SelectValue placeholder="Choose yes or no" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="no">No</SelectItem>
+                <SelectItem value="yes">Yes</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              If yes, add each due date as a Reporting Deadline before the gift
+              can be exported for accounting.
+            </p>
+          </div>
+
           <DialogFooter>
             <Button
               type="button"
@@ -482,7 +510,12 @@ export function CreateOpportunityDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!trimmedName || !donorId || create.isPending}
+              disabled={
+                !trimmedName ||
+                !donorId ||
+                !form.reportingRequired ||
+                create.isPending
+              }
               data-testid="button-create-opportunity"
             >
               {create.isPending ? "Creating…" : "Create"}

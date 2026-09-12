@@ -221,7 +221,6 @@ const NOOP_ACTIONS: DepositActions = {
   openColumnGiftSearch: () => undefined,
   openIdentify: () => undefined,
   openDonorboxSearch: () => undefined,
-  openCodingFormLookup: () => undefined,
   openExclude: () => undefined,
   reInclude: () => undefined,
   openRevert: () => undefined,
@@ -237,7 +236,6 @@ const NOOP_ACTIONS: DepositActions = {
   openBankDepositExclusion: () => undefined,
   clearBankDepositExclusion: () => undefined,
   isFinanceOrAdmin: false,
-  canUseCodingForm: false,
   openQbDetail: () => undefined,
   rejectChargeQbTie: () => undefined,
   confirmProposedMatch: () => undefined,
@@ -1412,27 +1410,6 @@ export function DepositRow({
                         : undefined,
                 },
                 {
-                  label: "Search coding forms…",
-                  onSelect: () => {
-                    if (giftColumnAnchor && !giftColumnUnitless)
-                      actions.openCodingFormLookup?.(
-                        giftColumnAnchor,
-                        bankPreview,
-                      );
-                  },
-                  disabled:
-                    !actions.canUseCodingForm ||
-                    !giftColumnAnchor ||
-                    giftColumnUnitless,
-                  disabledReason: !actions.canUseCodingForm
-                    ? "Admin permission is required for coding-form matching."
-                    : !giftColumnAnchor
-                      ? NO_GIFT_ANCHOR_REASON
-                      : giftColumnUnitless
-                        ? COMPONENT_NO_UNIT_REASON
-                        : undefined,
-                },
-                {
                   label: "Browse unlinked CRM gifts…",
                   onSelect: () => {
                     if (giftColumnAnchor)
@@ -1570,20 +1547,6 @@ export function DepositRow({
                                 label: "Find Donorbox match…",
                                 onSelect: () =>
                                   actions.openDonorboxSearch?.(
-                                    anchor,
-                                    bankPreview,
-                                  ),
-                              },
-                            ]
-                          : []),
-                        ...(anchor &&
-                        actions.canUseCodingForm &&
-                        actions.openCodingFormLookup
-                          ? [
-                              {
-                                label: "Find coding form match…",
-                                onSelect: () =>
-                                  actions.openCodingFormLookup?.(
                                     anchor,
                                     bankPreview,
                                   ),

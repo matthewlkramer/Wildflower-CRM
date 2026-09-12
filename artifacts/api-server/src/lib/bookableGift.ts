@@ -25,10 +25,10 @@
 //   6. Intended usage — every allocation has an intendedUsage; when it is
 //      'project', a fundableProjectId is set.
 //   7. Restriction evidence — if ANY axis is donor_restricted, the gift needs
-//      EITHER a grant letter (grantLetterUrl) OR an online-source link
-//      (sourceRecordUrl).
-//   8. Reporting deadline — if the linked opportunity's coding form requires a
-//      written report, a reporting_deadline task must exist for that opportunity.
+//      BOTH the exact governing source language on each restricted allocation
+//      and either a grant letter or an online-source link.
+//   8. Reporting deadline — if the linked opportunity says reporting is
+//      required, a reporting_deadline task must exist for that opportunity.
 //
 // CORRELATION follows the bare-column rule (literal gift-id SQL expr) — see
 // giftPaymentSummary.ts / .agents/memory/drizzle-sql-template-bare-column.md.
@@ -42,11 +42,14 @@ export const BOOKABLE_REASONS = [
   "missing_amount",
   "missing_date",
   "no_allocations",
+  "missing_allocation_amount",
   "missing_entity",
   "missing_fiscal_year",
   "missing_intended_usage",
   "missing_fundable_project",
   "missing_restriction_evidence",
+  "missing_restriction_language",
+  "missing_reporting_requirement_decision",
   "missing_reporting_deadline",
 ] as const;
 export type BookableReason = (typeof BOOKABLE_REASONS)[number];
@@ -57,17 +60,23 @@ export const BOOKABLE_REASON_LABELS: Record<BookableReason, string> = {
   missing_amount: "Amount missing",
   missing_date: "Date received missing",
   no_allocations: "No allocation rows",
+  missing_allocation_amount: "Amount missing on an allocation",
   missing_entity: "Entity attribution missing on an allocation",
   missing_fiscal_year: "Fiscal year missing on an allocation",
   missing_intended_usage: "Intended usage missing on an allocation",
   missing_fundable_project: "Fundable project missing for a project allocation",
   missing_restriction_evidence:
     "Restricted gift needs a grant letter or online-source link",
+  missing_restriction_language:
+    "Restricted allocation needs the exact governing source language",
+  missing_reporting_requirement_decision:
+    "Donor reporting requirement has not been reviewed",
   missing_reporting_deadline: "Reporting deadline task missing",
 };
 
 // ── Pure TS predicate ───────────────────────────────────────────────────────
 export interface BookableGiftAllocationInput {
+  subAmount: string | null;
   entityId: string | null;
   grantYear: string | null;
   intendedUsage: string | null;
@@ -75,6 +84,7 @@ export interface BookableGiftAllocationInput {
   regionalRestrictionType: string | null;
   otherRestrictionType: string | null;
   timeRestrictionType: string | null;
+  purposeVerbatim: string | null;
 }
 
 export interface BookableGiftInput {
@@ -83,13 +93,15 @@ export interface BookableGiftInput {
   householdId: string | null;
   amount: string | null;
   dateReceived: string | null;
+  /** Grant letter on the gift or its linked opportunity/pledge. */
   grantLetterUrl: string | null;
   sourceRecordUrl: string | null;
   /** Whether the gift is off-books (all allocations on non-payment entities). */
   isOffBooks: boolean;
   allocations: BookableGiftAllocationInput[];
-  /** Linked opportunity's coding form marks a written report as required. */
-  reportRequired: boolean;
+  hasOpportunity: boolean;
+  /** Linked opportunity's explicit reporting decision; null means unreviewed. */
+  reportRequired: boolean | null;
   /** A reporting_deadline task exists for the linked opportunity. */
   hasReportingDeadlineTask: boolean;
 }
@@ -126,6 +138,8 @@ export function deriveGiftBookable(input: BookableGiftInput): {
   if (allocs.length === 0) {
     reasons.push("no_allocations");
   } else {
+    if (allocs.some((a) => !present(a.subAmount)))
+      reasons.push("missing_allocation_amount");
     if (allocs.some((a) => !present(a.entityId))) reasons.push("missing_entity");
     if (allocs.some((a) => !present(a.grantYear)))
       reasons.push("missing_fiscal_year");
@@ -148,8 +162,21 @@ export function deriveGiftBookable(input: BookableGiftInput): {
   );
   if (restricted && !present(input.grantLetterUrl) && !present(input.sourceRecordUrl))
     reasons.push("missing_restriction_evidence");
+  if (
+    allocs.some(
+      (a) =>
+        anyDonorRestricted(
+          a.regionalRestrictionType,
+          a.otherRestrictionType,
+          a.timeRestrictionType,
+        ) && !present(a.purposeVerbatim),
+    )
+  )
+    reasons.push("missing_restriction_language");
 
-  if (input.reportRequired && !input.hasReportingDeadlineTask)
+  if (input.hasOpportunity && input.reportRequired == null)
+    reasons.push("missing_reporting_requirement_decision");
+  if (input.reportRequired === true && !input.hasReportingDeadlineTask)
     reasons.push("missing_reporting_deadline");
 
   return { bookable: reasons.length === 0, reasons };
@@ -158,20 +185,34 @@ export function deriveGiftBookable(input: BookableGiftInput): {
 // ── SQL helpers (lockstep with the TS predicate) ────────────────────────────
 
 /**
- * True when the linked opportunity's coding form requires a written report.
- * (matched_opportunity_id = the gift's opportunity_id). False when the gift has
- * no opportunity or no report-required coding row.
+ * True when the linked opportunity's CRM record requires donor reporting.
+ * False when the gift has no linked opportunity.
  */
 export function giftReportRequiredExpr(
   giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
 ): SQL<boolean> {
   return sql<boolean>`EXISTS (
     SELECT 1
-    FROM coding_form_rows cfr
-    JOIN gifts_and_payments grr ON grr.id = ${giftIdSql}
+    FROM gifts_and_payments grr
+    JOIN opportunities_and_pledges opr
+      ON opr.id = grr.opportunity_id
     WHERE grr.opportunity_id IS NOT NULL
-      AND cfr.matched_opportunity_id = grr.opportunity_id
-      AND cfr.report_required = true
+      AND grr.id = ${giftIdSql}
+      AND opr.reporting_required = true
+  )`;
+}
+
+/** True when a linked opportunity has not had its reporting requirement reviewed. */
+export function giftReportingDecisionMissingExpr(
+  giftIdSql: SQL = DEFAULT_GIFT_ID_SQL,
+): SQL<boolean> {
+  return sql<boolean>`EXISTS (
+    SELECT 1
+    FROM gifts_and_payments grd
+    JOIN opportunities_and_pledges opd
+      ON opd.id = grd.opportunity_id
+    WHERE grd.id = ${giftIdSql}
+      AND opd.reporting_required IS NULL
   )`;
 }
 
@@ -213,6 +254,11 @@ export function giftIsIncompleteExpr(
             OR (
               gi.grant_letter_url IS NULL
               AND gi.source_record_url IS NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM opportunities_and_pledges ore
+                WHERE ore.id = gi.opportunity_id
+                  AND ore.grant_letter_url IS NOT NULL
+              )
               AND EXISTS (
                 SELECT 1 FROM gift_allocations gar
                 WHERE gar.gift_id = ${giftIdSql}
@@ -232,11 +278,23 @@ export function giftIsIncompleteExpr(
         SELECT 1 FROM gift_allocations ga
         WHERE ga.gift_id = ${giftIdSql}
           AND (
-            ga.entity_id IS NULL
+            ga.sub_amount IS NULL
+            OR ga.entity_id IS NULL
             OR ga.grant_year IS NULL
             OR ga.intended_usage IS NULL
             OR (ga.intended_usage = 'project' AND ga.fundable_project_id IS NULL)
+            OR (
+              (
+                ga.regional_restriction_type = 'donor_restricted'
+                OR ga.other_restriction_type = 'donor_restricted'
+                OR ga.time_restriction_type = 'donor_restricted'
+              )
+              AND NULLIF(TRIM(ga.purpose_verbatim), '') IS NULL
+            )
           )
+      )
+      OR (
+        ${giftReportingDecisionMissingExpr(giftIdSql)}
       )
       OR (
         ${giftReportRequiredExpr(giftIdSql)}

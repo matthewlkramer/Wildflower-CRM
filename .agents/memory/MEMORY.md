@@ -49,6 +49,7 @@ code/docs and update or archive the stale memory.
 - [Drizzle SQL pitfalls](drizzle-pitfalls.md) — 9 runtime-only footguns invisible to typecheck: ANY(array) cast, outer-paren syntax, top-level-field unqualify, ORDER BY ordinal, alias collision, alias ordering, .desc() index churn, ESCAPE '\' collapse, COALESCE(enum,'').
 - [Orval / React Query patterns](orval-guide.md) — /api invalidation prefix; query options need queryKey; coerce.boolean "false"→true; array query params arrive comma-joined (normalizeArrayQuery).
 - [api-server HTTP integration tests](api-server-http-integration-tests.md) — DB-backed route test pattern: mock requireAuth, boot app.listen(0)+fetch, raise hook timeouts, skipIf no real DB.
+- [Unified goal forecasting](unified-goal-forecasting.md) — Dashboard, FY Report, and Projections must consume one server-side forecast authority; never reimplement payment netting or contribution classification per screen.
 
 ## Frontend and interaction conventions
 

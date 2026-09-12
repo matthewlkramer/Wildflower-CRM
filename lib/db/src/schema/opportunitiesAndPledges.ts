@@ -214,6 +214,15 @@ export const opportunitiesAndPledges = pgTable(
     applicationDeadline: date("application_deadline"),
     paymentDetails: text("payment_details"),
     usageNotes: text("usage_notes"),
+    // CRM-native source of truth for whether this opportunity/award requires
+    // donor reporting. A true value requires at least one linked
+    // reporting_deadline task before a gift is bookable/export-ready. This
+    // deliberately replaces the historical coding_form_rows flag.
+    // NULL is intentional for historical records that have not yet been
+    // reviewed. New API-created opportunities must make an explicit yes/no
+    // choice; a linked gift stays out of the accounting export while this is
+    // unknown.
+    reportingRequired: boolean("reporting_required"),
     // Legacy integer pledge ID inherited from Copper. Not a FK; preserved for
     // cross-reference back to the prior CRM.
     copperPledgeId: text("copper_pledge_id"),

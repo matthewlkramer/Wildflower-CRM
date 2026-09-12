@@ -27,7 +27,6 @@ import {
   BOOKABLE_REASON_LABELS,
   deriveGiftBookable,
   giftIsIncompleteExpr,
-  giftReportRequiredExpr,
   giftHasReportingTaskExpr,
   type BookableGiftAllocationInput,
 } from "../../lib/bookableGift";
@@ -111,7 +110,8 @@ router.get(
           householdName: households.name,
           opportunityId: giftsAndPayments.opportunityId,
           opportunityName: opportunitiesAndPledges.name,
-          reportRequired: giftReportRequiredExpr(),
+          opportunityGrantLetterUrl: opportunitiesAndPledges.grantLetterUrl,
+          reportRequired: opportunitiesAndPledges.reportingRequired,
           hasReportingTask: giftHasReportingTaskExpr(),
         })
         .from(giftsAndPayments)
@@ -155,6 +155,7 @@ router.get(
       ? await db
           .select({
             giftId: giftAllocations.giftId,
+            subAmount: giftAllocations.subAmount,
             entityId: giftAllocations.entityId,
             grantYear: giftAllocations.grantYear,
             intendedUsage: giftAllocations.intendedUsage,
@@ -162,6 +163,7 @@ router.get(
             regionalRestrictionType: giftAllocations.regionalRestrictionType,
             otherRestrictionType: giftAllocations.otherRestrictionType,
             timeRestrictionType: giftAllocations.timeRestrictionType,
+            purposeVerbatim: giftAllocations.purposeVerbatim,
           })
           .from(giftAllocations)
           .where(inArray(giftAllocations.giftId, giftIds))
@@ -172,6 +174,7 @@ router.get(
       if (!a.giftId) continue;
       const list = allocsByGift.get(a.giftId) ?? [];
       list.push({
+        subAmount: a.subAmount,
         entityId: a.entityId,
         grantYear: a.grantYear,
         intendedUsage: a.intendedUsage,
@@ -179,6 +182,7 @@ router.get(
         regionalRestrictionType: a.regionalRestrictionType,
         otherRestrictionType: a.otherRestrictionType,
         timeRestrictionType: a.timeRestrictionType,
+        purposeVerbatim: a.purposeVerbatim,
       });
       allocsByGift.set(a.giftId, list);
     }
@@ -214,12 +218,13 @@ router.get(
         householdId: r.householdId,
         amount: r.amount,
         dateReceived: r.dateReceived,
-        grantLetterUrl: r.grantLetterUrl,
+        grantLetterUrl: r.grantLetterUrl || r.opportunityGrantLetterUrl,
         sourceRecordUrl: r.sourceRecordUrl,
         // The query already excludes off-books gifts (giftIsIncompleteExpr).
         isOffBooks: false,
         allocations: allocsByGift.get(r.id) ?? [],
-        reportRequired: Boolean(r.reportRequired),
+        hasOpportunity: Boolean(r.opportunityId),
+        reportRequired: r.reportRequired,
         hasReportingDeadlineTask: Boolean(r.hasReportingTask),
       });
 

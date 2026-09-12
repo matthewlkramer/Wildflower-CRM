@@ -29,6 +29,12 @@ export const GetRevenueExtractorReportResponse = zod.object({
   "startDate": zod.string().date(),
   "endDate": zod.string().date(),
   "generatedAt": zod.string().datetime({}),
+  "readyToExport": zod.boolean().describe('True only when every in-range gift is bookable, every derived coding row has no unresolved flag, and no CRM\/QuickBooks coding disagreement remains.'),
+  "blockingIssues": zod.array(zod.object({
+  "giftId": zod.string(),
+  "giftName": zod.string().nullish(),
+  "messages": zod.array(zod.string())
+}).describe('A CRM gift that must be corrected or reviewed before the selected\naccounting export can be downloaded. The report remains available as a\npreview while these issues are present; export is blocked.\n')),
   "rows": zod.array(zod.object({
   "rowKey": zod.string().describe('Stable key: giftId, giftId:allocationId, or giftId:fee.'),
   "giftId": zod.string(),

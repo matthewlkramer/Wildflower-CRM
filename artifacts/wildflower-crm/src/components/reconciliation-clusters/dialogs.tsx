@@ -3,7 +3,6 @@ import { ExternalLink, Loader2, Lock, Sparkles } from "lucide-react";
 import {
   type StagedPaymentExclusionReason,
   type WorkbenchClusterQbRecord,
-  type CodingFormRow,
   type DonorboxReviewRow,
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
@@ -110,67 +109,6 @@ export function DonorboxSearchDialog({
               </p>
             )}
           </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export function CodingFormLookupDialog({
-  open,
-  onOpenChange,
-  rows,
-  busy,
-  onUse,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  rows: CodingFormRow[];
-  busy: boolean;
-  onUse: (row: CodingFormRow, mode: "identify" | "create") => void;
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(value) => (!busy ? onOpenChange(value) : null)}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Use a coding-form row</DialogTitle>
-          <DialogDescription>
-            Coding-form donor and intended-use evidence informs the next
-            identify or create-gift step. It does not book money by itself.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-80 space-y-2 overflow-y-auto">
-          {rows.length ? rows.map((row) => (
-            <div key={row.id} className="rounded-md border px-3 py-2 text-xs">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-semibold">{row.donorName ?? row.donorNameRaw ?? "Donor not identified"}</p>
-                  <p className="text-muted-foreground">
-                    {row.donationDate ?? "Undated"} · {row.amount ?? "—"} · {row.source} row {row.sourceRowIndex}
-                  </p>
-                  {row.intendedUsageSuggested ? <p className="mt-1 text-muted-foreground">Purpose: {row.intendedUsageSuggested}</p> : null}
-                  {row.internalMemo ? <p className="mt-1 line-clamp-2 text-muted-foreground">Memo: {row.internalMemo}</p> : null}
-                </div>
-                <div className="flex shrink-0 gap-1.5">
-                  <Button size="sm" variant="outline" disabled={busy} onClick={() => onUse(row, "identify")}>
-                    Identify donor
-                  </Button>
-                  <Button size="sm" disabled={busy} onClick={() => onUse(row, "create")}>
-                    Create gift
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )) : (
-            <p className="py-6 text-center text-sm text-muted-foreground">
-              No coding-form rows matched this component.
-            </p>
-          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" disabled={busy} onClick={() => onOpenChange(false)}>
