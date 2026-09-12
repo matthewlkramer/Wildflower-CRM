@@ -23,7 +23,7 @@ track (`revenue` or `loan_capital`) and an optional comma-separated or repeated
   An explicit payment plan overrides the close-date estimate completely.
   Actual pledges, pledge-path prospects, loans, and reimbursement awards do not
   inherit that default. Allocation fiscal years never become receipt dates.
-- Projections → Expected arrivals displays the timing basis for every row:
+- Finance → Cash flow displays the timing basis for every row:
   projected close date, explicit payment date, timing not estimated, or annual
   reimbursement plan. Undated records remain visible here; no missing-date
   review items or tasks are generated. Existing annual forecasts are unchanged.
@@ -75,6 +75,9 @@ intentionally deferred. This endpoint is a timing read model only; it does not
 add target, scenario, concentration, or follow-up semantics.
 
 ## Report navigation
+
+The Finance navigation contains a dedicated **Cash flow** page at `/cash-flow`.
+Projections remains the separate annual forecast at `/projections`.
 
 The default receipt window is the report's current Chicago calendar month plus
 11 months, including empty months. The server's `asOfDate` anchors this window;
