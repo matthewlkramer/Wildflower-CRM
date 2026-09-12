@@ -8389,6 +8389,58 @@ paths:
               },
           }
 
+  /funding-arrivals-by-month:
+    get:
+      operationId: getFundingArrivalsByMonth
+      tags: [analytics]
+      summary: Authenticated monthly funding-arrival timing forecast.
+      description: |
+        Returns known dated installment arrivals for active, unarchived,
+        non-writeoff pledges and opportunities. `pledge` rows are committed;
+        `open` rows are prospective and expose both face and
+        probability-weighted amounts. Payments are parent-gift totals consumed
+        oldest-first across the schedule as a planning convention; this is not
+        payment matching evidence. Expected-payment rows intentionally retain
+        no recipient attribution. When entityId is supplied (comma-separated or
+        repeated), a parent schedule is included once if any non-direct
+        allocation overlaps the requested scope; installments are never split
+        across recipients. Active writeoff children resolve and exclude their
+        original, matching canonical writeoff behavior. Cost-reimbursement
+        ceilings are not forecasts: only explicit dated schedule rows are
+        timing entries, while annual allocation plans without a schedule are
+        returned in untimedReimbursementPlans and never monthly totals.
+        Projected close dates and allocation fiscal years are not payment timing.
+      parameters:
+        - name: entityId
+          in: query
+          required: false
+          description: |
+            Optional recipient entity IDs. Accepts comma-separated or repeated
+            values. Scope selects a parent schedule once; it does not attribute
+            or prorate an installment to an individual recipient.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: category
+          in: query
+          required: true
+          description: "Funding track: revenue (grants and other non-loans) or loan_capital."
+          schema: { $ref: "#/components/schemas/FundraisingCategory" }
+      responses:
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/FundingArrivalsByMonth" },
+                  },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
   /projections-by-fy-entity:
     get:
       operationId: getProjectionsByFyEntity
@@ -12548,6 +12600,60 @@ components:
         flag (loan → `loan_capital`, grant → `revenue`). The legacy persisted
         columns of the same name are @deprecated and no longer written or
         returned.
+    FundingArrivalMonth:
+      type: object
+      required: [month, committedAmount, prospectiveAmount, prospectiveWeightedAmount, sourceRecordIds]
+      properties:
+        month: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$" }
+        committedAmount: { type: string }
+        prospectiveAmount: { type: string }
+        prospectiveWeightedAmount: { type: string }
+        sourceRecordIds: { type: array, items: { type: string } }
+    FundingArrivalUnknownTiming:
+      type: object
+      required: [category, status, opportunityId, opportunityName, amount, remainingAmount, sourceRecordIds, message]
+      properties:
+        category: { $ref: "#/components/schemas/FundraisingCategory" }
+        status: { type: string, enum: [pledge, open] }
+        opportunityId: { type: string }
+        opportunityName: { type: ["string", "null"] }
+        amount: { type: string }
+        remainingAmount: { type: string }
+        sourceRecordIds: { type: array, items: { type: string } }
+        message: { type: string }
+    FundingArrivalAction:
+      type: object
+      required: [type, category, opportunityId, opportunityName, sourceRecordIds, message]
+      properties:
+        type: { type: string, enum: [overdue, missing_timing, missing_amount, schedule_discrepancy] }
+        category: { $ref: "#/components/schemas/FundraisingCategory" }
+        opportunityId: { type: string }
+        opportunityName: { type: ["string", "null"] }
+        expectedPaymentId: { type: string }
+        expectedDate: { type: string, format: date }
+        amount: { type: string }
+        remainingAmount: { type: string }
+        sourceRecordIds: { type: array, items: { type: string } }
+        message: { type: string }
+    UntimedReimbursementPlan:
+      type: object
+      required: [opportunityId, opportunityName, allocationId, entityId, amount, sourceRecordIds]
+      properties:
+        opportunityId: { type: string }
+        opportunityName: { type: ["string", "null"] }
+        allocationId: { type: string }
+        entityId: { type: ["string", "null"] }
+        amount: { type: string }
+        sourceRecordIds: { type: array, items: { type: string } }
+    FundingArrivalsByMonth:
+      type: object
+      required: [category, months, unknownTiming, actionableItems, untimedReimbursementPlans]
+      properties:
+        category: { $ref: "#/components/schemas/FundraisingCategory" }
+        months: { type: array, items: { $ref: "#/components/schemas/FundingArrivalMonth" } }
+        unknownTiming: { type: array, items: { $ref: "#/components/schemas/FundingArrivalUnknownTiming" } }
+        actionableItems: { type: array, items: { $ref: "#/components/schemas/FundingArrivalAction" } }
+        untimedReimbursementPlans: { type: array, items: { $ref: "#/components/schemas/UntimedReimbursementPlan" } }
     LoanOrGrant:
       type: string
       enum: [loan, grant]

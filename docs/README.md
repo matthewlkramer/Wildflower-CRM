@@ -91,6 +91,9 @@ unverified and confirm against code before relying on it.
 - [`crm-to-accounting-workflow.md`](crm-to-accounting-workflow.md) — ratified
   CRM-native donation-coding workflow, team roles, accounting-export controls,
   and the retirement gate for historical coding-form staging.
+- [`funding-arrivals-current-status.md`](funding-arrivals-current-status.md) —
+  current status and definitions for monthly funding-arrival timing, payment
+  coverage, recipient scope, and reimbursement plans.
 
 ## Rules
 

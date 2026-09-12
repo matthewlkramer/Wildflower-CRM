@@ -16,12 +16,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  BadRequestResponse,
   DashboardSummary,
   FiscalYearBreakdown,
   FiscalYearReport,
+  FundingArrivalsByMonth,
   GetDashboardSummaryParams,
   GetFiscalYearBreakdownParams,
   GetFiscalYearReportParams,
+  GetFundingArrivalsByMonthParams,
   GetProjectionsByFyEntityParams,
   ProjectionsByFyEntity
 } from '../api.schemas';
@@ -110,6 +113,103 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDashboardSummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * Returns known dated installment arrivals for active, unarchived,
+non-writeoff pledges and opportunities. `pledge` rows are committed;
+`open` rows are prospective and expose both face and
+probability-weighted amounts. Payments are parent-gift totals consumed
+oldest-first across the schedule as a planning convention; this is not
+payment matching evidence. Expected-payment rows intentionally retain
+no recipient attribution. When entityId is supplied (comma-separated or
+repeated), a parent schedule is included once if any non-direct
+allocation overlaps the requested scope; installments are never split
+across recipients. Active writeoff children resolve and exclude their
+original, matching canonical writeoff behavior. Cost-reimbursement
+ceilings are not forecasts: only explicit dated schedule rows are
+timing entries, while annual allocation plans without a schedule are
+returned in untimedReimbursementPlans and never monthly totals.
+Projected close dates and allocation fiscal years are not payment timing.
+
+ * @summary Authenticated monthly funding-arrival timing forecast.
+ */
+export const getGetFundingArrivalsByMonthUrl = (params: GetFundingArrivalsByMonthParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/funding-arrivals-by-month?${stringifiedParams}` : `/api/funding-arrivals-by-month`
+}
+
+export const getFundingArrivalsByMonth = async (params: GetFundingArrivalsByMonthParams, options?: RequestInit): Promise<FundingArrivalsByMonth> => {
+  
+  return customFetch<FundingArrivalsByMonth>(getGetFundingArrivalsByMonthUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetFundingArrivalsByMonthQueryKey = (params?: GetFundingArrivalsByMonthParams,) => {
+    return [
+    `/api/funding-arrivals-by-month`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getGetFundingArrivalsByMonthQueryOptions = <TData = Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError = ErrorType<BadRequestResponse>>(params: GetFundingArrivalsByMonthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFundingArrivalsByMonthQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFundingArrivalsByMonth>>> = ({ signal }) => getFundingArrivalsByMonth(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFundingArrivalsByMonthQueryResult = NonNullable<Awaited<ReturnType<typeof getFundingArrivalsByMonth>>>
+export type GetFundingArrivalsByMonthQueryError = ErrorType<BadRequestResponse>
+
+
+/**
+ * @summary Authenticated monthly funding-arrival timing forecast.
+ */
+
+export function useGetFundingArrivalsByMonth<TData = Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError = ErrorType<BadRequestResponse>>(
+ params: GetFundingArrivalsByMonthParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFundingArrivalsByMonthQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

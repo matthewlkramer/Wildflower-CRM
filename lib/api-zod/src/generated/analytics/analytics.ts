@@ -70,6 +70,74 @@ export const GetDashboardSummaryResponse = zod.object({
 })
 
 /**
+ * Returns known dated installment arrivals for active, unarchived,
+non-writeoff pledges and opportunities. `pledge` rows are committed;
+`open` rows are prospective and expose both face and
+probability-weighted amounts. Payments are parent-gift totals consumed
+oldest-first across the schedule as a planning convention; this is not
+payment matching evidence. Expected-payment rows intentionally retain
+no recipient attribution. When entityId is supplied (comma-separated or
+repeated), a parent schedule is included once if any non-direct
+allocation overlaps the requested scope; installments are never split
+across recipients. Active writeoff children resolve and exclude their
+original, matching canonical writeoff behavior. Cost-reimbursement
+ceilings are not forecasts: only explicit dated schedule rows are
+timing entries, while annual allocation plans without a schedule are
+returned in untimedReimbursementPlans and never monthly totals.
+Projected close dates and allocation fiscal years are not payment timing.
+
+ * @summary Authenticated monthly funding-arrival timing forecast.
+ */
+export const GetFundingArrivalsByMonthQueryParams = zod.object({
+  "entityId": zod.array(zod.coerce.string()).optional().describe('Optional recipient entity IDs. Accepts comma-separated or repeated\nvalues. Scope selects a parent schedule once; it does not attribute\nor prorate an installment to an individual recipient.\n'),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Funding track: revenue (grants and other non-loans) or loan_capital.')
+})
+
+export const getFundingArrivalsByMonthResponseMonthsItemMonthRegExp = new RegExp('^[0-9]{4}-[0-9]{2}$');
+
+
+export const GetFundingArrivalsByMonthResponse = zod.object({
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
+  "months": zod.array(zod.object({
+  "month": zod.string().regex(getFundingArrivalsByMonthResponseMonthsItemMonthRegExp),
+  "committedAmount": zod.string(),
+  "prospectiveAmount": zod.string(),
+  "prospectiveWeightedAmount": zod.string(),
+  "sourceRecordIds": zod.array(zod.string())
+})),
+  "unknownTiming": zod.array(zod.object({
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
+  "status": zod.enum(['pledge', 'open']),
+  "opportunityId": zod.string(),
+  "opportunityName": zod.string().nullable(),
+  "amount": zod.string(),
+  "remainingAmount": zod.string(),
+  "sourceRecordIds": zod.array(zod.string()),
+  "message": zod.string()
+})),
+  "actionableItems": zod.array(zod.object({
+  "type": zod.enum(['overdue', 'missing_timing', 'missing_amount', 'schedule_discrepancy']),
+  "category": zod.enum(['revenue', 'loan_capital']).describe('Analytics\/track TOKEN vocabulary only (revenue vs loan-capital track).\nUsed as a derived bucket label on analytics rows and as a filter token;\nevery value is derived server-side from the authoritative `loan_or_grant`\nflag (loan → `loan_capital`, grant → `revenue`). The legacy persisted\ncolumns of the same name are @deprecated and no longer written or\nreturned.\n'),
+  "opportunityId": zod.string(),
+  "opportunityName": zod.string().nullable(),
+  "expectedPaymentId": zod.string().optional(),
+  "expectedDate": zod.string().date().optional(),
+  "amount": zod.string().optional(),
+  "remainingAmount": zod.string().optional(),
+  "sourceRecordIds": zod.array(zod.string()),
+  "message": zod.string()
+})),
+  "untimedReimbursementPlans": zod.array(zod.object({
+  "opportunityId": zod.string(),
+  "opportunityName": zod.string().nullable(),
+  "allocationId": zod.string(),
+  "entityId": zod.string().nullable(),
+  "amount": zod.string(),
+  "sourceRecordIds": zod.array(zod.string())
+}))
+})
+
+/**
  * Returns the shared allocation-grain forecast for each (grantYear, entityId,
 category) bucket. `receivedGoalCredit` is received gift allocation credit;
 `unpaidCommitment` and `unpaidCommitmentWeighted` are face and

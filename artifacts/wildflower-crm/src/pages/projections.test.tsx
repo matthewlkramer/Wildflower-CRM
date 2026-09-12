@@ -10,6 +10,9 @@ const api = vi.hoisted(() => ({
   calls: [] as Array<Record<string, unknown> | undefined>,
   revenueData: null as Record<string, unknown> | null,
   loanData: null as Record<string, unknown> | null,
+  monthlyCalls: [] as Array<Record<string, unknown> | undefined>,
+  monthlyRevenueData: null as Record<string, unknown> | null,
+  monthlyLoanData: null as Record<string, unknown> | null,
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -20,6 +23,20 @@ vi.mock("@workspace/api-client-react", () => ({
     return {
       data:
         params?.category === "loan_capital" ? api.loanData : api.revenueData,
+      isLoading: false,
+      isError: false,
+      error: null,
+    };
+  },
+  useGetFundingArrivalsByMonth: (
+    params: Record<string, unknown> | undefined,
+  ) => {
+    api.monthlyCalls.push(params);
+    return {
+      data:
+        params?.category === "loan_capital"
+          ? api.monthlyLoanData
+          : api.monthlyRevenueData,
       isLoading: false,
       isError: false,
       error: null,
@@ -37,6 +54,10 @@ vi.mock("@workspace/api-client-react", () => ({
   }),
   getGetProjectionsByFyEntityQueryKey: (params: unknown) => [
     "projections",
+    params,
+  ],
+  getGetFundingArrivalsByMonthQueryKey: (params: unknown) => [
+    "monthly-cash",
     params,
   ],
   getListEntitiesQueryKey: () => ["entities"],
@@ -107,6 +128,7 @@ const revenueDiagnostics = [
 
 beforeEach(() => {
   api.calls.length = 0;
+  api.monthlyCalls.length = 0;
   api.revenueData = {
     rows: [
       row(currentFy, "recipient-a"),
@@ -143,6 +165,61 @@ beforeEach(() => {
         message: "Loan amount is missing.",
       },
     ],
+  };
+
+  api.monthlyRevenueData = {
+    category: "revenue",
+    months: [
+      {
+        month: "2024-01",
+        committedAmount: "1000",
+        prospectiveAmount: "2000",
+        prospectiveWeightedAmount: "1000",
+        sourceRecordIds: ["a", "b"],
+      },
+    ],
+    unknownTiming: [
+      {
+        category: "revenue",
+        status: "open",
+        opportunityId: "opp-unknown",
+        opportunityName: "Unknown Opp",
+        amount: "5000",
+        remainingAmount: "5000",
+        sourceRecordIds: ["c"],
+        message: "No payment dates.",
+      },
+    ],
+    actionableItems: [
+      {
+        type: "missing_amount",
+        category: "revenue",
+        opportunityId: "opp-action",
+        opportunityName: "Action Opp",
+        amount: "0",
+        remainingAmount: "0",
+        sourceRecordIds: ["d"],
+        message: "Missing amount in schedule.",
+      },
+    ],
+    untimedReimbursementPlans: [
+      {
+        opportunityId: "opp-reimb",
+        opportunityName: "Reimb Opp",
+        allocationId: "alloc-1",
+        entityId: "recipient-a",
+        amount: "10000",
+        sourceRecordIds: ["e"],
+      },
+    ],
+  };
+
+  api.monthlyLoanData = {
+    category: "loan_capital",
+    months: [],
+    unknownTiming: [],
+    actionableItems: [],
+    untimedReimbursementPlans: [],
   };
 });
 
@@ -278,5 +355,56 @@ describe("projections forecast distinctions", () => {
     expect(container.textContent).toContain("Loan-only detail");
     expect(container.textContent).not.toContain("Needs recipient");
     expect(container.textContent).not.toContain("Unused capacity");
+  });
+});
+
+describe("monthly cash outlook", () => {
+  it("renders the table, unknown timing, actionable items, and reimbursement plans", () => {
+    render();
+
+    expect(container.textContent).toContain("Monthly cash outlook");
+    expect(container.textContent).toContain("2024-01");
+    expect(container.textContent).toContain("$1,000"); // committed
+    expect(container.textContent).toContain("$2,000"); // prospective
+
+    // Check unknown
+    expect(container.textContent).toContain("Unknown timing");
+    expect(container.textContent).toContain("Unknown Opp");
+    expect(container.textContent).toContain("No payment dates.");
+
+    // Check actionable
+    expect(container.textContent).toContain("Needs attention");
+    expect(container.textContent).toContain("Action Opp");
+    expect(container.textContent).toContain("Missing amount in schedule.");
+    const editLinks = container.querySelectorAll('a[href^="/opportunities/"]');
+    expect(editLinks.length).toBeGreaterThan(0);
+
+    // Check reimbursement
+    expect(container.textContent).toContain("Untimed cost-reimbursement plans");
+    expect(container.textContent).toContain("Reimb Opp");
+    expect(container.textContent).toContain("Planned annual amount:");
+  });
+
+  it("sends request params and refetches on category switch", () => {
+    render();
+    expect(api.monthlyCalls.at(-1)).toEqual({
+      entityId: ["recipient-a"],
+      category: "revenue",
+    });
+
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="projections-category-loan_capital"]',
+        )!
+        .click();
+    });
+
+    expect(api.monthlyCalls.at(-1)).toEqual({
+      entityId: ["recipient-a"],
+      category: "loan_capital",
+    });
+    // Loan data is empty, table should show no data message
+    expect(container.textContent).toContain("No dated installments are recorded");
   });
 });

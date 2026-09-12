@@ -8,6 +8,7 @@ import {
   organizations,
   people,
   pledgeAllocations,
+  pledgeExpectedPayments,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { deriveGiftTypeExpr } from "./giftTypeDerived";
@@ -16,6 +17,77 @@ import { personDisplayNameSql as personNameSqlFor } from "./personNameSql";
 
 export const FORECAST_CATEGORIES = ["revenue", "loan_capital"] as const;
 export type ForecastCategory = (typeof FORECAST_CATEGORIES)[number];
+
+/** Return today's calendar date in the organization's Chicago timezone. */
+export function chicagoCalendarDate(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const year = parts.find((part) => part.type === "year")?.value ?? "0000";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
+
+/** Pure date-only comparison used by the funding-arrival overdue action. */
+export function isExpectedDateOverdue(
+  expectedDate: string,
+  today: string = chicagoCalendarDate(),
+): boolean {
+  return expectedDate < today;
+}
+
+export type FundingArrivalMonth = {
+  month: string;
+  committedAmount: string;
+  prospectiveAmount: string;
+  prospectiveWeightedAmount: string;
+  sourceRecordIds: string[];
+};
+
+export type FundingArrivalUnknownTiming = {
+  category: ForecastCategory;
+  status: "pledge" | "open";
+  opportunityId: string;
+  opportunityName: string | null;
+  amount: string;
+  remainingAmount: string;
+  sourceRecordIds: string[];
+  message: string;
+};
+
+export type FundingArrivalAction = {
+  type: "overdue" | "missing_timing" | "missing_amount" | "schedule_discrepancy";
+  category: ForecastCategory;
+  opportunityId: string;
+  opportunityName: string | null;
+  expectedPaymentId?: string;
+  expectedDate?: string;
+  amount?: string;
+  remainingAmount?: string;
+  sourceRecordIds: string[];
+  message: string;
+};
+
+export type UntimedReimbursementPlan = {
+  opportunityId: string;
+  opportunityName: string | null;
+  allocationId: string;
+  entityId: string | null;
+  amount: string;
+  sourceRecordIds: string[];
+};
+
+export type FundingArrivalsByMonth = {
+  category: ForecastCategory;
+  months: FundingArrivalMonth[];
+  unknownTiming: FundingArrivalUnknownTiming[];
+  actionableItems: FundingArrivalAction[];
+  untimedReimbursementPlans: UntimedReimbursementPlan[];
+};
 export type ForecastBucket = "received" | "committed" | "open";
 export type ForecastScope = {
   fiscalYearId: string | null;
@@ -329,6 +401,272 @@ export async function getGoalForecast(scope: ForecastScope): Promise<GoalForecas
     }];
   })) as Record<ForecastCategory, ForecastMetrics>;
   return { fiscalYearId: scope.fiscalYearId, receivedRows, committedRows, openRows, metrics };
+}
+
+/**
+ * Shared timing read model for the funding-arrivals API. Installments are
+ * deliberately kept at opportunity grain: expected payments have no
+ * recipient attribution, and parent gifts (not gift allocations) are the
+ * payment facts used to consume installments oldest-first.
+ */
+export async function getFundingArrivalsByMonth(
+  category: ForecastCategory,
+  entityIds: string[] = [],
+  today: string = chicagoCalendarDate(),
+): Promise<FundingArrivalsByMonth> {
+  const categoryPredicate = category === "loan_capital"
+    ? eq(opportunitiesAndPledges.loanOrGrant, "loan")
+    : sql`${opportunitiesAndPledges.loanOrGrant} IS DISTINCT FROM 'loan'`;
+  const activeWriteOffChild = sql`NOT EXISTS (
+    SELECT 1
+    FROM opportunities_and_pledges AS writeoff_child
+    WHERE writeoff_child.write_off_of_pledge_id = ${opportunitiesAndPledges.id}
+      AND writeoff_child.archived_at IS NULL
+      AND writeoff_child.is_write_off = true
+  )`;
+
+  const opportunities = await db
+    .select({
+      id: opportunitiesAndPledges.id,
+      name: opportunitiesAndPledges.name,
+      status: sql<"pledge" | "open">`${opportunitiesAndPledges.status}::text`,
+      winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
+      disbursementModel: opportunitiesAndPledges.disbursementModel,
+      loanOrGrant: opportunitiesAndPledges.loanOrGrant,
+    })
+    .from(opportunitiesAndPledges)
+    .where(and(
+      isNull(opportunitiesAndPledges.archivedAt),
+      inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
+      eq(opportunitiesAndPledges.isWriteOff, false),
+      activeWriteOffChild,
+      categoryPredicate,
+    ));
+
+  const result: FundingArrivalsByMonth = {
+    category,
+    months: [],
+    unknownTiming: [],
+    actionableItems: [],
+    untimedReimbursementPlans: [],
+  };
+  if (opportunities.length === 0) return result;
+  const opportunityIds = opportunities.map((row) => row.id);
+
+  const [allocations, schedules, payments] = await Promise.all([
+    db.select({
+      id: pledgeAllocations.id,
+      opportunityId: pledgeAllocations.pledgeOrOpportunityId,
+      entityId: pledgeAllocations.entityId,
+      amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
+      reimbursementType: pledgeAllocations.reimbursementType,
+    }).from(pledgeAllocations).where(inArray(
+      pledgeAllocations.pledgeOrOpportunityId,
+      opportunityIds,
+    )),
+    db.select({
+      id: pledgeExpectedPayments.id,
+      opportunityId: pledgeExpectedPayments.pledgeOrOpportunityId,
+      expectedDate: sql<string>`${pledgeExpectedPayments.expectedDate}::text`,
+      amount: sql<string | null>`${pledgeExpectedPayments.amount}::text`,
+    }).from(pledgeExpectedPayments).where(inArray(
+      pledgeExpectedPayments.pledgeOrOpportunityId,
+      opportunityIds,
+    )),
+    db.select({
+      id: giftsAndPayments.id,
+      opportunityId: giftsAndPayments.opportunityId,
+      amount: sql<string | null>`${giftsAndPayments.amount}::text`,
+      dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
+    }).from(giftsAndPayments).where(and(
+      inArray(giftsAndPayments.opportunityId, opportunityIds),
+      isNull(giftsAndPayments.archivedAt),
+    )),
+  ]);
+
+  const selected = new Set(opportunityIds);
+  if (entityIds.length > 0) {
+    // A schedule is not split by recipient. A parent is selected once when
+    // at least one non-direct allocation overlaps the requested scope.
+    const overlapping = new Set(
+      allocations
+        .filter((row) =>
+          row.entityId != null &&
+          entityIds.includes(row.entityId) &&
+          row.reimbursementType !== "direct"
+        )
+        .map((row) => row.opportunityId),
+    );
+    for (const id of opportunityIds) {
+      if (!overlapping.has(id)) selected.delete(id);
+    }
+  }
+
+  const monthByKey = new Map<string, FundingArrivalMonth>();
+  const unknownByOpportunity = new Map<string, FundingArrivalUnknownTiming>();
+  const actions: FundingArrivalAction[] = [];
+  const money = (value: string | null | undefined) => num(value);
+  const appendMonth = (
+    month: string,
+    opp: typeof opportunities[number],
+    amount: number,
+    sourceRecordId?: string,
+  ) => {
+    if (amount <= 0) return;
+    const existing = monthByKey.get(month) ?? {
+      month,
+      committedAmount: "0",
+      prospectiveAmount: "0",
+      prospectiveWeightedAmount: "0",
+      sourceRecordIds: [],
+    };
+    if (opp.status === "pledge") {
+      existing.committedAmount = decimal(num(existing.committedAmount) + amount);
+    } else {
+      existing.prospectiveAmount = decimal(num(existing.prospectiveAmount) + amount);
+      existing.prospectiveWeightedAmount = decimal(
+        num(existing.prospectiveWeightedAmount) +
+        amount * money(opp.winProbability),
+      );
+    }
+    if (!existing.sourceRecordIds.includes(opp.id)) existing.sourceRecordIds.push(opp.id);
+    if (sourceRecordId != null && !existing.sourceRecordIds.includes(sourceRecordId)) {
+      existing.sourceRecordIds.push(sourceRecordId);
+    }
+    monthByKey.set(month, existing);
+  };
+
+  for (const opp of opportunities) {
+    if (!selected.has(opp.id)) continue;
+    const oppAllocations = allocations.filter((row) =>
+      row.opportunityId === opp.id &&
+      row.reimbursementType !== "direct",
+    );
+    // Scope only determines whether the parent schedule is included. Amounts
+    // remain parent totals and are never prorated to a recipient.
+    const total = oppAllocations.reduce((sum, row) => sum + money(row.amount), 0);
+    const oppPayments = payments
+      .filter((row) => row.opportunityId === opp.id)
+      .sort((a, b) => (a.dateReceived ?? "").localeCompare(b.dateReceived ?? "") || a.id.localeCompare(b.id));
+    const paid = oppPayments.reduce((sum, row) => sum + money(row.amount), 0);
+    const unpaid = Math.max(0, total - paid);
+    const oppSchedules = schedules
+      .filter((row) => row.opportunityId === opp.id)
+      .sort((a, b) => a.expectedDate.localeCompare(b.expectedDate) || a.id.localeCompare(b.id));
+    const isReimbursement = opp.disbursementModel === "cost_reimbursement";
+    const knownSchedules = oppSchedules.filter((row) => row.amount != null);
+    const knownScheduledTotal = knownSchedules.reduce((sum, row) => sum + money(row.amount), 0);
+
+    if (isReimbursement && oppSchedules.length === 0) {
+      for (const allocation of oppAllocations) {
+        if (allocation.amount == null) continue;
+        result.untimedReimbursementPlans.push({
+          opportunityId: opp.id,
+          opportunityName: opp.name,
+          allocationId: allocation.id,
+          entityId: allocation.entityId,
+          amount: allocation.amount,
+          sourceRecordIds: [opp.id, allocation.id],
+        });
+      }
+      continue;
+    }
+    if (!isReimbursement && oppSchedules.length === 0 && unpaid > 0) {
+      actions.push({
+        type: "missing_timing",
+        category,
+        opportunityId: opp.id,
+        opportunityName: opp.name,
+        remainingAmount: decimal(unpaid),
+        sourceRecordIds: [opp.id],
+        message: "No installment timing is recorded for the remaining unpaid commitment.",
+      });
+      unknownByOpportunity.set(opp.id, {
+        category,
+        status: opp.status,
+        opportunityId: opp.id,
+        opportunityName: opp.name,
+        amount: decimal(total),
+        remainingAmount: decimal(unpaid),
+        sourceRecordIds: [opp.id],
+        message: "Remaining funding has no expected-payment date.",
+      });
+      continue;
+    }
+    if (oppSchedules.length === 0) continue;
+
+    // A parent payment is consumed at most once across the whole schedule.
+    let paymentRemaining = paid;
+    for (const schedule of oppSchedules) {
+      if (schedule.amount == null) {
+        const unknown = unknownByOpportunity.get(opp.id) ?? {
+          category,
+          status: opp.status,
+          opportunityId: opp.id,
+          opportunityName: opp.name,
+          amount: decimal(total),
+          remainingAmount: decimal(unpaid),
+          sourceRecordIds: [opp.id],
+          message: "One or more expected-payment dates have no known amount.",
+        };
+        if (!unknown.sourceRecordIds.includes(schedule.id)) {
+          unknown.sourceRecordIds.push(schedule.id);
+        }
+        unknownByOpportunity.set(opp.id, unknown);
+        if (!isReimbursement) {
+          actions.push({
+            type: "missing_amount",
+            category,
+            opportunityId: opp.id,
+            opportunityName: opp.name,
+            expectedPaymentId: schedule.id,
+            expectedDate: schedule.expectedDate,
+            sourceRecordIds: [opp.id, schedule.id],
+            message: "An expected-payment date is recorded, but its amount is unknown.",
+          });
+        }
+        continue;
+      }
+      const scheduledAmount = money(schedule.amount);
+      const allocated = Math.min(paymentRemaining, Math.max(0, scheduledAmount));
+      paymentRemaining = Math.max(0, paymentRemaining - allocated);
+      const remaining = Math.max(0, scheduledAmount - allocated);
+      if (remaining > 0) {
+        appendMonth(schedule.expectedDate.slice(0, 7), opp, remaining, schedule.id);
+      }
+      if (!isReimbursement && remaining > 0 && isExpectedDateOverdue(schedule.expectedDate, today)) {
+        actions.push({
+          type: "overdue",
+          category,
+          opportunityId: opp.id,
+          opportunityName: opp.name,
+          expectedPaymentId: schedule.id,
+          expectedDate: schedule.expectedDate,
+          amount: schedule.amount,
+          remainingAmount: decimal(remaining),
+          sourceRecordIds: [opp.id, schedule.id],
+          message: "This expected installment is past due and remains unpaid.",
+        });
+      }
+    }
+    if (!isReimbursement && Math.abs(knownScheduledTotal - unpaid) > 0.0000001) {
+      actions.push({
+        type: "schedule_discrepancy",
+        category,
+        opportunityId: opp.id,
+        opportunityName: opp.name,
+        amount: decimal(knownScheduledTotal),
+        remainingAmount: decimal(unpaid),
+        sourceRecordIds: [opp.id, ...oppSchedules.map((row) => row.id)],
+        message: "The known installment amounts do not reconcile to the unpaid commitment balance.",
+      });
+    }
+  }
+
+  for (const unknown of unknownByOpportunity.values()) result.unknownTiming.push(unknown);
+  result.months = Array.from(monthByKey.values()).sort((a, b) => a.month.localeCompare(b.month));
+  result.actionableItems = actions;
+  return result;
 }
 
 /**

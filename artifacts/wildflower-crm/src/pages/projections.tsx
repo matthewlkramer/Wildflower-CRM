@@ -2,15 +2,18 @@ import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetProjectionsByFyEntity,
+  useGetFundingArrivalsByMonth,
   useListEntities,
   useListFiscalYears,
   getGetProjectionsByFyEntityQueryKey,
+  getGetFundingArrivalsByMonthQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
   type FundraisingCategory,
   type ProjectionByFyEntityRow,
   type ProjectionCombinedFyRow,
   type ProjectionForecastDiagnostic,
+  type GetFundingArrivalsByMonthParams,
 } from "@workspace/api-client-react";
 import {
   currentFiscalYearEndYear,
@@ -49,6 +52,17 @@ export default function Projections() {
   const proj = useGetProjectionsByFyEntity(projParams, {
     query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
+
+  const monthlyParams: GetFundingArrivalsByMonthParams = useMemo(
+    () => ({
+      category,
+      ...(globalEntityIds.length > 0
+        ? { entityId: [...globalEntityIds].sort() }
+        : {}),
+    }),
+    [globalEntityIds, category],
+  );
+
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
   });
@@ -149,6 +163,7 @@ export default function Projections() {
             key={c.value}
             type="button"
             data-testid={`projections-category-${c.value}`}
+            aria-pressed={category === c.value}
             onClick={() => setCategory(c.value)}
             className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
               category === c.value
@@ -238,7 +253,221 @@ export default function Projections() {
         </p>
       ) : null}
       <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
+
+      {monthlyParams && <MonthlyCashOutlook params={monthlyParams} />}
     </div>
+  );
+}
+
+function MonthlyCashOutlook({
+  params,
+}: {
+  params: GetFundingArrivalsByMonthParams;
+}) {
+  const query = useGetFundingArrivalsByMonth(params, {
+    query: { queryKey: getGetFundingArrivalsByMonthQueryKey(params) },
+  });
+
+  if (query.isLoading) {
+    return (
+      <div className="mt-12 space-y-4">
+        <SkeletonRows cols={4} />
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div className="mt-12 text-destructive border-destructive border p-4 rounded-md">
+        Failed to load monthly cash outlook:{" "}
+        {query.error instanceof Error ? query.error.message : "Unknown error"}
+      </div>
+    );
+  }
+
+  if (!query.data) return null;
+
+  const {
+    months,
+    actionableItems,
+    unknownTiming,
+    untimedReimbursementPlans,
+  } = query.data;
+
+  return (
+    <section className="mt-12 space-y-6" data-testid="monthly-cash-outlook">
+      <div>
+        <h2 className="text-2xl font-serif font-bold text-foreground">
+          Monthly cash outlook
+        </h2>
+        <p
+          id="monthly-cash-outlook-description"
+          className="text-sm text-muted-foreground mt-1"
+        >
+          Scheduled installments are reduced by recorded payments in oldest-due-first
+          planning order, which is not evidence of a payment-to-installment match.
+          Recipient filters select parent records with matching allocations; they do
+          not split an installment between recipients.
+        </p>
+      </div>
+
+      {months.length > 0 ? (
+        <div className="rounded-md border bg-card overflow-x-auto">
+          <Table aria-describedby="monthly-cash-outlook-description">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Committed</TableHead>
+                <TableHead className="text-right">Prospective</TableHead>
+                <TableHead className="text-right">
+                  Prospective (Weighted)
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {months.map((m) => (
+                <TableRow key={m.month} data-testid={`row-monthly-${m.month}`}>
+                  <TableCell className="font-medium whitespace-nowrap">
+                    {m.month}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrency(m.committedAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrency(m.prospectiveAmount)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatCurrency(m.prospectiveWeightedAmount)}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      ) : (
+        <div className="rounded-md border bg-card p-6 text-center text-muted-foreground">
+          No dated installments are recorded for the selected scope.
+        </div>
+      )}
+
+      {actionableItems.length > 0 && (
+        <div
+          className="space-y-3 rounded-md border border-amber-300 bg-amber-50/50 p-4 dark:border-amber-900 dark:bg-amber-950/20"
+          data-testid="monthly-actionable"
+        >
+          <h3 className="font-serif text-lg font-semibold">Needs attention</h3>
+          <ul className="mt-2 grid gap-2 md:grid-cols-2">
+            {actionableItems.map((item, i) => (
+              <li
+                key={`${item.opportunityId}-${i}`}
+                className="rounded-md border bg-card p-2"
+              >
+                <Link
+                  href={`/opportunities/${item.opportunityId}`}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {item.opportunityName ?? item.opportunityId}
+                </Link>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  <div>{item.message}</div>
+                  <div className="mt-2">
+                    <Link
+                      href={`/opportunities/${item.opportunityId}`}
+                      className="text-primary hover:underline"
+                    >
+                      Edit schedule
+                    </Link>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {unknownTiming.length > 0 && (
+        <div
+          className="space-y-3 rounded-md border bg-card p-4"
+          data-testid="monthly-unknown"
+        >
+          <h3 className="font-serif text-lg font-semibold">Unknown timing</h3>
+          <p className="text-xs text-muted-foreground">
+            These active commitments and open asks have no recorded payment dates.
+          </p>
+          <ul className="mt-2 grid gap-2 md:grid-cols-2">
+            {unknownTiming.map((item, i) => (
+              <li
+                key={`${item.opportunityId}-${i}`}
+                className="rounded-md border p-2"
+              >
+                <Link
+                  href={`/opportunities/${item.opportunityId}`}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {item.opportunityName ?? item.opportunityId}
+                </Link>
+                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                  <div>{item.message}</div>
+                  <div className="flex justify-between">
+                    <span>Remaining amount:</span>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {formatCurrency(item.remainingAmount)}
+                    </span>
+                  </div>
+                  <div className="mt-1">
+                    <Link
+                      href={`/opportunities/${item.opportunityId}`}
+                      className="text-primary hover:underline"
+                    >
+                      Edit schedule
+                    </Link>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {untimedReimbursementPlans.length > 0 && (
+        <div
+          className="space-y-3 rounded-md border bg-card p-4"
+          data-testid="monthly-reimbursement"
+        >
+          <h3 className="font-serif text-lg font-semibold">
+            Untimed cost-reimbursement plans
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            These are annual planned amounts for cost-reimbursement awards, not
+            cash forecasts or award ceilings. Only explicitly dated drawdowns appear
+            above.
+          </p>
+          <ul className="mt-2 grid gap-2 md:grid-cols-2">
+            {untimedReimbursementPlans.map((item, i) => (
+              <li
+                key={`${item.opportunityId}-${item.allocationId}-${i}`}
+                className="rounded-md border p-2"
+              >
+                <Link
+                  href={`/opportunities/${item.opportunityId}`}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  {item.opportunityName ?? item.opportunityId}
+                </Link>
+                <div className="mt-1 space-y-1 text-xs text-muted-foreground">
+                  <div className="flex justify-between">
+                    <span>Planned annual amount:</span>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {formatCurrency(item.amount)}
+                    </span>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 

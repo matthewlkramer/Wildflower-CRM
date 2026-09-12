@@ -2,6 +2,10 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import { derivePledgePlanning } from "../lib/pledgePlanning";
+import {
+  chicagoCalendarDate,
+  isExpectedDateOverdue,
+} from "../lib/goalForecast";
 
 const RAW_DB_URL = process.env.DATABASE_URL;
 const HAS_DB =
@@ -57,6 +61,7 @@ let schema: {
   giftAllocations: Db["giftAllocations"];
   opportunitiesAndPledges: Db["opportunitiesAndPledges"];
   pledgeAllocations: Db["pledgeAllocations"];
+  pledgeExpectedPayments: Db["pledgeExpectedPayments"];
 };
 let eqFn: (typeof import("drizzle-orm"))["eq"];
 let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
@@ -73,6 +78,7 @@ function nextId(label: string): string {
 const giftIds: string[] = [];
 const giftAllocationIds = new Map<string, string>();
 const opportunityIds: string[] = [];
+const expectedPaymentIds: string[] = [];
 
 async function getJson(path: string): Promise<any> {
   const response = await fetch(`${baseUrl}${path}`);
@@ -141,6 +147,22 @@ async function insertPledgeAllocation(
   return id;
 }
 
+async function insertExpectedPayment(
+  opportunityId: string,
+  expectedDate: string,
+  amount: string | null,
+): Promise<string> {
+  const id = nextId("expected");
+  expectedPaymentIds.push(id);
+  await db.insert(schema.pledgeExpectedPayments).values({
+    id,
+    pledgeOrOpportunityId: opportunityId,
+    expectedDate,
+    amount,
+  });
+  return id;
+}
+
 beforeAll(async () => {
   if (!HAS_DB) return;
   const dbMod = await import("@workspace/db");
@@ -157,6 +179,7 @@ beforeAll(async () => {
     giftAllocations: dbMod.giftAllocations,
     opportunitiesAndPledges: dbMod.opportunitiesAndPledges,
     pledgeAllocations: dbMod.pledgeAllocations,
+    pledgeExpectedPayments: dbMod.pledgeExpectedPayments,
   };
   eqFn = drizzle.eq;
   inArrayFn = drizzle.inArray;
@@ -221,6 +244,11 @@ afterAll(async () => {
       .where(inArrayFn(schema.giftsAndPayments.id, giftIds));
   }
   if (opportunityIds.length) {
+    if (expectedPaymentIds.length) {
+      await db
+        .delete(schema.pledgeExpectedPayments)
+        .where(inArrayFn(schema.pledgeExpectedPayments.id, expectedPaymentIds));
+    }
     await db
       .delete(schema.pledgeAllocations)
       .where(
@@ -279,10 +307,154 @@ describe("pledge planning pre-award state", () => {
   });
 });
 
+describe("funding-arrival Chicago date boundaries", () => {
+  it("uses the Chicago calendar day, not the UTC day, for overdue comparisons", () => {
+    // 23:30 on June 30 in Chicago is already July 1 in UTC.
+    const lateChicago = new Date("2026-07-01T04:30:00.000Z");
+    expect(chicagoCalendarDate(lateChicago)).toBe("2026-06-30");
+    expect(isExpectedDateOverdue("2026-06-30", chicagoCalendarDate(lateChicago))).toBe(false);
+    expect(isExpectedDateOverdue("2026-06-29", chicagoCalendarDate(lateChicago))).toBe(true);
+
+    const julyFirstChicago = new Date("2026-07-01T05:00:00.000Z");
+    expect(chicagoCalendarDate(julyFirstChicago)).toBe("2026-07-01");
+    expect(isExpectedDateOverdue("2026-06-30", chicagoCalendarDate(julyFirstChicago))).toBe(true);
+  });
+});
+
 // prettier-ignore
 
 
 describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
+  it("reports monthly commitment/prospect timing, payment coverage, reimbursements, and scope", async () => {
+    const committedId = await insertOpportunity({
+      status: "pledge",
+      winProbability: "0.5000",
+      disbursementModel: "fixed_commitment",
+    });
+    await insertPledgeAllocation(committedId, {
+      subAmount: "100.00",
+      entityId: ENTITY_ID,
+    });
+    const committedFirst = await insertExpectedPayment(committedId, "2020-01-15", "60.00");
+    await insertExpectedPayment(committedId, "2020-02-15", "40.00");
+    // This payment only exercises installment coverage; leave it out of the
+    // annual-FY fixture that follows in this shared integration suite.
+    await insertGift("30.00", committedId, "30.00", ENTITY_ID, "grant", null);
+
+    const prospectiveId = await insertOpportunity({
+      status: "open",
+      winProbability: "0.2500",
+      disbursementModel: "fixed_commitment",
+    });
+    await insertPledgeAllocation(prospectiveId, {
+      subAmount: "100.00",
+      entityId: ENTITY_B_ID,
+    });
+    await insertExpectedPayment(prospectiveId, "2099-03-15", "100.00");
+    const prospectiveMissing = await insertExpectedPayment(prospectiveId, "2099-04-15", null);
+
+    const reimbursementId = await insertOpportunity({
+      status: "pledge",
+      disbursementModel: "cost_reimbursement",
+    });
+    const reimbursementAllocationId = await insertPledgeAllocation(reimbursementId, {
+      subAmount: "500.00",
+      entityId: ENTITY_ID,
+      reimbursementType: "indirect",
+    });
+    const untimedFixedId = await insertOpportunity({
+      status: "pledge",
+      disbursementModel: "fixed_commitment",
+    });
+    await insertPledgeAllocation(untimedFixedId, {
+      subAmount: "55.00",
+      entityId: ENTITY_ID,
+    });
+
+    const crossRecipientId = await insertOpportunity({
+      status: "pledge",
+      disbursementModel: "fixed_commitment",
+    });
+    await insertPledgeAllocation(crossRecipientId, { subAmount: "40.00", entityId: ENTITY_ID });
+    await insertPledgeAllocation(crossRecipientId, { subAmount: "60.00", entityId: ENTITY_B_ID });
+    await insertExpectedPayment(crossRecipientId, "2099-05-15", "100.00");
+
+    const archivedId = await insertOpportunity({
+      status: "pledge",
+      archivedAt: new Date(),
+    });
+    await insertPledgeAllocation(archivedId, { subAmount: "90.00", entityId: ENTITY_ID });
+    await insertExpectedPayment(archivedId, "2099-06-15", "90.00");
+
+    const lostId = await insertOpportunity({ status: "lost" });
+    await insertPledgeAllocation(lostId, { subAmount: "80.00", entityId: ENTITY_ID });
+    await insertExpectedPayment(lostId, "2099-07-15", "80.00");
+
+    const writeoffOriginalId = await insertOpportunity({ status: "pledge" });
+    await insertPledgeAllocation(writeoffOriginalId, { subAmount: "70.00", entityId: ENTITY_ID });
+    await insertExpectedPayment(writeoffOriginalId, "2099-08-15", "70.00");
+    await insertOpportunity({
+      status: "pledge",
+      isWriteOff: true,
+      writeOffOfPledgeId: writeoffOriginalId,
+    });
+
+    const all = await getJson(
+      `/api/funding-arrivals-by-month?category=revenue&entityId=${ENTITY_ID},${ENTITY_B_ID}`,
+    );
+    const committedMonth = all.months.find((row: any) => row.month === "2020-01");
+    expect(committedMonth.sourceRecordIds).toContain(committedId);
+    expectMoney(committedMonth.committedAmount, 30);
+    expectMoney(
+      all.months.find((row: any) => row.month === "2020-02").committedAmount,
+      40,
+    );
+    const prospectiveMonth = all.months.find((row: any) => row.month === "2099-03");
+    expectMoney(prospectiveMonth.prospectiveAmount, 100);
+    expectMoney(prospectiveMonth.prospectiveWeightedAmount, 25);
+    expect(all.actionableItems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "overdue",
+        opportunityId: committedId,
+        expectedPaymentId: committedFirst,
+      }),
+      expect.objectContaining({
+        type: "missing_amount",
+        opportunityId: prospectiveId,
+        expectedPaymentId: prospectiveMissing,
+      }),
+      expect.objectContaining({
+        type: "missing_timing",
+        opportunityId: untimedFixedId,
+        remainingAmount: "55",
+      }),
+    ]));
+    expect(all.untimedReimbursementPlans).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        opportunityId: reimbursementId,
+        allocationId: reimbursementAllocationId,
+        amount: "500.00",
+      }),
+    ]));
+    const allIds = [
+      ...all.months.flatMap((row: any) => row.sourceRecordIds),
+      ...all.unknownTiming.flatMap((row: any) => row.sourceRecordIds),
+      ...all.actionableItems.flatMap((row: any) => row.sourceRecordIds),
+    ];
+    expect(allIds).not.toContain(archivedId);
+    expect(allIds).not.toContain(lostId);
+    expect(allIds).not.toContain(writeoffOriginalId);
+
+    const scoped = await getJson(
+      `/api/funding-arrivals-by-month?category=revenue&entityId=${ENTITY_ID}`,
+    );
+    const scopedCross = scoped.months.find((row: any) => row.month === "2099-05");
+    expect(scopedCross.sourceRecordIds).toEqual(
+      expect.arrayContaining([crossRecipientId]),
+    );
+    expectMoney(scopedCross.committedAmount, 100);
+  }, 60_000);
+
   it("reconciles Dashboard, FY report, and Projections and reports intentional omissions", async () => {
     await db.insert(schema.fiscalYearEntityGoals).values({
       fiscalYearId: FY_ID,
