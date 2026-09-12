@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   useGetProjectionsByFyEntity,
@@ -9,6 +9,7 @@ import {
   getGetFundingArrivalsByMonthQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
+  type FundingArrivalItem,
   type FundraisingCategory,
   type ProjectionByFyEntityRow,
   type ProjectionCombinedFyRow,
@@ -284,11 +285,29 @@ export default function Projections() {
   );
 }
 
+const basisLabels = {
+  projected_close: "Projected close date",
+  explicit_payment: "Explicit payment date",
+  unscheduled: "Timing not estimated",
+  reimbursement_annual: "Annual reimbursement plan",
+};
+const money = (amount: string | null) =>
+  amount == null ? "Unknown" : formatCurrency(amount);
+const monthLabel = (month: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-01T12:00:00Z`));
+
 function MonthlyCashOutlook({
   params,
 }: {
   params: GetFundingArrivalsByMonthParams;
 }) {
+  const [status, setStatus] = useState("all");
+  const [basis, setBasis] = useState("all");
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const query = useGetFundingArrivalsByMonth(params, {
     query: { queryKey: getGetFundingArrivalsByMonthQueryKey(params) },
   });
@@ -303,21 +322,44 @@ function MonthlyCashOutlook({
       </p>
     );
   if (!query.data) return null;
-  const { months, items } = query.data;
-  const basisLabels = {
-    projected_close: "Projected close date",
-    explicit_payment: "Explicit payment date",
-    unscheduled: "Timing not estimated",
-    reimbursement_annual: "Annual reimbursement plan",
-  };
-  const money = (amount: string | null) =>
-    amount == null ? "Unknown" : formatCurrency(amount);
-  const monthLabel = (month: string) =>
-    new Intl.DateTimeFormat("en-US", {
-      month: "short",
-      year: "numeric",
-      timeZone: "UTC",
-    }).format(new Date(`${month}-01T12:00:00Z`));
+  const { items, asOfDate } = query.data;
+  const filtered = items.filter(
+    (item) =>
+      (status === "all" || item.status === status) &&
+      (basis === "all" || item.basis === basis),
+  );
+  const currentMonth = asOfDate.slice(0, 7);
+  const [year, month] = currentMonth.split("-").map(Number);
+  const months = Array.from({ length: 12 }, (_, index) =>
+    new Date(Date.UTC(year, month - 1 + index, 1)).toISOString().slice(0, 7),
+  );
+  const dated = filtered.filter(
+    (item) => item.expectedDate && item.basis !== "reimbursement_annual",
+  );
+  const older = dated.filter(
+    (item) => item.expectedDate!.slice(0, 7) < currentMonth,
+  );
+  const later = dated.filter(
+    (item) => item.expectedDate!.slice(0, 7) > months[11],
+  );
+  const undated = filtered.filter(
+    (item) => !item.expectedDate && item.basis !== "reimbursement_annual",
+  );
+  const annual = filtered.filter(
+    (item) => item.basis === "reimbursement_annual",
+  );
+  const toggle = (key: string) =>
+    setExpanded((previous) => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const groups = months.map((key) => ({
+    key,
+    label: monthLabel(key),
+    items: dated.filter((item) => item.expectedDate!.startsWith(key)),
+  }));
   return (
     <section className="space-y-5" data-testid="monthly-cash-outlook">
       <div>
@@ -330,28 +372,231 @@ function MonthlyCashOutlook({
           weighted by the existing opportunity probability. Payment dates are
           optional.
         </p>
+      </div>
+      <div className="flex flex-wrap gap-4">
+        <label className="grid gap-1 text-sm">
+          Funding status
+          <select
+            aria-label="Funding status"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+            className="rounded-md border bg-background px-3 py-2"
+          >
+            <option value="all">Committed and prospective</option>
+            <option value="pledge">Committed only</option>
+            <option value="open">Prospective only</option>
+          </select>
+        </label>
+        <label className="grid gap-1 text-sm">
+          Timing basis
+          <select
+            aria-label="Timing basis"
+            value={basis}
+            onChange={(event) => setBasis(event.target.value)}
+            className="rounded-md border bg-background px-3 py-2"
+          >
+            <option value="all">All timing sources</option>
+            <option value="projected_close">Estimated from close date</option>
+            <option value="explicit_payment">Explicit payment date</option>
+            <option value="unscheduled">Timing not estimated</option>
+            <option value="reimbursement_annual">
+              Annual reimbursement plan
+            </option>
+          </select>
+        </label>
+        {status !== "all" || basis !== "all" ? (
+          <button
+            type="button"
+            className="self-end rounded-md border px-3 py-2 text-sm"
+            onClick={() => {
+              setStatus("all");
+              setBasis("all");
+            }}
+          >
+            Clear filters
+          </button>
+        ) : null}
+      </div>
+      <div>
+        <h3 className="font-serif text-lg font-semibold">
+          Next 12 months · {monthLabel(currentMonth)} – {monthLabel(months[11])}
+        </h3>
         <p
-          className="text-xs text-muted-foreground mt-2"
+          className="text-xs text-muted-foreground mt-1"
           id="monthly-cash-outlook-description"
         >
-          Recorded payments cover the oldest installments first for planning;
-          this does not establish individual payment matches. Recipient filters
-          select whole records with matching allocations, so amounts may also
-          cover other recipients. Do not add separate recipient views together.
-          Past months show amounts still outstanding at their original expected
-          dates. Unknown amounts and undated rows are excluded from monthly
-          totals.
+          Includes the current month, based on the report date of{" "}
+          {formatDate(asOfDate)}. Expand a month to see its expectations. Totals
+          reflect the filters above and include only known amounts; unknown
+          amounts and probabilities remain visible in the details.
         </p>
       </div>
-      {months.length ? (
-        <div className="rounded-md border bg-card overflow-x-auto">
-          <Table
-            aria-label="Monthly expected arrivals"
-            aria-describedby="monthly-cash-outlook-description"
-          >
+      {filtered.length === 0 ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          No funding records match these filters.
+        </p>
+      ) : null}
+      <div className="rounded-md border bg-card overflow-x-auto">
+        <Table
+          aria-label="Monthly expected arrivals"
+          aria-describedby="monthly-cash-outlook-description"
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead>Expected month</TableHead>
+              <TableHead className="text-right">Committed</TableHead>
+              <TableHead className="text-right">Prospective</TableHead>
+              <TableHead className="text-right">
+                Prospective, weighted
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {groups.map((group) => (
+              <Fragment key={group.key}>
+                <TableRow data-testid={`row-monthly-${group.key}`}>
+                  <TableCell>
+                    <button
+                      type="button"
+                      className="text-left font-medium hover:underline disabled:text-muted-foreground disabled:no-underline"
+                      aria-expanded={expanded.has(group.key)}
+                      aria-controls={`arrival-details-${group.key}`}
+                      disabled={group.items.length === 0}
+                      onClick={() => toggle(group.key)}
+                    >
+                      {expanded.has(group.key) ? "▾" : "▸"} {group.label}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        ({group.items.length} expectations)
+                      </span>
+                    </button>
+                  </TableCell>
+                  <ArrivalTotalCells items={group.items} />
+                </TableRow>
+                {expanded.has(group.key) && group.items.length > 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      id={`arrival-details-${group.key}`}
+                      className="p-3 bg-muted/20"
+                    >
+                      <ArrivalDetails
+                        items={group.items}
+                        label={`${group.label} funding details`}
+                      />
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+              </Fragment>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+      <ArrivalGroup
+        groupKey="older"
+        title="Earlier outstanding amounts"
+        description={`Expected before ${monthLabel(currentMonth)}. Original dates are retained; these amounts are not moved into the next 12 months.`}
+        items={older}
+      />
+      <ArrivalGroup
+        groupKey="later"
+        title="Beyond the next 12 months"
+        description={`Expected after ${monthLabel(months[11])}.`}
+        items={later}
+      />
+      <ArrivalGroup
+        groupKey="undated"
+        title="Timing not estimated"
+        description="These records have no receipt date. Payment dates remain optional, and these amounts are not included in monthly totals."
+        items={undated}
+      />
+      <ArrivalGroup
+        groupKey="annual"
+        title="Annual reimbursement plans"
+        description="Gross annual plan context only; these amounts are not additional remaining cash and are excluded from receipt totals."
+        items={annual}
+        contextOnly
+      />
+      <p className="text-xs text-muted-foreground">
+        Recorded payments cover the oldest installments first for planning; this
+        does not establish individual payment matches. Recipient filters select
+        whole records with matching allocations, so amounts may also cover other
+        recipients. Do not add separate recipient views together.
+      </p>
+    </section>
+  );
+}
+
+// Sum the server's remaining and weighted amounts; never rederive probability,
+// payment coverage, writeoffs, or receipt dates in the browser.
+function ArrivalTotalCells({ items }: { items: FundingArrivalItem[] }) {
+  const sum = (status: FundingArrivalItem["status"], weighted = false) => {
+    const matching = items.filter((item) => item.status === status);
+    const values = matching.map((item) =>
+      weighted ? item.weightedAmount : item.amount,
+    );
+    const total =
+      values.reduce<number>(
+        (sum, value) =>
+          sum + (value == null ? 0 : Math.round(Number(value) * 100)),
+        0,
+      ) / 100;
+    return (
+      <TableCell className="text-right tabular-nums">
+        {formatCurrency(total)}
+        {values.some((value) => value == null) ? (
+          <span className="block text-xs text-muted-foreground">
+            Plus unknown amounts
+          </span>
+        ) : null}
+      </TableCell>
+    );
+  };
+  return (
+    <>
+      {sum("pledge")}
+      {sum("open")}
+      {sum("open", true)}
+    </>
+  );
+}
+
+function ArrivalGroup({
+  groupKey,
+  title,
+  description,
+  items,
+  contextOnly = false,
+}: {
+  groupKey: string;
+  title: string;
+  description: string;
+  items: FundingArrivalItem[];
+  contextOnly?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <section
+      className="rounded-md border bg-card p-4 space-y-3"
+      data-testid={`arrival-group-${groupKey}`}
+    >
+      <h3>
+        <button
+          type="button"
+          className="font-serif text-lg font-semibold hover:underline"
+          aria-expanded={open}
+          aria-controls={`arrival-group-details-${groupKey}`}
+          onClick={() => setOpen((previous) => !previous)}
+        >
+          {open ? "▾" : "▸"} {title} ({items.length} expectations)
+        </button>
+      </h3>
+      <p className="text-xs text-muted-foreground">{description}</p>
+      {!contextOnly ? (
+        <div className="overflow-x-auto">
+          <Table aria-label={`${title} totals`}>
             <TableHeader>
               <TableRow>
-                <TableHead>Expected month</TableHead>
                 <TableHead className="text-right">Committed</TableHead>
                 <TableHead className="text-right">Prospective</TableHead>
                 <TableHead className="text-right">
@@ -360,97 +605,97 @@ function MonthlyCashOutlook({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {months.map((month) => (
-                <TableRow
-                  key={month.month}
-                  data-testid={`row-monthly-${month.month}`}
-                >
-                  <TableCell>{monthLabel(month.month)}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money(month.committedAmount)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money(month.prospectiveAmount)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money(month.prospectiveWeightedAmount)}
-                  </TableCell>
-                </TableRow>
-              ))}
+              <TableRow>
+                <ArrivalTotalCells items={items} />
+              </TableRow>
             </TableBody>
           </Table>
         </div>
-      ) : (
-        <p className="rounded-md border bg-card p-4 text-muted-foreground">
-          No dated amounts are available for the selected scope. Any untimed
-          records appear below.
-        </p>
-      )}
-      <div className="rounded-md border bg-card overflow-x-auto">
-        <Table aria-label="Funding arrival details">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Opportunity / pledge</TableHead>
-              <TableHead>Expected receipt</TableHead>
-              <TableHead>Timing basis</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead className="text-right">Weighted amount</TableHead>
-              <TableHead>Notes</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {items.length ? (
-              items.map((item) => (
-                <TableRow key={item.id} data-testid={`arrival-${item.id}`}>
-                  <TableCell className="min-w-48">
-                    <Link
-                      className="font-medium hover:underline"
-                      href={`/opportunities/${item.opportunityId}#payment-plan`}
-                    >
-                      {item.opportunityName ?? "Unnamed opportunity"}
-                    </Link>
-                    <div className="text-xs text-muted-foreground">
-                      {item.status === "pledge" ? "Committed" : "Prospective"}
-                    </div>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {item.expectedDate
-                      ? formatDate(item.expectedDate)
-                      : "Not estimated"}
-                  </TableCell>
-                  <TableCell>{basisLabels[item.basis]}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money(item.amount)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {item.basis === "reimbursement_annual"
-                      ? "Not included"
-                      : money(item.weightedAmount)}
-                  </TableCell>
-                  <TableCell className="min-w-64 text-xs text-muted-foreground">
-                    {item.overdue && (
-                      <strong className="block text-amber-700 dark:text-amber-400">
-                        Overdue expected payment
-                      </strong>
-                    )}
-                    {item.note}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="text-center text-muted-foreground"
-                >
-                  No active funding records in this scope.
+      ) : null}
+      {open ? (
+        <div
+          id={`arrival-group-details-${groupKey}`}
+          className="overflow-x-auto"
+        >
+          <ArrivalDetails items={items} label={`${title} details`} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function ArrivalDetails({
+  items,
+  label,
+}: {
+  items: FundingArrivalItem[];
+  label: string;
+}) {
+  return (
+    <div className="rounded-md border bg-card overflow-x-auto">
+      <Table aria-label={label}>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Opportunity / pledge</TableHead>
+            <TableHead>Expected receipt</TableHead>
+            <TableHead>Timing basis</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">Weighted amount</TableHead>
+            <TableHead>Notes</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {items.length ? (
+            items.map((item) => (
+              <TableRow key={item.id} data-testid={`arrival-${item.id}`}>
+                <TableCell className="min-w-48">
+                  <Link
+                    className="font-medium hover:underline"
+                    href={`/opportunities/${item.opportunityId}#payment-plan`}
+                  >
+                    {item.opportunityName ?? "Unnamed opportunity"}
+                  </Link>
+                  <div className="text-xs text-muted-foreground">
+                    {item.status === "pledge" ? "Committed" : "Prospective"}
+                  </div>
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {item.expectedDate
+                    ? formatDate(item.expectedDate)
+                    : "Not estimated"}
+                </TableCell>
+                <TableCell>{basisLabels[item.basis]}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {money(item.amount)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {item.basis === "reimbursement_annual"
+                    ? "Not included"
+                    : money(item.weightedAmount)}
+                </TableCell>
+                <TableCell className="min-w-64 text-xs text-muted-foreground">
+                  {item.overdue && (
+                    <strong className="block text-amber-700 dark:text-amber-400">
+                      Overdue expected payment
+                    </strong>
+                  )}
+                  {item.note}
                 </TableCell>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-    </section>
+            ))
+          ) : (
+            <TableRow>
+              <TableCell
+                colSpan={6}
+                className="text-center text-muted-foreground"
+              >
+                No active funding records in this scope.
+              </TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 

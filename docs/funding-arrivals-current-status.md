@@ -73,3 +73,22 @@ lines remain excluded. No historical amount or date is written or backfilled.
 Target/scenario planning, concentration analysis, and follow-up workflow are
 intentionally deferred. This endpoint is a timing read model only; it does not
 add target, scenario, concentration, or follow-up semantics.
+
+## Report navigation
+
+The default receipt window is the report's current Chicago calendar month plus
+11 months, including empty months. The server's `asOfDate` anchors this window;
+it does not depend on the viewer's device date or timezone. Each populated month
+expands to show its underlying expectations, timing sources, and record links.
+
+Earlier outstanding dates, dates beyond the next 12 months, undated balances,
+and annual reimbursement context appear in separate collapsed groups. Earlier
+amounts retain their original dates and are not moved into the current window.
+Annual plans never enter receipt totals.
+
+Funding-status and timing-basis filters apply together to every group, its
+details, and its displayed totals. The browser only sums the server-provided
+remaining amounts and weighted amounts for the visible selection; it does not
+rederive probability, payment coverage, writeoffs, or dates. Unknown amounts and
+probabilities remain visible and mark incomplete totals. No filter writes data
+or creates cleanup tasks.
