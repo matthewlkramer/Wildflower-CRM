@@ -366,7 +366,7 @@ paths:
       tags: [cleanup-queue]
       summary: >-
         Flag a record for research — adds it to the Cleanup Queue with
-        reason_code='needs_research' (or 'cleanup_project' for standalone work). Idempotent against the
+        reason_code='needs_research'. Idempotent against the
         (target_type, target_id, reason_code) unique key: re-flagging an
         already-flagged record returns the existing item instead of creating a
         duplicate.
@@ -1411,12 +1411,12 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
-  # ─── In-app product feedback and implementation proposals ────────────────
+  # ─── In-app product feedback ─────────────────────────────────────────────
   /feedback:
     post:
       operationId: createAppFeedback
       tags: [feedback]
-      summary: Submit in-app product feedback and queue an AI implementation proposal.
+      summary: Submit in-app product feedback.
       requestBody:
         required: true
         content:
@@ -1424,7 +1424,7 @@ paths:
             schema: { $ref: "#/components/schemas/CreateAppFeedbackBody" }
       responses:
         "201":
-          description: Feedback accepted; proposal generation is queued.
+          description: Feedback accepted.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AppFeedbackItem" }
@@ -1433,7 +1433,7 @@ paths:
     get:
       operationId: listAppFeedback
       tags: [feedback]
-      summary: Admin-only feedback review queue with the current AI proposal.
+      summary: Admin-only feedback review queue.
       parameters:
         - name: status
           in: query
@@ -1487,63 +1487,6 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { description: Admin required }
         "404": { $ref: "#/components/responses/NotFound" }
-  /admin/feedback/{id}/proposal/revise:
-    post:
-      operationId: reviseAppFeedbackProposal
-      tags: [feedback]
-      summary: >-
-        Admin-only regeneration of an implementation proposal using free-text
-        human guidance. Guidance is retained and the proposal revision number
-        increments.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              { $ref: "#/components/schemas/ReviseAppFeedbackProposalBody" }
-      responses:
-        "200":
-          description: Regenerated feedback item and proposal.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { description: Admin required }
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          description: Proposal generation or implementation is already in progress.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
-  /admin/feedback/{id}/proposal/implement:
-    post:
-      operationId: implementAppFeedbackProposal
-      tags: [feedback]
-      summary: >-
-        Owner-only approval handoff from the admin queue. The authenticated
-        admin must match the single server-configured feedback implementer.
-        Marks the feedback item in progress and records who approved the current
-        proposal; the response includes the self-contained implementation brief
-        for a repository-aware coding agent. This endpoint does not edit or
-        publish application code itself.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses:
-        "200":
-          description: Implementation handoff recorded.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/AppFeedbackItem" }
-        "403":
-          description: >-
-            Admin access and the configured feedback-implementer identity are
-            required.
-        "404": { $ref: "#/components/responses/NotFound" }
-        "409":
-          description: Proposal is not ready or was already handed off.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ─── Email-intelligence admin console ──────────────────────────────────────
   /admin/email-intel/prompts:
@@ -1790,6 +1733,29 @@ paths:
       responses:
         "204": { description: Ignored }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /email-identity/match:
+    post:
+      operationId: matchEmailIdentity
+      tags: [email-proposals, correspondents]
+      summary: Attach an observed email to an existing or newly-created person.
+      description: >-
+        Shared identity workflow for bounce proposals and unmatched
+        correspondents. A hard-bounce invalidation is explicit and is never
+        implied by selecting a person; soft bounces cannot invalidate an email.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MatchEmailIdentityBody" }
+      responses:
+        "200":
+          description: Matched
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MatchEmailIdentityResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Email is already attached to another record. }
 
   /healthz:
     get:
@@ -3877,13 +3843,16 @@ paths:
               partially_paid   — status=pledge with >$0 received (a pledge fully
                                  paid flips to cash_in, so status=pledge + paid>0
                                  means paid < awarded). No expected-payment-date
+              overdue_fixed_close — open opportunities whose fixed projected close
+                                    date is more than one year in the past. Rolling
+                                    months-out estimates are excluded.
                                  field exists, so rows are ordered by projected
                                  close date (oldest first) as a best-effort
                                  "overdue" proxy.
           schema:
             {
               type: string,
-              enum: [verbal_no_letter, committed_unpaid, partially_paid],
+              enum: [verbal_no_letter, committed_unpaid, partially_paid, overdue_fixed_close],
             }
         - name: type
           in: query
@@ -5778,6 +5747,19 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /meeting-notes/{id}/generate-next-steps:
+    post:
+      operationId: generateMeetingNextSteps
+      tags: [meeting-notes]
+      summary: Generate editable task proposals from a saved meeting note.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Editable proposals; no tasks are created by this endpoint.
+          content:
+            application/json:
+              { schema: { $ref: "#/components/schemas/MeetingNextStepsResult" } }
         "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Saved views (per-list-page filter+sort presets) ───────────────────────
@@ -12400,41 +12382,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/NewsletterContactList" }
 
-  /people/{id}/newsletter-preferences:
-    get:
-      operationId: listNewsletterPreferences
-      tags: [people]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      responses:
-        "200":
-          description: Newsletter preference history and derived audience status.
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data, newsletter, unsubscribedToNewsletter]
-                properties:
-                  data: { type: array, items: { $ref: "#/components/schemas/NewsletterPreferenceEvent" } }
-                  newsletter: { type: boolean }
-                  unsubscribedToNewsletter: { type: boolean }
-    post:
-      operationId: createNewsletterPreferenceEvent
-      tags: [people]
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/CreateNewsletterPreferenceEventBody" }
-      responses:
-        "201":
-          description: Preference evidence recorded. Only later affirmative consent can lift an opt-out.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/NewsletterPreferenceEvent" }
-
   /people/{id}/newsletter-engagement:
     get:
       operationId: listPersonNewsletterEngagement
@@ -12462,6 +12409,22 @@ paths:
         - { name: opened, in: query, schema: { type: boolean } }
         - { name: clicked, in: query, schema: { type: boolean } }
         - { name: linked, in: query, schema: { type: boolean } }
+        - name: individualPriority
+          in: query
+          description: Filter linked individual recipients by their current solicitation priority.
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Priority" }
+          style: form
+          explode: true
+        - name: organizationPriority
+          in: query
+          description: Filter linked organization recipients by their current solicitation priority.
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/Priority" }
+          style: form
+          explode: true
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -12774,35 +12737,9 @@ components:
             e_10000_plus,
           ],
       }
-    NewsletterPreferenceEvent:
-      type: object
-      required: [id, personId, eventType, recordedAt, source, sourceKey, evidence]
-      properties:
-        id: { type: string }
-        personId: { type: string }
-        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out, legacy_selected, legacy_opted_out] }
-        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event time if known. Never substitute import time. }
-        recordedAt: { type: string, format: date-time }
-        source: { type: string }
-        sourceKey: { type: string }
-        sourceUrl: { type: string, nullable: true }
-        evidence: { type: string }
-        recordedByUserId: { type: string, nullable: true }
-    CreateNewsletterPreferenceEventBody:
-      type: object
-      required: [eventType, source, evidence, requestId]
-      properties:
-        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out] }
-        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event date if known. Undated consent cannot lift an opt-out. }
-        source: { type: string, minLength: 1, maxLength: 200 }
-        sourceUrl: { type: string, maxLength: 2000, nullable: true }
-        evidence: { type: string, minLength: 1, maxLength: 4000 }
-        requestId: { type: string, minLength: 1, maxLength: 100, description: Stable unique ID for retrying this event submission. }
-
     CapacityRating:
       {
         type: string,
-        description: "Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.",
         enum:
           [
             tier_1k_10k,
@@ -12828,10 +12765,7 @@ components:
             "1-hostile",
           ],
       }
-    Priority:
-      type: string
-      enum: [top, high, medium, low]
-      description: Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.
+    Priority: { type: string, enum: [top, high, medium, low] }
     StrategicAlignment: { type: string, enum: [high, medium, low] }
     ActiveStatus: { type: string, enum: [active, defunct, spenddown] }
     OrganizationType:
@@ -13810,6 +13744,7 @@ components:
           verbalNoLetter,
           committedUnpaid,
           partiallyPaid,
+          overdueFixedClose,
           stagedUnprocessed,
           giftsMissingAllocations,
         ]
@@ -13820,6 +13755,8 @@ components:
         committedUnpaid: { type: integer }
         # pledges?worklist=partially_paid
         partiallyPaid: { type: integer }
+        # opportunities?worklist=overdue_fixed_close
+        overdueFixedClose: { type: integer }
         # staged_payments + stripe_staged_charges still status=pending (links to
         # the reconciliation workbench). Stripe charges carry no entity column,
         # so they are not entity-scoped.
@@ -13906,6 +13843,16 @@ components:
           allOf: [{ $ref: "#/components/schemas/OpportunityStage" }]
           nullable: true
 
+    TopPriorityGiftOrPledgeSummary:
+      type: object
+      required: [kind, amount, date, paymentStatus, opportunityId]
+      properties:
+        kind: { type: string, enum: [gift, pledge] }
+        amount: { type: string }
+        date: { type: string, nullable: true }
+        paymentStatus: { type: string, nullable: true }
+        opportunityId: { type: string, nullable: true }
+
     TopPriorityOrganization:
       type: object
       required:
@@ -13934,6 +13881,8 @@ components:
           items: { $ref: "#/components/schemas/TopPriorityAffiliate" }
         lastGiftDate: { type: string, nullable: true }
         lastGiftAmount: { type: string, nullable: true }
+        giftOrPledgeSummary:
+          { $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary", nullable: true }
 
     TopPriorityPerson:
       type: object
@@ -13962,6 +13911,8 @@ components:
           items: { $ref: "#/components/schemas/TopPriorityOpenAsk" }
         lastGiftDate: { type: string, nullable: true }
         lastGiftAmount: { type: string, nullable: true }
+        giftOrPledgeSummary:
+          { $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary", nullable: true }
 
     TopPriorities:
       type: object
@@ -14053,6 +14004,7 @@ components:
             description: "Parent opp's win_probability (0–1, numeric string).",
           }
         projectedCloseDate: { type: string, format: date, nullable: true }
+        projectedCloseMonthsOut: { type: integer, nullable: true, readOnly: true }
         organizationId: { type: string, nullable: true }
         organizationName: { type: string, nullable: true }
         householdId: { type: string, nullable: true }
@@ -14191,6 +14143,11 @@ components:
             description: "Parent opp's win_probability (0–1, numeric string).",
           }
         projectedCloseDate: { type: string, format: date, nullable: true }
+        projectedCloseMonthsOut:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: "Rolling months-from-now timing for open or committed opportunity rows; null for a specific date."
         pledgedAmount:
           {
             type: string,
@@ -14331,11 +14288,7 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
-        primaryEmail:
-          type: string
-          nullable: true
-          readOnly: true
-          description: Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.
+        orgEmail: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
         website: { type: string, nullable: true }
@@ -14359,7 +14312,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds: { type: array, items: { type: string }, nullable: true }
         parentOrganizationId: { type: string, nullable: true }
         anonymous:
           {
@@ -14454,7 +14407,7 @@ components:
         pagination: { $ref: "#/components/schemas/Pagination" }
     RelationshipSummary:
       type: object
-      required: [summary, generatedAt]
+      required: [summary, nextSteps, generatedAt]
       description: >
         On-demand AI snapshot of where a donor relationship stands. Never
         persisted — regenerated from recent CRM activity each time it's
@@ -14465,6 +14418,11 @@ components:
             type: string,
             description: "2–4 sentence plain-text state of the relationship. '(no summary available)' when the model call fails or there is no activity to summarize.",
           }
+        nextSteps:
+          type: array
+          maxItems: 3
+          items: { type: string }
+          description: "Evidence-specific suggested actions, separate from the narrative."
         generatedAt: { type: string, format: date-time }
     CreateOrganizationBody:
       type: object
@@ -14487,6 +14445,7 @@ components:
         historicalNames: { type: array, items: { type: string } }
         details: { type: string }
         emailDomain: { type: string }
+        orgEmail: { type: string }
         ownerUserId: { type: string }
         tags: { type: string }
         website: { type: string }
@@ -14496,7 +14455,7 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds: { type: array, items: { type: string } }
         parentOrganizationId: { type: string }
         x: { type: string }
         linkedin: { type: string }
@@ -14540,6 +14499,7 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
+        orgEmail: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
         website: { type: string, nullable: true }
@@ -14563,7 +14523,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds: { type: array, items: { type: string }, nullable: true }
         parentOrganizationId: { type: string, nullable: true }
         x: { type: string, nullable: true }
         linkedin: { type: string, nullable: true }
@@ -14628,6 +14588,7 @@ components:
         id: { type: string }
         amount: { type: string }
         dateReceived: { type: string, format: date, nullable: true }
+        kind: { type: string, enum: [gift, pledge] }
     GivingRelationship:
       type: object
       required:
@@ -14905,7 +14866,7 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds: { type: array, items: { type: string }, nullable: true }
         newsletter: { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf: { type: string, nullable: true }
@@ -15058,8 +15019,9 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
-        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
+        regionIds: { type: array, items: { type: string } }
+        newsletter: { type: boolean }
+        unsubscribedToNewsletter: { type: boolean }
         childrenAtWf: { type: string }
         meetingLink: { type: string }
         quickbooksCustomerId: { type: string }
@@ -15104,8 +15066,9 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
-        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
+        regionIds: { type: array, items: { type: string }, nullable: true }
+        newsletter: { type: boolean }
+        unsubscribedToNewsletter: { type: boolean }
         childrenAtWf: { type: string, nullable: true }
         meetingLink: { type: string, nullable: true }
         assistantPersonId: { type: string, nullable: true }
@@ -15608,6 +15571,17 @@ components:
             nullable: true,
           }
         projectedCloseDate: { type: string, format: date, nullable: true }
+        projectedCloseMonthsOut:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: "Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other."
+        effectiveProjectedCloseDate:
+          type: string
+          format: date
+          nullable: true
+          readOnly: true
+          description: "Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month's last day."
         actualCompletionDate: { type: string, format: date, nullable: true }
         winProbability: { type: string, nullable: true }
         stage:
@@ -15678,8 +15652,8 @@ components:
         # Used by the grants calendar's contact column.
         primaryContactPersonName:
           { type: string, nullable: true, readOnly: true }
-        # Fiscal-year slug derived from projectedCloseDate (FY ends Jun 30
-        # America/Chicago). e.g. a projectedCloseDate of 2026-08-15 →
+        # Fiscal-year slug derived from the effective projected close date (FY ends Jun 30
+        # America/Chicago). e.g. an effective close date of 2026-08-15 →
         # "FY27". Null when projectedCloseDate is null.
         fiscalYear: { type: string, nullable: true, readOnly: true }
         # Distinct grant_year values across pledge_allocations for this
@@ -15866,6 +15840,9 @@ components:
         matchId: { type: string }
         lossType: { $ref: "#/components/schemas/OpportunityLossType" }
         projectedCloseDate: { type: string, format: date }
+        projectedCloseMonthsOut:
+          type: integer
+          minimum: 1
         actualCompletionDate: { type: string, format: date }
         winProbability: { type: string }
         stage: { $ref: "#/components/schemas/OpportunityStage" }
@@ -15914,6 +15891,7 @@ components:
             nullable: true,
           }
         projectedCloseDate: { type: string, format: date, nullable: true }
+        projectedCloseMonthsOut: { type: integer, minimum: 1, nullable: true }
         actualCompletionDate: { type: string, format: date, nullable: true }
         winProbability: { type: string, nullable: true }
         stage:
@@ -22930,8 +22908,7 @@ components:
       type: object
       required: [targetType, targetId, note]
       description: >-
-        Flag a record for research, or create a standalone cleanup/research project.
-        work_item uses reason_code 'cleanup_project'; record flags use 'needs_research'.
+        Flag a record for research. reason_code is always 'needs_research'.
       properties:
         targetType:
           {
@@ -22946,21 +22923,20 @@ components:
                 gift,
                 staged_payment,
                 stripe_payout,
-                work_item,
               ],
-            description: "Kind of record, or work_item for a standalone project.",
+            description: "Kind of record being flagged.",
           }
         targetId:
           {
             type: string,
             minLength: 1,
-            description: "Record id, or a stable client-generated UUID for a standalone project.",
+            description: "Id of the record being flagged.",
           }
         note:
           {
             type: string,
             minLength: 1,
-            description: "Shared working notes. For work_item, the first line is the project title.",
+            description: "What needs research / follow-up on this record.",
           }
     UpdateCleanupItemBody:
       type: object
@@ -24853,7 +24829,8 @@ components:
         # Display name of the mailbox owner. Populated only in the
         # admin all-mailboxes review mode so reviewers can see whose
         # inbox produced each suggestion; null/omitted otherwise.
-        mailboxUserName: { type: string, nullable: true }
+        mailboxUserName:
+          { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
         kind: { $ref: "#/components/schemas/EmailProposalKind" }
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         sourceMessageId: { type: string, nullable: true }
@@ -25193,7 +25170,7 @@ components:
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         reviewerNote: { type: string, nullable: true }
         mailboxUserId: { type: string }
-        mailboxUserName: { type: string, nullable: true }
+        mailboxUserName: { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
         resolvedByUserId: { type: string, nullable: true }
         resolverName: { type: string, nullable: true }
         resolvedAt: { type: string, format: date-time, nullable: true }
@@ -25468,16 +25445,35 @@ components:
         id: { type: string }
         grantLeadId: { type: string }
         mailboxUserId: { type: string }
-        mailboxUserName:
-          {
-            type: string,
-            nullable: true,
-            description: "Denormalized display name of the mailbox user.",
-          }
+        mailboxUserName: { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
         gmailMessageId: { type: string, nullable: true }
         emailMessageId: { type: string, nullable: true }
         emailSentAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
+    MatchEmailIdentityBody:
+      type: object
+      required: [emailAddress]
+      properties:
+        emailAddress: { type: string }
+        personId: { type: string, nullable: true }
+        createPerson:
+          type: object
+          nullable: true
+          properties:
+            firstName: { type: string }
+            lastName: { type: string }
+            fullName: { type: string }
+        proposalId: { type: string, nullable: true }
+        invalidateObservedEmail:
+          type: boolean
+          description: Only an explicit hard-bounce action may set this true.
+    MatchEmailIdentityResult:
+      type: object
+      required: [personId, emailId]
+      properties:
+        personId: { type: string }
+        emailId: { type: string }
+        proposalId: { type: string, nullable: true }
     GrantLeadSourceEmail:
       type: object
       description: "Compact reference to a source email ('sighting') that produced this lead, for opening the original message from the list."
@@ -25726,6 +25722,23 @@ components:
         data:
           { type: array, items: { $ref: "#/components/schemas/MeetingNote" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+    MeetingNextStepProposal:
+      type: object
+      required: [title, assignmentDate]
+      properties:
+        title: { type: string }
+        assigneeUserId: { type: string, nullable: true }
+        assigneeName: { type: string, nullable: true }
+        assignmentDate: { type: string, format: date }
+        dueDate: { type: string, format: date, nullable: true }
+        description: { type: string, nullable: true }
+    MeetingNextStepsResult:
+      type: object
+      required: [proposals]
+      properties:
+        proposals:
+          type: array
+          items: { $ref: "#/components/schemas/MeetingNextStepProposal" }
     CreateMeetingNoteBody:
       type: object
       description: "Exactly one of personId / funderId / householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow)."
@@ -26993,80 +27006,6 @@ components:
         id: { type: string }
         name: { type: string, nullable: true }
         email: { type: string, nullable: true }
-    AppFeedbackProposalCodeArea:
-      type: object
-      required: [area, rationale]
-      properties:
-        area: { type: string }
-        rationale: { type: string }
-    AppFeedbackProposalContent:
-      type: object
-      required:
-        [
-          title,
-          summary,
-          userExperience,
-          implementationSteps,
-          likelyCodeAreas,
-          acceptanceCriteria,
-          testPlan,
-          risksAndOpenQuestions,
-          implementationBrief,
-        ]
-      properties:
-        title: { type: string }
-        summary: { type: string }
-        userExperience: { type: array, items: { type: string } }
-        implementationSteps: { type: array, items: { type: string } }
-        likelyCodeAreas:
-          type: array
-          items: { $ref: "#/components/schemas/AppFeedbackProposalCodeArea" }
-        acceptanceCriteria: { type: array, items: { type: string } }
-        testPlan: { type: array, items: { type: string } }
-        risksAndOpenQuestions: { type: array, items: { type: string } }
-        implementationBrief: { type: string }
-    AppFeedbackProposal:
-      type: object
-      required:
-        [
-          id,
-          feedbackId,
-          generationStatus,
-          revision,
-          contextSnapshot,
-          proposal,
-          reviewerGuidance,
-          analyzedAt,
-          model,
-          error,
-          implementationRequestedAt,
-          implementationRequestedByUserId,
-          implementationRequestedBy,
-          createdAt,
-          updatedAt,
-        ]
-      properties:
-        id: { type: string }
-        feedbackId: { type: string }
-        generationStatus:
-          { type: string, enum: [queued, generating, ready, error] }
-        revision: { type: integer, minimum: 1 }
-        contextSnapshot: { type: object, additionalProperties: true }
-        proposal:
-          allOf: [{ $ref: "#/components/schemas/AppFeedbackProposalContent" }]
-          nullable: true
-        reviewerGuidance: { type: string, nullable: true }
-        analyzedAt: { type: string, format: date-time, nullable: true }
-        model: { type: string, nullable: true }
-        error: { type: string, nullable: true }
-        implementationRequestedAt:
-          { type: string, format: date-time, nullable: true }
-        implementationRequestedByUserId: { type: string, nullable: true }
-        implementationRequestedBy:
-          allOf: [{ $ref: "#/components/schemas/AppFeedbackPerson" }]
-          nullable: true
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
     AppFeedbackItem:
       type: object
       required:
@@ -27091,8 +27030,6 @@ components:
           updatedAt,
           reporter,
           resolver,
-          proposal,
-          viewerCanImplement,
         ]
       properties:
         id: { type: string }
@@ -27118,15 +27055,6 @@ components:
         resolver:
           allOf: [{ $ref: "#/components/schemas/AppFeedbackPerson" }]
           nullable: true
-        proposal:
-          allOf: [{ $ref: "#/components/schemas/AppFeedbackProposal" }]
-          nullable: true
-        viewerCanImplement:
-          type: boolean
-          description: >-
-            Whether the authenticated viewer may start the implementation
-            handoff. The API remains authoritative even when the UI hides the
-            action.
     CreateAppFeedbackBody:
       type: object
       required: [message, pageUrl, pagePath]
@@ -27154,11 +27082,6 @@ components:
       properties:
         status: { $ref: "#/components/schemas/AppFeedbackStatus" }
         adminNotes: { type: string, maxLength: 20000, nullable: true }
-    ReviseAppFeedbackProposalBody:
-      type: object
-      required: [reviewerGuidance]
-      properties:
-        reviewerGuidance: { type: string, minLength: 1, maxLength: 20000 }
     AppFeedbackList:
       type: object
       required: [data, pagination]

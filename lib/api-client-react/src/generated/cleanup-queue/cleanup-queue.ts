@@ -125,7 +125,7 @@ export function useListCleanupQueue<TData = Awaited<ReturnType<typeof listCleanu
 
 
 /**
- * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research' (or 'cleanup_project' for standalone work). Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
+ * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research'. Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
  */
 export const getFlagForResearchUrl = () => {
 
@@ -182,7 +182,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type FlagForResearchMutationError = ErrorType<BadRequestResponse>
 
     /**
- * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research' (or 'cleanup_project' for standalone work). Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
+ * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research'. Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
  */
 export const useFlagForResearch = <TError = ErrorType<BadRequestResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flagForResearch>>, TError,{data: BodyType<FlagForResearchBody>}, TContext>, request?: SecondParameter<typeof customFetch>}

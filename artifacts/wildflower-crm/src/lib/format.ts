@@ -96,6 +96,19 @@ export function formatDateShort(dateString: string | null | undefined): string {
   }
 }
 
+/** Compact timing label for an opportunity's exact or rolling close date. */
+export function formatProjectedCloseTiming(
+  monthsOut: number | null | undefined,
+  effectiveDate: string | null | undefined,
+): string {
+  if (monthsOut != null) {
+    return `${monthsOut} ${monthsOut === 1 ? "month" : "months"} from now${
+      effectiveDate ? ` (${formatDateShort(effectiveDate)})` : ""
+    }`;
+  }
+  return formatDateShort(effectiveDate);
+}
+
 // ─── Fiscal-year computation (canonical client-side implementation) ─────────
 // Wildflower's fiscal year ends Jun 30 in America/Chicago — months Jul–Dec
 // belong to the next-year FY. Everything below mirrors the server's

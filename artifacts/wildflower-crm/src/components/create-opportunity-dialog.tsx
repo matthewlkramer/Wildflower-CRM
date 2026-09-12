@@ -77,6 +77,8 @@ type FormState = {
   askAmount: string;
   awardedAmount: string;
   projectedCloseDate: string;
+  projectedCloseMonthsOut: string;
+  timingMode: "date" | "months";
 };
 
 const EMPTY_FORM: FormState = {
@@ -87,6 +89,8 @@ const EMPTY_FORM: FormState = {
   askAmount: "",
   awardedAmount: "",
   projectedCloseDate: "",
+  projectedCloseMonthsOut: "",
+  timingMode: "date",
 };
 
 export function CreateOpportunityDialog({
@@ -174,7 +178,6 @@ export function CreateOpportunityDialog({
   });
 
   const trimmedName = form.name.trim();
-  const showAwardedAmount = isPledge || form.stage === "verbal_confirmation";
 
   function resetAndClose(next: boolean) {
     if (create.isPending) return;
@@ -190,6 +193,7 @@ export function CreateOpportunityDialog({
     const ask = form.askAmount.trim();
     const awarded = form.awardedAmount.trim();
     const closeDate = form.projectedCloseDate.trim();
+    const monthsOut = form.projectedCloseMonthsOut.trim();
     const donor = donorBodyFor(donorType, donorId);
     create.mutate({
       data: {
@@ -201,8 +205,13 @@ export function CreateOpportunityDialog({
         ...(form.type ? { type: form.type } : {}),
         loanOrGrant: form.loanOrGrant,
         ...(ask ? { askAmount: ask } : {}),
-        ...(showAwardedAmount && awarded ? { awardedAmount: awarded } : {}),
-        ...(closeDate ? { projectedCloseDate: closeDate } : {}),
+        ...(awarded ? { awardedAmount: awarded } : {}),
+        ...(form.timingMode === "date" && closeDate
+          ? { projectedCloseDate: closeDate }
+          : {}),
+        ...(form.timingMode === "months" && monthsOut
+          ? { projectedCloseMonthsOut: Number(monthsOut) }
+          : {}),
       },
     });
   }
@@ -313,12 +322,27 @@ export function CreateOpportunityDialog({
               <Label>Stage</Label>
               <Select
                 value={form.stage || "__none__"}
-                onValueChange={(v) =>
+                onValueChange={(v) => {
+                  const stage =
+                    v === "__none__" ? "" : (v as OpportunityStage);
+                  const rollingAllowed = [
+                    "cold_lead",
+                    "warm_lead",
+                    "in_conversation",
+                  ].includes(stage);
                   setForm({
                     ...form,
-                    stage: v === "__none__" ? "" : (v as OpportunityStage),
-                  })
-                }
+                    stage,
+                    timingMode:
+                      form.timingMode === "months" && !rollingAllowed
+                        ? "date"
+                        : form.timingMode,
+                    projectedCloseMonthsOut:
+                      form.timingMode === "months" && !rollingAllowed
+                        ? ""
+                        : form.projectedCloseMonthsOut,
+                  });
+                }}
               >
                 <SelectTrigger data-testid="select-new-opportunity-stage">
                   <SelectValue placeholder="—" />
@@ -375,9 +399,8 @@ export function CreateOpportunityDialog({
                 data-testid="input-new-opportunity-ask"
               />
             </div>
-            {showAwardedAmount && (
             <div className="space-y-1.5">
-              <Label htmlFor="new-opportunity-awarded">Committed amount / award ceiling</Label>
+              <Label htmlFor="new-opportunity-awarded">Awarded amount</Label>
               <Input
                 id="new-opportunity-awarded"
                 type="number"
@@ -391,22 +414,57 @@ export function CreateOpportunityDialog({
                 data-testid="input-new-opportunity-awarded"
               />
             </div>
-            )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="new-opportunity-close">Expected commitment date</Label>
-            <Input
-              id="new-opportunity-close"
-              type="date"
-              value={form.projectedCloseDate}
-              onChange={(e) =>
-                setForm({ ...form, projectedCloseDate: e.target.value })
+            <Label>Projected close</Label>
+            <Select
+              value={form.timingMode}
+              onValueChange={(value) =>
+                setForm({
+                  ...form,
+                  timingMode: value as "date" | "months",
+                  projectedCloseDate: value === "months" ? "" : form.projectedCloseDate,
+                  projectedCloseMonthsOut: value === "date" ? "" : form.projectedCloseMonthsOut,
+                })
               }
-              data-testid="input-new-opportunity-close"
-            />
+            >
+              <SelectTrigger data-testid="select-new-opportunity-timing">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Specific date</SelectItem>
+                <SelectItem
+                  value="months"
+                  disabled={!["cold_lead", "warm_lead", "in_conversation"].includes(form.stage)}
+                >
+                  Months from now
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {form.timingMode === "date" ? (
+              <Input
+                id="new-opportunity-close"
+                type="date"
+                value={form.projectedCloseDate}
+                onChange={(e) => setForm({ ...form, projectedCloseDate: e.target.value })}
+                data-testid="input-new-opportunity-close"
+              />
+            ) : (
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={form.projectedCloseMonthsOut}
+                onChange={(e) => setForm({ ...form, projectedCloseMonthsOut: e.target.value })}
+                aria-label="Months from now"
+                data-testid="input-new-opportunity-close-months"
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              When the donor is expected to decide or confirm support. Payment dates and fiscal-year credit are recorded separately.
+              {form.timingMode === "months"
+                ? "Use a positive whole number. Available through In conversation; the date rolls forward automatically."
+                : "Determines the fiscal year automatically."}
             </p>
           </div>
 

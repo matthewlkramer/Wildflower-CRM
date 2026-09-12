@@ -1,14 +1,16 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { correspondentIgnore } from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
+import { correspondentIgnore, emailProposals, emails, people } from "@workspace/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import {
   ListUnrecognizedCorrespondentsQueryParams,
   CreateCorrespondentIgnoreBody,
 } from "@workspace/api-zod";
+import { z } from "zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
-import { asyncHandler, parseBoolQuery, parseOrBadRequest } from "../lib/helpers";
+import { asyncHandler, newId, parseBoolQuery, parseOrBadRequest } from "../lib/helpers";
+import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
 
 /**
  * "People you've been emailing who aren't in the CRM yet" dashboard
@@ -30,6 +32,17 @@ import { asyncHandler, parseBoolQuery, parseOrBadRequest } from "../lib/helpers"
 
 const router: IRouter = Router();
 router.use(requireAuth);
+const MatchEmailIdentityBody = z.object({
+  emailAddress: z.string(),
+  personId: z.string().nullish(),
+  createPerson: z.object({
+    firstName: z.string().optional(),
+    lastName: z.string().optional(),
+    fullName: z.string().optional(),
+  }).nullish(),
+  proposalId: z.string().nullish(),
+  invalidateObservedEmail: z.boolean().optional(),
+});
 
 router.get(
   "/correspondents/unrecognized",
@@ -230,6 +243,136 @@ router.post(
       .values({ mailboxUserId: targetMailboxUserId, emailLower: lower })
       .onConflictDoNothing();
     res.status(204).end();
+  }),
+);
+
+/**
+ * The single write boundary for observed-email identity review. Bounce rows
+ * and unmatched-correspondent rows use this same transaction: attach the
+ * address to an existing person or create one, optionally resolve a bounce
+ * proposal, and only invalidate when the caller explicitly confirms the
+ * hard-bounce action.
+ */
+router.post(
+  "/email-identity/match",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
+    const body = parseOrBadRequest(MatchEmailIdentityBody, req.body, res);
+    if (!body) return;
+    const emailAddress = body.emailAddress.trim();
+    if (!emailAddress || !emailAddress.includes("@")) {
+      res.status(400).json({ error: "validation_error", message: "emailAddress must look like an email" });
+      return;
+    }
+    if (!body.personId && !body.createPerson) {
+      res.status(400).json({ error: "validation_error", message: "Choose an existing person or provide createPerson." });
+      return;
+    }
+
+    try {
+      const result = await db.transaction(async (tx) => {
+        let personId = body.personId ?? null;
+        if (body.proposalId) {
+          const [proposal] = await tx
+            .select({
+              id: emailProposals.id,
+              kind: emailProposals.kind,
+              mailboxUserId: emailProposals.mailboxUserId,
+              status: emailProposals.status,
+            })
+            .from(emailProposals)
+            .where(and(eq(emailProposals.id, body.proposalId), eq(emailProposals.status, "pending")))
+            .limit(1);
+          if (!proposal || (proposal.mailboxUserId !== user.id && user.role !== "admin")) {
+            throw Object.assign(new Error("Proposal not found or is no longer pending."), { statusCode: 404 });
+          }
+          if (proposal.kind !== "bounce_invalid" && proposal.kind !== "bounce_soft") {
+            throw Object.assign(new Error("Only bounce proposals can use the identity workflow."), { statusCode: 400 });
+          }
+          if (body.invalidateObservedEmail && proposal.kind !== "bounce_invalid") {
+            throw Object.assign(new Error("Soft bounces cannot permanently invalidate an email."), { statusCode: 400 });
+          }
+        } else if (body.invalidateObservedEmail) {
+          throw Object.assign(new Error("Email invalidation requires a hard-bounce proposal."), { statusCode: 400 });
+        }
+
+        if (!personId) {
+          const create = body.createPerson!;
+          personId = newId();
+          await tx.insert(people).values({
+            id: personId,
+            firstName: create.firstName?.trim() || null,
+            lastName: create.lastName?.trim() || null,
+            fullName: create.fullName?.trim() || [create.firstName, create.lastName].filter(Boolean).join(" ") || null,
+          });
+        } else {
+          const [person] = await tx.select({ id: people.id }).from(people).where(eq(people.id, personId)).limit(1);
+          if (!person) throw Object.assign(new Error("Person not found."), { statusCode: 404 });
+        }
+
+        const [existing] = await tx.select({ id: emails.id, personId: emails.personId })
+          .from(emails).where(sql`lower(${emails.email}) = lower(${emailAddress})`).limit(1);
+        let emailId: string;
+        if (existing) {
+          if (existing.personId !== personId) {
+            throw Object.assign(new Error("That email is already attached to another record."), { statusCode: 409 });
+          }
+          emailId = existing.id;
+          if (body.invalidateObservedEmail) {
+            await tx.update(emails).set({ validity: "invalid", updatedAt: new Date() }).where(eq(emails.id, emailId));
+          }
+        } else {
+          emailId = newId();
+          await tx.insert(emails).values({
+            id: emailId,
+            email: emailAddress,
+            personId,
+            validity: body.invalidateObservedEmail ? "invalid" : "unknown",
+          });
+        }
+        await tx.execute(sql`
+          UPDATE email_messages
+          SET matched_person_ids =
+            COALESCE(matched_person_ids, '{}') || ARRAY[${personId}]::text[]
+          WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${personId}]::text[])
+            AND (
+              lower(COALESCE(from_email, '')) = lower(${emailAddress})
+              OR EXISTS (
+                SELECT 1 FROM unnest(
+                  COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
+                ) AS addr WHERE lower(addr) = lower(${emailAddress})
+              )
+            )
+        `);
+
+        if (body.proposalId) {
+          await tx.update(emailProposals).set({
+            status: "applied",
+            resolvedAt: new Date(),
+            resolvedByUserId: user.id,
+            updatedAt: new Date(),
+          }).where(and(eq(emailProposals.id, body.proposalId), eq(emailProposals.status, "pending")));
+        }
+        return { personId, emailId, proposalId: body.proposalId ?? null };
+      });
+      invalidateStaffDefaultSuppressionCache();
+      res.json(result);
+    } catch (error) {
+      const status = (error as { statusCode?: number }).statusCode;
+      if (status) {
+        res.status(status).json({ error: status === 404 ? "not_found" : "validation_error", message: (error as Error).message });
+        return;
+      }
+      if ((error as { code?: string }).code === "23505") {
+        res.status(409).json({ error: "conflict", message: "That email is already attached to another record." });
+        return;
+      }
+      throw error;
+    }
   }),
 );
 

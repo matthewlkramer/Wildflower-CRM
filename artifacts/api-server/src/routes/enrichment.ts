@@ -18,8 +18,10 @@ import {
   parseOrBadRequest,
 } from "../lib/helpers";
 import {
+  deriveOrganizationRegion,
   runExternalEnrichmentStubs,
   runPersonRegionEnrichment,
+  saveRegionSuggestion,
 } from "../lib/enrichment";
 
 const router: IRouter = Router();
@@ -127,6 +129,12 @@ router.post(
       .where(eq(organizations.id, id))
       .then((rows) => rows[0]);
     if (!org) return notFound(res, "organization");
+    if (!org.regionIds?.length) {
+      const evidence = await deriveOrganizationRegion(id);
+      if (evidence) {
+        await saveRegionSuggestion("organization", id, "regionIds", evidence);
+      }
+    }
     await runExternalEnrichmentStubs("organization", id);
     const result = await listPending(req, "organization", id);
     res.json(result);
@@ -282,11 +290,54 @@ router.patch(
             );
           }
           if (body.status === "accepted") {
-            throw new EnrichmentError(
-              409,
-              "funding_interest_evidence_required",
-              "Office location does not establish funding interests. Dismiss this address suggestion and enter confirmed funding regions on the organization.",
-            );
+            if (organization.regionIds?.length) {
+              throw new EnrichmentError(
+                409,
+                "canonical_value_present",
+                "Regions were filled after this suggestion was created.",
+              );
+            }
+            const regionExists = await tx
+              .select({ id: regions.id })
+              .from(regions)
+              .where(
+                and(
+                  eq(regions.id, suggestion.suggestedValue.regionId),
+                  isNull(regions.archivedAt),
+                ),
+              )
+              .then((rows) => rows[0]);
+            if (!regionExists) {
+              throw new EnrichmentError(
+                409,
+                "suggested_value_stale",
+                "The suggested region is no longer available.",
+              );
+            }
+            await tx
+              .update(organizations)
+              .set({
+                regionIds: [suggestion.suggestedValue.regionId],
+                updatedAt: now,
+              })
+              .where(eq(organizations.id, suggestion.entityId));
+            await recordAudit(tx, req, {
+              action: "field_enriched",
+              entityType: "organization",
+              entityId: suggestion.entityId,
+              summary: "Accepted CRM enrichment suggestion",
+              changes: [
+                {
+                  field: "regionIds",
+                  from: organization.regionIds ?? [],
+                  to: [suggestion.suggestedValue.regionId],
+                },
+              ],
+              metadata: {
+                suggestionId: suggestion.id,
+                sourceLabel: suggestion.sourceLabel,
+              },
+            });
           }
         } else {
           throw new EnrichmentError(

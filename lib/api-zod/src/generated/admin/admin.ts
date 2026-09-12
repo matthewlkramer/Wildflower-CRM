@@ -179,7 +179,7 @@ export const AdminListEmailIntelFeedbackResponse = zod.object({
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "reviewerNote": zod.string().nullish(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "resolvedByUserId": zod.string().nullish(),
   "resolverName": zod.string().nullish(),
   "resolvedAt": zod.string().datetime({}).nullish(),

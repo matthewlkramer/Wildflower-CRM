@@ -89,6 +89,7 @@ import {
   formatDate,
   formatEnum,
   formatPercent,
+  formatProjectedCloseTiming,
 } from "@/lib/format";
 import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import { useToast } from "@/hooks/use-toast";
@@ -446,7 +447,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
   // non-selected ones nulled, so exactly one stays populated on save.
   const saveDonor = (body: DonorSaveBody) => patch(body);
 
-  const title = editingName ? (
+  const grantName = editingName ? (
     <Input
       value={nameValue}
       onChange={(e) => setNameValue(e.target.value)}
@@ -457,6 +458,29 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
     />
   ) : (
     (opp.name ?? `Untitled ${opp.id}`)
+  );
+  const donorHeader = (opp.payments ?? []).length > 0 ? (
+    donorDisplay
+  ) : (
+    <InlineEditDonor
+      testIdBase="opp-donor"
+      align="left"
+      value={{
+        organizationId: opp.organizationId ?? null,
+        individualGiverPersonId: opp.individualGiverPersonId ?? null,
+        householdId: opp.householdId ?? null,
+      }}
+      display={donorDisplay}
+      onSave={saveDonor}
+    />
+  );
+  const headerTitle = (
+    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span>{donorHeader}</span>
+      {opp.fiscalYear ? (
+        <span className="text-muted-foreground">· {opp.fiscalYear}</span>
+      ) : null}
+    </span>
   );
 
   const paymentDonor = opp.organizationId
@@ -707,7 +731,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                         disabled={!viewerIsFinance}
                         onSelect={() => setCloseAwardOpen(true)}
                       >
-                        Close award…
+                        Close pledge award…
                         {!viewerIsFinance ? " (finance role required)" : ""}
                       </DropdownMenuItem>
                     )
@@ -987,7 +1011,21 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
           value={opp.stage ?? null}
           options={STAGE_OPTIONS}
           display={formatEnum(opp.stage) || "—"}
-          onSave={(next) => patch({ stage: next })}
+          onSave={(next) => {
+            if (
+              opp.projectedCloseMonthsOut != null &&
+              !["cold_lead", "warm_lead", "in_conversation"].includes(next ?? "")
+            ) {
+              toast({
+                title: "Set a specific close date first",
+                description:
+                  "Months from now is available only through In conversation.",
+                variant: "destructive",
+              });
+              return Promise.resolve();
+            }
+            return patch({ stage: next });
+          }}
         />
       ),
     },
@@ -1048,6 +1086,9 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
       value: (
         <InlineEditCloseDates
           projected={opp.projectedCloseDate ?? null}
+          monthsOut={opp.projectedCloseMonthsOut ?? null}
+          effective={opp.effectiveProjectedCloseDate ?? opp.projectedCloseDate ?? null}
+          stage={opp.stage ?? null}
           actual={opp.actualCompletionDate ?? null}
           onSave={(body) => patch(body)}
         />
@@ -1090,15 +1131,6 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
       <span data-testid="text-opp-status" className="flex items-center">
         {statusBadge(opp.status ?? null)}
       </span>
-      {opp.fiscalYear ? (
-        <Badge
-          variant="outline"
-          className="rounded-full"
-          data-testid="badge-opp-fy"
-        >
-          {opp.fiscalYear}
-        </Badge>
-      ) : null}
       <NeedsResearchBadge flagged={opp.flaggedForResearch} />
       <PlanningBadge opp={opp} />
       {opp.awardClosedAt ? (
@@ -1118,21 +1150,11 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
 
   // Once money is linked, changing the donor also changes the meaning of the
   // payment. Keep it read-only and require an explicit correction workflow.
-  const subtitle =
+  const donorSubtitle =
     linkedPayments.length > 0 ? (
-      donorDisplay
+      grantName
     ) : (
-      <InlineEditDonor
-        testIdBase="opp-donor"
-        align="left"
-        value={{
-          organizationId: opp.organizationId ?? null,
-          individualGiverPersonId: opp.individualGiverPersonId ?? null,
-          householdId: opp.householdId ?? null,
-        }}
-        display={donorDisplay}
-        onSave={saveDonor}
-      />
+      grantName
     );
 
   return (
@@ -1140,10 +1162,10 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
       <RecordLayout
         backHref={recordBackHref}
         backLabel={recordBackLabel}
-        title={title}
+        title={headerTitle}
         typeBadge={recordLabel}
         headerBadges={headerBadges}
-        subtitle={subtitle}
+        subtitle={donorSubtitle}
         actions={actions}
         highlights={highlights}
         left={
@@ -1785,19 +1807,32 @@ function InlineEditAmounts({
 // actual date (falling back to projected) but on edit exposes BOTH.
 function InlineEditCloseDates({
   projected,
+  monthsOut,
+  effective,
+  stage,
   actual,
   onSave,
 }: {
   projected: string | null;
+  monthsOut: number | null;
+  effective: string | null;
+  stage: OpportunityStage | null;
   actual: string | null;
   onSave: (body: UpdateOpportunityOrPledgeBody) => SaveResult;
 }) {
   const [editing, setEditing] = useState(false);
   const { busy, run } = useSaveRunner();
   const [projectedDraft, setProjectedDraft] = useState(projected ?? "");
+  const [monthsDraft, setMonthsDraft] = useState(monthsOut?.toString() ?? "");
+  const [timingMode, setTimingMode] = useState<"date" | "months">(
+    monthsOut != null ? "months" : "date",
+  );
   const [actualDraft, setActualDraft] = useState(actual ?? "");
 
-  const display = formatDate(actual ?? projected);
+  const display =
+    actual != null
+      ? formatDate(actual)
+      : formatProjectedCloseTiming(monthsOut, effective);
 
   if (!editing) {
     return (
@@ -1806,6 +1841,8 @@ function InlineEditCloseDates({
         display={display}
         onEdit={() => {
           setProjectedDraft(projected ?? "");
+          setMonthsDraft(monthsOut?.toString() ?? "");
+          setTimingMode(monthsOut != null ? "months" : "date");
           setActualDraft(actual ?? "");
           setEditing(true);
         }}
@@ -1818,15 +1855,22 @@ function InlineEditCloseDates({
   const projectedNext =
     projectedDraft.trim().length === 0 ? null : projectedDraft;
   const actualNext = actualDraft.trim().length === 0 ? null : actualDraft;
+  const monthsNext = monthsDraft.trim() === "" ? null : Number(monthsDraft);
+  const rollingAllowed = ["cold_lead", "warm_lead", "in_conversation"].includes(stage ?? "");
+  const validMonths =
+    monthsNext != null && Number.isInteger(monthsNext) && monthsNext > 0;
   const dirty =
-    projectedNext !== (projected ?? null) || actualNext !== (actual ?? null);
+    projectedNext !== (projected ?? null) ||
+    monthsNext !== monthsOut ||
+    actualNext !== (actual ?? null);
 
   const trySave = () => {
     if (!dirty || busy) return;
     run(
       () =>
         onSave({
-          projectedCloseDate: projectedNext,
+          projectedCloseDate: timingMode === "date" ? projectedNext : null,
+          projectedCloseMonthsOut: timingMode === "months" ? monthsNext : null,
           actualCompletionDate: actualNext,
         }),
       () => setEditing(false),
@@ -1835,6 +1879,20 @@ function InlineEditCloseDates({
 
   return (
     <div className="flex flex-col gap-1.5">
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-20 shrink-0 text-left">Timing</span>
+        <select
+          value={timingMode}
+          onChange={(e) => setTimingMode(e.target.value as "date" | "months")}
+          disabled={busy}
+          className="h-8 rounded-md border bg-background px-2 text-sm"
+          aria-label="Projected close timing mode"
+        >
+          <option value="date">Specific date</option>
+          <option value="months" disabled={!rollingAllowed}>Months from now</option>
+        </select>
+      </label>
+      {timingMode === "date" ? (
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="w-20 shrink-0 text-left">Projected</span>
         <Input
@@ -1847,6 +1905,25 @@ function InlineEditCloseDates({
           className="h-8"
         />
       </label>
+      ) : (
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="w-20 shrink-0 text-left">Months</span>
+        <Input
+          type="number"
+          min="1"
+          step="1"
+          value={monthsDraft}
+          onChange={(e) => setMonthsDraft(e.target.value)}
+          aria-label="Months from now"
+          disabled={busy}
+          data-testid="input-opp-projected-close-months"
+          className="h-8"
+        />
+      </label>
+      )}
+      {timingMode === "months" && !validMonths ? (
+        <p className="text-xs text-destructive">Enter a positive whole number of months.</p>
+      ) : null}
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="w-20 shrink-0 text-left">Completed</span>
         <Input
@@ -1862,7 +1939,7 @@ function InlineEditCloseDates({
       <div className="flex items-center justify-start gap-1">
         <ActionButtons
           busy={busy}
-          canSave={dirty}
+          canSave={dirty && (timingMode === "date" || validMonths)}
           onSave={trySave}
           onCancel={() => setEditing(false)}
           testIdBase="opp-close-dates"

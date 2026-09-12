@@ -53,7 +53,3 @@ relevant to the task.
 - [Airtable→schools sync & school-recipient FK](school-sync-recipient-fk.md) — school recipient is allocation-level ONLY; sync upserts before stale-check so an error status can hide already-synced data; token prefers AIRTABLE_API_TOKEN.
 - [Cleanup queue flag-for-research](cleanup-queue-flag-for-research.md) — SOLE research-flag path; polymorphic targetType (new type needs targetHref case); idempotent cleanup_nr_<targetId>; retired free-text notes need a DISTINCT reason_code or ON CONFLICT drops them ([issues_to_address](issues-to-address-cleanup-queue.md)).
 - [Audit log recording model](audit-log-recording-model.md) — atomic recordAudit(tx) for in-tx writes (archive/bulk/merge); non-throwing safeRecordAudit after standalone create/PATCH so audit never breaks a save; admin-gated.
-
-## Donor fields and cleanup
-
-- [Field definitions](../../docs/field-definitions.md) — organization regions are funding interests; organization emails live only in Contact info; newsletter events are authoritative, with dated renewed consent required to lift opt-out. Cleanup projects reuse `cleanup_queue` work_item rows.

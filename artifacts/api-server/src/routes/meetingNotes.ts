@@ -28,6 +28,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { summarizeMeeting } from "../lib/summarizeMeeting";
+import { generateMeetingNextSteps } from "../lib/generateMeetingNextSteps";
 import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
 
 const router: IRouter = Router();
@@ -354,6 +355,36 @@ router.post(
       return;
     }
     res.status(201).json(result.task);
+  }),
+);
+
+router.post(
+  "/meeting-notes/:id/generate-next-steps",
+  asyncHandler(async (req, res) => {
+    const note = await db
+      .select()
+      .from(meetingNotes)
+      .where(eq(meetingNotes.id, paramId(req)))
+      .then((rows) => rows[0]);
+    if (!note) return notFound(res, "meeting note");
+    const savedText = [
+      note.title ? `Title: ${note.title}` : "",
+      note.aiSummary ? `Summary:\n${note.aiSummary}` : "",
+      (note.actionItems as MeetingActionItem[] | null)?.length
+        ? `Existing action items:\n${(note.actionItems as MeetingActionItem[]).map((item) => `- ${item.title}`).join("\n")}`
+        : "",
+    ].filter(Boolean).join("\n\n");
+    const proposals = await generateMeetingNextSteps(savedText);
+    const today = new Date().toISOString().slice(0, 10);
+    const user = getAppUser(req);
+    res.json({
+      proposals: proposals.map((proposal) => ({
+        ...proposal,
+        assigneeUserId: user?.id ?? null,
+        assigneeName: user?.displayName ?? user?.email ?? null,
+        assignmentDate: today,
+      })),
+    });
   }),
 );
 

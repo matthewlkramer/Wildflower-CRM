@@ -88,12 +88,24 @@ function SummaryShell({
             Not enough recent activity to summarize yet.
           </p>
         ) : (
-          <p
+          <>
+            <p
             className="whitespace-pre-wrap text-sm leading-relaxed text-foreground"
             data-testid="relationship-summary-text"
           >
             {data?.summary}
-          </p>
+            </p>
+            {data?.nextSteps?.length ? (
+            <div className="mt-3 border-t pt-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Suggested next steps
+              </p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-sm">
+                {data.nextSteps.map((step) => <li key={step}>{step}</li>)}
+              </ul>
+            </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>

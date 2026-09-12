@@ -1,4 +1,3 @@
-import { organizationEmails } from "../lib/organizationContact";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
@@ -137,7 +136,7 @@ export function tokensAreSpellingVariants(a: string, b: string): boolean {
 // Two records that live on different web domains are different organizations:
 // every state has its own Department of Education, each with its own website
 // and email domain. For each org we collect a small "domain set" — the
-// website host plus the email domains (email_domain and canonical emails) — normalized
+// website host plus the email domains (email_domain, org_email) — normalized
 // (protocol / www / path / port stripped) and with free-mail providers
 // excluded (a gmail address says nothing about identity). If BOTH sides have
 // at least one real domain and the sets share nothing (subdomains of the same
@@ -291,10 +290,10 @@ async function detectNamePairs(
         bName: b.name,
         aWebsite: a.website,
         aEmailDomain: a.emailDomain,
-        aEmails: organizationEmails(a.id),
+        aOrgEmail: a.orgEmail,
         bWebsite: b.website,
         bEmailDomain: b.emailDomain,
-        bEmails: organizationEmails(b.id),
+        bOrgEmail: b.orgEmail,
         score,
       })
       .from(a)
@@ -320,8 +319,8 @@ async function detectNamePairs(
       .filter(
         (r) =>
           !domainSetsConflict(
-            orgDomainSet([r.aWebsite, r.aEmailDomain, ...r.aEmails]),
-            orgDomainSet([r.bWebsite, r.bEmailDomain, ...r.bEmails]),
+            orgDomainSet([r.aWebsite, r.aEmailDomain, r.aOrgEmail]),
+            orgDomainSet([r.bWebsite, r.bEmailDomain, r.bOrgEmail]),
           ),
       )
       .map((r) => ({ aId: r.aId, bId: r.bId, score: Number(r.score) }));

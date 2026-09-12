@@ -31,7 +31,7 @@ export const ListEmailProposalsResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -90,7 +90,7 @@ export const AcceptEmailProposalBody = zod.object({
 export const AcceptEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -134,7 +134,7 @@ export const RejectEmailProposalBody = zod.object({
 export const RejectEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -177,7 +177,7 @@ export const RetryEmailProposalParams = zod.object({
 export const RetryEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -227,7 +227,7 @@ export const ReviseEmailProposalBody = zod.object({
 export const ReviseEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -270,7 +270,7 @@ export const ReopenEmailProposalParams = zod.object({
 export const ReopenEmailProposalResponse = zod.object({
   "id": zod.string(),
   "mailboxUserId": zod.string(),
-  "mailboxUserName": zod.string().nullish(),
+  "mailboxUserName": zod.string().nullish().describe('Denormalized display name of the mailbox user.'),
   "kind": zod.enum(['linkedin_job_change', 'auto_responder_move', 'bounce_invalid', 'bounce_soft', 'signature_update', 'grant_opportunity', 'thank_you_acknowledgment', 'wildflower_update']),
   "status": zod.enum(['pending', 'applied', 'rejected', 'ignored']),
   "sourceMessageId": zod.string().nullish(),
@@ -301,5 +301,27 @@ export const ReopenEmailProposalResponse = zod.object({
   "resolvedAt": zod.string().datetime({}).nullish(),
   "resolvedByUserId": zod.string().nullish(),
   "reviewerNote": zod.string().nullish()
+})
+
+/**
+ * Shared identity workflow for bounce proposals and unmatched correspondents. A hard-bounce invalidation is explicit and is never implied by selecting a person; soft bounces cannot invalidate an email.
+ * @summary Attach an observed email to an existing or newly-created person.
+ */
+export const MatchEmailIdentityBody = zod.object({
+  "emailAddress": zod.string(),
+  "personId": zod.string().nullish(),
+  "createPerson": zod.object({
+  "firstName": zod.string().optional(),
+  "lastName": zod.string().optional(),
+  "fullName": zod.string().optional()
+}).nullish(),
+  "proposalId": zod.string().nullish(),
+  "invalidateObservedEmail": zod.boolean().optional().describe('Only an explicit hard-bounce action may set this true.')
+})
+
+export const MatchEmailIdentityResponse = zod.object({
+  "personId": zod.string(),
+  "emailId": zod.string(),
+  "proposalId": zod.string().nullish()
 })
 

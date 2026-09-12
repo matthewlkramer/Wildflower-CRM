@@ -1,0 +1,30 @@
+Replace verbose feedback-plan generation and storage with the concise implementation brief only.
+
+Confirmed scope:
+- KEEP all screenshot capture, upload, storage fields, private screenshot objects, and related behavior unchanged.
+- KEEP feedback page context and proposal context_snapshot capture/storage unchanged.
+- KEEP the existing simplified /admin/feedback dialog and all proposal lifecycle actions/status/revision/reviewer guidance/implementation-request metadata.
+- Remove only the verbose generated plan content and the code/types/contracts that produce or expect it.
+
+Database migration:
+1. Add app_feedback_proposals.implementation_brief as a text column.
+2. Backfill it from proposal->>'implementationBrief' for every existing proposal row that has a brief.
+3. Include an explicit validation/guard so the old proposal column is not dropped if any ready proposal with a non-null proposal lacks a non-empty implementationBrief or if copied values do not match.
+4. After successful backfill validation, drop app_feedback_proposals.proposal. Do not drop context_snapshot or any screenshot/context fields.
+5. Preserve nullable/error/queued rows appropriately; ready rows must retain their brief.
+
+Application changes:
+- Change the Drizzle schema and API/frontend types to use proposal.implementationBrief (the dedicated database column exposed on the proposal response), not proposal.proposal.implementationBrief.
+- Simplify the AI response schema and prompt to generate exactly one field: implementationBrief. Do not ask the model to create title, summary, userExperience, implementationSteps, likelyCodeAreas, acceptanceCriteria, testPlan, or risksAndOpenQuestions.
+- Remove normalization, validation, serialization, OpenAPI, generated client, and tests for those verbose fields.
+- Preserve Modify proposal behavior: reviewer guidance should regenerate only the concise brief and continue incrementing revision.
+- Preserve Start implementation behavior and its current empty-body request contract.
+- Do not re-add verbose plan UI.
+
+Verification:
+- First inspect existing development and production row counts/brief completeness read-only and report the findings.
+- Add migration tests covering successful backfill, queued/error/null rows, and guard failure for a ready proposal missing a brief.
+- Update focused API/frontend tests, generated contracts, typechecks, full relevant test suites, and production build.
+- Confirm screenshot and context code paths are unchanged.
+
+Do not apply the migration to the production database. Do not publish or deploy. Prepare and test the code/migration only; production migration and publishing require a separate explicit confirmation.

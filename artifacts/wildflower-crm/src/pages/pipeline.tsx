@@ -22,7 +22,7 @@ import {
   type OpportunityStage,
   type OpportunityType,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatDateShort, formatEnum, fiscalYearFromDate } from "@/lib/format";
+import { formatCurrency, formatEnum, fiscalYearFromDate, formatProjectedCloseTiming } from "@/lib/format";
 import { DonorCell } from "@/components/donor-cell";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -142,6 +142,18 @@ export default function Pipeline() {
     if (nextStage === "complete") return;
     const moved = rows.find((r) => r.id === oppId);
     if (!moved || moved.stage === nextStage) return;
+    if (
+      moved.projectedCloseMonthsOut != null &&
+      !["cold_lead", "warm_lead", "in_conversation"].includes(nextStage)
+    ) {
+      toast({
+        title: "Set a specific close date first",
+        description:
+          "Months from now is available only through In conversation. Open this opportunity and choose a specific projected close date before moving it forward.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     queryClient.setQueryData<typeof data>(queryKey, (prev) => {
       if (!prev) return prev;
@@ -322,7 +334,8 @@ function OppCard({
     id: opp.id,
     disabled: isOverlay,
   });
-  const fy = opp.fiscalYear ?? fiscalYearFromDate(opp.projectedCloseDate);
+  const effectiveClose = opp.effectiveProjectedCloseDate ?? opp.projectedCloseDate;
+  const fy = opp.fiscalYear ?? fiscalYearFromDate(effectiveClose);
 
   return (
     <div
@@ -366,7 +379,7 @@ function OppCard({
           {formatCurrency(opp.askAmount)}
         </span>
         <span className="text-muted-foreground tabular-nums">
-          {formatDateShort(opp.projectedCloseDate)}
+          {formatProjectedCloseTiming(opp.projectedCloseMonthsOut, effectiveClose)}
         </span>
       </div>
       {opp.ownerUserId && (

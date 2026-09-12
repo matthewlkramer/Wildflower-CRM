@@ -24,8 +24,9 @@ import type { Server } from "node:http";
 const RAW_DB_URL = process.env.DATABASE_URL;
 const HAS_DB = !!RAW_DB_URL && !/test:test@localhost:5432\/test/.test(RAW_DB_URL);
 
-const { TEST_USER_ID } = vi.hoisted(() => ({
+const { TEST_USER_ID, authRole } = vi.hoisted(() => ({
   TEST_USER_ID: `dm_test_user_${Date.now()}`,
+  authRole: { value: "admin" },
 }));
 
 vi.mock("../middlewares/requireAuth", () => ({
@@ -34,7 +35,7 @@ vi.mock("../middlewares/requireAuth", () => ({
     _res: unknown,
     next: () => void,
   ) => {
-    req.appUser = { id: TEST_USER_ID, role: "admin" };
+    req.appUser = { id: TEST_USER_ID, role: authRole.value };
     next();
   },
 }));
@@ -374,6 +375,18 @@ describe.skipIf(!HAS_DB)("plan-vs-actual per pledge-allocation line (Task #788)"
 });
 
 describe.skipIf(!HAS_DB)("close-award closure semantics (Task #788)", () => {
+  it("requires the finance permission for the deliberate close-pledge action", async () => {
+    const oppId = await seedOpp({ disbursementModel: "cost_reimbursement" });
+    authRole.value = "fundraiser";
+    const { status, json } = await post(
+      `/api/opportunities-and-pledges/${oppId}/close-award`,
+      { closedAt: "2026-07-01", reason: "award_period_ended" },
+    );
+    authRole.value = "admin";
+    expect(status).toBe(403);
+    expect(json?.error).toBe("finance_role_required");
+  });
+
   it("409s not_cost_reimbursement on a fixed commitment", async () => {
     const oppId = await seedOpp({ disbursementModel: "fixed_commitment" });
     const { status, json } = await post(

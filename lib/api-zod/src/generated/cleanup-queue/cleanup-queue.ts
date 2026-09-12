@@ -77,17 +77,17 @@ export const ListCleanupQueueResponse = zod.object({
 })
 
 /**
- * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research' (or 'cleanup_project' for standalone work). Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
+ * @summary Flag a record for research — adds it to the Cleanup Queue with reason_code='needs_research'. Idempotent against the (target_type, target_id, reason_code) unique key: re-flagging an already-flagged record returns the existing item instead of creating a duplicate.
  */
 
 
 
 
 export const FlagForResearchBody = zod.object({
-  "targetType": zod.enum(['opportunity', 'pledge', 'organization', 'person', 'household', 'gift', 'staged_payment', 'stripe_payout', 'work_item']).describe('Kind of record, or work_item for a standalone project.'),
-  "targetId": zod.string().min(1).describe('Record id, or a stable client-generated UUID for a standalone project.'),
-  "note": zod.string().min(1).describe('Shared working notes. For work_item, the first line is the project title.')
-}).describe('Flag a record for research, or create a standalone cleanup\/research project. work_item uses reason_code \'cleanup_project\'; record flags use \'needs_research\'.')
+  "targetType": zod.enum(['opportunity', 'pledge', 'organization', 'person', 'household', 'gift', 'staged_payment', 'stripe_payout']).describe('Kind of record being flagged.'),
+  "targetId": zod.string().min(1).describe('Id of the record being flagged.'),
+  "note": zod.string().min(1).describe('What needs research \/ follow-up on this record.')
+}).describe('Flag a record for research. reason_code is always \'needs_research\'.')
 
 export const FlagForResearchResponse = zod.object({
   "id": zod.string(),

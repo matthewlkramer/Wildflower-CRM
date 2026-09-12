@@ -28,6 +28,8 @@ import type {
   EmailProposalSummary,
   ErrorResponse,
   ListEmailProposalsParams,
+  MatchEmailIdentityBody,
+  MatchEmailIdentityResult,
   NotFoundResponse,
   RejectEmailProposalBody,
   ReviseEmailProposalBody
@@ -526,5 +528,62 @@ export const useReopenEmailProposal = <TError = ErrorType<NotFoundResponse | Err
         TContext
       > => {
       return useMutation(getReopenEmailProposalMutationOptions(options));
+    }
+    /**
+ * Shared identity workflow for bounce proposals and unmatched correspondents. A hard-bounce invalidation is explicit and is never implied by selecting a person; soft bounces cannot invalidate an email.
+ * @summary Attach an observed email to an existing or newly-created person.
+ */
+export const getMatchEmailIdentityUrl = () => {
+  return `/api/email-identity/match`
+}
+
+export const matchEmailIdentity = async (matchEmailIdentityBody: MatchEmailIdentityBody, options?: RequestInit): Promise<MatchEmailIdentityResult> => {
+  return customFetch<MatchEmailIdentityResult>(getMatchEmailIdentityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      matchEmailIdentityBody,)
+  }
+);}
+
+export const getMatchEmailIdentityMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext> => {
+
+const mutationKey = ['matchEmailIdentity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof matchEmailIdentity>>, {data: BodyType<MatchEmailIdentityBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  matchEmailIdentity(data,requestOptions)
+        }
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MatchEmailIdentityMutationResult = NonNullable<Awaited<ReturnType<typeof matchEmailIdentity>>>
+    export type MatchEmailIdentityMutationBody = BodyType<MatchEmailIdentityBody>
+    export type MatchEmailIdentityMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Attach an observed email to an existing or newly-created person.
+ */
+export const useMatchEmailIdentity = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof matchEmailIdentity>>,
+        TError,
+        {data: BodyType<MatchEmailIdentityBody>},
+        TContext
+      > => {
+      return useMutation(getMatchEmailIdentityMutationOptions(options));
     }
     

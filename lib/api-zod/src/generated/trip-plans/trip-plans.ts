@@ -141,12 +141,7 @@ export const GetTripPlanResponse = zod
           personName: zod.string(),
           primaryEmail: zod.string().nullish(),
           location: zod.string().nullish(),
-          priority: zod
-            .enum(["top", "high", "medium", "low"])
-            .describe(
-              "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
-            )
-            .nullish(),
+          priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
           rank: zod.number(),
           rationale: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
@@ -404,12 +399,7 @@ export const DraftTripVisitsResponse = zod
           personName: zod.string(),
           primaryEmail: zod.string().nullish(),
           location: zod.string().nullish(),
-          priority: zod
-            .enum(["top", "high", "medium", "low"])
-            .describe(
-              "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
-            )
-            .nullish(),
+          priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
           rank: zod.number(),
           rationale: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
@@ -539,12 +529,7 @@ export const UpdateTripVisitResponse = zod.object({
   personName: zod.string(),
   primaryEmail: zod.string().nullish(),
   location: zod.string().nullish(),
-  priority: zod
-    .enum(["top", "high", "medium", "low"])
-    .describe(
-      "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
-    )
-    .nullish(),
+  priority: zod.enum(["top", "high", "medium", "low"]).nullish(),
   rank: zod.number(),
   rationale: zod.string().nullish(),
   source: zod.enum(["system_draft", "manual"]),

@@ -17,6 +17,7 @@ import {
   desc,
   eq,
   ilike,
+  inArray,
   isNotNull,
   isNull,
   or,
@@ -314,6 +315,18 @@ router.get(
         linked
           ? isNotNull(newsletterEngagement.emailId)
           : isNull(newsletterEngagement.emailId),
+      );
+    }
+    // Priority is deliberately read from the linked CRM records at query time.
+    // Newsletter evidence must not copy or snapshot solicitation priority.
+    if (q.individualPriority?.length) {
+      filters.push(
+        inArray(people.priority, q.individualPriority as never[]),
+      );
+    }
+    if (q.organizationPriority?.length) {
+      filters.push(
+        inArray(organizations.priority, q.organizationPriority as never[]),
       );
     }
     const where = and(...filters);

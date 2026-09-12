@@ -23,6 +23,7 @@ import { requireAuth } from "../middlewares/requireAuth";
 import { asyncHandler, notFound } from "../lib/helpers";
 import { personDisplayNameSql as personNameSqlFor } from "../lib/personNameSql";
 import { deriveGiftTypeExpr } from "../lib/giftTypeDerived";
+import { effectiveProjectedCloseDateSql } from "../lib/effectiveProjectedCloseDate";
 
 // Person display name — the canonical chain shared with the rest of the
 // API (see lib/personNameSql.ts).
@@ -96,6 +97,10 @@ type FundraisingCategory = (typeof FUNDRAISING_CATEGORIES)[number];
 const giftCategorySql = sql<string>`CASE WHEN ${giftsAndPayments.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
 const oppCategorySql = sql<string>`CASE WHEN ${opportunitiesAndPledges.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
 const goalCategorySql = sql<string>`CASE WHEN ${fiscalYearEntityGoals.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
+const effectiveCloseDateExpr = effectiveProjectedCloseDateSql(
+  opportunitiesAndPledges.projectedCloseDate,
+  opportunitiesAndPledges.projectedCloseMonthsOut,
+);
 
 type CategoryMetrics = {
   openPipelineAsk: string;
@@ -400,6 +405,7 @@ router.get(
       [{ value: verbalNoLetterCt }],
       [{ value: committedUnpaidCt }],
       [{ value: partiallyPaidCt }],
+      [{ value: overdueFixedCloseCt }],
       [{ value: stagedPaymentsPendingCt }],
       [{ value: stripeChargesPendingCt }],
       [{ value: giftsMissingAllocCt }],
@@ -440,6 +446,10 @@ router.get(
         .where(oppWorklistCountWhere("partially_paid", entityIds)),
       db
         .select({ value: count() })
+        .from(opportunitiesAndPledges)
+        .where(oppWorklistCountWhere("overdue_fixed_close", entityIds)),
+      db
+        .select({ value: count() })
         .from(stagedPayments)
         .where(stagedPendingWhere(stagedPayments, entityIds, true)),
       db
@@ -468,6 +478,7 @@ router.get(
         verbalNoLetter: Number(verbalNoLetterCt),
         committedUnpaid: Number(committedUnpaidCt),
         partiallyPaid: Number(partiallyPaidCt),
+        overdueFixedClose: Number(overdueFixedCloseCt),
         stagedUnprocessed: Number(stagedPaymentsPendingCt) + Number(stripeChargesPendingCt),
         giftsMissingAllocations: Number(giftsMissingAllocCt),
       },
@@ -595,7 +606,8 @@ router.get(
           opportunityName: opportunitiesAndPledges.name,
           opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
           winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
-          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          projectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`,
+          projectedCloseMonthsOut: opportunitiesAndPledges.projectedCloseMonthsOut,
           organizationId: opportunitiesAndPledges.organizationId,
           organizationName: organizations.name,
           householdId: opportunitiesAndPledges.householdId,
@@ -621,7 +633,7 @@ router.get(
             entityIdParam ? eq(pledgeAllocations.entityId, entityIdParam) : undefined,
           ),
         )
-        .orderBy(desc(opportunitiesAndPledges.projectedCloseDate)),
+        .orderBy(desc(effectiveCloseDateExpr)),
     ]);
 
     // Sum at the API edge so the page header totals always agree with the
@@ -822,7 +834,8 @@ router.get(
           opportunityName: opportunitiesAndPledges.name,
           opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
           winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
-          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          projectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`,
+          projectedCloseMonthsOut: opportunitiesAndPledges.projectedCloseMonthsOut,
           pledged: sql<string>`${pledgedAmount}::text`,
           paid: sql<string>`COALESCE(${paidAmount}, 0)::text`,
           remainder: sql<string>`${committedRemainder}::text`,
@@ -857,7 +870,8 @@ router.get(
           opportunityName: opportunitiesAndPledges.name,
           opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
           winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
-          projectedCloseDate: sql<string | null>`${opportunitiesAndPledges.projectedCloseDate}::text`,
+          projectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`,
+          projectedCloseMonthsOut: opportunitiesAndPledges.projectedCloseMonthsOut,
           organizationId: opportunitiesAndPledges.organizationId,
           organizationName: organizations.name,
           householdId: opportunitiesAndPledges.householdId,
@@ -943,6 +957,7 @@ router.get(
       opportunityStage: null,
       winProbability: null,
       projectedCloseDate: null,
+      projectedCloseMonthsOut: null,
       pledgedAmount: null,
       paidAmount: null,
       ...donorOf(r),
@@ -966,6 +981,7 @@ router.get(
       opportunityStage: r.opportunityStage,
       winProbability: r.winProbability,
       projectedCloseDate: r.projectedCloseDate,
+      projectedCloseMonthsOut: r.projectedCloseMonthsOut,
       pledgedAmount: r.pledged,
       paidAmount: r.paid,
       ...donorOf(r),
@@ -989,6 +1005,7 @@ router.get(
       opportunityStage: r.opportunityStage,
       winProbability: r.winProbability,
       projectedCloseDate: r.projectedCloseDate,
+      projectedCloseMonthsOut: r.projectedCloseMonthsOut,
       pledgedAmount: null,
       paidAmount: null,
       ...donorOf(r),

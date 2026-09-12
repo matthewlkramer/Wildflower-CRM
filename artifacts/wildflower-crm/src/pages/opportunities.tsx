@@ -63,7 +63,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useDebounce } from "@/hooks/use-debounce";
-import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
+import {
+  formatCurrency,
+  formatDateShort,
+  formatEnum,
+  formatProjectedCloseTiming,
+} from "@/lib/format";
 import {
   Table,
   TableBody,
@@ -118,6 +123,7 @@ const OPP_WORKLIST_LABELS: Record<ListOpportunitiesAndPledgesWorklist, string> =
   verbal_no_letter: "Verbal yes, no letter",
   committed_unpaid: "Committed but unpaid",
   partially_paid: "Partially paid pledges",
+  overdue_fixed_close: "Overdue fixed close",
 };
 
 const NONE = "__none__";
@@ -261,7 +267,11 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
       key: "projectedClose",
       label: "Projected close",
       defaultVisible: !ctx.isPledgeView,
-      cell: (o) => formatDateShort(o.projectedCloseDate),
+      cell: (o) =>
+        formatProjectedCloseTiming(
+          o.projectedCloseMonthsOut,
+          o.effectiveProjectedCloseDate ?? o.projectedCloseDate,
+        ),
     },
     {
       key: "owner",

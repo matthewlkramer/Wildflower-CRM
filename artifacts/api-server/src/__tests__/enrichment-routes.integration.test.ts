@@ -235,22 +235,39 @@ describe.skipIf(!HAS_DB)("enrichment routes", () => {
     expect(audit?.action).toBe("field_enriched");
   });
 
-  it("does not infer funding interests from office location, including old pending suggestions", async () => {
+  it("dismisses an organization suggestion and recreates it only on manual rerun", async () => {
     auth.current = { id: OWNER_ID, role: "team_member" };
-    const created = await request(`/api/organizations/${ORGANIZATION_ID}/enrich`, { method: "POST" });
-    expect(created.json.data).toEqual([]);
-    const suggestionId = `${RUN}_legacy_org_region`;
-    await db.insert(schema.enrichmentSuggestions).values({ id: suggestionId, entityType: "organization", entityId: ORGANIZATION_ID,
-      fieldName: "regionIds", suggestedValue: { regionId: REGION_ID, label: "Missoula" }, sourceLabel: "Organization address" });
-    const accepted = await request(`/api/enrichment-suggestions/${suggestionId}`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "accepted" }),
-    });
-    expect(accepted.status).toBe(409);
-    expect(accepted.json.error).toBe("funding_interest_evidence_required");
-    const dismissed = await request(`/api/enrichment-suggestions/${suggestionId}`, {
-      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: "dismissed" }),
-    });
+    const created = await request(
+      `/api/organizations/${ORGANIZATION_ID}/enrich`,
+      { method: "POST" },
+    );
+    const suggestionId = created.json.data[0].id as string;
+    const dismissed = await request(
+      `/api/enrichment-suggestions/${suggestionId}`,
+      {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "dismissed" }),
+      },
+    );
     expect(dismissed.status).toBe(200);
-    expect((await request(`/api/organizations/${ORGANIZATION_ID}/enrich`, { method: "POST" })).json.data).toEqual([]);
+    expect(dismissed.json.status).toBe("dismissed");
+    const pending = await request(
+      `/api/organizations/${ORGANIZATION_ID}/enrichment-suggestions`,
+    );
+    expect(pending.json.data).toEqual([]);
+
+    const rerun = await request(
+      `/api/organizations/${ORGANIZATION_ID}/enrich`,
+      { method: "POST" },
+    );
+    expect(rerun.json.data).toHaveLength(1);
+    expect(rerun.json.data[0].id).not.toBe(suggestionId);
+    const organization = await db
+      .select({ regionIds: schema.organizations.regionIds })
+      .from(schema.organizations)
+      .where(drizzle.eq(schema.organizations.id, ORGANIZATION_ID))
+      .then((rows) => rows[0]);
+    expect(organization?.regionIds ?? []).toEqual([]);
   });
 });

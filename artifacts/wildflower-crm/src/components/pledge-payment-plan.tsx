@@ -388,7 +388,7 @@ export function CloseAwardDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Close award</DialogTitle>
+            <DialogTitle>Close pledge award</DialogTitle>
           <DialogDescription>
             Ends this cost-reimbursement award. Requires all projected
             allocations to be resolved (drawn as gifts or reduced) first.

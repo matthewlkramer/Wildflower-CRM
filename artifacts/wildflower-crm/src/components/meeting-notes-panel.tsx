@@ -5,6 +5,8 @@ import {
   useUpdateMeetingNote,
   useDeleteMeetingNote,
   usePromoteMeetingActionItem,
+  useGenerateMeetingNextSteps,
+  useCreateTask,
   useGetCurrentUser,
   useListPeople,
   useListOrganizations,
@@ -18,6 +20,7 @@ import {
   getListCalendarEventsQueryKey,
   type MeetingNote,
   type MeetingActionItem,
+  type MeetingNextStepProposal,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -571,6 +574,20 @@ export function AddMeetingNoteDialog({
   // that's what people will use until the transcript flow is figured out.
   const [mode, setMode] = useState<"notes" | "transcript">("notes");
   const [picked, setPicked] = useState<PickedContact | null>(null);
+  const [generateAfterSave, setGenerateAfterSave] = useState(false);
+  const [proposals, setProposals] = useState<MeetingNextStepProposal[]>([]);
+  const [proposalOpen, setProposalOpen] = useState(false);
+  const generate = useGenerateMeetingNextSteps({
+    mutation: {
+      onSuccess: (result) => {
+        setProposals(result.proposals);
+        setProposalOpen(true);
+      },
+      onError: (err: unknown) =>
+        toast({ title: "Next steps failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" }),
+    },
+  });
+  const createTask = useCreateTask();
 
   // Reseed from prefill each time the dialog opens so the dashboard widget
   // can reuse a single dialog instance across multiple meetings. Also reset
@@ -596,7 +613,15 @@ export function AddMeetingNoteDialog({
 
   const create = useCreateMeetingNote({
     mutation: {
-      onSuccess: async () => {
+      onSuccess: async (saved) => {
+        if (generateAfterSave) {
+          setGenerateAfterSave(false);
+          await queryClient.invalidateQueries({
+            queryKey: getListMeetingNotesQueryKey(),
+          });
+          generate.mutate({ id: saved.id });
+          return;
+        }
         await queryClient.invalidateQueries({
           queryKey: getListMeetingNotesQueryKey(),
         });
@@ -626,18 +651,18 @@ export function AddMeetingNoteDialog({
   // Pinned ctx wins over the in-dialog picker. The picker is only shown
   // (and only matters) in unpinned mode.
   const effectivePerson =
-    ctx?.personId ?? (picked?.kind === "person" ? picked.id : undefined);
+    ctx?.personId ??
+    (!attendees.trim() && picked?.kind === "person" ? picked.id : undefined);
   const effectiveFunder =
     ctx?.organizationId ??
-    (picked?.kind === "organization" ? picked.id : undefined);
+    (!attendees.trim() && picked?.kind === "organization"
+      ? picked.id
+      : undefined);
   const effectiveHousehold =
-    ctx?.householdId ?? (picked?.kind === "household" ? picked.id : undefined);
-  const contactCount =
-    (effectivePerson ? 1 : 0) +
-    (effectiveFunder ? 1 : 0) +
-    (effectiveHousehold ? 1 : 0);
+    ctx?.householdId ??
+    (!attendees.trim() && picked?.kind === "household" ? picked.id : undefined);
   const bodyText = mode === "notes" ? notes : transcript;
-  const canSubmit = bodyText.trim().length > 0 && contactCount === 1;
+  const canSubmit = bodyText.trim().length > 0;
 
   // File upload: accept text-shaped transcript files and read them
   // client-side into the textarea so the user can still tweak before
@@ -776,7 +801,7 @@ export function AddMeetingNoteDialog({
               data-testid="input-meeting-attendees"
             />
           </div>
-          {unpinned ? (
+          {unpinned && !attendees.trim() ? (
             <div className="space-y-1.5">
               <Label>Contact</Label>
               <ContactPicker value={picked} onChange={setPicked} />
@@ -815,7 +840,7 @@ export function AddMeetingNoteDialog({
             <TabsContent value="transcript" className="space-y-1.5 mt-0">
               <div className="flex items-center justify-between">
                 <Label htmlFor="mtg-transcript">Transcript</Label>
-                <Button
+             <Button
                   type="button"
                   size="sm"
                   variant="ghost"
@@ -866,18 +891,132 @@ export function AddMeetingNoteDialog({
             <Button
               type="submit"
               disabled={!canSubmit || create.isPending}
+              onClick={() => setGenerateAfterSave(false)}
               data-testid="button-save-meeting-note"
             >
               {create.isPending
                 ? mode === "transcript"
                   ? "Summarizing…"
                   : "Saving…"
-                : mode === "transcript"
-                  ? "Save & summarize"
-                  : "Save notes"}
+                : "Save"}
+            </Button>
+            <Button
+              type="submit"
+              variant="secondary"
+              disabled={!canSubmit || create.isPending || generate.isPending}
+              onClick={() => setGenerateAfterSave(true)}
+              data-testid="button-save-and-generate-next-steps"
+            >
+              {generate.isPending ? "Generating…" : "Save and generate next steps"}
             </Button>
           </DialogFooter>
         </form>
+        <MeetingNextStepsProposalDialog
+          open={proposalOpen}
+          proposals={proposals}
+          onOpenChange={setProposalOpen}
+          onConfirm={async (selected) => {
+            await Promise.all(
+              selected.map((proposal) =>
+                createTask.mutateAsync({
+                  data: {
+                    title: proposal.title,
+                    description: proposal.description ?? undefined,
+                    dueDate: proposal.dueDate ?? undefined,
+                    assigneeUserId: proposal.assigneeUserId ?? undefined,
+                    personIds: effectivePerson ? [effectivePerson] : undefined,
+                    organizationIds: effectiveFunder ? [effectiveFunder] : undefined,
+                    householdIds: effectiveHousehold ? [effectiveHousehold] : undefined,
+                  },
+                }),
+              ),
+            );
+            await queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+            setProposalOpen(false);
+            setOpen(false);
+            toast({ title: `${selected.length} task${selected.length === 1 ? "" : "s"} created` });
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function MeetingNextStepsProposalDialog({
+  open,
+  proposals,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  proposals: MeetingNextStepProposal[];
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (proposals: MeetingNextStepProposal[]) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<MeetingNextStepProposal[]>([]);
+  useEffect(() => setDraft(proposals), [proposals]);
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Review proposed next steps</DialogTitle>
+          <DialogDescription>
+            Edit, remove, or add proposals. Nothing is created until you explicitly confirm.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+          {draft.map((proposal, index) => (
+            <div key={index} className="grid grid-cols-[1fr_140px_140px_auto] gap-2 items-start">
+              <Input
+                value={proposal.title}
+                onChange={(event) =>
+                  setDraft((items) => items.map((item, i) => i === index ? { ...item, title: event.target.value } : item))
+                }
+                aria-label={`Proposed task ${index + 1}`}
+              />
+              <Input
+                value={proposal.assigneeName ?? ""}
+                onChange={(event) =>
+                  setDraft((items) => items.map((item, i) => i === index ? { ...item, assigneeName: event.target.value || null } : item))
+                }
+                placeholder="Assignee"
+                aria-label={`Assignee for proposed task ${index + 1}`}
+              />
+              <Input
+                type="date"
+                value={proposal.dueDate ?? ""}
+                onChange={(event) =>
+                  setDraft((items) => items.map((item, i) => i === index ? { ...item, dueDate: event.target.value || null } : item))
+                }
+                aria-label={`Due date for proposed task ${index + 1}`}
+              />
+              <Button type="button" variant="ghost" size="icon" onClick={() => setDraft((items) => items.filter((_, i) => i !== index))} aria-label="Delete proposed task">
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+          <Button type="button" variant="outline" onClick={() => setDraft((items) => [...items, {
+            title: "",
+            assigneeUserId: null,
+            assigneeName: null,
+            assignmentDate: new Date().toISOString().slice(0, 10),
+            dueDate: null,
+            description: null,
+          }])}>
+            <Plus className="h-4 w-4 mr-1" /> Add task
+          </Button>
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            type="button"
+            disabled={draft.some((item) => !item.title.trim())}
+            onClick={() => void onConfirm(draft.map((item) => ({ ...item, title: item.title.trim() })))}
+            data-testid="button-confirm-create-next-steps"
+          >
+            Confirm and create tasks
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

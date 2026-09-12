@@ -57,14 +57,6 @@ unverified and confirm against code before relying on it.
    two-plane conceptual framing and ratified relationship context; its physical
    money target is partly superseded by the implemented bank-spine ADR.
 
-## Donor fields and cleanup work
-
-- [`field-definitions.md`](field-definitions.md) — approved field definitions,
-  canonical contact information, newsletter preference history, and shared
-  cleanup projects.
-- [`../lib/db/migrations/0246_0247_field_simplification_RUNBOOK.md`](../lib/db/migrations/0246_0247_field_simplification_RUNBOOK.md) — deployment sequence,
-  preservation checks, evidence backfill, and cleanup-project seeds (0246–0248).
-
 ## Other canonical documents
 
 - [`change-recipes.md`](change-recipes.md) — step-by-step recipes for routine

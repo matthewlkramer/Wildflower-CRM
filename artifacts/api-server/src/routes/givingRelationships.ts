@@ -13,6 +13,10 @@ import {
   type DonorRef,
   type SqlExecutor,
 } from "../lib/donorRouting";
+import {
+  collapsePledgePayments,
+  largestGivingMetric,
+} from "../lib/givingMetrics";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -37,6 +41,10 @@ type GiftRow = {
   payment_intermediary_id: string | null;
   payment_intermediary_name: string | null;
   attribution_kinds: AttributionKind[];
+  opportunity_id: string | null;
+  pledge_amount: string | null;
+  pledge_date: string | null;
+  pledge_payment_status: string | null;
 };
 
 type BreakdownDefinition = {
@@ -152,6 +160,16 @@ const giftProjection = sql.raw(`
     END AS donor_owner_user_id,
     g.payment_intermediary_id,
     pi.name AS payment_intermediary_name,
+    g.opportunity_id,
+    CASE WHEN o.pledge_committed_at IS NOT NULL
+      THEN COALESCE(o.awarded_amount, o.ask_amount)::text END AS pledge_amount,
+    o.pledge_committed_at::text AS pledge_date,
+    CASE
+      WHEN o.pledge_committed_at IS NULL THEN NULL
+      WHEN o.status = 'cash_in' THEN 'paid'
+      WHEN COALESCE(o.paid, 0) > 0 THEN 'partially_paid'
+      ELSE 'unpaid'
+    END AS pledge_payment_status,
     c.attribution_kinds
   FROM grouped c
   JOIN gifts_and_payments g ON g.id = c.gift_id
@@ -159,6 +177,7 @@ const giftProjection = sql.raw(`
   LEFT JOIN people donor_person ON donor_person.id = g.individual_giver_person_id
   LEFT JOIN households donor_household ON donor_household.id = g.household_id
   LEFT JOIN payment_intermediaries pi ON pi.id = g.payment_intermediary_id
+  LEFT JOIN opportunities_and_pledges o ON o.id = g.opportunity_id
   ORDER BY g.date_received DESC NULLS LAST, g.created_at DESC, g.id
 `);
 
@@ -285,10 +304,18 @@ router.get(
     const throughIntermediaryCents = rows
       .filter((row) => row.payment_intermediary_id !== null)
       .reduce((sum, row) => sum + toCents(row.amount), 0);
-    const largest = rows.reduce<GiftRow | null>((current, row) => {
-      if (!current || toCents(row.amount) > toCents(current.amount)) return row;
-      return current;
-    }, null);
+    const metricRows = collapsePledgePayments(
+      rows.map((row) => ({
+        id: row.id,
+        amount: row.amount,
+        dateReceived: row.date_received,
+        opportunityId: row.opportunity_id,
+        pledgeAmount: row.pledge_amount,
+        pledgeDate: row.pledge_date,
+        pledgePaymentStatus: row.pledge_payment_status,
+      })),
+    );
+    const largest = largestGivingMetric(metricRows);
 
     const breakdown = defs.map((definition) => {
       const matching = rows.filter((row) =>
@@ -353,13 +380,14 @@ router.get(
       relationshipTotal: fromCents(relationshipCents),
       donorOfRecordTotal: fromCents(directCents),
       throughIntermediaryTotal: fromCents(throughIntermediaryCents),
-      giftCount: rows.length,
+       giftCount: metricRows.length,
       mostRecentGiftDate: rows[0]?.date_received ?? null,
-      largestGift: largest
+       largestGift: largest
         ? {
             id: largest.id,
-            amount: largest.amount ?? "0.00",
-            dateReceived: largest.date_received,
+            amount: largest.amount,
+            dateReceived: largest.dateReceived,
+            kind: largest.kind,
           }
         : null,
       breakdown,

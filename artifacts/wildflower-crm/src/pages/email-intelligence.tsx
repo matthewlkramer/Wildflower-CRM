@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, useSearch, useLocation } from "wouter";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   useListEmailProposals,
   useAcceptEmailProposal,
@@ -651,6 +651,14 @@ function ProposalList({
               onRetry={() => onRetry(p.id)}
               retrying={retryingId === p.id || (bulkRetrying && isRetriable(p))}
             />
+            {kind === "bounce_invalid" || kind === "bounce_soft" ? (
+              <PersonIdentityWorkflow
+                emailAddress={p.subjectEmail ?? String((p.payload as Record<string, unknown>)?.recipient ?? "")}
+                proposalId={p.id}
+                kind={kind}
+                onSuccess={invalidate}
+              />
+            ) : null}
           </CardContent>
         </Card>
       ))}
@@ -1394,6 +1402,108 @@ function ProposalDetail({
   }
 }
 
+/**
+ * Shared observed-email identity workflow. Bounce proposals and unmatched
+ * newsletter/correspondent rows deliberately use the same picker and write
+ * endpoint so adding an address has one set of semantics.
+ */
+function PersonIdentityWorkflow({
+  emailAddress,
+  proposalId,
+  kind,
+  onSuccess,
+}: {
+  emailAddress: string;
+  proposalId?: string;
+  kind?: "bounce_invalid" | "bounce_soft";
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const [personId, setPersonId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [confirmInvalid, setConfirmInvalid] = useState(false);
+  const resolvedName = usePersonName(personId);
+  const match = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const response = await fetch("/api/email-identity/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) {
+        const error = (await response.json()) as { message?: string };
+        throw new Error(error.message ?? "Request failed");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Email linked", description: `"${emailAddress}" added to the person` });
+      onSuccess();
+    },
+    onError: (error: Error) =>
+      toast({
+        title: "Could not link email",
+        description: error.message,
+        variant: "destructive",
+      }),
+  });
+  const canSubmit = creating
+    ? Boolean(firstName.trim() || lastName.trim())
+    : Boolean(personId);
+  return (
+    <div className="mt-3 space-y-2 rounded-md border bg-muted/20 p-3" data-testid={`identity-workflow-${emailAddress}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-medium">Add this observed email to a person</span>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setCreating((v) => !v)}>
+          {creating ? "Select existing" : "Create new person"}
+        </Button>
+      </div>
+      {creating ? (
+        <div className="flex gap-2">
+          <input className="h-9 flex-1 rounded-md border bg-background px-2 text-sm" placeholder="First name" value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+          <input className="h-9 flex-1 rounded-md border bg-background px-2 text-sm" placeholder="Last name" value={lastName} onChange={(e) => setLastName(e.target.value)} />
+        </div>
+      ) : (
+        <EntityCombobox
+          useSearch={usePersonSearch}
+          useResolve={usePersonName}
+          value={personId}
+          onChange={setPersonId}
+          placeholder="Search people…"
+          allowNull={false}
+          testId={`combobox-identity-person-${emailAddress}`}
+        />
+      )}
+      {kind === "bounce_invalid" ? (
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Checkbox checked={confirmInvalid} onCheckedChange={(checked) => setConfirmInvalid(checked === true)} />
+          Confirm this hard-bounced address is no longer valid
+        </label>
+      ) : null}
+      <Button
+        type="button"
+        size="sm"
+        disabled={!canSubmit || match.isPending || (kind === "bounce_invalid" && !confirmInvalid)}
+        onClick={() =>
+          match.mutate({
+              emailAddress,
+              ...(personId && !creating ? { personId } : {}),
+              ...(creating
+                ? { createPerson: { firstName: firstName.trim() || undefined, lastName: lastName.trim() || undefined } }
+                : {}),
+              ...(proposalId ? { proposalId } : {}),
+              ...(kind === "bounce_invalid" ? { invalidateObservedEmail: confirmInvalid } : {}),
+          })
+        }
+      >
+        {match.isPending ? "Saving…" : `Link${resolvedName && !creating ? ` to ${resolvedName}` : ""}`}
+      </Button>
+    </div>
+  );
+}
+
 function UnrecognizedCorrespondents({
   allMailboxes,
 }: {
@@ -1525,14 +1635,7 @@ function UnrecognizedCorrespondents({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <Link
-                    href={`/individuals?createFromEmail=${encodeURIComponent(
-                      r.emailAddress,
-                    )}`}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    Create person
-                  </Link>
+                  <span className="text-xs text-muted-foreground">Observed email</span>
                   <Button
                     size="sm"
                     variant="outline"
@@ -1575,6 +1678,10 @@ function UnrecognizedCorrespondents({
                   isPending={linkEmail.isPending}
                 />
               ) : null}
+              <PersonIdentityWorkflow
+                emailAddress={r.emailAddress}
+                onSuccess={invalidateCorrespondents}
+              />
             </li>
           ))}
         </ul>

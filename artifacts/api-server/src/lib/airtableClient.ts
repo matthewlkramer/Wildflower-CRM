@@ -122,7 +122,6 @@ interface ListRecordsOptions {
   baseId: string;
   tableId: string;
   viewId?: string;
-  fields?: readonly string[];
   pageSize?: number;
   /** Max pages to walk before bailing (guards against runaway pagination). */
   maxPages?: number;
@@ -143,7 +142,6 @@ export async function listAllRecords(
     baseId,
     tableId,
     viewId,
-    fields,
     pageSize = 100,
     maxPages = 1000,
     timeoutMs = 30_000,
@@ -165,7 +163,6 @@ export async function listAllRecords(
     }
     const url = new URL(`${AIRTABLE_API_BASE}/v0/${baseId}/${tableId}`);
     if (viewId) url.searchParams.set("view", viewId);
-    for (const field of fields ?? []) url.searchParams.append("fields[]", field);
     url.searchParams.set("pageSize", String(Math.min(Math.max(pageSize, 1), 100)));
     if (offset) url.searchParams.set("offset", offset);
 

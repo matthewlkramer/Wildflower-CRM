@@ -29,6 +29,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { CircleDollarSign, Ban } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // Same per-card cap as the legacy linked-record cards; the header count
 // still shows the true totals.
@@ -96,11 +97,25 @@ export function GivingPipelineCard({
     <RelatedCard
       title="Giving & pipeline"
       count={isLoading ? undefined : total}
+      // This card is intentionally a discoverable work surface even when the
+      // donor has no rows yet: the three creation actions remain available.
+      empty={false}
       action={
         <div className="flex items-center gap-1">
-          <CreateOpportunityDialog scope={scope} mode="opportunity" />
-          <CreateOpportunityDialog scope={scope} mode="pledge" />
-          <RecordReceivedGiftDialog scope={scope} />
+          <CreateOpportunityDialog
+            scope={scope}
+            mode="opportunity"
+            trigger={<Button size="sm" variant="ghost">Add opportunity</Button>}
+          />
+          <CreateOpportunityDialog
+            scope={scope}
+            mode="pledge"
+            trigger={<Button size="sm" variant="ghost">Add pledge</Button>}
+          />
+          <RecordReceivedGiftDialog
+            scope={scope}
+            trigger={<Button size="sm" variant="ghost">Add gift</Button>}
+          />
         </div>
       }
     >

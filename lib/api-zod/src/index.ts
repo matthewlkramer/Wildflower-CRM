@@ -42,6 +42,53 @@ export interface OppCloseState {
   actualCompletionDate?: string | Date | null;
 }
 
+export const ROLLING_CLOSE_ALLOWED_STAGES = [
+  "cold_lead",
+  "warm_lead",
+  "in_conversation",
+] as const;
+export const ROLLING_CLOSE_STAGE_MESSAGE =
+  "Months from now is available only for Cold Lead, Warm Lead, or In Conversation. Set a specific projected close date before moving to Convince or later.";
+export const PROJECTED_CLOSE_MODE_MESSAGE =
+  "Choose either a specific projected close date or months from now, not both.";
+
+export interface OppProjectedCloseTimingState {
+  stage?: string | null;
+  projectedCloseDate?: string | null;
+  projectedCloseMonthsOut?: number | null;
+}
+
+export function validateOppProjectedCloseTiming(
+  state: OppProjectedCloseTimingState,
+): InvariantIssue[] {
+  const issues: InvariantIssue[] = [];
+  if (
+    state.projectedCloseDate != null &&
+    state.projectedCloseMonthsOut != null
+  ) {
+    issues.push({ path: "projectedCloseDate", message: PROJECTED_CLOSE_MODE_MESSAGE });
+  }
+  if (
+    state.projectedCloseMonthsOut != null &&
+    (!Number.isInteger(state.projectedCloseMonthsOut) ||
+      state.projectedCloseMonthsOut < 1)
+  ) {
+    issues.push({
+      path: "projectedCloseMonthsOut",
+      message: "Months from now must be a positive whole number.",
+    });
+  }
+  if (
+    state.projectedCloseMonthsOut != null &&
+    !ROLLING_CLOSE_ALLOWED_STAGES.includes(
+      state.stage as (typeof ROLLING_CLOSE_ALLOWED_STAGES)[number],
+    )
+  ) {
+    issues.push({ path: "projectedCloseMonthsOut", message: ROLLING_CLOSE_STAGE_MESSAGE });
+  }
+  return issues;
+}
+
 export interface InvariantIssue {
   path: string;
   message: string;
@@ -163,6 +210,7 @@ export const CreateOpportunityOrPledgeBodyRefined =
   CreateOpportunityOrPledgeBody.superRefine(
     (b: z.infer<typeof CreateOpportunityOrPledgeBody>, ctx) => {
       issuesToZodCtx(validateOppInvariants(b), ctx);
+      issuesToZodCtx(validateOppProjectedCloseTiming(b), ctx);
       // A row created already-closed must carry its completion date up front.
       issuesToZodCtx(validateOppCloseTransition({}, b), ctx);
     },

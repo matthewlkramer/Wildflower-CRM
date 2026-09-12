@@ -71,7 +71,6 @@ import {
   parseFieldsParam,
   selectExportFields,
 } from "../lib/csvExportFields";
-import { organizationPrimaryEmail } from "../lib/organizationContact";
 import { generateRelationshipSummary } from "../lib/relationshipSummary";
 
 const ORGANIZATIONS_ARRAY_PARAMS = [
@@ -152,10 +151,7 @@ const orgsMostRecentGiftExpr = sql`(
 // 0107; `payment_intermediary_id`, migration 0146 — superseded by
 // donor_payment_intermediaries) are physically dropped and simply fall out of
 // getTableColumns.
-const orgColumns = {
-  ...getTableColumns(organizations),
-  primaryEmail: organizationPrimaryEmail(ORGS_ID).as("primary_email"),
-};
+const orgColumns = getTableColumns(organizations);
 
 const orgsListSelect = {
   ...orgColumns,
@@ -631,10 +627,6 @@ router.post(
 router.post(
   "/organizations",
   asyncHandler(async (req, res) => {
-    if (req.body && ("orgEmail" in req.body || "primaryEmail" in req.body)) {
-      res.status(400).json({ error: "contact_email_required", message: "Edit organization email addresses in Contact info using the emails endpoints." });
-      return;
-    }
     const body = parseOrBadRequest(CreateOrganizationBody, req.body, res);
     if (!body) return;
     const [row] = await db
@@ -659,10 +651,6 @@ router.post(
 router.patch(
   "/organizations/:id",
   asyncHandler(async (req, res) => {
-    if (req.body && ("orgEmail" in req.body || "primaryEmail" in req.body)) {
-      res.status(400).json({ error: "contact_email_required", message: "Edit organization email addresses in Contact info using the emails endpoints." });
-      return;
-    }
     const body = parseOrBadRequest(UpdateOrganizationBody, req.body, res);
     if (!body) return;
     const id = paramId(req);

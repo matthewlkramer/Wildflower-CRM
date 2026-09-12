@@ -29,6 +29,7 @@ export const GetDashboardSummaryResponse = zod.object({
   "verbalNoLetter": zod.number(),
   "committedUnpaid": zod.number(),
   "partiallyPaid": zod.number(),
+  "overdueFixedClose": zod.number(),
   "stagedUnprocessed": zod.number(),
   "giftsMissingAllocations": zod.number()
 }).describe('Counts for the donor-lifecycle worklists (\"what hasn\'t been done yet\").\nEach count is scoped by the dashboard\'s global entity filter (when set)\nand excludes archived rows, matching the corresponding filtered-list\nworklist preset. See the `worklist` query params on the opportunities and\ngifts list endpoints for the canonical per-worklist definitions.\n'),
@@ -136,8 +137,8 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "householdName": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
-  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish()
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
 }).describe('A single gift_allocation row booked to the FY\'s grant_year, denormalized with parent gift + donor info.'))
 }),
   "openPipeline": zod.object({
@@ -157,14 +158,15 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "opportunityStage": zod.string().nullish(),
   "winProbability": zod.string().nullish().describe('Parent opp\'s win_probability (0–1, numeric string).'),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().nullish(),
   "organizationId": zod.string().nullish(),
   "organizationName": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
-  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish()
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
 }).describe('A single pledge_allocation row on an open opportunity for the FY\'s grant_year, denormalized with parent opp + donor info.'))
 })
 }).describe('Per-category (revenue OR loan_capital) supporting detail for one FY.'),
@@ -190,8 +192,8 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "householdName": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
-  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish()
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
 }).describe('A single gift_allocation row booked to the FY\'s grant_year, denormalized with parent gift + donor info.'))
 }),
   "openPipeline": zod.object({
@@ -211,14 +213,15 @@ export const GetFiscalYearBreakdownResponse = zod.object({
   "opportunityStage": zod.string().nullish(),
   "winProbability": zod.string().nullish().describe('Parent opp\'s win_probability (0–1, numeric string).'),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().nullish(),
   "organizationId": zod.string().nullish(),
   "organizationName": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "householdName": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
-  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish()
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
 }).describe('A single pledge_allocation row on an open opportunity for the FY\'s grant_year, denormalized with parent opp + donor info.'))
 })
 }).describe('Per-category (revenue OR loan_capital) supporting detail for one FY.')
@@ -281,6 +284,7 @@ export const GetFiscalYearReportResponse = zod.object({
   "opportunityStage": zod.string().nullish(),
   "winProbability": zod.string().nullish().describe('Parent opp\'s win_probability (0–1, numeric string).'),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().nullish().describe('Rolling months-from-now timing for open or committed opportunity rows; null for a specific date.'),
   "pledgedAmount": zod.string().nullish().describe('committed: total pledged to this FY before payments (numeric string).'),
   "paidAmount": zod.string().nullish().describe('committed: payments booked this FY against the pledge (numeric string).'),
   "organizationId": zod.string().nullish(),
@@ -289,8 +293,8 @@ export const GetFiscalYearReportResponse = zod.object({
   "householdName": zod.string().nullish(),
   "individualGiverPersonId": zod.string().nullish(),
   "individualGiverPersonName": zod.string().nullish(),
-  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish(),
-  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).describe('Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.').nullish()
+  "organizationPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish(),
+  "individualGiverPersonPriority": zod.enum(['top', 'high', 'medium', 'low']).nullish()
 }).describe('One record contributing to a fiscal year + track\'s progress-to-goal\ncalculation, denormalized with its donor (Donor-XOR: exactly one of\norganization \/ household \/ individual) and a link target (giftId for\n`received`, opportunityId for `committed`\/`open`).\n'))
 }).describe('The records behind one fiscal year + track\'s progress-to-goal bar. Totals\nreconcile to the dashboard bar for the same FY + track + entity filter.\n')
 

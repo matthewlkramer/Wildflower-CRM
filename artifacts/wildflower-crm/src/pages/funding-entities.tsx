@@ -118,6 +118,7 @@ const CONNECTION_STATUSES: ConnectionStatus[] = [
   "no_connection",
 ];
 const PRIORITIES: Priority[] = ["top", "high", "medium", "low"];
+type OrganizationTypeChoice = "all" | "grantmaker" | "lender" | "neither";
 
 const CAPACITY_TIERS: CapacityRating[] = [
   "tier_1k_10k",
@@ -523,6 +524,7 @@ export default function Organizations() {
   const debouncedSearch = useDebounce(search, 250);
   const [issuesGrants, setIssuesGrants] = usePersistedState<boolean | undefined>("wf.list.funders.issuesGrants", undefined);
   const [makesPris, setMakesPris] = usePersistedState<boolean | undefined>("wf.list.funders.makesPris", undefined);
+  const [organizationType, setOrganizationType] = usePersistedState<OrganizationTypeChoice>("wf.list.funders.organizationType", "all");
   const [subtypes, setSubtypes] = usePersistedState<string[]>("wf.list.funders.subtypes", DEFAULT_SUBTYPES);
   const [activeStatuses, setActiveStatuses] = usePersistedState<string[]>("wf.list.funders.activeStatuses", DEFAULT_ACTIVE_STATUSES);
   const [connectionStatuses, setConnectionStatuses] = usePersistedState<string[]>("wf.list.funders.connectionStatuses", []);
@@ -572,8 +574,13 @@ export default function Organizations() {
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
-    ...(issuesGrants !== undefined ? { issuesGrants } : {}),
-    ...(makesPris !== undefined ? { makesPris } : {}),
+    ...(organizationType === "grantmaker" ? { issuesGrants: true } : {}),
+    ...(organizationType === "lender" ? { makesPris: true } : {}),
+    ...(organizationType === "neither" ? { issuesGrants: false, makesPris: false } : {}),
+    // Retain the legacy boolean filters only for previously saved views that
+    // explicitly set them; the primary UI now uses the derived type choice.
+    ...(organizationType === "all" && issuesGrants !== undefined ? { issuesGrants } : {}),
+    ...(organizationType === "all" && makesPris !== undefined ? { makesPris } : {}),
     ...(subtypes.length > 0 ? { entityType: [...subtypes].sort() } : {}),
     // Explicit active-status filter wins; otherwise "Show defunct" governs:
     // off hides defunct only (null-status orgs still show), on adds no filter.
@@ -655,6 +662,7 @@ export default function Organizations() {
       },
       { key: "lastContacted", label: "Last contacted", display: (v) => formatDateShort(v as string | null) },
       { key: "website", label: "Website" },
+      { key: "orgEmail", label: "Org email" },
       { key: "emailDomain", label: "Email domain" },
       { key: "linkedin", label: "LinkedIn" },
     ],
@@ -798,8 +806,32 @@ export default function Organizations() {
     () => {
       const defs: FilterDef[] = [
       {
+        key: "organizationType",
+        label: "Organization type",
+        active: organizationType !== "all",
+        clear: () => { setOrganizationType("all"); setPage(1); selection.clear(); },
+        render: () => (
+          <select
+            className="h-8 rounded border px-2 text-sm bg-background"
+            value={organizationType}
+            onChange={(e) => {
+              setOrganizationType(e.target.value as OrganizationTypeChoice);
+              setPage(1);
+              selection.clear();
+            }}
+            data-testid="select-organization-type"
+          >
+            <option value="all">All types</option>
+            <option value="grantmaker">Grantmaker</option>
+            <option value="lender">Lender</option>
+            <option value="neither">Neither</option>
+          </select>
+        ),
+      },
+      {
         key: "issuesGrants",
         label: "Grant-making",
+        defaultVisible: false,
         active: issuesGrants !== undefined,
         clear: () => { setIssuesGrants(undefined); setPage(1); selection.clear(); },
         render: () => (
@@ -1056,7 +1088,7 @@ export default function Organizations() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, viewMode],
+    [organizationType, issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1108,6 +1140,7 @@ export default function Organizations() {
 
   const hasActiveFilters =
     !!search ||
+    organizationType !== "all" ||
     issuesGrants !== undefined ||
     makesPris !== undefined ||
     !sameDefaultSubtypes ||
@@ -1127,6 +1160,7 @@ export default function Organizations() {
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
     search: string;
+    organizationType: OrganizationTypeChoice;
     issuesGrants: boolean | undefined;
     makesPris: boolean | undefined;
     subtypes: string[];
@@ -1148,6 +1182,7 @@ export default function Organizations() {
   };
   const currentView: FundersView = {
     search,
+    organizationType,
     issuesGrants,
     makesPris,
     subtypes,
@@ -1169,6 +1204,7 @@ export default function Organizations() {
   };
   const clearAll = () => {
     setSearch("");
+    setOrganizationType("all");
     setIssuesGrants(undefined);
     setMakesPris(undefined);
     setSubtypes(DEFAULT_SUBTYPES);
@@ -1193,6 +1229,7 @@ export default function Organizations() {
     current: currentView,
     apply: (s) => {
       setSearch(s.search ?? "");
+      setOrganizationType(s.organizationType ?? "all");
       setIssuesGrants(s.issuesGrants ?? undefined);
       setMakesPris(s.makesPris ?? undefined);
       setSubtypes(s.subtypes ?? DEFAULT_SUBTYPES);

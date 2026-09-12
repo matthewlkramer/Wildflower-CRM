@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-09-12
+last_verified: 2026-09-11
 ---
 
 # Individual and organization enrichment field audit
@@ -14,6 +14,7 @@ confirmed value, and acceptance remains an owner/admin decision.
 | Entity       | Canonical field          | Evidence priority                                                                  | Confidence                                                                          | Decision                            |
 | ------------ | ------------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- | ----------------------------------- |
 | Person       | `current_home_region_id` | direct address; primary household address; current affiliated organization address | High when an address already links to a live region; medium for state-code fallback | Suggest only while blank            |
+| Organization | `region_ids`             | organization address                                                               | High when the address links to a live region; medium for state-code fallback        | Suggest one region only while blank |
 
 The CRM already stores canonical `city_region_id` and `state_region_id` links
 on addresses, plus `state_code`. Those links are safer than guessing geography
@@ -21,11 +22,6 @@ from postal-code ranges and preserve the CRM's mixed city/state/metro taxonomy.
 The service therefore uses the most precise live linked region first, then a
 canonical state matching `state_code`. Unrecognized or incomplete addresses
 produce no suggestion.
-
-Organization `region_ids` means **funding interests**. Office addresses are
-not evidence of those interests. Address-based organization suggestions are no
-longer generated or accepted; existing suggestions remain dismissible for audit
-history. Person home-region suggestions are unchanged.
 
 ## Reviewed, not safe to infer automatically yet
 

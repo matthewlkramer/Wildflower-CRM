@@ -9,7 +9,7 @@ import {
   type FiscalYearReportRow,
   type FundraisingCategory,
 } from "@workspace/api-client-react";
-import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates, currentFiscalYearSlug } from "@/lib/format";
+import { formatCurrency, formatDateShort, formatEnum, abbreviateUsStates, currentFiscalYearSlug, formatProjectedCloseTiming } from "@/lib/format";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -579,7 +579,12 @@ function OpenTable({
               <>
                 {sortedRows.map((r) => (
                   <TableRow key={r.rowId} data-testid={`row-${r.rowId}`}>
-                    <TableCell className="whitespace-nowrap">{fmtDate(r.projectedCloseDate)}</TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      {formatProjectedCloseTiming(
+                        r.projectedCloseMonthsOut,
+                        r.projectedCloseDate,
+                      )}
+                    </TableCell>
                     <TableCell>
                       <DonorCell
                         organizationId={r.organizationId}

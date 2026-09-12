@@ -1,4 +1,3 @@
-import { recordNewsletterPreference } from "../lib/newsletterPreferences";
 import {
   Router,
   type IRouter,
@@ -591,7 +590,6 @@ router.get(
 router.post(
   "/people/bulk-update",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.patch?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
     await executeBulkUpdate(req, res, {
       entity: "people",
       table: people,
@@ -604,11 +602,11 @@ router.post(
         "enthusiasm",
         "priority",
         "deceased",
+        "newsletter",
       ],
       // text[] interest/region columns reconciled via extraApply
       // (replace/append) rather than written as a single column SET.
       virtualFields: [
-        "newsletter",
         "interestsThematic",
         "interestsThematicMode",
         "interestsAges",
@@ -619,12 +617,6 @@ router.post(
         "regionIdsMode",
       ],
       extraApply: async (tx, id, vp) => {
-        if (typeof vp.newsletter === "boolean") {
-          await recordNewsletterPreference(tx, { personId: id, eventType: vp.newsletter ? "staff_added" : "staff_removed",
-            occurredAt: new Date(), source: "CRM bulk edit", sourceKey: `bulk:${newId()}`,
-            evidence: vp.newsletter ? "Staff added this person to the newsletter audience." : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
-            recordedByUserId: getAppUser(req)?.id ?? null });
-        }
         await reconcileArrayColumns(tx, people, id, vp, [
           {
             valueKey: "interestsThematic",
@@ -703,19 +695,12 @@ router.post(
 router.post(
   "/people",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
-    if (req.body && "unsubscribedToNewsletter" in req.body) {
-      res.status(400).json({ error: "preference_history_required", message: "Record opt-out or renewed consent with its source in Newsletter preferences." }); return;
-    }
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
-    const { newsletter, ...personFields } = body;
-    const row = await db.transaction(async (tx) => {
-      const [created] = await tx.insert(people).values({ id: newId(), ...personFields }).returning();
-      if (newsletter) await recordNewsletterPreference(tx, { personId: created.id, eventType: "staff_added", occurredAt: new Date(),
-        source: "CRM", sourceKey: `staff:${newId()}`, evidence: "Staff selected this person for the newsletter audience.", recordedByUserId: getAppUser(req)?.id ?? null });
-      return tx.select().from(people).where(eq(people.id, created.id)).then((r) => r[0]);
-    });
+    const [row] = await db
+      .insert(people)
+      .values({ id: newId(), ...body })
+      .returning();
     if (row) {
       await auditCreate(
         req,
@@ -734,10 +719,6 @@ router.post(
 router.patch(
   "/people/:id",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
-    if (req.body && "unsubscribedToNewsletter" in req.body) {
-      res.status(400).json({ error: "preference_history_required", message: "Record opt-out or renewed consent with its source in Newsletter preferences." }); return;
-    }
     const body = parseOrBadRequest(UpdatePersonBody, req.body, res);
     if (!body) return;
     const id = paramId(req);
@@ -752,16 +733,11 @@ router.patch(
     const needsTracking = trackingFields.some((f) => f in body);
     const before = needsTracking ? auditBefore : undefined;
 
-    const { newsletter, ...personFields } = body;
-    const row = await db.transaction(async (tx) => {
-      const [updated] = await tx.update(people).set({ ...personFields, updatedAt: new Date() }).where(eq(people.id, id)).returning();
-      if (!updated) return undefined;
-      if (typeof newsletter === "boolean") await recordNewsletterPreference(tx, { personId: id,
-        eventType: newsletter ? "staff_added" : "staff_removed", occurredAt: new Date(), source: "CRM", sourceKey: `staff:${newId()}`,
-        evidence: newsletter ? "Staff added this person to the newsletter audience." : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
-        recordedByUserId: getAppUser(req)?.id ?? null });
-      return tx.select().from(people).where(eq(people.id, id)).then((r) => r[0]);
-    });
+    const [row] = await db
+      .update(people)
+      .set({ ...body, updatedAt: new Date() })
+      .where(eq(people.id, id))
+      .returning();
     if (!row) return notFound(res, "person");
 
     // Write history entries for any tracked fields that actually changed.

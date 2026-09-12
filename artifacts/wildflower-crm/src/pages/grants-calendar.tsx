@@ -14,6 +14,7 @@ import {
   type OpportunityType,
   type UpdateOpportunityOrPledgeBody,
 } from "@workspace/api-client-react";
+import { formatProjectedCloseTiming } from "@/lib/format";
 import { useTableState, sortRows, SortableTH } from "@/lib/table-helpers";
 import {
   resolveColumns,
@@ -108,7 +109,11 @@ function buildColumns(
     {
       key: "projectedClose",
       label: "Projected close",
-      cell: (o) => formatDateShort(o.projectedCloseDate),
+      cell: (o) =>
+        formatProjectedCloseTiming(
+          o.projectedCloseMonthsOut,
+          o.effectiveProjectedCloseDate ?? o.projectedCloseDate,
+        ),
     },
     {
       key: "name",
@@ -396,10 +401,24 @@ export default function GrantsCalendar() {
   const upcoming = useMemo(
     () =>
       (data?.data ?? [])
-        .filter((o) => Boolean(o.applicationDeadline ?? o.projectedCloseDate))
+        .filter((o) =>
+          Boolean(
+            o.applicationDeadline ??
+              o.effectiveProjectedCloseDate ??
+              o.projectedCloseDate,
+          ),
+        )
         .sort((a, b) =>
-          (a.applicationDeadline ?? a.projectedCloseDate ?? "").localeCompare(
-            b.applicationDeadline ?? b.projectedCloseDate ?? "",
+          (
+            a.applicationDeadline ??
+            a.effectiveProjectedCloseDate ??
+            a.projectedCloseDate ??
+            ""
+          ).localeCompare(
+            b.applicationDeadline ??
+              b.effectiveProjectedCloseDate ??
+              b.projectedCloseDate ??
+              "",
           ),
         ),
     [data],
@@ -410,7 +429,8 @@ export default function GrantsCalendar() {
         upcoming,
         {
           applicationDeadline: (o) => o.applicationDeadline ?? null,
-          projectedClose: (o) => o.projectedCloseDate ?? null,
+          projectedClose: (o) =>
+            o.effectiveProjectedCloseDate ?? o.projectedCloseDate ?? null,
           name: (o) => (o.name ?? "").toLowerCase(),
           funder: (o) =>
             (
@@ -672,7 +692,8 @@ function CalendarRow({
   const { busy, run } = useSaveRunner();
   const label = o.name ?? `Opportunity ${o.id}`;
   const drivingIsApp = Boolean(o.applicationDeadline);
-  const drivingDate = o.applicationDeadline ?? o.projectedCloseDate ?? "";
+  const effectiveClose = o.effectiveProjectedCloseDate ?? o.projectedCloseDate;
+  const drivingDate = o.applicationDeadline ?? effectiveClose ?? "";
   const overdue = Boolean(drivingDate) && drivingDate < today;
 
   const startEditDates = () => {
@@ -740,7 +761,7 @@ function CalendarRow({
         />
       ) : (
         <DateCell
-          date={o.projectedCloseDate}
+          date={effectiveClose}
           overdue={overdue && !drivingIsApp}
         />
       );

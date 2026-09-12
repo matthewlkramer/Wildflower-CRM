@@ -24,7 +24,12 @@ import { stagedStatusWhere, chargeStatusWhere } from "./derivedStatus";
 // paidPresence subquery in the opportunities route.)
 // ───────────────────────────────────────────────────────────────────────────
 
-export const OPP_WORKLISTS = ["verbal_no_letter", "committed_unpaid", "partially_paid"] as const;
+export const OPP_WORKLISTS = [
+  "verbal_no_letter",
+  "committed_unpaid",
+  "partially_paid",
+  "overdue_fixed_close",
+] as const;
 export type OppWorklist = (typeof OPP_WORKLISTS)[number];
 
 export const GIFT_WORKLISTS = ["missing_allocations"] as const;
@@ -55,6 +60,15 @@ export function oppWorklistConds(worklist: OppWorklist): SQL[] {
       // A pledge with some money in but not fully paid. A fully-paid pledge
       // flips to status=cash_in, so status=pledge + paid>0 ⇒ paid < awarded.
       return [eq(opportunitiesAndPledges.status, "pledge"), sql`${oppPaidSum} > 0`];
+    case "overdue_fixed_close":
+      // Deliberately use the fixed date column only. A rolling months-out
+      // estimate is not a projected close date and must never enter this
+      // overdue worklist.
+      return [
+        eq(opportunitiesAndPledges.status, "open"),
+        isNull(opportunitiesAndPledges.projectedCloseMonthsOut),
+        sql`${opportunitiesAndPledges.projectedCloseDate} < CURRENT_DATE - INTERVAL '1 year'`,
+      ];
   }
 }
 

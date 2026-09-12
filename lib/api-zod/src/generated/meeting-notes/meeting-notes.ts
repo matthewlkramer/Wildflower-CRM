@@ -152,3 +152,21 @@ export const PromoteMeetingActionItemBody = zod.object({
   "dueDate": zod.string().date().optional()
 })
 
+/**
+ * @summary Generate editable task proposals from a saved meeting note.
+ */
+export const GenerateMeetingNextStepsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const GenerateMeetingNextStepsResponse = zod.object({
+  "proposals": zod.array(zod.object({
+  "title": zod.string(),
+  "assigneeUserId": zod.string().nullish(),
+  "assigneeName": zod.string().nullish(),
+  "assignmentDate": zod.string().date(),
+  "dueDate": zod.string().date().nullish(),
+  "description": zod.string().nullish()
+}))
+})
+

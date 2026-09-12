@@ -602,7 +602,11 @@ function VisitRow({
                 visit.source === "system_draft" ? "secondary" : "outline"
               }
             >
-              {visit.source === "system_draft" ? "Suggested" : "Added by team"}
+              {visit.source === "system_draft"
+                ? "Suggested"
+                : visit.planningUpdatedByUserName
+                  ? `Added by ${visit.planningUpdatedByUserName}`
+                  : "Added manually"}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
