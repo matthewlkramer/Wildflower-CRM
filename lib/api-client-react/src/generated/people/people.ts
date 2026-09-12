@@ -24,14 +24,17 @@ import type {
   BulkArchiveBody,
   BulkUpdatePeopleBody,
   BulkUpdateResult,
+  CreateNewsletterPreferenceEventBody,
   CreatePersonBody,
   EnrichmentSuggestion,
   EnrichmentSuggestionList,
   ExportPeopleCsvParams,
   ForbiddenResponse,
+  ListNewsletterPreferences200,
   ListPeopleParams,
   MergePeopleBody,
   MergeResult,
+  NewsletterPreferenceEvent,
   NotFoundResponse,
   Person,
   PersonDetail,
@@ -60,7 +63,7 @@ export const getExportPeopleCsvUrl = (params?: ExportPeopleCsvParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -72,16 +75,16 @@ export const getExportPeopleCsvUrl = (params?: ExportPeopleCsvParams,) => {
 }
 
 export const exportPeopleCsv = async (params?: ExportPeopleCsvParams, options?: RequestInit): Promise<string> => {
-  
+
   return customFetch<string>(getExportPeopleCsvUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -92,7 +95,7 @@ export const getExportPeopleCsvQueryKey = (params?: ExportPeopleCsvParams,) => {
     ] as const;
     }
 
-    
+
 export const getExportPeopleCsvQueryOptions = <TData = Awaited<ReturnType<typeof exportPeopleCsv>>, TError = ErrorType<unknown>>(params?: ExportPeopleCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -100,13 +103,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getExportPeopleCsvQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof exportPeopleCsv>>> = ({ signal }) => exportPeopleCsv(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -118,7 +121,7 @@ export type ExportPeopleCsvQueryError = ErrorType<unknown>
 
 export function useExportPeopleCsv<TData = Awaited<ReturnType<typeof exportPeopleCsv>>, TError = ErrorType<unknown>>(
  params?: ExportPeopleCsvParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPeopleCsv>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportPeopleCsvQueryOptions(params,options)
@@ -135,7 +138,7 @@ export const getListPeopleUrl = (params?: ListPeopleParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -147,16 +150,16 @@ export const getListPeopleUrl = (params?: ListPeopleParams,) => {
 }
 
 export const listPeople = async (params?: ListPeopleParams, options?: RequestInit): Promise<PersonList> => {
-  
+
   return customFetch<PersonList>(getListPeopleUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -167,7 +170,7 @@ export const getListPeopleQueryKey = (params?: ListPeopleParams,) => {
     ] as const;
     }
 
-    
+
 export const getListPeopleQueryOptions = <TData = Awaited<ReturnType<typeof listPeople>>, TError = ErrorType<unknown>>(params?: ListPeopleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPeople>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -175,13 +178,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPeopleQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPeople>>> = ({ signal }) => listPeople(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPeople>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -193,7 +196,7 @@ export type ListPeopleQueryError = ErrorType<unknown>
 
 export function useListPeople<TData = Awaited<ReturnType<typeof listPeople>>, TError = ErrorType<unknown>>(
  params?: ListPeopleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPeople>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPeopleQueryOptions(params,options)
@@ -209,15 +212,15 @@ export function useListPeople<TData = Awaited<ReturnType<typeof listPeople>>, TE
 export const getCreatePersonUrl = () => {
 
 
-  
+
 
   return `/api/people`
 }
 
 export const createPerson = async (createPersonBody: CreatePersonBody, options?: RequestInit): Promise<Person> => {
-  
+
   return customFetch<Person>(getCreatePersonUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -225,7 +228,7 @@ export const createPerson = async (createPersonBody: CreatePersonBody, options?:
       createPersonBody,)
   }
 );}
-  
+
 
 
 
@@ -240,7 +243,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPerson>>, {data: BodyType<CreatePersonBody>}> = (props) => {
@@ -251,7 +254,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -273,22 +276,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetPersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}`
 }
 
 export const getPerson = async (id: string, options?: RequestInit): Promise<PersonDetail> => {
-  
+
   return customFetch<PersonDetail>(getGetPersonUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -299,7 +302,7 @@ export const getGetPersonQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetPersonQueryOptions = <TData = Awaited<ReturnType<typeof getPerson>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPerson>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -307,13 +310,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetPersonQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getPerson>>> = ({ signal }) => getPerson(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPerson>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -325,7 +328,7 @@ export type GetPersonQueryError = ErrorType<NotFoundResponse>
 
 export function useGetPerson<TData = Awaited<ReturnType<typeof getPerson>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPerson>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPersonQueryOptions(id,options)
@@ -341,16 +344,16 @@ export function useGetPerson<TData = Awaited<ReturnType<typeof getPerson>>, TErr
 export const getUpdatePersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}`
 }
 
 export const updatePerson = async (id: string,
     updatePersonBody: UpdatePersonBody, options?: RequestInit): Promise<Person> => {
-  
+
   return customFetch<Person>(getUpdatePersonUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -358,7 +361,7 @@ export const updatePerson = async (id: string,
       updatePersonBody,)
   }
 );}
-  
+
 
 
 
@@ -373,7 +376,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePerson>>, {id: string;data: BodyType<UpdatePersonBody>}> = (props) => {
@@ -384,7 +387,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -410,22 +413,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getGetPersonRelationshipSummaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}/relationship-summary`
 }
 
 export const getPersonRelationshipSummary = async (id: string, options?: RequestInit): Promise<RelationshipSummary> => {
-  
+
   return customFetch<RelationshipSummary>(getGetPersonRelationshipSummaryUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -436,7 +439,7 @@ export const getGetPersonRelationshipSummaryQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetPersonRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -444,13 +447,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetPersonRelationshipSummaryQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonRelationshipSummary>>> = ({ signal }) => getPersonRelationshipSummary(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -462,7 +465,7 @@ export type GetPersonRelationshipSummaryQueryError = ErrorType<NotFoundResponse>
 
 export function useGetPersonRelationshipSummary<TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPersonRelationshipSummaryQueryOptions(id,options)
@@ -683,15 +686,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getBulkUpdatePeopleUrl = () => {
 
 
-  
+
 
   return `/api/people/bulk-update`
 }
 
 export const bulkUpdatePeople = async (bulkUpdatePeopleBody: BulkUpdatePeopleBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkUpdatePeopleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -699,7 +702,7 @@ export const bulkUpdatePeople = async (bulkUpdatePeopleBody: BulkUpdatePeopleBod
       bulkUpdatePeopleBody,)
   }
 );}
-  
+
 
 
 
@@ -714,7 +717,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkUpdatePeople>>, {data: BodyType<BulkUpdatePeopleBody>}> = (props) => {
@@ -725,7 +728,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -747,15 +750,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getMergePeopleUrl = () => {
 
 
-  
+
 
   return `/api/people/merge`
 }
 
 export const mergePeople = async (mergePeopleBody: MergePeopleBody, options?: RequestInit): Promise<MergeResult> => {
-  
+
   return customFetch<MergeResult>(getMergePeopleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -763,7 +766,7 @@ export const mergePeople = async (mergePeopleBody: MergePeopleBody, options?: Re
       mergePeopleBody,)
   }
 );}
-  
+
 
 
 
@@ -778,7 +781,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergePeople>>, {data: BodyType<MergePeopleBody>}> = (props) => {
@@ -789,7 +792,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -814,15 +817,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getBulkArchivePeopleUrl = () => {
 
 
-  
+
 
   return `/api/people/bulk-archive`
 }
 
 export const bulkArchivePeople = async (bulkArchiveBody: BulkArchiveBody, options?: RequestInit): Promise<BulkUpdateResult> => {
-  
+
   return customFetch<BulkUpdateResult>(getBulkArchivePeopleUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -830,7 +833,7 @@ export const bulkArchivePeople = async (bulkArchiveBody: BulkArchiveBody, option
       bulkArchiveBody,)
   }
 );}
-  
+
 
 
 
@@ -845,7 +848,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkArchivePeople>>, {data: BodyType<BulkArchiveBody>}> = (props) => {
@@ -856,7 +859,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -881,22 +884,22 @@ export const useBulkArchivePeople = <TError = ErrorType<BadRequestResponse>,
     export const getArchivePersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}/archive`
 }
 
 export const archivePerson = async (id: string, options?: RequestInit): Promise<Person> => {
-  
+
   return customFetch<Person>(getArchivePersonUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -911,7 +914,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof archivePerson>>, {id: string}> = (props) => {
@@ -922,13 +925,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ArchivePersonMutationResult = NonNullable<Awaited<ReturnType<typeof archivePerson>>>
-    
+
     export type ArchivePersonMutationError = ErrorType<NotFoundResponse>
 
     export const useArchivePerson = <TError = ErrorType<NotFoundResponse>,
@@ -944,22 +947,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUnarchivePersonUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}/unarchive`
 }
 
 export const unarchivePerson = async (id: string, options?: RequestInit): Promise<Person> => {
-  
+
   return customFetch<Person>(getUnarchivePersonUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -974,7 +977,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchivePerson>>, {id: string}> = (props) => {
@@ -985,13 +988,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type UnarchivePersonMutationResult = NonNullable<Awaited<ReturnType<typeof unarchivePerson>>>
-    
+
     export type UnarchivePersonMutationError = ErrorType<ForbiddenResponse | NotFoundResponse>
 
     export const useUnarchivePerson = <TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
@@ -1004,4 +1007,136 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUnarchivePersonMutationOptions(options));
     }
-    
+    export const getListNewsletterPreferencesUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/newsletter-preferences`
+}
+
+export const listNewsletterPreferences = async (id: string, options?: RequestInit): Promise<ListNewsletterPreferences200> => {
+
+  return customFetch<ListNewsletterPreferences200>(getListNewsletterPreferencesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListNewsletterPreferencesQueryKey = (id: string,) => {
+    return [
+    `/api/people/${id}/newsletter-preferences`
+    ] as const;
+    }
+
+
+export const getListNewsletterPreferencesQueryOptions = <TData = Awaited<ReturnType<typeof listNewsletterPreferences>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListNewsletterPreferencesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listNewsletterPreferences>>> = ({ signal }) => listNewsletterPreferences(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listNewsletterPreferences>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListNewsletterPreferencesQueryResult = NonNullable<Awaited<ReturnType<typeof listNewsletterPreferences>>>
+export type ListNewsletterPreferencesQueryError = ErrorType<unknown>
+
+
+
+export function useListNewsletterPreferences<TData = Awaited<ReturnType<typeof listNewsletterPreferences>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listNewsletterPreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListNewsletterPreferencesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getCreateNewsletterPreferenceEventUrl = (id: string,) => {
+
+
+
+
+  return `/api/people/${id}/newsletter-preferences`
+}
+
+export const createNewsletterPreferenceEvent = async (id: string,
+    createNewsletterPreferenceEventBody: CreateNewsletterPreferenceEventBody, options?: RequestInit): Promise<NewsletterPreferenceEvent> => {
+
+  return customFetch<NewsletterPreferenceEvent>(getCreateNewsletterPreferenceEventUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createNewsletterPreferenceEventBody,)
+  }
+);}
+
+
+
+
+export const getCreateNewsletterPreferenceEventMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>, TError,{id: string;data: BodyType<CreateNewsletterPreferenceEventBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>, TError,{id: string;data: BodyType<CreateNewsletterPreferenceEventBody>}, TContext> => {
+
+const mutationKey = ['createNewsletterPreferenceEvent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>, {id: string;data: BodyType<CreateNewsletterPreferenceEventBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createNewsletterPreferenceEvent(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateNewsletterPreferenceEventMutationResult = NonNullable<Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>>
+    export type CreateNewsletterPreferenceEventMutationBody = BodyType<CreateNewsletterPreferenceEventBody>
+    export type CreateNewsletterPreferenceEventMutationError = ErrorType<unknown>
+
+    export const useCreateNewsletterPreferenceEvent = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>, TError,{id: string;data: BodyType<CreateNewsletterPreferenceEventBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createNewsletterPreferenceEvent>>,
+        TError,
+        {id: string;data: BodyType<CreateNewsletterPreferenceEventBody>},
+        TContext
+      > => {
+      return useMutation(getCreateNewsletterPreferenceEventMutationOptions(options));
+    }

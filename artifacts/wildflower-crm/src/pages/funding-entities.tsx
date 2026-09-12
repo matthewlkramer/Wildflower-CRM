@@ -655,7 +655,6 @@ export default function Organizations() {
       },
       { key: "lastContacted", label: "Last contacted", display: (v) => formatDateShort(v as string | null) },
       { key: "website", label: "Website" },
-      { key: "orgEmail", label: "Org email" },
       { key: "emailDomain", label: "Email domain" },
       { key: "linkedin", label: "LinkedIn" },
     ],

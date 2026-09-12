@@ -41,6 +41,7 @@ export const organizations = pgTable("organizations", {
   entityType: entityTypeEnum("entity_type"),
   makesPris: boolean("makes_pris"),
   numberOfEmployees: numberOfEmployeesEnum("number_of_employees"),
+  // Potential annual giving to Wildflower; null = not assessed.
   capacityRating: capacityRatingEnum("capacity_rating"),
   totalAssets: numeric("total_assets", { precision: 16, scale: 2 }),
   priorityAreasNotes: text("priority_areas_notes"),
@@ -49,7 +50,8 @@ export const organizations = pgTable("organizations", {
   historicalNames: text("historical_names").array(),
   details: text("details"),
   emailDomain: text("email_domain"),
-  orgEmail: text("org_email"),
+  // Contact emails live only in emails. Migration 0246 preserves legacy org_email
+  // values there before dropping the duplicate column.
   ownerUserId: text("owner_user_id").references(() => users.id, {
     onDelete: "restrict",
   }),
@@ -74,6 +76,7 @@ export const organizations = pgTable("organizations", {
   interestsThematic: text("interests_thematic").array(),
   interestsAges: text("interests_ages").array(),
   interestsGovModels: text("interests_gov_models").array(),
+  // Expressed funding geographies, never inferred from office addresses.
   regionIds: text("region_ids").array(),
   // Self-ref. SET NULL: removing a parent org leaves children intact.
   parentOrganizationId: text("parent_organization_id").references(
@@ -83,7 +86,7 @@ export const organizations = pgTable("organizations", {
   // NOTE: payment_intermediary_id was DROPPED (migration 0146) — superseded by
   // the donor_payment_intermediaries join table (a donor can give through many
   // intermediaries); values were backfilled there. Do not reintroduce.
-  // Solicitation priority tier. Relevant when issuesGrants = true.
+  // Manual overall future-giving priority: capacity, connection, enthusiasm, fit.
   priority: priorityEnum("priority"),
   // When true, the organization's real name is hidden in the UI (shown as
   // "Anonymous") from everyone except the record owner and admins. UI-only.

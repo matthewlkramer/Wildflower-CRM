@@ -72,8 +72,12 @@ document set (see [`../README.md`](../README.md)).
   date-bounded pass also captures every primary-calendar event overlapping
   those travel windows. Unmatched trip events default private and expire when
   no active trip or linked CRM note requires them.
-- **Flodesk** — newsletter-eligible people (driven by the `people.newsletter`
-  flags) are pushed to Flodesk; state in `flodesk_sync_state`. Historical
+- **Flodesk** — newsletter eligibility derives from `newsletter_preference_events`;
+  the two people flags are read-only projections. Staff removal removes the
+  configured segment membership; opt-out suppresses delivery. Resubscription
+  sends a known affirmative opt-in timestamp for Flodesk to validate. Inbound
+  unsubscribe observations append source evidence with an unknown event date
+  when the provider supplies none. Sync state remains in `flodesk_sync_state`. Historical
   audience, campaign, open, and click evidence can also be imported from the
   canonical Flodesk workbook on `/newsletter`. Imports upsert
   `newsletter_contacts`, `newsletter_campaigns`, and `newsletter_engagement`
@@ -86,3 +90,22 @@ document set (see [`../README.md`](../README.md)).
   data and must not be committed to the repository.
 - **GDELT** — press coverage into `media_mentions`; cursor in
   `media_ingest_state`.
+
+### Newsletter preference evidence backfill
+
+`backfill-newsletter-preferences.ts` reads the Flodesk subscriber API and the
+School dbase sources `SSJ Fillout Forms` (`tblvgyMdMcidh8k6u`) and `Fillout Get
+Involved results` (`tbls7U2BOBRQrfQTy`), base `appJBT9a4f3b7hWQ2`. It reads only
+fields needed to verify the answer, source identity, date, and disposition.
+Normalized answers/email must agree with their preserved form evidence.
+A preserved form Entry Date is usable; a record's Last updated timestamp is
+not a consent date. Unknown dates remain null. Exact email identity must match
+one active CRM person. Ambiguous, test, and conflicting sources are reported
+for review. No people are created and source systems are never modified.
+
+Preview is the default; stable source keys make repeated application safe.
+This is an explicit backfill, not a new scheduled Fillout sync. See the
+[cutover runbook](../../lib/db/migrations/0246_0247_field_simplification_RUNBOOK.md).
+Historical Flodesk and Mailchimp consent/opt-out evidence remains an open
+Cleanup Queue project until those source records are located and reviewed.
+Workbook campaign/engagement imports remain a separate evidence model.

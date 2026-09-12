@@ -97,6 +97,8 @@ export interface FlodeskSubscriber {
   firstName: string | null;
   lastName: string | null;
   segments: FlodeskSegmentRef[];
+  optinTimestamp?: string | null;
+  source?: string | null;
 }
 
 interface RawSubscriber {
@@ -106,6 +108,8 @@ interface RawSubscriber {
   first_name?: unknown;
   last_name?: unknown;
   segments?: unknown;
+  optin_timestamp?: unknown;
+  source?: unknown;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -236,10 +240,13 @@ export function parseSubscriber(raw: unknown): FlodeskSubscriber | null {
     firstName: asStr(r.first_name),
     lastName: asStr(r.last_name),
     segments: parseSegments(r.segments),
+    optinTimestamp: asStr(r.optin_timestamp),
+    source: asStr(r.source),
   };
 }
 
 export interface UpsertSubscriberFields {
+  optinTimestamp?: string | null;
   firstName?: string | null;
   lastName?: string | null;
 }
@@ -255,6 +262,7 @@ export async function upsertSubscriber(
   const body: Record<string, unknown> = { email: email.toLowerCase() };
   if (fields.firstName) body["first_name"] = fields.firstName;
   if (fields.lastName) body["last_name"] = fields.lastName;
+  if (fields.optinTimestamp) body["optin_timestamp"] = fields.optinTimestamp;
   const json = await flodeskFetch("/subscribers", { method: "POST", body });
   return parseSubscriber(json);
 }
@@ -269,6 +277,13 @@ export async function addSubscriberToSegments(
     `/subscribers/${encodeURIComponent(email.toLowerCase())}/segments`,
     { method: "POST", body: { segment_ids: segmentIds } },
   );
+}
+
+/** Staff audience removal is segment membership, never a recipient opt-out. */
+export async function removeSubscriberFromSegments(email: string, segmentIds: string[]): Promise<void> {
+  await flodeskFetch(`/subscribers/${encodeURIComponent(email.toLowerCase())}/segments`, {
+    method: "DELETE", body: { segment_ids: segmentIds }, allow404: true,
+  });
 }
 
 /** Globally unsubscribe a subscriber. Idempotent + safe when not present. */

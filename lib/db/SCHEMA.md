@@ -142,7 +142,13 @@ analytics and pledge paid-amount derivation.
   `anonymous` flag (UI-only name masking). There is no separate `funders`
   table — that split was consolidated here.
 - `people` — individuals (donors, advisors, staff contacts); `anonymous`
-  flag; `newsletter` / `unsubscribed_to_newsletter` drive Flodesk eligibility.
+  flag; `newsletter` / `unsubscribed_to_newsletter` are read-only projections
+  from `newsletter_preference_events`, maintained by migration 0247's trigger.
+- `newsletter_preference_events` — append-only through the API; source-keyed
+  consent, audience selection/removal, and opt-out evidence. Actual event dates
+  may be unknown; recorded dates are separate. Only dated consent later than
+  an opt-out lifts suppression. Person merges move evidence and trigger the
+  same derivation; selection flags are never merged as independent inputs.
 - `households` — joint-account donors (name + `active`).
 - `people_entity_roles` — polymorphic join: a person plays a role in exactly
   one of organization / payment_intermediary / household, with `connection`,
@@ -154,7 +160,10 @@ analytics and pledge paid-amount derivation.
 - `emails`, `phone_numbers`, `addresses` — each row owned by exactly one of
   person / organization / payment_intermediary / household (CHECK
   `num_nonnulls(...) = 1`, CASCADE on owner delete). `emails` is globally
-  unique on `lower(email)` (API returns 409 on collision).
+  unique on `lower(email)` (API returns 409 on collision). Organization email
+  also lives here exclusively after 0246; `org_email` is dropped after its
+  preservation checks. API `primaryEmail` is derived from usable contact rows,
+  preferred first then oldest/id, and is never an editable second field.
 
 ## Internal dimensions
 
@@ -476,3 +485,8 @@ The `anonymous` flag on `organizations` and `people` masks the name to
 - Evidence↔evidence ledger ADR: [`docs/adr-source-link-ledger.md`](../../docs/adr-source-link-ledger.md)
 - Data provenance and sync procedures: [`docs/integrations/data-sources.md`](../../docs/integrations/data-sources.md)
 - Routine schema changes: [`docs/change-recipes.md`](../../docs/change-recipes.md)
+
+Standalone cleanup projects use existing `cleanup_queue` rows with
+`target_type=work_item`, a stable target key, and `reason_code=cleanup_project`.
+The first note line is their display title. They share the existing open,
+resolved, and dismissed workflow; no separate task-status table is introduced.

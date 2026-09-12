@@ -201,23 +201,6 @@ export async function derivePersonHomeRegion(
   );
 }
 
-export async function deriveOrganizationRegion(
-  organizationId: string,
-): Promise<RegionSuggestionEvidence | null> {
-  const direct = await db
-    .select()
-    .from(addresses)
-    .where(eq(addresses.organizationId, organizationId))
-    .orderBy(desc(addresses.updatedAt));
-  const signals = direct.map((address) =>
-    asSignal(address, 1, "Organization address"),
-  );
-  return selectAddressRegionSuggestion(
-    signals,
-    await loadRegionEvidence(signals),
-  );
-}
-
 export async function saveRegionSuggestion(
   entityType: EntityType,
   entityId: string,

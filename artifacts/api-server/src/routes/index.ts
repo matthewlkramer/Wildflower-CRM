@@ -69,6 +69,7 @@ import adminReassignRouter from "./adminReassign";
 import reconciliationRouter from "./reconciliation";
 import codingFormRowsRouter from "./codingFormRows";
 import newsletterRouter from "./newsletter";
+import newsletterPreferencesRouter from "./newsletterPreferences";
 import tripPlansRouter from "./tripPlans";
 import enrichmentRouter from "./enrichment";
 
@@ -154,6 +155,7 @@ router.use(adminReassignRouter);
 router.use(reconciliationRouter);
 router.use(codingFormRowsRouter);
 router.use(newsletterRouter);
+router.use(newsletterPreferencesRouter);
 router.use(tripPlansRouter);
 router.use(enrichmentRouter);
 

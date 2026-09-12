@@ -42,6 +42,12 @@ import {
 
 const router: IRouter = Router();
 router.use(requireAuth);
+router.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD" && getAppUser(req)?.role === "read_only") {
+    res.status(403).json({ error: "write_permission_required" }); return;
+  }
+  next();
+});
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -64,6 +70,7 @@ const CLEANUP_TARGET_ID = sql.raw(`"cleanup_queue"."target_id"`);
 const CLEANUP_TARGET_TYPE = sql.raw(`"cleanup_queue"."target_type"`);
 
 const targetNameSql = sql<string | null>`COALESCE(
+  CASE WHEN ${CLEANUP_TARGET_TYPE} = 'work_item' THEN split_part(${cleanupQueue.note}, chr(10), 1) END,
   (
     SELECT oap.name
     FROM opportunities_and_pledges oap
@@ -484,7 +491,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(FlagForResearchBody, req.body, res);
     if (!body) return;
-    const reasonCode = "needs_research";
+    const reasonCode = body.targetType === "work_item" ? "cleanup_project" : "needs_research";
     const note = body.note.trim();
     if (!note) {
       res

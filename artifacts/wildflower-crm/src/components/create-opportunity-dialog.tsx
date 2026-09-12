@@ -174,6 +174,7 @@ export function CreateOpportunityDialog({
   });
 
   const trimmedName = form.name.trim();
+  const showAwardedAmount = isPledge || form.stage === "verbal_confirmation";
 
   function resetAndClose(next: boolean) {
     if (create.isPending) return;
@@ -200,7 +201,7 @@ export function CreateOpportunityDialog({
         ...(form.type ? { type: form.type } : {}),
         loanOrGrant: form.loanOrGrant,
         ...(ask ? { askAmount: ask } : {}),
-        ...(awarded ? { awardedAmount: awarded } : {}),
+        ...(showAwardedAmount && awarded ? { awardedAmount: awarded } : {}),
         ...(closeDate ? { projectedCloseDate: closeDate } : {}),
       },
     });
@@ -374,8 +375,9 @@ export function CreateOpportunityDialog({
                 data-testid="input-new-opportunity-ask"
               />
             </div>
+            {showAwardedAmount && (
             <div className="space-y-1.5">
-              <Label htmlFor="new-opportunity-awarded">Awarded amount</Label>
+              <Label htmlFor="new-opportunity-awarded">Committed amount / award ceiling</Label>
               <Input
                 id="new-opportunity-awarded"
                 type="number"
@@ -389,10 +391,11 @@ export function CreateOpportunityDialog({
                 data-testid="input-new-opportunity-awarded"
               />
             </div>
+            )}
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="new-opportunity-close">Projected close date</Label>
+            <Label htmlFor="new-opportunity-close">Expected commitment date</Label>
             <Input
               id="new-opportunity-close"
               type="date"
@@ -403,7 +406,7 @@ export function CreateOpportunityDialog({
               data-testid="input-new-opportunity-close"
             />
             <p className="text-xs text-muted-foreground">
-              Determines the fiscal year automatically.
+              When the donor is expected to decide or confirm support. Payment dates and fiscal-year credit are recorded separately.
             </p>
           </div>
 
