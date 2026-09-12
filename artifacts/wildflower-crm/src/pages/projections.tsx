@@ -38,7 +38,6 @@ type ProjectionCombinedForecastRow = ProjectionCombinedFyRow;
 
 export default function Projections() {
   const { selected: globalEntityIds } = useEntityFilter();
-  const [view, setView] = useState<"annual" | "arrivals">("annual");
   const [category, setCategory] = useState<FundraisingCategory>("revenue");
   const projParams = useMemo(
     () =>
@@ -55,16 +54,6 @@ export default function Projections() {
   const proj = useGetProjectionsByFyEntity(projParams, {
     query: { queryKey: getGetProjectionsByFyEntityQueryKey(projParams) },
   });
-
-  const monthlyParams: GetFundingArrivalsByMonthParams = useMemo(
-    () => ({
-      category,
-      ...(globalEntityIds.length > 0
-        ? { entityId: [...globalEntityIds].sort() }
-        : {}),
-    }),
-    [globalEntityIds, category],
-  );
 
   const entitiesQ = useListEntities({
     query: { queryKey: getListEntitiesQueryKey() },
@@ -154,133 +143,148 @@ export default function Projections() {
         </p>
       </div>
 
-      <div
-        className="flex items-center gap-1"
-        data-testid="projections-category-toggle"
-      >
-        {[
-          { value: "revenue" as const, label: "Grants / Revenue" },
-          { value: "loan_capital" as const, label: "Loans / Loan Capital" },
-        ].map((c) => (
-          <button
-            key={c.value}
-            type="button"
-            data-testid={`projections-category-${c.value}`}
-            aria-pressed={category === c.value}
-            onClick={() => setCategory(c.value)}
-            className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
-              category === c.value
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:bg-muted/70"
-            }`}
-          >
-            {c.label}
-          </button>
-        ))}
-      </div>
+      <FundingCategoryToggle category={category} onChange={setCategory} />
 
-      <div className="flex gap-2" aria-label="Projection view">
-        {(
-          [
-            { value: "annual", label: "Annual forecast" },
-            { value: "arrivals", label: "Expected arrivals" },
-          ] as const
-        ).map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            aria-pressed={view === option.value}
-            onClick={() => setView(option.value)}
-            data-testid={`projection-view-${option.value}`}
-            className={`rounded-md border px-3 py-2 text-sm ${view === option.value ? "bg-primary text-primary-foreground" : "bg-card"}`}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-      {view === "arrivals" ? (
-        <MonthlyCashOutlook params={monthlyParams} />
-      ) : (
-        <>
-          <ForecastTotals
-            rows={combinedRows}
-            fiscalYears={fyQ.data ?? []}
-            category={category}
-          />
+      <ForecastTotals
+        rows={combinedRows}
+        fiscalYears={fyQ.data ?? []}
+        category={category}
+      />
 
-          <div className="rounded-md border bg-card overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fiscal year</TableHead>
-                  {entityCols.map((e) => (
-                    <TableHead key={e} className="whitespace-nowrap">
-                      {entityName(e)}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
-                ) : isError ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={Math.max(entityCols.length + 1, 2)}
-                      className="text-center h-24 text-destructive"
-                    >
-                      {error instanceof Error
-                        ? error.message
-                        : "Failed to load projections."}
-                    </TableCell>
-                  </TableRow>
-                ) : fyRows.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={Math.max(entityCols.length + 1, 2)}
-                      className="text-center h-24 text-muted-foreground"
-                    >
-                      No forecast information is available.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  <>
-                    {fyRows.map((fy) => {
-                      return (
-                        <TableRow key={fy} data-testid={`row-projection-${fy}`}>
-                          <TableCell className="font-medium whitespace-nowrap">
-                            {fyLabel(fy)}
+      <div className="rounded-md border bg-card overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Fiscal year</TableHead>
+              {entityCols.map((e) => (
+                <TableHead key={e} className="whitespace-nowrap">
+                  {entityName(e)}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading ? (
+              <SkeletonRows cols={Math.max(entityCols.length + 1, 2)} />
+            ) : isError ? (
+              <TableRow>
+                <TableCell
+                  colSpan={Math.max(entityCols.length + 1, 2)}
+                  className="text-center h-24 text-destructive"
+                >
+                  {error instanceof Error
+                    ? error.message
+                    : "Failed to load projections."}
+                </TableCell>
+              </TableRow>
+            ) : fyRows.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={Math.max(entityCols.length + 1, 2)}
+                  className="text-center h-24 text-muted-foreground"
+                >
+                  No forecast information is available.
+                </TableCell>
+              </TableRow>
+            ) : (
+              <>
+                {fyRows.map((fy) => {
+                  return (
+                    <TableRow key={fy} data-testid={`row-projection-${fy}`}>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {fyLabel(fy)}
+                      </TableCell>
+                      {entityCols.map((ent) => {
+                        const row = cell.get(`${fy}|${ent}`);
+                        return (
+                          <TableCell
+                            key={ent}
+                            className="align-top"
+                            data-testid={`cell-${fy}-${ent}`}
+                          >
+                            {row ? <ProjectionCell row={row} /> : "—"}
                           </TableCell>
-                          {entityCols.map((ent) => {
-                            const row = cell.get(`${fy}|${ent}`);
-                            return (
-                              <TableCell
-                                key={ent}
-                                className="align-top"
-                                data-testid={`cell-${fy}-${ent}`}
-                              >
-                                {row ? <ProjectionCell row={row} /> : "—"}
-                              </TableCell>
-                            );
-                          })}
-                        </TableRow>
-                      );
-                    })}
-                  </>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-          {entityCols.length > 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Recipient comparisons are useful for context, but they may not add
-              up to the total because payment credit is capped once per
-              opportunity within the selected recipient scope.
-            </p>
-          ) : null}
-          <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
-        </>
-      )}
+                        );
+                      })}
+                    </TableRow>
+                  );
+                })}
+              </>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      {entityCols.length > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Recipient comparisons are useful for context, but they may not add up
+          to the total because payment credit is capped once per opportunity
+          within the selected recipient scope.
+        </p>
+      ) : null}
+      <ForecastOmissions diagnostics={proj.data?.diagnostics ?? []} />
+    </div>
+  );
+}
+
+export function CashFlow() {
+  const { selected: globalEntityIds } = useEntityFilter();
+  const [category, setCategory] = useState<FundraisingCategory>("revenue");
+  const params: GetFundingArrivalsByMonthParams = useMemo(
+    () => ({
+      category,
+      ...(globalEntityIds.length > 0
+        ? { entityId: [...globalEntityIds].sort() }
+        : {}),
+    }),
+    [globalEntityIds, category],
+  );
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-serif font-bold text-foreground">
+          Cash flow
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          See when committed and prospective funding is expected to arrive.
+        </p>
+      </div>
+      <FundingCategoryToggle category={category} onChange={setCategory} />
+      <MonthlyCashOutlook params={params} />
+    </div>
+  );
+}
+
+function FundingCategoryToggle({
+  category,
+  onChange,
+}: {
+  category: FundraisingCategory;
+  onChange: (category: FundraisingCategory) => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1"
+      data-testid="projections-category-toggle"
+    >
+      {[
+        { value: "revenue" as const, label: "Grants / Revenue" },
+        { value: "loan_capital" as const, label: "Loans / Loan Capital" },
+      ].map((c) => (
+        <button
+          key={c.value}
+          type="button"
+          data-testid={`projections-category-${c.value}`}
+          aria-pressed={category === c.value}
+          onClick={() => onChange(c.value)}
+          className={`rounded-md px-3 py-1 text-xs font-medium transition-colors ${
+            category === c.value
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-muted-foreground hover:bg-muted/70"
+          }`}
+        >
+          {c.label}
+        </button>
+      ))}
     </div>
   );
 }

@@ -21,7 +21,7 @@ import PledgeDetail from "@/pages/pledge-detail";
 import Gifts from "@/pages/gifts";
 import GiftDetail from "@/pages/gift-detail";
 import Moves from "@/pages/moves";
-import Projections from "@/pages/projections";
+import Projections, { CashFlow } from "@/pages/projections";
 import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import FiscalYearReport from "@/pages/fiscal-year-report";
@@ -238,6 +238,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/newsletter"><ProtectedRoute component={Newsletter} /></Route>
           <Route path="/interactions"><Redirect to="/moves" /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>
+          <Route path="/cash-flow"><ProtectedRoute component={CashFlow} /></Route>
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/fiscal-year-report/:fyId"><ProtectedRoute component={FiscalYearReport} /></Route>
           <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>

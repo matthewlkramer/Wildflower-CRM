@@ -68,7 +68,7 @@ vi.mock("@/lib/entity-filter-context", () => ({
   useEntityFilter: () => ({ selected: ["recipient-a"] }),
 }));
 
-import Projections from "./projections";
+import Projections, { CashFlow } from "./projections";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -367,14 +367,7 @@ describe("projections forecast distinctions", () => {
 });
 
 function openArrivals() {
-  render();
-  act(() =>
-    container
-      .querySelector<HTMLButtonElement>(
-        '[data-testid="projection-view-arrivals"]',
-      )!
-      .click(),
-  );
+  act(() => root.render(<CashFlow />));
 }
 function clickButton(text: string) {
   const button = [...container.querySelectorAll("button")].find((button) =>

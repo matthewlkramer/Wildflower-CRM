@@ -109,6 +109,7 @@ const navItems: NavEntry[] = [
 
   { section: "Finance" },
   { href: "/projections", label: "Projections", icon: LineChart },
+  { href: "/cash-flow", label: "Cash flow", icon: HandCoins },
   { href: "/reconciliation/deposits", label: "Reconciliation", icon: Scale },
   { href: "/revenue-extractor", label: "Export for QB", icon: FileBarChart },
 
