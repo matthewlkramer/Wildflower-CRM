@@ -235,6 +235,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/reconciliation/clusters"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/meetings"><ProtectedRoute component={Meetings} /></Route>
+          <Route path="/meetings/notes/:noteId"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/meetings/:id"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/trips"><ProtectedRoute component={TripPlanner} /></Route>
           <Route path="/newsletter"><ProtectedRoute component={Newsletter} /></Route>

@@ -4,6 +4,7 @@ import {
   meetingHistoryStart,
   shouldShowNoNotesAction,
 } from "./meetings";
+import { newMeetingWorkspaceHref } from "@/components/meeting-launcher-dialog";
 
 describe("meetings history window", () => {
   it("starts exactly 60 days before the page load time", () => {
@@ -21,5 +22,17 @@ describe("meetings list actions", () => {
 
   it("does not show No notes after meeting notes exist", () => {
     expect(shouldShowNoNotesAction({ hasMeetingNotes: true })).toBe(false);
+  });
+});
+
+describe("new meeting launcher", () => {
+  it("opens a draft workspace for the selected CRM contact", () => {
+    expect(
+      newMeetingWorkspaceHref({
+        kind: "person",
+        id: "person-123",
+        label: "A donor name that does not belong in the URL",
+      }),
+    ).toBe("/meetings/new?contactKind=person&contactId=person-123");
   });
 });
