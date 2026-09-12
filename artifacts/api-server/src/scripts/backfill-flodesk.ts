@@ -82,6 +82,7 @@ async function main(): Promise<void> {
 
   const counts: Record<FlodeskOutboundOutcome, number> = {
     subscribed: 0,
+    removed_from_segment: 0,
     unsubscribed: 0,
     mirrored_unsubscribe: 0,
     skipped_no_email: 0,

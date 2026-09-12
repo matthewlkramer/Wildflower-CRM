@@ -289,6 +289,69 @@ export const NumberOfEmployees = {
   e_10000_plus: 'e_10000_plus',
 } as const;
 
+export type NewsletterPreferenceEventEventType = typeof NewsletterPreferenceEventEventType[keyof typeof NewsletterPreferenceEventEventType];
+
+
+export const NewsletterPreferenceEventEventType = {
+  consent_given: 'consent_given',
+  staff_added: 'staff_added',
+  staff_removed: 'staff_removed',
+  opted_out: 'opted_out',
+  legacy_selected: 'legacy_selected',
+  legacy_opted_out: 'legacy_opted_out',
+} as const;
+
+export interface NewsletterPreferenceEvent {
+  id: string;
+  personId: string;
+  eventType: NewsletterPreferenceEventEventType;
+  /** Actual event time if known. Never substitute import time. */
+  occurredAt?: string | null;
+  recordedAt: string;
+  source: string;
+  sourceKey: string;
+  sourceUrl?: string | null;
+  evidence: string;
+  recordedByUserId?: string | null;
+}
+
+export type CreateNewsletterPreferenceEventBodyEventType = typeof CreateNewsletterPreferenceEventBodyEventType[keyof typeof CreateNewsletterPreferenceEventBodyEventType];
+
+
+export const CreateNewsletterPreferenceEventBodyEventType = {
+  consent_given: 'consent_given',
+  staff_added: 'staff_added',
+  staff_removed: 'staff_removed',
+  opted_out: 'opted_out',
+} as const;
+
+export interface CreateNewsletterPreferenceEventBody {
+  eventType: CreateNewsletterPreferenceEventBodyEventType;
+  /** Actual event date if known. Undated consent cannot lift an opt-out. */
+  occurredAt?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  source: string;
+  /** @maxLength 2000 */
+  sourceUrl?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  evidence: string;
+  /**
+   * Stable unique ID for retrying this event submission.
+   * @minLength 1
+   * @maxLength 100
+   */
+  requestId: string;
+}
+
+/**
+ * Estimated potential annual giving to Wildflower. Optional; blank means not assessed. Existing ratings should be reviewed against this annual basis.
+ */
 export type CapacityRating = typeof CapacityRating[keyof typeof CapacityRating];
 
 
@@ -322,6 +385,9 @@ export const Enthusiasm = {
   '1-hostile': '1-hostile',
 } as const;
 
+/**
+ * Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.
+ */
 export type Priority = typeof Priority[keyof typeof Priority];
 
 
@@ -1414,7 +1480,8 @@ export interface Organization {
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
-  orgEmail?: string | null;
+  /** Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints. */
+  readonly primaryEmail?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
@@ -1424,6 +1491,7 @@ export interface Organization {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[] | null;
   parentOrganizationId?: string | null;
   /** When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
@@ -1560,7 +1628,6 @@ export interface CreateOrganizationBody {
   historicalNames?: string[];
   details?: string;
   emailDomain?: string;
-  orgEmail?: string;
   ownerUserId?: string;
   tags?: string;
   website?: string;
@@ -1570,6 +1637,7 @@ export interface CreateOrganizationBody {
   interestsThematic?: string[];
   interestsAges?: string[];
   interestsGovModels?: string[];
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[];
   parentOrganizationId?: string;
   x?: string;
@@ -1597,7 +1665,6 @@ export interface UpdateOrganizationBody {
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
-  orgEmail?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
@@ -1607,6 +1674,7 @@ export interface UpdateOrganizationBody {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[] | null;
   parentOrganizationId?: string | null;
   x?: string | null;
@@ -1827,6 +1895,7 @@ export interface Person {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[] | null;
   newsletter: boolean;
   unsubscribedToNewsletter: boolean;
@@ -1899,9 +1968,10 @@ export interface CreatePersonBody {
   interestsThematic?: string[];
   interestsAges?: string[];
   interestsGovModels?: string[];
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[];
+  /** Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. */
   newsletter?: boolean;
-  unsubscribedToNewsletter?: boolean;
   childrenAtWf?: string;
   meetingLink?: string;
   quickbooksCustomerId?: string;
@@ -1940,9 +2010,10 @@ export interface UpdatePersonBody {
   interestsThematic?: string[] | null;
   interestsAges?: string[] | null;
   interestsGovModels?: string[] | null;
+  /** Expressed funding interests; not home or office location. Blank means unknown. */
   regionIds?: string[] | null;
+  /** Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. */
   newsletter?: boolean;
-  unsubscribedToNewsletter?: boolean;
   childrenAtWf?: string | null;
   meetingLink?: string | null;
   assistantPersonId?: string | null;
@@ -7370,7 +7441,7 @@ export interface ApplyHighConfidenceCleanupProposalsResult {
 }
 
 /**
- * Kind of record being flagged.
+ * Kind of record, or work_item for a standalone project.
  */
 export type FlagForResearchBodyTargetType = typeof FlagForResearchBodyTargetType[keyof typeof FlagForResearchBodyTargetType];
 
@@ -7384,21 +7455,22 @@ export const FlagForResearchBodyTargetType = {
   gift: 'gift',
   staged_payment: 'staged_payment',
   stripe_payout: 'stripe_payout',
+  work_item: 'work_item',
 } as const;
 
 /**
- * Flag a record for research. reason_code is always 'needs_research'.
+ * Flag a record for research, or create a standalone cleanup/research project. work_item uses reason_code 'cleanup_project'; record flags use 'needs_research'.
  */
 export interface FlagForResearchBody {
-  /** Kind of record being flagged. */
+  /** Kind of record, or work_item for a standalone project. */
   targetType: FlagForResearchBodyTargetType;
   /**
-   * Id of the record being flagged.
+   * Record id, or a stable client-generated UUID for a standalone project.
    * @minLength 1
    */
   targetId: string;
   /**
-   * What needs research / follow-up on this record.
+   * Shared working notes. For work_item, the first line is the project title.
    * @minLength 1
    */
   note: string;
@@ -12560,6 +12632,12 @@ export const ListNewsletterContactsAudience = {
   unsubscribe_evidence: 'unsubscribe_evidence',
   bounce_evidence: 'bounce_evidence',
 } as const;
+
+export type ListNewsletterPreferences200 = {
+  data: NewsletterPreferenceEvent[];
+  newsletter: boolean;
+  unsubscribedToNewsletter: boolean;
+};
 
 export type ListPersonNewsletterEngagementParams = {
 /**

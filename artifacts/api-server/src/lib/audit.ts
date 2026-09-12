@@ -28,6 +28,7 @@ export type AuditAction =
   | "merge"
   | "bulk_update"
   | "bulk_archive"
+  | "newsletter_preference_recorded"
   | "field_enriched"
   | "field_enrichment_dismissed";
 

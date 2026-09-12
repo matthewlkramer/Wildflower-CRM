@@ -30,31 +30,7 @@ cp "$root/lib/api-client-react/src/custom-fetch.ts" \
 cd "$here"
 CODEGEN_OUT_ROOT="$tmp" pnpm exec orval --config ./orval.config.ts
 CODEGEN_OUT_ROOT="$tmp" node ./gen-index.mjs
-# Orval emits trailing spaces in some bodyless operation templates.
-# Normalize the generated files affected by this contract change, plus the
-# historical reconciliation file, while leaving unrelated generated files
-# byte-identical to the existing baseline.
-for rel in \
-  calendar-events/calendar-events.ts \
-  feedback/feedback.ts \
-  reconciliation/reconciliation.ts \
-  gifts-and-payments/gifts-and-payments.ts \
-  opportunities-and-pledges/opportunities-and-pledges.ts; do
-  file="$tmp/lib/api-client-react/src/generated/$rel"
-  [ -f "$file" ] && sed -i 's/[[:space:]]*$//' "$file"
-done
-
-# These two generated tag files receive the new enrichment operations. Trim
-# only those inserted sections so unrelated historical output stays byte-for-
-# byte stable.
-file="$tmp/lib/api-client-react/src/generated/organizations/organizations.ts"
-[ -f "$file" ] && sed -i \
-  '/List pending, human-reviewed enrichment suggestions for an organization\./,/Download the Organizations list as CSV\./ s/[[:space:]]*$//' \
-  "$file"
-file="$tmp/lib/api-client-react/src/generated/people/people.ts"
-[ -f "$file" ] && sed -i \
-  '/List pending, human-reviewed enrichment suggestions for a person\./,/export const getBulkUpdatePeopleUrl/ s/[[:space:]]*$//' \
-  "$file"
+node ./normalize-generated.mjs "$tmp"
 
 # Newsletter operations include a binary upload shape that Orval formats very
 # unevenly. Keep the targeted generated files deterministic and diff-clean.

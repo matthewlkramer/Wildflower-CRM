@@ -164,6 +164,7 @@ afterAll(async () => {
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
+  await db.delete(schema.cleanupQueue).where(eqFn(schema.cleanupQueue.targetId, `${RUN}_project`));
   await db.delete(schema.users).where(eqFn(schema.users.id, USER_ID));
 }, 60_000);
 
@@ -172,6 +173,26 @@ beforeEach(() => {
 });
 
 describe.skipIf(!HAS_DB)("POST /cleanup-queue (flag for research)", () => {
+  it("tracks a standalone project through create, retry, edit, and completion", async () => {
+    const body = { targetType: "work_item", targetId: `${RUN}_project`, note: "Historical consent review\n\nCheck Mailchimp and preserve evidence." };
+    const created = await flag(body);
+    expect(created.status).toBe(201);
+    expect(created.json.targetName).toBe("Historical consent review");
+    expect(created.json.reasonCode).toBe("cleanup_project");
+    expect((await flag(body)).json.id).toBe(created.json.id);
+    const edit = await fetch(`${baseUrl}/api/cleanup-queue/${created.json.id}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ note: body.note + "\nOwner: fixture reviewer" }) });
+    expect(edit.status).toBe(200);
+    const done = await fetch(`${baseUrl}/api/cleanup-queue/${created.json.id}/resolve`, { method: "POST" });
+    expect(done.status).toBe(200);
+    expect((await done.json()).status).toBe("resolved");
+    expect((await flag(body)).json.status).toBe("resolved");
+  });
+
+  it("does not let a read-only viewer create cleanup projects", async () => {
+    auth.current = { id: USER_ID, role: "read_only" };
+    expect((await flag({ targetType: "work_item", targetId: `${RUN}_denied`, note: "Should not be written" })).status).toBe(403);
+  });
+
   it("creates an open needs_research item for a fresh record (201)", async () => {
     const { status, json } = await flag({
       targetType: "opportunity",

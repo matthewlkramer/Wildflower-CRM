@@ -553,7 +553,6 @@ const PLEDGE_HEADERS = [
   { key: "fund", label: "Fund" },
   { key: "usage", label: "Usage" },
   { key: "fy", label: "FY" },
-  { key: "expected", label: "Expected" },
   { key: "regions", label: "Regions" },
   { key: "share", label: "Share" },
   { key: "restriction", label: "Restriction" },
@@ -659,6 +658,7 @@ function PledgeAllocationDialog({
   mode,
   initial,
   scheduleCount = 0,
+  reimbursablePrompt = false,
   onClose,
   onSubmit,
   onDelete,
@@ -670,6 +670,7 @@ function PledgeAllocationDialog({
   // add dialog offers cross-applying this allocation to every scheduled
   // payment (one row each, grant year derived server-side per payment date).
   scheduleCount?: number;
+  reimbursablePrompt?: boolean;
   onClose: () => void;
   onSubmit: (
     body: CreatePledgeAllocationBody | UpdatePledgeAllocationBody,
@@ -681,6 +682,9 @@ function PledgeAllocationDialog({
   const fiscalYearOptions = useFiscalYearOptions();
   const currentFiscalYearId = useCurrentFiscalYearId();
   const fundableProjectOptions = useFundableProjectOptions(initial?.fundableProjectId ?? null);
+  const schoolNames = useSchoolNameMap();
+  const schoolOptions = Array.from(schoolNames, ([value, label]) => ({ value, label }));
+  if (initial?.schoolRecipientId && !schoolNames.has(initial.schoolRecipientId)) schoolOptions.push({ value: initial.schoolRecipientId, label: `Current school (${initial.schoolRecipientId})` });
   const defaults: AllocationDefaults = { currentFiscalYearId };
   const [s, setS] = useState<PledgeFormState>(() => pledgeStateFrom(initial, defaults));
   const [saving, setSaving] = useState(false);
@@ -830,7 +834,17 @@ function PledgeAllocationDialog({
               options={INTENDED_USAGE_OPTIONS}
             />
           </DialogField>
-          <DialogField label="Grant year" htmlFor="pa-year">
+          {(s.intendedUsage === "project" || !!noneToNull(s.fundableProjectId)) && (
+            <DialogField label="Fundable project" htmlFor="pa-project">
+              <DialogSelect
+                id="pa-project"
+                value={s.fundableProjectId || NONE}
+                onValueChange={(v) => set("fundableProjectId", v)}
+                options={fundableProjectOptions}
+              />
+            </DialogField>
+          )}
+          <DialogField label="Fiscal year credited" htmlFor="pa-year">
             <DialogSelect
               id="pa-year"
               value={s.grantYear || NONE}
@@ -851,7 +865,7 @@ function PledgeAllocationDialog({
                 checked={applyToSchedule}
                 onCheckedChange={(v) => setApplyToSchedule(v)}
                 label={`Apply to all ${scheduleCount} scheduled payments`}
-                hint="Creates one allocation per scheduled payment with these details; each row's grant year comes from that payment's date."
+                hint="Creates one allocation per scheduled payment with these details; each row defaults to the fiscal year of that payment. Review the allocation if reporting credit differs."
               />
             </DialogField>
           ) : null}
@@ -874,6 +888,7 @@ function PledgeAllocationDialog({
             />
           </DialogField>
 
+          {((!!noneToNull(s.conditional) && s.conditional !== "unconditional" && s.conditional !== "reimbursable") || s.conditionsMet === "partial" || s.conditionsMet === "yes") && (
           <DialogField label="Conditions met" htmlFor="pa-conditions-met">
             <Select
               value={s.conditionsMet || "no"}
@@ -891,7 +906,9 @@ function PledgeAllocationDialog({
               </SelectContent>
             </Select>
           </DialogField>
+          )}
 
+          {(reimbursablePrompt || !!noneToNull(s.reimbursementType)) && (
           <DialogField label="Reimbursement type" htmlFor="pa-reimb">
             <DialogSelect
               id="pa-reimb"
@@ -901,6 +918,7 @@ function PledgeAllocationDialog({
             />
             <p className="mt-1 text-xs text-muted-foreground">{REIMBURSEMENT_TYPE_HINT}</p>
           </DialogField>
+          )}
 
           <MoreDetails>
             <RestrictionAxisFields s={s} setAxis={setAxis} />
@@ -910,14 +928,6 @@ function PledgeAllocationDialog({
                 value={s.status || NONE}
                 onValueChange={(v) => set("status", v)}
                 options={PLEDGE_ALLOCATION_STATUS_OPTIONS}
-              />
-            </DialogField>
-            <DialogField label="Fundable project" htmlFor="pa-project">
-              <DialogSelect
-                id="pa-project"
-                value={s.fundableProjectId || NONE}
-                onValueChange={(v) => set("fundableProjectId", v)}
-                options={fundableProjectOptions}
               />
             </DialogField>
             <DialogField label="Direct to school">
@@ -935,19 +945,11 @@ function PledgeAllocationDialog({
               />
             </DialogField>
             <DialogField label="School recipient" htmlFor="pa-school">
-              <Input
+              <DialogSelect
                 id="pa-school"
-                className="h-8 text-sm"
-                value={s.schoolRecipientId}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  setS((prev) => ({
-                    ...prev,
-                    schoolRecipientId: v,
-                    directToSchool: v.trim() ? true : prev.directToSchool,
-                  }));
-                }}
-                placeholder="School ID"
+                value={s.schoolRecipientId || NONE}
+                options={schoolOptions}
+                onValueChange={(v) => setS((prev) => ({ ...prev, schoolRecipientId: noneToNull(v) ?? "", directToSchool: !!noneToNull(v) || prev.directToSchool }))}
               />
             </DialogField>
             <DialogField label="Payment type">
@@ -1206,9 +1208,6 @@ export function PledgeAllocationsEditor({
                 <TableCell>{a.entityId ? entityNameById.get(a.entityId) ?? a.entityId : "—"}</TableCell>
                 <TableCell>{usageLabel(a)}</TableCell>
                 <TableCell className="whitespace-nowrap">{a.grantYear ?? "—"}</TableCell>
-                <TableCell className="whitespace-nowrap" data-testid={`text-opp-alloc-${a.id}-expected`}>
-                  {a.expectedPaymentDate ?? "—"}
-                </TableCell>
                 <TableCell
                   className="max-w-[10rem] truncate"
                   data-testid={`text-opp-alloc-${a.id}-regions`}
@@ -1245,6 +1244,7 @@ export function PledgeAllocationsEditor({
         open={dialog !== null}
         mode={dialog?.mode ?? "add"}
         scheduleCount={scheduleCount}
+        reimbursablePrompt={reimbursablePrompt}
         initial={dialog?.mode === "edit" ? dialog.alloc : null}
         onClose={() => setDialog(null)}
         onSubmit={submit}
@@ -1311,6 +1311,9 @@ function GiftAllocationDialog({
   const fiscalYearOptions = useFiscalYearOptions();
   const currentFiscalYearId = useCurrentFiscalYearId();
   const fundableProjectOptions = useFundableProjectOptions(initial?.fundableProjectId ?? null);
+  const schoolNames = useSchoolNameMap();
+  const schoolOptions = Array.from(schoolNames, ([value, label]) => ({ value, label }));
+  if (initial?.schoolRecipientId && !schoolNames.has(initial.schoolRecipientId)) schoolOptions.push({ value: initial.schoolRecipientId, label: `Current school (${initial.schoolRecipientId})` });
   const defaults: AllocationDefaults = { currentFiscalYearId };
   const [s, setS] = useState<GiftFormState>(() => giftStateFrom(initial, defaults));
   const [saving, setSaving] = useState(false);
@@ -1436,7 +1439,17 @@ function GiftAllocationDialog({
               options={INTENDED_USAGE_OPTIONS}
             />
           </DialogField>
-          <DialogField label="Grant year" htmlFor="ga-year">
+          {(s.intendedUsage === "project" || !!noneToNull(s.fundableProjectId)) && (
+            <DialogField label="Fundable project" htmlFor="ga-project">
+              <DialogSelect
+                id="ga-project"
+                value={s.fundableProjectId || NONE}
+                onValueChange={(v) => set("fundableProjectId", v)}
+                options={fundableProjectOptions}
+              />
+            </DialogField>
+          )}
+          <DialogField label="Fiscal year credited" htmlFor="ga-year">
             <DialogSelect
               id="ga-year"
               value={s.grantYear || NONE}
@@ -1476,21 +1489,12 @@ function GiftAllocationDialog({
 
           <MoreDetails>
             <RestrictionAxisFields s={s} setAxis={setAxis} />
-            <DialogField label="Fundable project" htmlFor="ga-project">
-              <DialogSelect
-                id="ga-project"
-                value={s.fundableProjectId || NONE}
-                onValueChange={(v) => set("fundableProjectId", v)}
-                options={fundableProjectOptions}
-              />
-            </DialogField>
             <DialogField label="School recipient" htmlFor="ga-school">
-              <Input
+              <DialogSelect
                 id="ga-school"
-                className="h-8 text-sm"
-                value={s.schoolRecipientId}
-                onChange={(e) => set("schoolRecipientId", e.target.value)}
-                placeholder="School ID"
+                value={s.schoolRecipientId || NONE}
+                options={schoolOptions}
+                onValueChange={(v) => set("schoolRecipientId", noneToNull(v) ?? "")}
               />
             </DialogField>
             <DialogField label="Spending start" htmlFor="ga-start">

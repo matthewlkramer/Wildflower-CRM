@@ -1,9 +1,11 @@
+import { recordFlodeskUnsubscribe } from "./newsletterPreferences";
 import { db } from "@workspace/db";
-import { people, emails } from "@workspace/db/schema";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { people, emails, newsletterPreferenceEvents } from "@workspace/db/schema";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import {
   addSubscriberToSegments,
+  removeSubscriberFromSegments,
   getFlodeskSegmentId,
   getSubscriber,
   isFlodeskConfigured,
@@ -13,26 +15,10 @@ import {
   type FlodeskSubscriber,
 } from "./flodeskClient";
 
-/**
- * Flodesk subscriber sync.
- *
- * OUTBOUND (CRM → Flodesk): `syncPersonToFlodesk` pushes a single person's
- * newsletter membership into the configured Flodesk segment. Eligible people
- * (newsletter on, not unsubscribed, with a usable email) are upserted as
- * active subscribers in the segment; ineligible people are unsubscribed in
- * Flodesk. The helper never throws — it returns a result and logs warnings —
- * so a future one-time backfill is a thin loop over eligible people.
- *
- * INBOUND (Flodesk → CRM): `reconcileFlodeskUnsubscribes` pages through the
- * segment's subscribers and flips `unsubscribedToNewsletter = true` on any CRM
- * person whose email is unsubscribed in Flodesk.
- *
- * Precedence (the two directions must not fight): inbound is monotonic — it
- * only ever SETS unsubscribed, never clears it — so a CRM unsubscribe can never
- * be overwritten by a stale Flodesk subscribe. Outbound guards the reverse:
- * before (re)subscribing an eligible person it checks Flodesk's current status
- * and, if Flodesk already shows them unsubscribed, mirrors that into the CRM
- * instead of clobbering it. The most recent explicit status therefore wins.
+/** Flodesk delivery sync consumes the evidence-derived CRM preference.
+ * Staff removal only removes segment membership. An opt-out suppresses delivery;
+ * resubscription supplies an actual consent timestamp for Flodesk to validate.
+ * Inbound observations append evidence; they never write preference flags.
  */
 
 const UNSUBSCRIBED_STATUS = "unsubscribed";
@@ -40,6 +26,7 @@ const UNSUBSCRIBED_STATUS = "unsubscribed";
 export type FlodeskOutboundOutcome =
   | "subscribed"
   | "unsubscribed"
+  | "removed_from_segment"
   | "mirrored_unsubscribe"
   | "skipped_no_email"
   | "skipped_not_configured"
@@ -138,33 +125,33 @@ export async function syncPersonToFlodesk(
       // Flodesk. If Flodesk already has them unsubscribed, that explicit signal
       // wins — mirror it into the CRM instead of re-subscribing.
       const existing = await getSubscriber(email);
-      if (existing && existing.status === UNSUBSCRIBED_STATUS) {
-        await db
-          .update(people)
-          .set({ unsubscribedToNewsletter: true, updatedAt: new Date() })
-          .where(
-            and(
-              eq(people.id, personId),
-              eq(people.unsubscribedToNewsletter, false),
-            ),
-          );
-        logger.info(
-          { personId, email },
-          "Flodesk sync: subscriber already unsubscribed in Flodesk — mirrored to CRM",
-        );
+      const latestConsent = await db.select({ occurredAt: newsletterPreferenceEvents.occurredAt })
+        .from(newsletterPreferenceEvents).where(and(eq(newsletterPreferenceEvents.personId, personId), eq(newsletterPreferenceEvents.eventType, "consent_given"), isNotNull(newsletterPreferenceEvents.occurredAt)))
+        .orderBy(sql`${newsletterPreferenceEvents.occurredAt} DESC`).limit(1).then((rows) => rows[0]?.occurredAt ?? null);
+      // Current eligibility already proves this consent is later than any recorded opt-out.
+      // Flodesk independently checks optin_timestamp before allowing reactivation.
+      if (existing?.status === UNSUBSCRIBED_STATUS && !latestConsent) {
+        await recordFlodeskUnsubscribe(personId, email);
         return { outcome: "mirrored_unsubscribe", email };
       }
-      await upsertSubscriber(email, {
-        firstName: person.firstName,
-        lastName: person.lastName,
+      const pushed = await upsertSubscriber(email, {
+        firstName: person.firstName, lastName: person.lastName,
+        optinTimestamp: latestConsent?.toISOString() ?? null,
       });
+      if (pushed?.status === UNSUBSCRIBED_STATUS) {
+        await recordFlodeskUnsubscribe(personId, email);
+        return { outcome: "mirrored_unsubscribe", email };
+      }
       await addSubscriberToSegments(email, [segmentId]);
       return { outcome: "subscribed", email };
     }
 
-    // Ineligible (newsletter off or unsubscribed) — unsubscribe in Flodesk.
-    await unsubscribeSubscriber(email);
-    return { outcome: "unsubscribed", email };
+    if (person.unsubscribedToNewsletter) {
+      await unsubscribeSubscriber(email);
+      return { outcome: "unsubscribed", email };
+    }
+    await removeSubscriberFromSegments(email, [segmentId]);
+    return { outcome: "removed_from_segment", email };
   } catch (err) {
     logger.warn(
       { err, personId, email },
@@ -208,7 +195,7 @@ async function applyUnsubscribes(emailsLower: string[]): Promise<number> {
   if (emailsLower.length === 0) return 0;
   // Find CRM people who own any of these emails.
   const ownerRows = await db
-    .selectDistinct({ personId: emails.personId })
+    .selectDistinct({ personId: emails.personId, email: emails.email })
     .from(emails)
     .where(
       and(
@@ -224,17 +211,12 @@ async function applyUnsubscribes(emailsLower: string[]): Promise<number> {
     .filter((id): id is string => !!id);
   if (personIds.length === 0) return 0;
 
-  const updated = await db
-    .update(people)
-    .set({ unsubscribedToNewsletter: true, updatedAt: new Date() })
-    .where(
-      and(
-        inArray(people.id, personIds),
-        eq(people.unsubscribedToNewsletter, false),
-      ),
-    )
-    .returning({ id: people.id });
-  return updated.length;
+  let applied = 0;
+  for (const personId of personIds) {
+    const matching = ownerRows.find((row) => row.personId === personId);
+    if (matching && await recordFlodeskUnsubscribe(personId, matching.email)) applied += 1;
+  }
+  return applied;
 }
 
 /**
