@@ -922,8 +922,17 @@ function PersonView({ person }: { person: PersonDetail }) {
             </div>
           </FieldCard>
 
-          <FieldCard title="Newsletter preferences">
-            <NewsletterPreferencesCard personId={person.id} />
+          <FieldCard
+            title="Engagement"
+            empty={
+              person.newsletter == null &&
+              person.unsubscribedToNewsletter == null
+            }
+          >
+            <div className="space-y-1">
+              <NewsletterPreferencesCard personId={person.id} />
+              <NewsletterEngagementCard personId={person.id} />
+            </div>
           </FieldCard>
 
           <div className="px-1 text-xs text-muted-foreground">
@@ -969,7 +978,6 @@ function PersonView({ person }: { person: PersonDetail }) {
       right={
         <>
           <PinnedMediaCard personId={person.id} />
-          <NewsletterEngagementCard personId={person.id} />
           <GivingPipelineCard
             scope={{ individualGiverPersonId: person.id }}
             relationship={{ sourceKind: "individual", sourceId: person.id }}

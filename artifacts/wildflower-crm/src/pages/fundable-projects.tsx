@@ -35,7 +35,7 @@ import {
 import { LOCATIONS } from "@workspace/api-zod";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -260,13 +260,6 @@ export default function FundableProjects() {
       />
 
       <Card data-testid="fundable-projects-card">
-        <CardHeader>
-          <CardTitle>All projects</CardTitle>
-          <CardDescription>
-            Click a project to edit its details. Retired projects stay for
-            historical attribution but are sorted to the bottom.
-          </CardDescription>
-        </CardHeader>
         <CardContent>
           <ProjectsTable
             projects={sorted}

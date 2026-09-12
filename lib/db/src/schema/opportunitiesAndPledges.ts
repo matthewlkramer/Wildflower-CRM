@@ -3,6 +3,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  integer,
   index,
   pgTable,
   text,
@@ -194,6 +195,9 @@ export const opportunitiesAndPledges = pgTable(
       onDelete: "restrict",
     }),
     projectedCloseDate: date("projected_close_date"),
+    // Rolling alternative to projectedCloseDate. The effective date is derived
+    // at read time from Chicago's current calendar date; never persist it.
+    projectedCloseMonthsOut: integer("projected_close_months_out"),
     actualCompletionDate: date("actual_completion_date"),
     winProbability: numeric("win_probability", { precision: 5, scale: 4 }),
     stage: opportunityStageEnum("stage"),

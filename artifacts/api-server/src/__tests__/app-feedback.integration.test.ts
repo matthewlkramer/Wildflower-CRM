@@ -8,8 +8,6 @@ const HAS_DB =
 const RUN = `appfeedback_${Date.now()}`;
 const REPORTER_ID = `${RUN}_reporter`;
 const ADMIN_ID = `${RUN}_admin`;
-const ORIGINAL_FEEDBACK_IMPLEMENTER_USER_ID =
-  process.env.FEEDBACK_IMPLEMENTER_USER_ID;
 
 const { currentUser } = vi.hoisted(() => ({
   currentUser: { id: "", role: "team_member" as string },
@@ -54,7 +52,6 @@ async function jsonRequest(path: string, init?: RequestInit) {
 }
 
 beforeAll(async () => {
-  delete process.env.FEEDBACK_IMPLEMENTER_USER_ID;
   if (!HAS_DB) return;
   schema = await import("@workspace/db");
   db = schema.db;
@@ -83,12 +80,6 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
-  if (ORIGINAL_FEEDBACK_IMPLEMENTER_USER_ID === undefined) {
-    delete process.env.FEEDBACK_IMPLEMENTER_USER_ID;
-  } else {
-    process.env.FEEDBACK_IMPLEMENTER_USER_ID =
-      ORIGINAL_FEEDBACK_IMPLEMENTER_USER_ID;
-  }
   if (!HAS_DB) return;
   for (const id of feedbackIds) {
     await db.delete(schema.appFeedback).where(eqFn(schema.appFeedback.id, id));
@@ -100,7 +91,7 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("app feedback API", () => {
-  it("accepts team feedback and exposes an admin-only resolution queue", async () => {
+  it("persists team feedback and exposes an admin-only resolution queue", async () => {
     const created = await jsonRequest("/api/feedback", {
       method: "POST",
       body: JSON.stringify({
@@ -125,9 +116,7 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
       status: "open",
       reporter: { id: REPORTER_ID, name: "Feedback Reporter" },
       screenshotStatus: "captured",
-      proposal: { generationStatus: "queued", revision: 1 },
     });
-    const proposalId = created.json.proposal.id as string;
 
     const unrelated = await jsonRequest("/api/feedback", {
       method: "POST",
@@ -158,7 +147,7 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
         expect.objectContaining({
           id: feedbackId,
           pagePath: "/reconciliation/deposits?lens=all_open",
-          viewerCanImplement: false,
+          screenshotUrl: "/api/storage/objects/feedback-test.jpg",
         }),
       ]),
     );
@@ -170,68 +159,6 @@ describe.skipIf(!HAS_DB)("app feedback API", () => {
     expect(
       literalWildcard.json.data.map((item: { id: string }) => item.id),
     ).toEqual([feedbackId]);
-
-    await db
-      .update(schema.appFeedbackProposals)
-      .set({
-        generationStatus: "ready",
-        analyzedAt: new Date(),
-        model: "test-model",
-        proposal: {
-          title: "Fix the completion lens",
-          summary: "Use the same completion rule in the row and lens.",
-          userExperience: ["The row appears in the correct lens."],
-          implementationSteps: ["Inspect and align the completion predicate."],
-          likelyCodeAreas: [
-            {
-              area: "Reconciliation UI",
-              rationale: "The report came from the deposit lens.",
-            },
-          ],
-          acceptanceCriteria: ["Completed rows never appear in the open lens."],
-          testPlan: ["Add a regression test for the completed row."],
-          risksAndOpenQuestions: [],
-          implementationBrief:
-            "Inspect the reconciliation completion lens and align its predicate.",
-        },
-      })
-      .where(eqFn(schema.appFeedbackProposals.id, proposalId));
-
-    const unconfiguredImplement = await jsonRequest(
-      `/api/admin/feedback/${feedbackId}/proposal/implement`,
-      { method: "POST" },
-    );
-    expect(unconfiguredImplement.status).toBe(403);
-
-    process.env.FEEDBACK_IMPLEMENTER_USER_ID = ADMIN_ID;
-    const ownerList = await jsonRequest(
-      "/api/admin/feedback?status=open&search=completed%20lens",
-    );
-    expect(ownerList.status).toBe(200);
-    expect(ownerList.json.data[0]).toMatchObject({
-      id: feedbackId,
-      viewerCanImplement: true,
-    });
-
-    const implemented = await jsonRequest(
-      `/api/admin/feedback/${feedbackId}/proposal/implement`,
-      { method: "POST" },
-    );
-    expect(implemented.status).toBe(200);
-    expect(implemented.json).toMatchObject({
-      status: "in_progress",
-      proposal: {
-        implementationRequestedByUserId: ADMIN_ID,
-        implementationRequestedBy: { id: ADMIN_ID },
-      },
-    });
-    expect(implemented.json.proposal.implementationRequestedAt).toBeTruthy();
-
-    const duplicateImplement = await jsonRequest(
-      `/api/admin/feedback/${feedbackId}/proposal/implement`,
-      { method: "POST" },
-    );
-    expect(duplicateImplement.status).toBe(409);
 
     const updated = await jsonRequest(`/api/admin/feedback/${feedbackId}`, {
       method: "PATCH",

@@ -140,6 +140,30 @@ export const ListNewsletterEngagementQueryParams = zod.object({
   opened: zod.coerce.boolean().optional(),
   clicked: zod.coerce.boolean().optional(),
   linked: zod.coerce.boolean().optional(),
+  individualPriority: zod
+    .array(
+      zod
+        .enum(["top", "high", "medium", "low"])
+        .describe(
+          "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
+        ),
+    )
+    .optional()
+    .describe(
+      "Filter linked individual recipients by their current solicitation priority.",
+    ),
+  organizationPriority: zod
+    .array(
+      zod
+        .enum(["top", "high", "medium", "low"])
+        .describe(
+          "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
+        ),
+    )
+    .optional()
+    .describe(
+      "Filter linked organization recipients by their current solicitation priority.",
+    ),
   limit: zod.coerce
     .number()
     .min(1)

@@ -35,7 +35,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   "stage": zod.array(zod.coerce.string()).optional(),
   "pledgeView": zod.enum(['pledges', 'opportunities']).optional().describe('Convenience filter encoding the page split:\n  pledges       — writtenPledge=true (the sticky commitment outcome).\n                  Drives the \/pledges page; historical pledges stay\n                  after they\'re fully paid.\n  opportunities — the complement (rest of the rows). Drives the\n                  \/opportunities page.\nOmit to include all rows.\n'),
   "writtenPledge": zod.coerce.boolean().optional().describe('Filter strictly on the written_pledge column.'),
-  "worklist": zod.enum(['verbal_no_letter', 'committed_unpaid', 'partially_paid']).optional().describe('Donor-lifecycle worklist preset (\"what hasn\'t been done yet\"). Each\nvalue applies a composite server-side filter on top of any other\nfilters (status, owner, entity scope, etc.) and is the canonical,\ndrift-proof definition shared with the dashboard worklist counts:\n  verbal_no_letter — stage=verbal_confirmation, written_pledge=false,\n                     grant_letter_url IS NULL, status=open. A verbal\n                     yes with no recorded written commitment yet.\n                     Rows are ordered stalest-first (least recently\n                     updated) so the oldest sit at the top.\n  committed_unpaid — status=pledge with $0 received. A written pledge\n                     nothing has been paid against yet.\n  partially_paid   — status=pledge with >$0 received (a pledge fully\n                     paid flips to cash_in, so status=pledge + paid>0\n                     means paid < awarded). No expected-payment-date\n                     field exists, so rows are ordered by projected\n                     close date (oldest first) as a best-effort\n                     \"overdue\" proxy.\n'),
+  "worklist": zod.enum(['verbal_no_letter', 'committed_unpaid', 'partially_paid', 'overdue_fixed_close']).optional().describe('Donor-lifecycle worklist preset (\"what hasn\'t been done yet\"). Each\nvalue applies a composite server-side filter on top of any other\nfilters (status, owner, entity scope, etc.) and is the canonical,\ndrift-proof definition shared with the dashboard worklist counts:\n  verbal_no_letter — stage=verbal_confirmation, written_pledge=false,\n                     grant_letter_url IS NULL, status=open. A verbal\n                     yes with no recorded written commitment yet.\n                     Rows are ordered stalest-first (least recently\n                     updated) so the oldest sit at the top.\n  committed_unpaid — status=pledge with $0 received. A written pledge\n                     nothing has been paid against yet.\n  partially_paid   — status=pledge with >$0 received (a pledge fully\n                     paid flips to cash_in, so status=pledge + paid>0\n                     means paid < awarded). No expected-payment-date\n  overdue_fixed_close — open opportunities whose fixed projected close\n                        date is more than one year in the past. Rolling\n                        months-out estimates are excluded.\n                     field exists, so rows are ordered by projected\n                     close date (oldest first) as a best-effort\n                     \"overdue\" proxy.\n'),
   "type": zod.array(zod.coerce.string()).optional(),
   "organizationId": zod.coerce.string().optional(),
   "householdId": zod.coerce.string().optional(),
@@ -48,6 +48,9 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   "limit": zod.coerce.number().min(1).max(listOpportunitiesAndPledgesQueryLimitMax).default(listOpportunitiesAndPledgesQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listOpportunitiesAndPledgesQueryPageDefault)
 })
+
+
+
 
 export const ListOpportunitiesAndPledgesResponse = zod.object({
   "data": zod.array(zod.object({
@@ -77,6 +80,8 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -118,6 +123,9 @@ export const ListOpportunitiesAndPledgesResponse = zod.object({
   "stageAskTotals": zod.record(zod.string(), zod.string()).optional().describe('SUM(ask_amount) per stage over ALL rows matching the current\nfilters (not just the returned page), keyed by stage value.\nNumeric string per stage; stages with no matching rows are\nomitted. Only present when `includeStageAskTotals=true` — lets\nthe pipeline board show true column totals even when the row\nset is truncated by pagination.\n')
 })
 
+
+
+
 export const CreateOpportunityOrPledgeBody = zod.object({
   "name": zod.string().optional(),
   "organizationId": zod.string().optional(),
@@ -132,6 +140,7 @@ export const CreateOpportunityOrPledgeBody = zod.object({
   "matchId": zod.string().optional(),
   "lossType": zod.enum(['dormant', 'lost']).optional().describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n'),
   "projectedCloseDate": zod.string().date().optional(),
+  "projectedCloseMonthsOut": zod.number().min(1).optional(),
   "actualCompletionDate": zod.string().date().optional(),
   "winProbability": zod.string().optional(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).optional().describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n'),
@@ -152,6 +161,9 @@ export const CreateOpportunityOrPledgeBody = zod.object({
 export const GetOpportunityOrPledgeParams = zod.object({
   "id": zod.coerce.string()
 })
+
+
+
 
 export const GetOpportunityOrPledgeResponse = zod.object({
   "id": zod.string(),
@@ -180,6 +192,8 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -359,6 +373,9 @@ export const UpdateOpportunityOrPledgeParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+
+
 export const UpdateOpportunityOrPledgeBody = zod.object({
   "name": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
@@ -373,6 +390,7 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   "matchId": zod.string().nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish(),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -387,6 +405,9 @@ export const UpdateOpportunityOrPledgeBody = zod.object({
   "primaryContactPersonId": zod.string().nullish(),
   "ownerUserId": zod.string().nullish()
 })
+
+
+
 
 export const UpdateOpportunityOrPledgeResponse = zod.object({
   "id": zod.string(),
@@ -415,6 +436,8 @@ export const UpdateOpportunityOrPledgeResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -462,6 +485,9 @@ export const ReduceOpportunityPlanProportionallyBody = zod.object({
   "awardedAmount": zod.string().nullable()
 })
 
+
+
+
 export const ReduceOpportunityPlanProportionallyResponse = zod.object({
   "opportunity": zod.object({
   "id": zod.string(),
@@ -490,6 +516,8 @@ export const ReduceOpportunityPlanProportionallyResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -560,6 +588,9 @@ export const RevertPledgeToVerbalGiftBody = zod.object({
   "reason": zod.string().nullish()
 })
 
+
+
+
 export const RevertPledgeToVerbalGiftResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -587,6 +618,8 @@ export const RevertPledgeToVerbalGiftResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -634,6 +667,9 @@ export const RevertPledgeToOpportunityBody = zod.object({
   "reason": zod.string().nullish()
 })
 
+
+
+
 export const RevertPledgeToOpportunityResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -661,6 +697,8 @@ export const RevertPledgeToOpportunityResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -796,6 +834,9 @@ export const ArchiveOpportunityOrPledgeParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+
+
 export const ArchiveOpportunityOrPledgeResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -823,6 +864,8 @@ export const ArchiveOpportunityOrPledgeResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -861,6 +904,9 @@ export const UnarchiveOpportunityOrPledgeParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+
+
 export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -888,6 +934,8 @@ export const UnarchiveOpportunityOrPledgeResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -989,6 +1037,9 @@ export const CloseAwardBody = zod.object({
   "reason": zod.enum(['fully_collected', 'award_period_ended', 'unused_balance', 'terminated']).describe('Why a cost-reimbursement award was explicitly closed. Captured by the\nfinance-permitted Close-award action alongside the close date — the\nsecond user-set lifecycle input alongside lossType.\n')
 })
 
+
+
+
 export const CloseAwardResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -1016,6 +1067,8 @@ export const CloseAwardResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),
@@ -1061,6 +1114,9 @@ export const ReopenAwardParams = zod.object({
   "id": zod.coerce.string()
 })
 
+
+
+
 export const ReopenAwardResponse = zod.object({
   "id": zod.string(),
   "name": zod.string().nullish(),
@@ -1088,6 +1144,8 @@ export const ReopenAwardResponse = zod.object({
   "status": zod.enum(['open', 'pledge', 'cash_in', 'dormant', 'lost']).describe('Read-only lifecycle status derived from lossType, pledgeCommittedAt,\nlinked money, awarded amount, and the disbursement model:\n  lossType set                         → dormant or lost\n  finalized pledge, not fully collected → pledge\n  fully collected pledge               → cash_in\n  direct gift fully received            → cash_in\n  otherwise                             → open\nA pledge exists only when pledgeCommittedAt is populated. The deprecated\nwrittenPledge field is a read-only compatibility mirror.\n').nullish(),
   "lossType": zod.enum(['dormant', 'lost']).describe('User-set override that pulls an opportunity\/pledge out of the\ncalculated funnel. Null while open\/pledge\/cash_in; set to \'dormant\'\n(paused) or \'lost\' (declined\/withdrawn). The only user-settable half\nof the old status overload — when set, `status` mirrors it.\nNEWLY setting this (closing the row) requires an actualCompletionDate\n(pre-existing on the row or supplied in the same request) → 400\notherwise. Rows that are already closed (incl. legacy no-date rows)\nstay freely editable — the rule fires only on the close transition.\n').nullish(),
   "projectedCloseDate": zod.string().date().nullish(),
+  "projectedCloseMonthsOut": zod.number().min(1).nullish().describe('Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.'),
+  "effectiveProjectedCloseDate": zod.string().date().nullish().describe('Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month\'s last day.'),
   "actualCompletionDate": zod.string().date().nullish(),
   "winProbability": zod.string().nullish(),
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullish(),

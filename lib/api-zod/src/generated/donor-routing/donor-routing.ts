@@ -37,7 +37,8 @@ export const GetGivingRelationshipResponse = zod.object({
   "largestGift": zod.object({
   "id": zod.string(),
   "amount": zod.string(),
-  "dateReceived": zod.string().date().nullish()
+  "dateReceived": zod.string().date().nullish(),
+  "kind": zod.enum(['gift', 'pledge']).optional()
 }).nullish(),
   "breakdown": zod.array(zod.object({
   "kind": zod.enum(['direct', 'household', 'household_member', 'principal_organization']),

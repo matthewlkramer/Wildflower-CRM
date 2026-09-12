@@ -17,6 +17,10 @@ const DIRECT_GIFT_ID = `${RUN}_direct`;
 const MEMBER_GIFT_ID = `${RUN}_member_gift`;
 const HOUSEHOLD_GIFT_ID = `${RUN}_household_gift`;
 const ORG_GIFT_ID = `${RUN}_org_gift`;
+const PLEDGE_ORG_ID = `${RUN}_pledge_org`;
+const PLEDGE_ID = `${RUN}_pledge`;
+const PLEDGE_PAYMENT_1_ID = `${RUN}_pledge_payment_1`;
+const PLEDGE_PAYMENT_2_ID = `${RUN}_pledge_payment_2`;
 
 const auth = vi.hoisted(() => ({ current: { id: "", role: "admin" } }));
 vi.mock("../middlewares/requireAuth", () => ({
@@ -73,6 +77,21 @@ beforeAll(async () => {
   await db.insert(schema.organizations).values({
     id: ORG_ID,
     name: "Giving Relationship Organization",
+  });
+  await db.insert(schema.organizations).values({
+    id: PLEDGE_ORG_ID,
+    name: "Giving Relationship Pledge Organization",
+  });
+  await db.insert(schema.opportunitiesAndPledges).values({
+    id: PLEDGE_ID,
+    name: "Two-installment pledge",
+    organizationId: PLEDGE_ORG_ID,
+    awardedAmount: "200.00",
+    askAmount: "200.00",
+    pledgeCommittedAt: "2025-10-01",
+    writtenPledge: true,
+    status: "pledge",
+    stage: "complete",
   });
   await db.insert(schema.paymentIntermediaries).values({
     id: PI_ID,
@@ -145,6 +164,22 @@ beforeAll(async () => {
       dateReceived: "2026-01-04",
       organizationId: ORG_ID,
     },
+    {
+      id: PLEDGE_PAYMENT_1_ID,
+      name: "Pledge installment 1",
+      amount: "75.00",
+      dateReceived: "2025-11-01",
+      organizationId: PLEDGE_ORG_ID,
+      opportunityId: PLEDGE_ID,
+    },
+    {
+      id: PLEDGE_PAYMENT_2_ID,
+      name: "Pledge installment 2",
+      amount: "125.00",
+      dateReceived: "2026-01-01",
+      organizationId: PLEDGE_ORG_ID,
+      opportunityId: PLEDGE_ID,
+    },
   ]);
 
   auth.current = { id: USER_ID, role: "admin" };
@@ -167,8 +202,13 @@ afterAll(async () => {
         MEMBER_GIFT_ID,
         HOUSEHOLD_GIFT_ID,
         ORG_GIFT_ID,
+        PLEDGE_PAYMENT_1_ID,
+        PLEDGE_PAYMENT_2_ID,
       ]),
     );
+  await db
+    .delete(schema.opportunitiesAndPledges)
+    .where(eq(schema.opportunitiesAndPledges.id, PLEDGE_ID));
   await db
     .delete(schema.peopleEntityRoles)
     .where(inArray(schema.peopleEntityRoles.personId, [PERSON_ID, MEMBER_ID]));
@@ -180,7 +220,7 @@ afterAll(async () => {
     .where(eq(schema.households.id, HOUSEHOLD_ID));
   await db
     .delete(schema.organizations)
-    .where(eq(schema.organizations.id, ORG_ID));
+    .where(inArray(schema.organizations.id, [ORG_ID, PLEDGE_ORG_ID]));
   await db
     .delete(schema.paymentIntermediaries)
     .where(eq(schema.paymentIntermediaries.id, PI_ID));
@@ -255,6 +295,23 @@ describe.skipIf(!HAS_DB)("giving relationship", () => {
       relationshipTotal: "300.00",
       donorOfRecordTotal: "300.00",
       giftCount: 1,
+    });
+  });
+
+  it("counts pledge installments as one pledge and uses the pledge total for largest", async () => {
+    const result = await get(
+      `/api/giving-relationships/organization/${PLEDGE_ORG_ID}`,
+    );
+    expect(result.status).toBe(200);
+    expect(result.json).toMatchObject({
+      relationshipTotal: "200.00",
+      giftCount: 1,
+      largestGift: {
+        id: PLEDGE_ID,
+        amount: "200.00",
+        kind: "pledge",
+        dateReceived: "2025-10-01",
+      },
     });
   });
 });

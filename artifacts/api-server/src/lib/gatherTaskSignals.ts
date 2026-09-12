@@ -9,6 +9,9 @@ import {
   calendarEvents,
   mediaMentions,
   emailMessages,
+  emails,
+  newsletterCampaigns,
+  newsletterEngagement,
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { deriveGiftTypeExpr } from "./giftTypeDerived";
@@ -34,6 +37,7 @@ export interface TaskSignals {
     tags: string | null;
     /** issuesGrants flag for orgs; always false for people. */
     issuesGrants: boolean;
+    interests: string[];
   };
   recentGifts: Array<{
     date: string | null;
@@ -66,6 +70,12 @@ export interface TaskSignals {
     publication: string;
     title: string | null;
   }>;
+  recentNewsletterEngagement: Array<{
+    date: string | null;
+    subject: string | null;
+    opened: boolean;
+    clicked: boolean;
+  }>;
 }
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -83,7 +93,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
     .limit(1);
   if (!p) return null;
 
-  const [gifts, opps, noteRows, meetingRows, calRows, emailRows, mediaRows] =
+  const [gifts, opps, noteRows, newsletterRows, meetingRows, calRows, emailRows, mediaRows] =
     await Promise.all([
       db
         .select({
@@ -121,6 +131,29 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
         .where(sql`${notes.personIds} @> ARRAY[${personId}]::text[]`)
         .orderBy(desc(notes.createdAt))
         .limit(3),
+      db
+        .select({
+          date: newsletterCampaigns.sentAt,
+          subject: newsletterCampaigns.subject,
+          opened: newsletterEngagement.opened,
+          clicked: newsletterEngagement.clicked,
+        })
+        .from(newsletterEngagement)
+        .innerJoin(
+          newsletterCampaigns,
+          eq(newsletterCampaigns.id, newsletterEngagement.campaignId),
+        )
+        .where(
+          inArray(
+            newsletterEngagement.emailId,
+            db
+              .select({ id: emails.id })
+              .from(emails)
+              .where(eq(emails.personId, personId)),
+          ),
+        )
+        .orderBy(desc(newsletterCampaigns.sentAt))
+        .limit(5),
       db
         .select({
           date: meetingNotes.meetingDate,
@@ -168,6 +201,11 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       interactionCount: p.interactionCount,
       tags: p.tags,
       issuesGrants: false,
+      interests: [
+        ...(p.interestsThematic ?? []),
+        ...(p.interestsAges ?? []),
+        ...(p.interestsGovModels ?? []),
+      ],
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
@@ -205,6 +243,12 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       date: iso(m.date),
       publication: m.publication,
       title: m.title,
+    })),
+    recentNewsletterEngagement: newsletterRows.map((n) => ({
+      date: iso(n.date),
+      subject: n.subject,
+      opened: n.opened,
+      clicked: n.clicked,
     })),
   };
 }
@@ -314,6 +358,11 @@ async function gatherOrganizationSignals(
       interactionCount: o.interactionCount,
       tags: o.tags,
       issuesGrants: o.issuesGrants,
+      interests: [
+        ...(o.interestsThematic ?? []),
+        ...(o.interestsAges ?? []),
+        ...(o.interestsGovModels ?? []),
+      ],
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
@@ -352,6 +401,7 @@ async function gatherOrganizationSignals(
       publication: m.publication,
       title: m.title,
     })),
+    recentNewsletterEngagement: [],
   };
 }
 

@@ -1173,6 +1173,7 @@ export interface DashboardWorklists {
   verbalNoLetter: number;
   committedUnpaid: number;
   partiallyPaid: number;
+  overdueFixedClose: number;
   stagedUnprocessed: number;
   giftsMissingAllocations: number;
 }
@@ -1217,6 +1218,22 @@ export interface TopPriorityOpenAsk {
   stage: OpportunityStage | null;
 }
 
+export type TopPriorityGiftOrPledgeSummaryKind = typeof TopPriorityGiftOrPledgeSummaryKind[keyof typeof TopPriorityGiftOrPledgeSummaryKind];
+
+
+export const TopPriorityGiftOrPledgeSummaryKind = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
+export interface TopPriorityGiftOrPledgeSummary {
+  kind: TopPriorityGiftOrPledgeSummaryKind;
+  amount: string;
+  date: string | null;
+  paymentStatus: string | null;
+  opportunityId: string | null;
+}
+
 export interface TopPriorityOrganization {
   id: string;
   name: string;
@@ -1228,6 +1245,7 @@ export interface TopPriorityOrganization {
   affiliatedPeople: TopPriorityAffiliate[];
   lastGiftDate?: string | null;
   lastGiftAmount?: string | null;
+  giftOrPledgeSummary?: TopPriorityGiftOrPledgeSummary | null;
 }
 
 export interface TopPriorityPerson {
@@ -1242,6 +1260,7 @@ export interface TopPriorityPerson {
   openAsks: TopPriorityOpenAsk[];
   lastGiftDate?: string | null;
   lastGiftAmount?: string | null;
+  giftOrPledgeSummary?: TopPriorityGiftOrPledgeSummary | null;
 }
 
 export interface TopPriorities {
@@ -1297,6 +1316,7 @@ export interface FiscalYearOpenRow {
   /** Parent opp's win_probability (0–1, numeric string). */
   winProbability?: string | null;
   projectedCloseDate?: string | null;
+  readonly projectedCloseMonthsOut?: number | null;
   organizationId?: string | null;
   organizationName?: string | null;
   householdId?: string | null;
@@ -1391,6 +1411,8 @@ export interface FiscalYearReportRow {
   /** Parent opp's win_probability (0–1, numeric string). */
   winProbability?: string | null;
   projectedCloseDate?: string | null;
+  /** Rolling months-from-now timing for open or committed opportunity rows; null for a specific date. */
+  readonly projectedCloseMonthsOut?: number | null;
   /** committed: total pledged to this FY before payments (numeric string). */
   pledgedAmount?: string | null;
   /** committed: payments booked this FY against the pledge (numeric string). */
@@ -1584,6 +1606,11 @@ export interface OrganizationList {
 export interface RelationshipSummary {
   /** 2–4 sentence plain-text state of the relationship. '(no summary available)' when the model call fails or there is no activity to summarize. */
   summary: string;
+  /**
+   * Evidence-specific suggested actions, separate from the narrative.
+   * @maxItems 3
+   */
+  nextSteps: string[];
   generatedAt: string;
 }
 
@@ -1712,10 +1739,19 @@ export interface GivingRelationshipGift {
   attributionLabel: string;
 }
 
+export type GivingRelationshipLargestGiftKind = typeof GivingRelationshipLargestGiftKind[keyof typeof GivingRelationshipLargestGiftKind];
+
+
+export const GivingRelationshipLargestGiftKind = {
+  gift: 'gift',
+  pledge: 'pledge',
+} as const;
+
 export interface GivingRelationshipLargestGift {
   id: string;
   amount: string;
   dateReceived?: string | null;
+  kind?: GivingRelationshipLargestGiftKind;
 }
 
 export interface GivingRelationship {
@@ -2216,6 +2252,13 @@ export interface OpportunityOrPledge {
   readonly status?: OpportunityStatus | null;
   lossType?: OpportunityLossType | null;
   projectedCloseDate?: string | null;
+  /**
+   * Rolling timing alternative to projectedCloseDate. Stores a positive whole number of calendar months from today; setting either timing mode clears the other.
+   * @minimum 1
+   */
+  projectedCloseMonthsOut?: number | null;
+  /** Specific projectedCloseDate when set; otherwise the dynamic Chicago-calendar date implied by projectedCloseMonthsOut. Month addition preserves day-of-month or uses the destination month's last day. */
+  readonly effectiveProjectedCloseDate?: string | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
   stage?: OpportunityStage | null;
@@ -2546,6 +2589,8 @@ export interface CreateOpportunityOrPledgeBody {
   matchId?: string;
   lossType?: OpportunityLossType;
   projectedCloseDate?: string;
+  /** @minimum 1 */
+  projectedCloseMonthsOut?: number;
   actualCompletionDate?: string;
   winProbability?: string;
   stage?: OpportunityStage;
@@ -2579,6 +2624,8 @@ export interface UpdateOpportunityOrPledgeBody {
   matchId?: string | null;
   lossType?: OpportunityLossType | null;
   projectedCloseDate?: string | null;
+  /** @minimum 1 */
+  projectedCloseMonthsOut?: number | null;
   actualCompletionDate?: string | null;
   winProbability?: string | null;
   stage?: OpportunityStage | null;
@@ -8760,6 +8807,7 @@ export interface ApplyActionResult {
 export interface EmailProposal {
   id: string;
   mailboxUserId: string;
+  /** Denormalized display name of the mailbox user. */
   mailboxUserName?: string | null;
   kind: EmailProposalKind;
   status: EmailProposalStatus;
@@ -9022,6 +9070,7 @@ export interface EmailIntelFeedbackItem {
   status: EmailProposalStatus;
   reviewerNote?: string | null;
   mailboxUserId: string;
+  /** Denormalized display name of the mailbox user. */
   mailboxUserName?: string | null;
   resolvedByUserId?: string | null;
   resolverName?: string | null;
@@ -9224,6 +9273,27 @@ export interface GrantLeadSighting {
   createdAt: string;
 }
 
+export type MatchEmailIdentityBodyCreatePerson = {
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+} | null;
+
+export interface MatchEmailIdentityBody {
+  emailAddress: string;
+  personId?: string | null;
+  createPerson?: MatchEmailIdentityBodyCreatePerson;
+  proposalId?: string | null;
+  /** Only an explicit hard-bounce action may set this true. */
+  invalidateObservedEmail?: boolean;
+}
+
+export interface MatchEmailIdentityResult {
+  personId: string;
+  emailId: string;
+  proposalId?: string | null;
+}
+
 /**
  * Compact reference to a source email ('sighting') that produced this lead, for opening the original message from the list.
  */
@@ -9378,6 +9448,19 @@ export interface MeetingNote {
 export interface MeetingNoteList {
   data: MeetingNote[];
   pagination: Pagination;
+}
+
+export interface MeetingNextStepProposal {
+  title: string;
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
+  assignmentDate: string;
+  dueDate?: string | null;
+  description?: string | null;
+}
+
+export interface MeetingNextStepsResult {
+  proposals: MeetingNextStepProposal[];
 }
 
 /**
@@ -10452,54 +10535,6 @@ export interface AppFeedbackPerson {
   email: string | null;
 }
 
-export interface AppFeedbackProposalCodeArea {
-  area: string;
-  rationale: string;
-}
-
-export interface AppFeedbackProposalContent {
-  title: string;
-  summary: string;
-  userExperience: string[];
-  implementationSteps: string[];
-  likelyCodeAreas: AppFeedbackProposalCodeArea[];
-  acceptanceCriteria: string[];
-  testPlan: string[];
-  risksAndOpenQuestions: string[];
-  implementationBrief: string;
-}
-
-export type AppFeedbackProposalGenerationStatus = typeof AppFeedbackProposalGenerationStatus[keyof typeof AppFeedbackProposalGenerationStatus];
-
-
-export const AppFeedbackProposalGenerationStatus = {
-  queued: 'queued',
-  generating: 'generating',
-  ready: 'ready',
-  error: 'error',
-} as const;
-
-export type AppFeedbackProposalContextSnapshot = { [key: string]: unknown };
-
-export interface AppFeedbackProposal {
-  id: string;
-  feedbackId: string;
-  generationStatus: AppFeedbackProposalGenerationStatus;
-  /** @minimum 1 */
-  revision: number;
-  contextSnapshot: AppFeedbackProposalContextSnapshot;
-  proposal: AppFeedbackProposalContent | null;
-  reviewerGuidance: string | null;
-  analyzedAt: string | null;
-  model: string | null;
-  error: string | null;
-  implementationRequestedAt: string | null;
-  implementationRequestedByUserId: string | null;
-  implementationRequestedBy: AppFeedbackPerson | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export type AppFeedbackItemContext = { [key: string]: unknown };
 
 export interface AppFeedbackItem {
@@ -10523,9 +10558,6 @@ export interface AppFeedbackItem {
   updatedAt: string;
   reporter: AppFeedbackPerson;
   resolver: AppFeedbackPerson | null;
-  proposal: AppFeedbackProposal | null;
-  /** Whether the authenticated viewer may start the implementation handoff. The API remains authoritative even when the UI hides the action. */
-  viewerCanImplement: boolean;
 }
 
 export type CreateAppFeedbackBodyContext = { [key: string]: unknown };
@@ -10566,14 +10598,6 @@ export interface UpdateAppFeedbackBody {
   status?: AppFeedbackStatus;
   /** @maxLength 20000 */
   adminNotes?: string | null;
-}
-
-export interface ReviseAppFeedbackProposalBody {
-  /**
-   * @minLength 1
-   * @maxLength 20000
-   */
-  reviewerGuidance: string;
 }
 
 export interface AppFeedbackList {
@@ -11333,6 +11357,9 @@ drift-proof definition shared with the dashboard worklist counts:
   partially_paid   — status=pledge with >$0 received (a pledge fully
                      paid flips to cash_in, so status=pledge + paid>0
                      means paid < awarded). No expected-payment-date
+  overdue_fixed_close — open opportunities whose fixed projected close
+                        date is more than one year in the past. Rolling
+                        months-out estimates are excluded.
                      field exists, so rows are ordered by projected
                      close date (oldest first) as a best-effort
                      "overdue" proxy.
@@ -11446,6 +11473,7 @@ export const ListOpportunitiesAndPledgesWorklist = {
   verbal_no_letter: 'verbal_no_letter',
   committed_unpaid: 'committed_unpaid',
   partially_paid: 'partially_paid',
+  overdue_fixed_close: 'overdue_fixed_close',
 } as const;
 
 export type ListPledgeAllocationsParams = {
@@ -12628,6 +12656,14 @@ search?: string;
 opened?: boolean;
 clicked?: boolean;
 linked?: boolean;
+/**
+ * Filter linked individual recipients by their current solicitation priority.
+ */
+individualPriority?: Priority[];
+/**
+ * Filter linked organization recipients by their current solicitation priority.
+ */
+organizationPriority?: Priority[];
 /**
  * @minimum 1
  * @maximum 10000

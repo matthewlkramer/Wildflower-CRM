@@ -21,10 +21,8 @@ import type {
   AppFeedbackList,
   BadRequestResponse,
   CreateAppFeedbackBody,
-  ErrorResponse,
   ListAppFeedbackParams,
   NotFoundResponse,
-  ReviseAppFeedbackProposalBody,
   UpdateAppFeedbackBody,
 } from "../api.schemas";
 
@@ -38,7 +36,7 @@ type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 /**
- * @summary Submit in-app product feedback and queue an AI implementation proposal.
+ * @summary Submit in-app product feedback.
  */
 export const getCreateAppFeedbackUrl = () => {
   return `/api/feedback`;
@@ -101,7 +99,7 @@ export type CreateAppFeedbackMutationBody = BodyType<CreateAppFeedbackBody>;
 export type CreateAppFeedbackMutationError = ErrorType<BadRequestResponse>;
 
 /**
- * @summary Submit in-app product feedback and queue an AI implementation proposal.
+ * @summary Submit in-app product feedback.
  */
 export const useCreateAppFeedback = <
   TError = ErrorType<BadRequestResponse>,
@@ -123,7 +121,7 @@ export const useCreateAppFeedback = <
   return useMutation(getCreateAppFeedbackMutationOptions(options));
 };
 /**
- * @summary Admin-only feedback review queue with the current AI proposal.
+ * @summary Admin-only feedback review queue.
  */
 export const getListAppFeedbackUrl = (params?: ListAppFeedbackParams) => {
   const normalizedParams = new URLSearchParams();
@@ -190,7 +188,7 @@ export type ListAppFeedbackQueryResult = NonNullable<
 export type ListAppFeedbackQueryError = ErrorType<void>;
 
 /**
- * @summary Admin-only feedback review queue with the current AI proposal.
+ * @summary Admin-only feedback review queue.
  */
 
 export function useListAppFeedback<
@@ -303,182 +301,4 @@ export const useUpdateAppFeedback = <
   TContext
 > => {
   return useMutation(getUpdateAppFeedbackMutationOptions(options));
-};
-/**
- * @summary Admin-only regeneration of an implementation proposal using free-text human guidance. Guidance is retained and the proposal revision number increments.
- */
-export const getReviseAppFeedbackProposalUrl = (id: string) => {
-  return `/api/admin/feedback/${id}/proposal/revise`;
-};
-
-export const reviseAppFeedbackProposal = async (
-  id: string,
-  reviseAppFeedbackProposalBody: ReviseAppFeedbackProposalBody,
-  options?: RequestInit,
-): Promise<AppFeedbackItem> => {
-  return customFetch<AppFeedbackItem>(getReviseAppFeedbackProposalUrl(id), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(reviseAppFeedbackProposalBody),
-  });
-};
-
-export const getReviseAppFeedbackProposalMutationOptions = <
-  TError = ErrorType<
-    BadRequestResponse | void | NotFoundResponse | ErrorResponse
-  >,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof reviseAppFeedbackProposal>>,
-    TError,
-    { id: string; data: BodyType<ReviseAppFeedbackProposalBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof reviseAppFeedbackProposal>>,
-  TError,
-  { id: string; data: BodyType<ReviseAppFeedbackProposalBody> },
-  TContext
-> => {
-  const mutationKey = ["reviseAppFeedbackProposal"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof reviseAppFeedbackProposal>>,
-    { id: string; data: BodyType<ReviseAppFeedbackProposalBody> }
-  > = (props) => {
-    const { id, data } = props ?? {};
-
-    return reviseAppFeedbackProposal(id, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ReviseAppFeedbackProposalMutationResult = NonNullable<
-  Awaited<ReturnType<typeof reviseAppFeedbackProposal>>
->;
-export type ReviseAppFeedbackProposalMutationBody =
-  BodyType<ReviseAppFeedbackProposalBody>;
-export type ReviseAppFeedbackProposalMutationError = ErrorType<
-  BadRequestResponse | void | NotFoundResponse | ErrorResponse
->;
-
-/**
- * @summary Admin-only regeneration of an implementation proposal using free-text human guidance. Guidance is retained and the proposal revision number increments.
- */
-export const useReviseAppFeedbackProposal = <
-  TError = ErrorType<
-    BadRequestResponse | void | NotFoundResponse | ErrorResponse
-  >,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof reviseAppFeedbackProposal>>,
-    TError,
-    { id: string; data: BodyType<ReviseAppFeedbackProposalBody> },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof reviseAppFeedbackProposal>>,
-  TError,
-  { id: string; data: BodyType<ReviseAppFeedbackProposalBody> },
-  TContext
-> => {
-  return useMutation(getReviseAppFeedbackProposalMutationOptions(options));
-};
-/**
- * @summary Owner-only approval handoff from the admin queue. The authenticated admin must match the single server-configured feedback implementer. Marks the feedback item in progress and records who approved the current proposal; the response includes the self-contained implementation brief for a repository-aware coding agent. This endpoint does not edit or publish application code itself.
- */
-export const getImplementAppFeedbackProposalUrl = (id: string) => {
-  return `/api/admin/feedback/${id}/proposal/implement`;
-};
-
-export const implementAppFeedbackProposal = async (
-  id: string,
-  options?: RequestInit,
-): Promise<AppFeedbackItem> => {
-  return customFetch<AppFeedbackItem>(getImplementAppFeedbackProposalUrl(id), {
-    ...options,
-    method: "POST",
-  });
-};
-
-export const getImplementAppFeedbackProposalMutationOptions = <
-  TError = ErrorType<void | NotFoundResponse | ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof implementAppFeedbackProposal>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof implementAppFeedbackProposal>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  const mutationKey = ["implementAppFeedbackProposal"];
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation &&
-      "mutationKey" in options.mutation &&
-      options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof implementAppFeedbackProposal>>,
-    { id: string }
-  > = (props) => {
-    const { id } = props ?? {};
-
-    return implementAppFeedbackProposal(id, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type ImplementAppFeedbackProposalMutationResult = NonNullable<
-  Awaited<ReturnType<typeof implementAppFeedbackProposal>>
->;
-
-export type ImplementAppFeedbackProposalMutationError = ErrorType<
-  void | NotFoundResponse | ErrorResponse
->;
-
-/**
- * @summary Owner-only approval handoff from the admin queue. The authenticated admin must match the single server-configured feedback implementer. Marks the feedback item in progress and records who approved the current proposal; the response includes the self-contained implementation brief for a repository-aware coding agent. This endpoint does not edit or publish application code itself.
- */
-export const useImplementAppFeedbackProposal = <
-  TError = ErrorType<void | NotFoundResponse | ErrorResponse>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof implementAppFeedbackProposal>>,
-    TError,
-    { id: string },
-    TContext
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseMutationResult<
-  Awaited<ReturnType<typeof implementAppFeedbackProposal>>,
-  TError,
-  { id: string },
-  TContext
-> => {
-  return useMutation(getImplementAppFeedbackProposalMutationOptions(options));
 };

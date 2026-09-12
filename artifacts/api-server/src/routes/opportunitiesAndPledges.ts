@@ -66,9 +66,16 @@ const primaryContact = alias(people, "primary_contact_person");
 // no Zod stripping — so every select/returning that reaches the client must go
 // through this projection.
 const oppHeaderColumns = getTableColumns(opportunitiesAndPledges);
+const effectiveCloseDateExpr = effectiveProjectedCloseDateSql(
+  opportunitiesAndPledges.projectedCloseDate,
+  opportunitiesAndPledges.projectedCloseMonthsOut,
+);
 
 const donorJoinSelect = {
   ...oppHeaderColumns,
+  effectiveProjectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`.as(
+    "effective_projected_close_date",
+  ),
   // Shared donor display names + priorities + anonymous/owner helpers
   // (see lib/donorJoinSelect.ts) — identical to the gifts route.
   ...donorDisplayColumns,
@@ -82,11 +89,11 @@ const donorJoinSelect = {
   // FY ends Jun 30 in America/Chicago, so Jul-Dec roll forward. We
   // shift the date by 6 months and read the year off — gives the same
   // answer as a CASE on EXTRACT(MONTH) but in fewer ops. Apostrophe-
-  // free slug: "FY26". Null when projected_close_date is null.
+  // free slug: "FY26". Null when no effective projected close date exists.
   fiscalYear: sql<string | null>`
-    CASE WHEN ${opportunitiesAndPledges.projectedCloseDate} IS NULL THEN NULL
+    CASE WHEN ${effectiveCloseDateExpr} IS NULL THEN NULL
     ELSE 'FY' || RIGHT(
-      EXTRACT(YEAR FROM (${opportunitiesAndPledges.projectedCloseDate}::date + INTERVAL '6 months'))::text,
+      EXTRACT(YEAR FROM (${effectiveCloseDateExpr}::date + INTERVAL '6 months'))::text,
       2
     ) END
   `.as("fiscal_year"),
@@ -149,6 +156,7 @@ import {
   ReduceOpportunityPlanProportionallyBody,
   validateOppInvariants,
   validateOppCloseTransition,
+  validateOppProjectedCloseTiming,
   type InvariantIssue,
 } from "@workspace/api-zod";
 import { copyPledgeAllocationsToGift } from "../lib/reconciliationCommit";
@@ -157,6 +165,10 @@ import {
   assertGiftHasAllocations,
 } from "../lib/giftAllocationSeed";
 import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
+import {
+  effectiveProjectedCloseDate,
+  effectiveProjectedCloseDateSql,
+} from "../lib/effectiveProjectedCloseDate";
 import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
 import { scalePlannedAmounts } from "../lib/proportionalPlan";
@@ -555,10 +567,10 @@ async function buildOppListWhere(
     }
     if (q.projectedCloseDatePresence === "has")
       filters.push(
-        sql`${opportunitiesAndPledges.projectedCloseDate} IS NOT NULL`,
+        sql`${effectiveCloseDateExpr} IS NOT NULL`,
       );
     else if (q.projectedCloseDatePresence === "blank")
-      filters.push(sql`${opportunitiesAndPledges.projectedCloseDate} IS NULL`);
+      filters.push(sql`${effectiveCloseDateExpr} IS NULL`);
     if (q.applicationDeadlinePresence === "has")
       filters.push(
         sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`,
@@ -589,7 +601,7 @@ async function buildOppListWhere(
         ? [asc(opportunitiesAndPledges.updatedAt)]
         : q.worklist === "partially_paid"
           ? [
-              sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${opportunitiesAndPledges.projectedCloseDate}) ASC NULLS LAST`,
+              sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${effectiveCloseDateExpr}) ASC NULLS LAST`,
             ]
           : null;
     return { q, where, worklistOrder };
@@ -634,7 +646,7 @@ router.get(
           .where(where)
           .orderBy(
             ...(worklistOrder ?? [
-              desc(opportunitiesAndPledges.projectedCloseDate),
+              desc(effectiveCloseDateExpr),
             ]),
           )
           .limit(limit)
@@ -749,7 +761,7 @@ router.get(
         .where(where)
         .orderBy(
           ...(worklistOrder ?? [
-            desc(opportunitiesAndPledges.projectedCloseDate),
+            desc(effectiveCloseDateExpr),
           ]),
           // Stable tiebreak so batch pagination never skips/dupes rows.
           asc(opportunitiesAndPledges.id),
@@ -978,6 +990,7 @@ router.post(
               | null
               | undefined,
           }),
+          ...validateOppProjectedCloseTiming(merged),
           ...validateOppCloseTransition(
             {
               lossType: ex.lossType as string | null | undefined,
@@ -1145,9 +1158,19 @@ router.post(
     // win_probability off the derived value. Explicit winProbability in
     // the body always wins. (applyDerivedOppFields below is authoritative
     // and re-canonicalises once payments are known.)
-    const writeValues: typeof body & {
+    const writeValues: Omit<
+      typeof body,
+      "projectedCloseDate" | "projectedCloseMonthsOut"
+    > & {
       winProbability?: string | null;
+      projectedCloseDate?: string | null;
+      projectedCloseMonthsOut?: number | null;
     } = { ...body };
+    if (body.projectedCloseDate !== undefined) {
+      writeValues.projectedCloseMonthsOut = null;
+    } else if (body.projectedCloseMonthsOut !== undefined) {
+      writeValues.projectedCloseDate = null;
+    }
     // loanOrGrant comes straight from the body (authoritative flag); omitted →
     // the DB default 'grant'.
     if (
@@ -1722,6 +1745,12 @@ router.patch(
     );
     if (!body) return;
     const id = paramId(req);
+    const normalizedTimingBody =
+      body.projectedCloseDate !== undefined
+        ? { ...body, projectedCloseMonthsOut: null }
+        : body.projectedCloseMonthsOut !== undefined
+          ? { ...body, projectedCloseDate: null }
+          : body;
     const existing = await db
       .select()
       .from(opportunitiesAndPledges)
@@ -1731,7 +1760,7 @@ router.patch(
 
     // Validate merged post-update state against DB invariants so we return
     // 400 instead of letting a partial PATCH trip the CHECK constraint as a 500.
-    const merged = { ...existing, ...body };
+    const merged = { ...existing, ...normalizedTimingBody };
     const issues = validateOppInvariants({
       organizationId: merged.organizationId,
       individualGiverPersonId: merged.individualGiverPersonId,
@@ -1739,6 +1768,7 @@ router.patch(
       status: merged.status,
       actualCompletionDate: merged.actualCompletionDate,
     });
+    issues.push(...validateOppProjectedCloseTiming(merged));
     if (issues.length) return respondInvariantFailure(res, issues);
 
     const donorChanged =
@@ -1790,8 +1820,13 @@ router.patch(
       awardClosedAt?: string | null;
       awardCloseReason?: null;
     } = {
-      ...body,
+      ...normalizedTimingBody,
     };
+    if (body.projectedCloseDate !== undefined) {
+      writeData.projectedCloseMonthsOut = null;
+    } else if (body.projectedCloseMonthsOut !== undefined) {
+      writeData.projectedCloseDate = null;
+    }
     // Award closure is meaningful ONLY on a cost-reimbursement pledge —
     // switching the model away clears the closure fields server-side (the
     // contract documents this; awardClosedAt is never PATCHable directly).
@@ -1878,7 +1913,15 @@ router.patch(
       Object.keys(body),
       "Updated opportunity",
     );
-    res.json({ ...(final ?? row), promptForReportingDeadlines });
+    const result = final ?? row;
+    res.json({
+      ...result,
+      effectiveProjectedCloseDate: effectiveProjectedCloseDate(
+        result.projectedCloseDate,
+        result.projectedCloseMonthsOut,
+      ),
+      promptForReportingDeadlines,
+    });
   }),
 );
 

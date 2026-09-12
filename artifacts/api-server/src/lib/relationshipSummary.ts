@@ -25,18 +25,21 @@ const SYSTEM = `You are a fundraising-CRM assistant for Wildflower Schools. Give
 
 Output STRICT JSON with this exact shape and nothing else (no markdown, no code fences, no commentary):
 {
-  "summary": "string — 2 to 4 plain sentences."
+  "summary": "string — 2 to 4 plain sentences describing only current state, not advice.",
+  "nextSteps": ["string — zero to three concrete, evidence-specific actions."]
 }
 
 Rules:
 - Lead with the current state: active pledge awaiting payment, open ask in progress, recently gave, long-lapsed, brand-new prospect, etc.
 - Ground every claim in the snapshot (a dated gift, an open opportunity and its stage, the last-contacted date, a recent meeting or email). Never invent facts, amounts, or interactions not present in the data.
-- Mention the single most pressing thing to know or do next if one clearly stands out (an application deadline, a payment that hasn't arrived, a long silence after a gift). Do not force a next step when nothing stands out.
+- Do not include recommendations, advice, or next steps in summary.
+- Return nextSteps separately. Each must cite a specific evidence item (media mention, recorded interest/current initiative, or recent newsletter engagement) and be actionable. Never give generic "send a warm email" advice.
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
 
 export interface RelationshipSummaryResult {
   summary: string;
+  nextSteps: string[];
   generatedAt: string;
 }
 
@@ -56,6 +59,7 @@ function fmtSignals(signals: TaskSignals): string {
   lines.push(`  Enthusiasm: ${e.enthusiasm ?? "(unset)"}`);
   lines.push(`  Last contacted: ${e.lastContacted ?? "(unknown)"}`);
   lines.push(`  Interaction count: ${e.interactionCount ?? "(unknown)"}`);
+  lines.push(`  Interests / current initiatives: ${e.interests.length ? e.interests.join(", ") : "(none recorded)"}`);
   lines.push("");
 
   lines.push("RECENT GIFTS / PAYMENTS:");
@@ -106,11 +110,16 @@ function fmtSignals(signals: TaskSignals): string {
     lines.push(
       `  - ${md.date ?? "?"}: ${md.title ?? "(untitled)"} — ${md.publication}`,
     );
+  lines.push("");
+  lines.push("RECENT NEWSLETTER ENGAGEMENT:");
+  if (signals.recentNewsletterEngagement.length === 0) lines.push("  (none)");
+  for (const n of signals.recentNewsletterEngagement)
+    lines.push(`  - ${n.date ?? "?"}: ${n.subject ?? "(untitled)"} — ${n.clicked ? "clicked" : n.opened ? "opened" : "not opened"}`);
 
   return lines.join("\n");
 }
 
-function parseModelOutput(text: string): string {
+function parseModelOutput(text: string): { summary: string; nextSteps: string[] } {
   // The model is instructed to return strict JSON, but be tolerant of
   // accidental code fences.
   const cleaned = text
@@ -125,12 +134,21 @@ function parseModelOutput(text: string): string {
       typeof (parsed as { summary?: unknown }).summary === "string"
     ) {
       const s = (parsed as { summary: string }).summary.trim();
-      if (s) return s;
+       if (s) {
+         const nextSteps = Array.isArray((parsed as { nextSteps?: unknown }).nextSteps)
+           ? (parsed as { nextSteps: unknown[] }).nextSteps
+               .filter((step): step is string => typeof step === "string")
+               .map((step) => step.trim())
+               .filter(Boolean)
+               .slice(0, 3)
+           : [];
+         return { summary: s, nextSteps };
+       }
     }
   } catch {
     // fall through to placeholder
   }
-  return PLACEHOLDER;
+  return { summary: PLACEHOLDER, nextSteps: [] };
 }
 
 const errClass = (err: unknown): string =>
@@ -177,7 +195,7 @@ export async function generateRelationshipSummary(args: {
     for (const block of response.content) {
       if (block.type === "text") text += block.text;
     }
-    return { summary: parseModelOutput(text), generatedAt };
+     return { ...parseModelOutput(text), generatedAt };
   } catch (err) {
     // Privacy: never log the err payload directly — Anthropic SDK errors
     // can echo the prompt back, and the prompt contains donor data.
@@ -185,6 +203,6 @@ export async function generateRelationshipSummary(args: {
       { errClass: errClass(err), errMessage: errMessage(err) },
       "generateRelationshipSummary failed; returning placeholder",
     );
-    return { summary: PLACEHOLDER, generatedAt };
+    return { summary: PLACEHOLDER, nextSteps: [], generatedAt };
   }
 }

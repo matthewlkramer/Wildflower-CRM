@@ -392,6 +392,12 @@ const WORKLIST_ITEMS: ReadonlyArray<{
     href: "/pledges?worklist=partially_paid",
   },
   {
+    key: "overdueFixedClose",
+    label: "Overdue fixed closes",
+    desc: "Open opportunities whose fixed projected close is more than one year overdue.",
+    href: "/opportunities?worklist=overdue_fixed_close",
+  },
+  {
     key: "stagedUnprocessed",
     label: "Money staged, not processed",
     desc: "Staged QuickBooks / Stripe payments awaiting reconciliation.",

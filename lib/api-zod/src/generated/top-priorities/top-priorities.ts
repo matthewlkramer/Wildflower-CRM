@@ -39,7 +39,14 @@ export const GetTopPrioritiesResponse = zod.object({
   "ownerUserId": zod.string().nullable()
 })),
   "lastGiftDate": zod.string().nullish(),
-  "lastGiftAmount": zod.string().nullish()
+  "lastGiftAmount": zod.string().nullish(),
+  "giftOrPledgeSummary": zod.object({
+  "kind": zod.enum(['gift', 'pledge']),
+  "amount": zod.string(),
+  "date": zod.string().nullable(),
+  "paymentStatus": zod.string().nullable(),
+  "opportunityId": zod.string().nullable()
+}).nullish()
 })),
   "individuals": zod.array(zod.object({
   "id": zod.string(),
@@ -58,7 +65,14 @@ export const GetTopPrioritiesResponse = zod.object({
   "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullable()
 })),
   "lastGiftDate": zod.string().nullish(),
-  "lastGiftAmount": zod.string().nullish()
+  "lastGiftAmount": zod.string().nullish(),
+  "giftOrPledgeSummary": zod.object({
+  "kind": zod.enum(['gift', 'pledge']),
+  "amount": zod.string(),
+  "date": zod.string().nullable(),
+  "paymentStatus": zod.string().nullable(),
+  "opportunityId": zod.string().nullable()
+}).nullish()
 }))
 })
 

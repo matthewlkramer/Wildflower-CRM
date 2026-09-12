@@ -28,6 +28,8 @@ import type {
   EmailProposalSummary,
   ErrorResponse,
   ListEmailProposalsParams,
+  MatchEmailIdentityBody,
+  MatchEmailIdentityResult,
   NotFoundResponse,
   RejectEmailProposalBody,
   ReviseEmailProposalBody
@@ -49,7 +51,7 @@ export const getListEmailProposalsUrl = (params?: ListEmailProposalsParams,) => 
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -61,16 +63,16 @@ export const getListEmailProposalsUrl = (params?: ListEmailProposalsParams,) => 
 }
 
 export const listEmailProposals = async (params?: ListEmailProposalsParams, options?: RequestInit): Promise<EmailProposalList> => {
-  
+
   return customFetch<EmailProposalList>(getListEmailProposalsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -81,7 +83,7 @@ export const getListEmailProposalsQueryKey = (params?: ListEmailProposalsParams,
     ] as const;
     }
 
-    
+
 export const getListEmailProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listEmailProposals>>, TError = ErrorType<unknown>>(params?: ListEmailProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmailProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -89,13 +91,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListEmailProposalsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmailProposals>>> = ({ signal }) => listEmailProposals(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmailProposals>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -107,7 +109,7 @@ export type ListEmailProposalsQueryError = ErrorType<unknown>
 
 export function useListEmailProposals<TData = Awaited<ReturnType<typeof listEmailProposals>>, TError = ErrorType<unknown>>(
  params?: ListEmailProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmailProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListEmailProposalsQueryOptions(params,options)
@@ -123,22 +125,22 @@ export function useListEmailProposals<TData = Awaited<ReturnType<typeof listEmai
 export const getGetEmailProposalSummaryUrl = () => {
 
 
-  
+
 
   return `/api/email-proposals/summary`
 }
 
 export const getEmailProposalSummary = async ( options?: RequestInit): Promise<EmailProposalSummary> => {
-  
+
   return customFetch<EmailProposalSummary>(getGetEmailProposalSummaryUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -149,7 +151,7 @@ export const getGetEmailProposalSummaryQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetEmailProposalSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getEmailProposalSummary>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmailProposalSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -157,13 +159,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetEmailProposalSummaryQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmailProposalSummary>>> = ({ signal }) => getEmailProposalSummary({ signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmailProposalSummary>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -175,7 +177,7 @@ export type GetEmailProposalSummaryQueryError = ErrorType<unknown>
 
 export function useGetEmailProposalSummary<TData = Awaited<ReturnType<typeof getEmailProposalSummary>>, TError = ErrorType<unknown>>(
   options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmailProposalSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEmailProposalSummaryQueryOptions(options)
@@ -191,16 +193,16 @@ export function useGetEmailProposalSummary<TData = Awaited<ReturnType<typeof get
 export const getAcceptEmailProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/email-proposals/${id}/accept`
 }
 
 export const acceptEmailProposal = async (id: string,
     acceptEmailProposalBody?: AcceptEmailProposalBody, options?: RequestInit): Promise<EmailProposal> => {
-  
+
   return customFetch<EmailProposal>(getAcceptEmailProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -208,7 +210,7 @@ export const acceptEmailProposal = async (id: string,
       acceptEmailProposalBody,)
   }
 );}
-  
+
 
 
 
@@ -223,7 +225,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof acceptEmailProposal>>, {id: string;data: BodyType<AcceptEmailProposalBody>}> = (props) => {
@@ -234,7 +236,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -256,16 +258,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getRejectEmailProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/email-proposals/${id}/reject`
 }
 
 export const rejectEmailProposal = async (id: string,
     rejectEmailProposalBody?: RejectEmailProposalBody, options?: RequestInit): Promise<EmailProposal> => {
-  
+
   return customFetch<EmailProposal>(getRejectEmailProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -273,7 +275,7 @@ export const rejectEmailProposal = async (id: string,
       rejectEmailProposalBody,)
   }
 );}
-  
+
 
 
 
@@ -288,7 +290,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof rejectEmailProposal>>, {id: string;data: BodyType<RejectEmailProposalBody>}> = (props) => {
@@ -299,7 +301,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -324,22 +326,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getRetryEmailProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/email-proposals/${id}/retry`
 }
 
 export const retryEmailProposal = async (id: string, options?: RequestInit): Promise<EmailProposal> => {
-  
+
   return customFetch<EmailProposal>(getRetryEmailProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -354,7 +356,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryEmailProposal>>, {id: string}> = (props) => {
@@ -365,13 +367,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RetryEmailProposalMutationResult = NonNullable<Awaited<ReturnType<typeof retryEmailProposal>>>
-    
+
     export type RetryEmailProposalMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
@@ -393,16 +395,16 @@ export const useRetryEmailProposal = <TError = ErrorType<NotFoundResponse | Erro
 export const getReviseEmailProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/email-proposals/${id}/revise`
 }
 
 export const reviseEmailProposal = async (id: string,
     reviseEmailProposalBody: ReviseEmailProposalBody, options?: RequestInit): Promise<EmailProposal> => {
-  
+
   return customFetch<EmailProposal>(getReviseEmailProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -410,7 +412,7 @@ export const reviseEmailProposal = async (id: string,
       reviseEmailProposalBody,)
   }
 );}
-  
+
 
 
 
@@ -425,7 +427,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviseEmailProposal>>, {id: string;data: BodyType<ReviseEmailProposalBody>}> = (props) => {
@@ -436,7 +438,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -464,22 +466,22 @@ export const useReviseEmailProposal = <TError = ErrorType<BadRequestResponse | N
 export const getReopenEmailProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/email-proposals/${id}/reopen`
 }
 
 export const reopenEmailProposal = async (id: string, options?: RequestInit): Promise<EmailProposal> => {
-  
+
   return customFetch<EmailProposal>(getReopenEmailProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -494,7 +496,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenEmailProposal>>, {id: string}> = (props) => {
@@ -505,13 +507,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReopenEmailProposalMutationResult = NonNullable<Awaited<ReturnType<typeof reopenEmailProposal>>>
-    
+
     export type ReopenEmailProposalMutationError = ErrorType<NotFoundResponse | ErrorResponse>
 
     /**
@@ -527,4 +529,74 @@ export const useReopenEmailProposal = <TError = ErrorType<NotFoundResponse | Err
       > => {
       return useMutation(getReopenEmailProposalMutationOptions(options));
     }
-    
+    /**
+ * Shared identity workflow for bounce proposals and unmatched correspondents. A hard-bounce invalidation is explicit and is never implied by selecting a person; soft bounces cannot invalidate an email.
+ * @summary Attach an observed email to an existing or newly-created person.
+ */
+export const getMatchEmailIdentityUrl = () => {
+
+
+
+
+  return `/api/email-identity/match`
+}
+
+export const matchEmailIdentity = async (matchEmailIdentityBody: MatchEmailIdentityBody, options?: RequestInit): Promise<MatchEmailIdentityResult> => {
+
+  return customFetch<MatchEmailIdentityResult>(getMatchEmailIdentityUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      matchEmailIdentityBody,)
+  }
+);}
+
+
+
+
+export const getMatchEmailIdentityMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext> => {
+
+const mutationKey = ['matchEmailIdentity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof matchEmailIdentity>>, {data: BodyType<MatchEmailIdentityBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  matchEmailIdentity(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MatchEmailIdentityMutationResult = NonNullable<Awaited<ReturnType<typeof matchEmailIdentity>>>
+    export type MatchEmailIdentityMutationBody = BodyType<MatchEmailIdentityBody>
+    export type MatchEmailIdentityMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Attach an observed email to an existing or newly-created person.
+ */
+export const useMatchEmailIdentity = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof matchEmailIdentity>>, TError,{data: BodyType<MatchEmailIdentityBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof matchEmailIdentity>>,
+        TError,
+        {data: BodyType<MatchEmailIdentityBody>},
+        TContext
+      > => {
+      return useMutation(getMatchEmailIdentityMutationOptions(options));
+    }

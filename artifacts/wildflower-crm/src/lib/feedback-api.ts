@@ -30,36 +30,6 @@ export type FeedbackPerson = {
   email: string | null;
 };
 
-export type FeedbackProposalContent = {
-  title: string;
-  summary: string;
-  userExperience: string[];
-  implementationSteps: string[];
-  likelyCodeAreas: Array<{ area: string; rationale: string }>;
-  acceptanceCriteria: string[];
-  testPlan: string[];
-  risksAndOpenQuestions: string[];
-  implementationBrief: string;
-};
-
-export type FeedbackProposal = {
-  id: string;
-  feedbackId: string;
-  generationStatus: "queued" | "generating" | "ready" | "error";
-  revision: number;
-  contextSnapshot: Record<string, unknown>;
-  proposal: FeedbackProposalContent | null;
-  reviewerGuidance: string | null;
-  analyzedAt: string | null;
-  model: string | null;
-  error: string | null;
-  implementationRequestedAt: string | null;
-  implementationRequestedByUserId: string | null;
-  implementationRequestedBy: FeedbackPerson | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export type AppFeedbackItem = {
   id: string;
   createdByUserId: string;
@@ -81,8 +51,6 @@ export type AppFeedbackItem = {
   updatedAt: string;
   reporter: FeedbackPerson;
   resolver: FeedbackPerson | null;
-  proposal: FeedbackProposal | null;
-  viewerCanImplement: boolean;
 };
 
 async function apiJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -176,27 +144,5 @@ export async function updateAppFeedback(
       method: "PATCH",
       body: JSON.stringify(input),
     },
-  );
-}
-
-export async function reviseAppFeedbackProposal(
-  id: string,
-  reviewerGuidance: string,
-): Promise<AppFeedbackItem> {
-  return apiJson<AppFeedbackItem>(
-    `/api/admin/feedback/${encodeURIComponent(id)}/proposal/revise`,
-    {
-      method: "POST",
-      body: JSON.stringify({ reviewerGuidance }),
-    },
-  );
-}
-
-export async function implementAppFeedbackProposal(
-  id: string,
-): Promise<AppFeedbackItem> {
-  return apiJson<AppFeedbackItem>(
-    `/api/admin/feedback/${encodeURIComponent(id)}/proposal/implement`,
-    { method: "POST" },
   );
 }

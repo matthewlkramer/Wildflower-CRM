@@ -356,8 +356,13 @@ export const GetPersonRelationshipSummaryParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const getPersonRelationshipSummaryResponseNextStepsMax = 3;
+
+
+
 export const GetPersonRelationshipSummaryResponse = zod.object({
   "summary": zod.string().describe('2–4 sentence plain-text state of the relationship. \'(no summary available)\' when the model call fails or there is no activity to summarize.'),
+  "nextSteps": zod.array(zod.string()).max(getPersonRelationshipSummaryResponseNextStepsMax).describe('Evidence-specific suggested actions, separate from the narrative.'),
   "generatedAt": zod.string().datetime({})
 }).describe('On-demand AI snapshot of where a donor relationship stands. Never persisted — regenerated from recent CRM activity each time it\'s requested.\n')
 

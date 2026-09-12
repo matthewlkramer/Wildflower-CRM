@@ -11,6 +11,7 @@ import {
   type ListNewsletterContactsAudience,
   type NewsletterImportResult,
   type NewsletterCampaign,
+  type Priority,
 } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,6 +162,8 @@ export default function NewsletterPage() {
   const [search, setSearch] = useState("");
   const [engagementFilter, setEngagementFilter] = useState("all");
   const [linkFilter, setLinkFilter] = useState("all");
+  const [individualPriority, setIndividualPriority] = useState<Priority | "all">("all");
+  const [organizationPriority, setOrganizationPriority] = useState<Priority | "all">("all");
   const [page, setPage] = useState(1);
   const [selectedAudience, setSelectedAudience] =
     useState<ListNewsletterContactsAudience | null>(null);
@@ -207,6 +210,10 @@ export default function NewsletterPage() {
         : linkFilter === "unmatched"
           ? false
           : undefined,
+    individualPriority:
+      individualPriority === "all" ? undefined : [individualPriority],
+    organizationPriority:
+      organizationPriority === "all" ? undefined : [organizationPriority],
     limit: 100,
     page,
   };
@@ -743,6 +750,42 @@ export default function NewsletterPage() {
                   <SelectItem value="all">All matches</SelectItem>
                   <SelectItem value="linked">Linked to CRM</SelectItem>
                   <SelectItem value="unmatched">Unmatched</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={individualPriority}
+                onValueChange={(value) => {
+                  setIndividualPriority(value as Priority | "all");
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Individual priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All individual priority</SelectItem>
+                  <SelectItem value="top">Individual: Top</SelectItem>
+                  <SelectItem value="high">Individual: High</SelectItem>
+                  <SelectItem value="medium">Individual: Medium</SelectItem>
+                  <SelectItem value="low">Individual: Low</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={organizationPriority}
+                onValueChange={(value) => {
+                  setOrganizationPriority(value as Priority | "all");
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Organization priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All organization priority</SelectItem>
+                  <SelectItem value="top">Organization: Top</SelectItem>
+                  <SelectItem value="high">Organization: High</SelectItem>
+                  <SelectItem value="medium">Organization: Medium</SelectItem>
+                  <SelectItem value="low">Organization: Low</SelectItem>
                 </SelectContent>
               </Select>
             </div>

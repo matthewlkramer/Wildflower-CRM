@@ -8,6 +8,7 @@ import {
   type TopPriorityPerson,
   type TopPriorityAffiliate,
   type TopPriorityOpenAsk,
+  type TopPriorityGiftOrPledgeSummary,
 } from "@workspace/api-client-react";
 import {
   Table,
@@ -101,6 +102,28 @@ function OpenAsksCell({ asks }: { asks: TopPriorityOpenAsk[] }) {
   );
 }
 
+function GiftOrPledgeCell({
+  summary,
+}: {
+  summary: TopPriorityGiftOrPledgeSummary | null | undefined;
+}) {
+  if (!summary) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="text-sm tabular-nums">
+      <div className="font-medium">
+        {summary.kind === "gift" ? "Gift" : "Pledge"}{" "}
+        {formatCurrency(summary.amount)}
+      </div>
+      <div className="text-xs text-muted-foreground">
+        {summary.date ? formatDateShort(summary.date) : "Date not set"}
+        {summary.kind === "pledge" && summary.paymentStatus
+          ? ` · ${formatEnum(summary.paymentStatus)}`
+          : ""}
+      </div>
+    </div>
+  );
+}
+
 function FundersTable({
   funders,
   viewer,
@@ -145,16 +168,15 @@ function FundersTable({
               <TableHead>Open opportunities</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
               <TableHead className="w-40">Affiliated People</TableHead>
-              <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
-              <SortableTH colKey="lastGiftAmount" {...ts} align="right" className="w-28 pr-6">Last Gift $</SortableTH>
+              <TableHead className="w-40 pr-6">Gift or pledge</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonRows cols={7} />
+              <SkeletonRows cols={6} />
             ) : funders.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="pl-6 py-8 text-center text-muted-foreground">
+                <TableCell colSpan={6} className="pl-6 py-8 text-center text-muted-foreground">
                   No top-priority funders
                 </TableCell>
               </TableRow>
@@ -182,11 +204,8 @@ function FundersTable({
                   <TableCell>
                     <AffiliatedPeopleCell people={f.affiliatedPeople ?? []} />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
-                    {f.lastGiftDate ? formatDateShort(f.lastGiftDate) : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums pr-6 text-sm">
-                    {f.lastGiftAmount ? formatCurrency(f.lastGiftAmount) : <span className="text-muted-foreground">—</span>}
+                  <TableCell className="pr-6">
+                    <GiftOrPledgeCell summary={f.giftOrPledgeSummary} />
                   </TableCell>
                 </TableRow>
               ))
@@ -244,16 +263,15 @@ function IndividualsTable({
               <SortableTH colKey="owner" {...ts} className="w-36">Owner</SortableTH>
               <TableHead>Open opportunities</TableHead>
               <SortableTH colKey="openTaskCount" {...ts} align="right" className="w-28">Open Tasks</SortableTH>
-              <SortableTH colKey="lastGiftDate" {...ts} align="right" className="w-28">Last Gift</SortableTH>
-              <SortableTH colKey="lastGiftAmount" {...ts} align="right" className="w-28 pr-6">Last Gift $</SortableTH>
+              <TableHead className="w-40 pr-6">Gift or pledge</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <SkeletonRows cols={6} />
+              <SkeletonRows cols={5} />
             ) : individuals.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="pl-6 py-8 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="pl-6 py-8 text-center text-muted-foreground">
                   No top-priority individuals
                 </TableCell>
               </TableRow>
@@ -278,11 +296,8 @@ function IndividualsTable({
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums text-sm">
-                    {p.lastGiftDate ? formatDateShort(p.lastGiftDate) : <span className="text-muted-foreground">—</span>}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums pr-6 text-sm">
-                    {p.lastGiftAmount ? formatCurrency(p.lastGiftAmount) : <span className="text-muted-foreground">—</span>}
+                  <TableCell className="pr-6">
+                    <GiftOrPledgeCell summary={p.giftOrPledgeSummary} />
                   </TableCell>
                 </TableRow>
               ))

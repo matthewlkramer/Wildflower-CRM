@@ -56,6 +56,29 @@ const orgLastGiftAmountExpr = sql`(
   LIMIT 1
 )`;
 
+const orgGiftOrPledgeSummaryExpr = sql`COALESCE(
+  (SELECT JSON_BUILD_OBJECT(
+    'kind', 'gift', 'amount', g.amount::text, 'date', g.date_received::text,
+    'paymentStatus', NULL, 'opportunityId', g.opportunity_id)
+   FROM gifts_and_payments g
+   WHERE g.organization_id = ${ORGS_ID} AND g.archived_at IS NULL
+     AND g.opportunity_id IS NULL
+   ORDER BY g.date_received DESC NULLS LAST, g.id DESC LIMIT 1),
+  (SELECT JSON_BUILD_OBJECT(
+    'kind', 'pledge',
+    'amount', COALESCE(o.awarded_amount, o.ask_amount, 0)::text,
+    'date', COALESCE(o.pledge_committed_at, o.created_at)::text,
+    'paymentStatus', CASE
+      WHEN COALESCE(o.paid, 0) <= 0 THEN 'unpaid'
+      WHEN COALESCE(o.paid, 0) >= COALESCE(o.awarded_amount, o.ask_amount, 0) THEN 'paid'
+      ELSE 'partially_paid' END,
+    'opportunityId', o.id)
+   FROM opportunities_and_pledges o
+   WHERE o.organization_id = ${ORGS_ID} AND o.pledge_committed_at IS NOT NULL
+     AND o.archived_at IS NULL
+   ORDER BY o.pledge_committed_at DESC NULLS LAST, o.id DESC LIMIT 1)
+)`;
+
 // Aggregates current affiliated people as a JSON array.
 const orgAffiliatedPeopleExpr = sql`(
   SELECT COALESCE(
@@ -162,6 +185,32 @@ const personLastGiftAmountExpr = sql`(
   LIMIT 1
 )`;
 
+const personGiftOrPledgeSummaryExpr = sql`COALESCE(
+  (SELECT JSON_BUILD_OBJECT(
+    'kind', 'gift', 'amount', g.amount::text, 'date', g.date_received::text,
+    'paymentStatus', NULL, 'opportunityId', g.opportunity_id)
+   FROM gifts_and_payments g
+   WHERE g.archived_at IS NULL AND g.opportunity_id IS NULL AND (
+     g.individual_giver_person_id = ${PEOPLE_ID}
+     OR g.household_id = ${sql.raw(`"people"."primary_household_id"`)}
+     OR ${personOrgCreditGiftWhere}
+   )
+   ORDER BY g.date_received DESC NULLS LAST, g.id DESC LIMIT 1),
+  (SELECT JSON_BUILD_OBJECT(
+    'kind', 'pledge',
+    'amount', COALESCE(o.awarded_amount, o.ask_amount, 0)::text,
+    'date', COALESCE(o.pledge_committed_at, o.created_at)::text,
+    'paymentStatus', CASE
+      WHEN COALESCE(o.paid, 0) <= 0 THEN 'unpaid'
+      WHEN COALESCE(o.paid, 0) >= COALESCE(o.awarded_amount, o.ask_amount, 0) THEN 'paid'
+      ELSE 'partially_paid' END,
+    'opportunityId', o.id)
+   FROM opportunities_and_pledges o
+   WHERE o.individual_giver_person_id = ${PEOPLE_ID}
+     AND o.pledge_committed_at IS NOT NULL AND o.archived_at IS NULL
+   ORDER BY o.pledge_committed_at DESC NULLS LAST, o.id DESC LIMIT 1)
+)`;
+
 // ─── Visibility helpers (mirror UI canSeeIdentity logic server-side) ───────
 // canSeeIdentity is the shared helper in ../lib/identityVisibility; the local
 // mask* wrappers adapt the (viewerId, viewerRole) call sites to a Viewer.
@@ -255,6 +304,9 @@ router.get(
           lastGiftAmount: sql<string | null>`${orgLastGiftAmountExpr}`.as(
             "last_gift_amount",
           ),
+          giftOrPledgeSummary: sql<unknown>`${orgGiftOrPledgeSummaryExpr}`.as(
+            "gift_or_pledge_summary",
+          ),
         })
         .from(organizations)
         .where(eq(organizations.priority, "top"))
@@ -288,6 +340,9 @@ router.get(
           ),
           lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as(
             "last_gift_amount",
+          ),
+          giftOrPledgeSummary: sql<unknown>`${personGiftOrPledgeSummaryExpr}`.as(
+            "gift_or_pledge_summary",
           ),
         })
         .from(people)
