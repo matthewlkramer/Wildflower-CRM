@@ -13405,6 +13405,7 @@ components:
           allocationCount,
           totalSubAmount,
           expected,
+          weightedProjection,
           receivedGoalCredit,
           unpaidCommitment,
           unpaidCommitmentWeighted,
@@ -13449,6 +13450,8 @@ components:
           { type: string, description: "Face-value open ask for the bucket." }
         openAskWeighted:
           { type: string, description: "Probability-weighted open ask for the bucket." }
+        weightedProjection:
+          { type: string, description: "Shared forecast total before display rounding: received goal credit plus weighted unpaid commitments and weighted open asks." }
         goal:
           { type: string, nullable: true, description: "Goal for the FY/entity/category bucket." }
         goalGap:
@@ -13496,6 +13499,7 @@ components:
           category,
           totalSubAmount,
           expected,
+          weightedProjection,
           receivedGoalCredit,
           unpaidCommitment,
           unpaidCommitmentWeighted,
@@ -13519,6 +13523,7 @@ components:
         unpaidCommitmentWeighted: { type: string }
         openAsk: { type: string }
         openAskWeighted: { type: string }
+        weightedProjection: { type: string, description: "Shared forecast total before display rounding." }
         goal: { type: string, nullable: true }
         goalGap: { type: string, nullable: true }
         contributionIds:

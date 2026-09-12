@@ -508,6 +508,7 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     expectMoney(projection.unpaidCommitmentWeighted, 100);
     expectMoney(projection.openAsk, 470);
     expectMoney(projection.openAskWeighted, 100);
+    expectMoney(projection.weightedProjection, 400);
     expectMoney(projection.goal, 1000);
     expectMoney(projection.goalGap, 600);
 
@@ -867,6 +868,8 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     expect(combined.receivedGoalCredit).toBe("0");
     expect(combined.unpaidCommitmentWeighted).toBe("0.006");
     expect(combined.openAskWeighted).toBe("0.006");
+    expect(projection.weightedProjection).toBe("0.012");
+    expect(combined.weightedProjection).toBe("0.012");
 
     // The UI formats the aggregate, not each already-precise component:
     // 0.006 + 0.006 displays as $0.01, whereas independently rounding the

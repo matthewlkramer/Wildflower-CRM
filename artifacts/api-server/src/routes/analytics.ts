@@ -948,6 +948,7 @@ router.get(
       unpaidCommitmentWeighted: metric.committedWeighted,
       openAsk: metric.openAsk,
       openAskWeighted: metric.openWeighted,
+      weightedProjection: metric.weightedProjection,
       goal: metric.goal,
       goalGap: metric.goalGap,
       contributionIds: [

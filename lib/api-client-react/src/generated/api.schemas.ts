@@ -1209,6 +1209,8 @@ export interface ProjectionByFyEntityRow {
   openAsk: string;
   /** Probability-weighted open ask for the bucket. */
   openAskWeighted: string;
+  /** Shared forecast total before display rounding: received goal credit plus weighted unpaid commitments and weighted open asks. */
+  weightedProjection: string;
   /** Goal for the FY/entity/category bucket. */
   goal: string | null;
   /** Non-negative goal less weighted projection; null when no goal is set. */
@@ -1260,6 +1262,8 @@ export interface ProjectionCombinedFyRow {
   unpaidCommitmentWeighted: string;
   openAsk: string;
   openAskWeighted: string;
+  /** Shared forecast total before display rounding. */
+  weightedProjection: string;
   goal: string | null;
   goalGap: string | null;
   /** Shared forecast contribution identifiers represented by this combined total. */
