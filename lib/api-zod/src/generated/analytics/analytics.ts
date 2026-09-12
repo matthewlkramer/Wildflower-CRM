@@ -106,6 +106,7 @@ export const GetProjectionsByFyEntityResponse = zod.object({
   "unpaidCommitmentWeighted": zod.string().describe('Probability-weighted unpaid written commitment.'),
   "openAsk": zod.string().describe('Face-value open ask for the bucket.'),
   "openAskWeighted": zod.string().describe('Probability-weighted open ask for the bucket.'),
+  "weightedProjection": zod.string().describe('Shared forecast total before display rounding: received goal credit plus weighted unpaid commitments and weighted open asks.'),
   "goal": zod.string().nullable().describe('Goal for the FY\/entity\/category bucket.'),
   "goalGap": zod.string().nullable().describe('Non-negative goal less weighted projection; null when no goal is set.'),
   "contributionIds": zod.array(zod.string()).describe('Shared forecast contribution identifiers represented by this recipient comparison cell.')
@@ -120,6 +121,7 @@ export const GetProjectionsByFyEntityResponse = zod.object({
   "unpaidCommitmentWeighted": zod.string(),
   "openAsk": zod.string(),
   "openAskWeighted": zod.string(),
+  "weightedProjection": zod.string().describe('Shared forecast total before display rounding.'),
   "goal": zod.string().nullable(),
   "goalGap": zod.string().nullable(),
   "contributionIds": zod.array(zod.string()).describe('Shared forecast contribution identifiers represented by this combined total.')

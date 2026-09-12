@@ -29,9 +29,7 @@ import {
 import { SkeletonRows } from "@/components/ui/skeleton";
 
 const UNKNOWN_BUCKET = "__unknown__";
-type ProjectionCombinedForecastRow = ProjectionCombinedFyRow & {
-  weightedProjection?: string | null;
-};
+type ProjectionCombinedForecastRow = ProjectionCombinedFyRow;
 
 export default function Projections() {
   const { selected: globalEntityIds } = useEntityFilter();
