@@ -27,6 +27,7 @@ import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import FiscalYearReport from "@/pages/fiscal-year-report";
 import Admin from "@/pages/admin";
 import AdminFeedback from "@/pages/admin-feedback";
+import FutureFunctionality from "@/pages/future-functionality";
 import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
 import CleanupQueue from "@/pages/cleanup-queue";
@@ -254,6 +255,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
           <Route path="/admin/feedback"><ProtectedRoute component={AdminFeedback} /></Route>
+          <Route path="/admin/future-functionality"><ProtectedRoute component={FutureFunctionality} /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
           <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
           <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
