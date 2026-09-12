@@ -222,7 +222,7 @@ export default function CleanupQueuePage() {
           Cleanup Queue
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Track shared cleanup projects, research, and flagged records. Keep the next step, person responsible, and source links in each item’s notes.
+          Track shared cleanup projects, research, and flagged records. Keep the next step and source links in each item’s notes.
         </p>
       </div>
 

@@ -6,13 +6,14 @@ import {
   tasks,
   users,
 } from "@workspace/db/schema";
-import type { MeetingActionItem } from "@workspace/db/schema";
+import type { MeetingActionItem, MeetingArtifact } from "@workspace/db/schema";
 import { and, desc, count, eq, or, sql, type SQL } from "drizzle-orm";
 import {
   ListMeetingNotesQueryParams,
   CreateMeetingNoteBodyRefined,
   UpdateMeetingNoteBody,
   PromoteMeetingActionItemBody,
+  ProcessMeetingMediaBody,
   validateMeetingContactInvariants,
   MEETING_CONTACT_XOR_MESSAGE,
 } from "@workspace/api-zod";
@@ -30,9 +31,27 @@ import {
 import { summarizeMeeting } from "../lib/summarizeMeeting";
 import { generateMeetingNextSteps } from "../lib/generateMeetingNextSteps";
 import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
+import { ObjectStorageService } from "../lib/objectStorage";
+import {
+  draftMeetingFollowUp,
+  ocrHandwrittenNotes,
+  transcribeMeetingAudio,
+} from "../lib/openaiMeeting";
 
 const router: IRouter = Router();
 router.use(requireAuth);
+const objectStorage = new ObjectStorageService();
+
+async function validateMeetingArtifacts(artifacts: MeetingArtifact[]) {
+  if (artifacts.length > 12)
+    throw new Error("A meeting can have at most 12 source files.");
+  for (const artifact of artifacts) {
+    if (!artifact.objectPath.startsWith("/objects/uploads/")) {
+      throw new Error("Meeting source files must use private object storage.");
+    }
+    await objectStorage.getObjectEntityFile(artifact.objectPath);
+  }
+}
 
 router.get(
   "/meeting-notes",
@@ -116,19 +135,9 @@ router.post(
         });
         return;
       }
-      const contactMatches =
-        (!!body.personId && event.matchedPersonIds?.includes(body.personId)) ||
-        (!!body.organizationId &&
-          event.matchedOrganizationIds?.includes(body.organizationId)) ||
-        (!!body.householdId &&
-          event.matchedHouseholdIds?.includes(body.householdId));
-      if (!contactMatches) {
-        res.status(400).json({
-          error: "validation_error",
-          message: "Choose a contact that is linked to this calendar event.",
-        });
-        return;
-      }
+      // Automatic attendee matching is a convenience, not a prerequisite.
+      // Staff may explicitly associate phone, in-person, or first-time donor
+      // meetings with any CRM contact from the meeting workspace.
       const existingNote = await db
         .select({ id: meetingNotes.id })
         .from(meetingNotes)
@@ -169,12 +178,40 @@ router.post(
     // summary + action items) vs hand-typed notes (`summary`, stored
     // verbatim with no AI processing and no rawTranscript). Refined
     // body validation has already enforced that exactly one is set.
-    const isTranscriptPath =
-      typeof body.transcript === "string" && body.transcript.trim().length > 0;
+    const artifacts = (body.artifacts ?? []) as MeetingArtifact[];
+    try {
+      await validateMeetingArtifacts(artifacts);
+    } catch (error) {
+      res.status(400).json({
+        error: "validation_error",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Invalid meeting source file.",
+      });
+      return;
+    }
+    const transcriptParts = [
+      body.transcript?.trim() || "",
+      ...artifacts.map((artifact) =>
+        artifact.transcript.trim()
+          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recorded meeting"} (${artifact.fileName}):\n${artifact.transcript.trim()}`
+          : "",
+      ),
+    ].filter(Boolean);
+    const isTranscriptPath = transcriptParts.length > 0;
+    const summaryInput = [
+      body.manualNotes?.trim()
+        ? `Staff notes:\n${body.manualNotes.trim()}`
+        : "",
+      ...transcriptParts,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const ai = isTranscriptPath
-      ? await summarizeMeeting(body.transcript!)
+      ? await summarizeMeeting(summaryInput)
       : {
-          summary: body.summary!.trim(),
+          summary: body.summary?.trim() || null,
           actionItems: [] as MeetingActionItem[],
         };
 
@@ -185,15 +222,21 @@ router.post(
         title: body.title ?? null,
         meetingDate: body.meetingDate ? new Date(body.meetingDate) : new Date(),
         attendees: body.attendees ?? null,
+        manualNotes: body.manualNotes?.trim() || null,
         // Privacy split mirrors the Gmail sync path: in summary_only
         // mode we drop the transcript here, BEFORE the insert, so the
         // raw bytes never reach postgres in the first place. The
         // hand-typed-notes path never has a transcript to begin with.
         rawTranscript:
-          !isTranscriptPath || summaryOnly ? null : body.transcript!,
+          !isTranscriptPath || summaryOnly
+            ? null
+            : transcriptParts.join("\n\n"),
         summaryOnly,
         aiSummary: ai.summary,
         actionItems: ai.actionItems as unknown as MeetingActionItem[],
+        artifacts: summaryOnly
+          ? artifacts.map((artifact) => ({ ...artifact, transcript: "" }))
+          : artifacts,
         creatorUserId: user.id,
         personId: body.personId ?? null,
         organizationId: body.organizationId ?? null,
@@ -242,8 +285,24 @@ router.patch(
     if (body.meetingDate !== undefined)
       patch.meetingDate = new Date(body.meetingDate);
     if (body.attendees !== undefined) patch.attendees = body.attendees;
+    if (body.manualNotes !== undefined) patch.manualNotes = body.manualNotes;
     if (body.aiSummary !== undefined) patch.aiSummary = body.aiSummary;
     if (body.actionItems !== undefined) patch.actionItems = body.actionItems;
+    if (body.artifacts !== undefined) {
+      try {
+        await validateMeetingArtifacts(body.artifacts as MeetingArtifact[]);
+      } catch (error) {
+        res.status(400).json({
+          error: "validation_error",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Invalid meeting source file.",
+        });
+        return;
+      }
+      patch.artifacts = body.artifacts;
+    }
     if (body.personId !== undefined) patch.personId = body.personId;
     if (body.organizationId !== undefined)
       patch.organizationId = body.organizationId;
@@ -367,13 +426,23 @@ router.post(
       .where(eq(meetingNotes.id, paramId(req)))
       .then((rows) => rows[0]);
     if (!note) return notFound(res, "meeting note");
+    const sourceArtifacts = (note.artifacts ?? []) as MeetingArtifact[];
     const savedText = [
       note.title ? `Title: ${note.title}` : "",
+      note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
       note.aiSummary ? `Summary:\n${note.aiSummary}` : "",
+      note.rawTranscript ? `Transcript:\n${note.rawTranscript}` : "",
+      ...sourceArtifacts.map((artifact) =>
+        artifact.transcript
+          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recording transcript"}:\n${artifact.transcript}`
+          : "",
+      ),
       (note.actionItems as MeetingActionItem[] | null)?.length
         ? `Existing action items:\n${(note.actionItems as MeetingActionItem[]).map((item) => `- ${item.title}`).join("\n")}`
         : "",
-    ].filter(Boolean).join("\n\n");
+    ]
+      .filter(Boolean)
+      .join("\n\n");
     const proposals = await generateMeetingNextSteps(savedText);
     const today = new Date().toISOString().slice(0, 10);
     const user = getAppUser(req);
@@ -385,6 +454,118 @@ router.post(
         assignmentDate: today,
       })),
     });
+  }),
+);
+
+router.post(
+  "/meeting-notes/:id/draft-follow-up",
+  asyncHandler(async (req, res) => {
+    const note = await db
+      .select()
+      .from(meetingNotes)
+      .where(eq(meetingNotes.id, paramId(req)))
+      .then((rows) => rows[0]);
+    if (!note) return notFound(res, "meeting note");
+    const artifacts = (note.artifacts ?? []) as MeetingArtifact[];
+    const actionItems = (note.actionItems ?? []) as MeetingActionItem[];
+    const savedContent = [
+      note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
+      note.aiSummary ? `Summary:\n${note.aiSummary}` : "",
+      note.rawTranscript ? `Transcript:\n${note.rawTranscript}` : "",
+      ...artifacts.map((artifact) =>
+        artifact.transcript
+          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recording transcript"}:\n${artifact.transcript}`
+          : "",
+      ),
+      actionItems.length
+        ? `Next steps:\n${actionItems.map((item) => `- ${item.title}`).join("\n")}`
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    try {
+      const draft = await draftMeetingFollowUp({
+        meetingTitle: note.title?.trim() || "our meeting",
+        meetingDate: note.meetingDate.toISOString().slice(0, 10),
+        notes: savedContent,
+      });
+      const internalEmails = new Set(
+        (await db.select({ email: users.email }).from(users))
+          .map((row) => row.email?.trim().toLowerCase())
+          .filter((email): email is string => Boolean(email)),
+      );
+      const recipients = Array.from(
+        new Set(
+          (note.attendees ?? [])
+            .map((value) => value.trim().toLowerCase())
+            .filter(
+              (email) =>
+                /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) &&
+                !internalEmails.has(email) &&
+                !email.endsWith("@wildflowerschools.org"),
+            ),
+        ),
+      );
+      res.json({ recipients, ...draft });
+    } catch (error) {
+      res.status(503).json({
+        error: "openai_unavailable",
+        message:
+          error instanceof Error ? error.message : "OpenAI is unavailable.",
+      });
+    }
+  }),
+);
+
+router.post(
+  "/meeting-media/process",
+  asyncHandler(async (req, res) => {
+    const body = parseOrBadRequest(ProcessMeetingMediaBody, req.body, res);
+    if (!body) return;
+    if (!body.objectPath.startsWith("/objects/uploads/")) {
+      res.status(400).json({
+        error: "validation_error",
+        message: "Meeting source files must use private object storage.",
+      });
+      return;
+    }
+    try {
+      const file = await objectStorage.getObjectEntityFile(body.objectPath);
+      const transcript =
+        body.kind === "handwritten_notes"
+          ? await ocrHandwrittenNotes({
+              file,
+              mimeType: body.mimeType,
+              sizeBytes: body.sizeBytes,
+            })
+          : await transcribeMeetingAudio({
+              file,
+              fileName: body.fileName,
+              mimeType: body.mimeType,
+              sizeBytes: body.sizeBytes,
+            });
+      const artifact: MeetingArtifact = {
+        id: newId(),
+        kind: body.kind,
+        objectPath: body.objectPath,
+        fileName: body.fileName,
+        mimeType: body.mimeType,
+        sizeBytes: body.sizeBytes,
+        transcript,
+        createdAt: new Date().toISOString(),
+      };
+      res.json(artifact);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The source file could not be processed.";
+      const status = message.startsWith("OpenAI") ? 503 : 400;
+      res.status(status).json({
+        error: status === 503 ? "openai_unavailable" : "validation_error",
+        message,
+      });
+    }
   }),
 );
 

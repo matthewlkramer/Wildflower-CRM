@@ -16,14 +16,15 @@ import { households } from "./households";
 import { calendarEvents } from "./calendarEvents";
 
 /**
- * Meeting notes captured via the paste-transcript flow. The user pastes
- * a raw meeting transcript (Zoom / Google Meet / manual). The server
- * runs it through Anthropic to extract:
+ * Meeting notes captured from live staff notes, pasted transcripts,
+ * photographed paper notes, or browser-recorded meeting audio. The server
+ * can run source text through an AI model to extract:
  *   - aiSummary:   short paragraph summary
  *   - actionItems: structured todos (jsonb)
  *
- * Privacy: when the creator's `users.email_sync_mode = 'summary_only'`
- * the raw transcript is dropped server-side BEFORE insert. The
+ * Privacy: when the creator's `users.email_sync_mode = 'summary_only'`,
+ * raw transcript text is dropped server-side BEFORE insert. Explicitly
+ * uploaded source files remain attached to the meeting. The
  * `summaryOnly` boolean snapshots that decision at create time so the
  * UI can show "transcript discarded" even if the user later flips back
  * to `full` mode. The mirror of the email-sync privacy split — the
@@ -43,10 +44,21 @@ export const meetingNotes = pgTable(
       .defaultNow()
       .notNull(),
     attendees: text("attendees").array(),
+    // Verbatim notes typed by a staff member during or after the meeting.
+    // Kept separate from the AI summary so later summarization never
+    // overwrites the source notes.
+    manualNotes: text("manual_notes"),
     rawTranscript: text("raw_transcript"),
     summaryOnly: boolean("summary_only").notNull().default(false),
     aiSummary: text("ai_summary"),
     actionItems: jsonb("action_items"),
+    // Immutable source files captured for this meeting. The object itself
+    // lives in private object storage; this JSON keeps its metadata and the
+    // OpenAI-produced transcript next to the meeting record.
+    artifacts: jsonb("artifacts")
+      .$type<MeetingArtifact[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     creatorUserId: text("creator_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
@@ -105,4 +117,17 @@ export interface MeetingActionItem {
   assigneeName?: string | null;
   dueDate?: string | null;
   promotedTaskId?: string | null;
+}
+
+export type MeetingArtifactKind = "handwritten_notes" | "audio_recording";
+
+export interface MeetingArtifact {
+  id: string;
+  kind: MeetingArtifactKind;
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  transcript: string;
+  createdAt: string;
 }

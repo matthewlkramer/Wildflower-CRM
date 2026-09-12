@@ -54,6 +54,8 @@ import {
   X,
   Check,
   Building2,
+  AudioLines,
+  FileImage,
   Home,
   Users as UsersIcon,
 } from "lucide-react";
@@ -280,6 +282,38 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
           {note.aiSummary}
         </p>
       ) : null}
+      {note.manualNotes ? (
+        <div className="space-y-1">
+          <div className="text-xs font-medium">Staff notes</div>
+          <p className="whitespace-pre-wrap text-muted-foreground">
+            {note.manualNotes}
+          </p>
+        </div>
+      ) : null}
+      {note.artifacts && note.artifacts.length > 0 ? (
+        <div className="space-y-1.5">
+          <div className="text-xs font-medium">Source material</div>
+          <ul className="space-y-1">
+            {note.artifacts.map((artifact) => (
+              <li key={artifact.id} className="flex items-center gap-2 text-xs">
+                {artifact.kind === "handwritten_notes" ? (
+                  <FileImage className="h-3.5 w-3.5" />
+                ) : (
+                  <AudioLines className="h-3.5 w-3.5" />
+                )}
+                <a
+                  href={`/api/storage${artifact.objectPath}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-primary hover:underline"
+                >
+                  {artifact.fileName}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {items.length > 0 ? (
         <div className="space-y-1.5">
           <div className="text-xs font-medium flex items-center gap-1">
@@ -370,12 +404,14 @@ function MeetingNoteEditor({
   onSave: (patch: {
     title?: string | null;
     aiSummary?: string | null;
+    manualNotes?: string | null;
     actionItems?: MeetingActionItem[];
   }) => void;
   saving: boolean;
 }) {
   const [title, setTitle] = useState(note.title ?? "");
   const [summary, setSummary] = useState(note.aiSummary ?? "");
+  const [manualNotes, setManualNotes] = useState(note.manualNotes ?? "");
   const [items, setItems] = useState<MeetingActionItem[]>(
     (note.actionItems ?? []) as MeetingActionItem[],
   );
@@ -418,6 +454,18 @@ function MeetingNoteEditor({
           onChange={(e) => setSummary(e.target.value)}
           rows={5}
           data-testid={`input-edit-meeting-summary-${note.id}`}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`edit-manual-notes-${note.id}`} className="text-xs">
+          Staff notes
+        </Label>
+        <Textarea
+          id={`edit-manual-notes-${note.id}`}
+          value={manualNotes}
+          onChange={(e) => setManualNotes(e.target.value)}
+          rows={7}
+          data-testid={`input-edit-meeting-manual-notes-${note.id}`}
         />
       </div>
       <div className="space-y-1.5">
@@ -509,6 +557,7 @@ function MeetingNoteEditor({
             onSave({
               title: title.trim() || null,
               aiSummary: summary.trim() || null,
+              manualNotes: manualNotes.trim() || null,
               actionItems: items
                 .map((it) => ({ ...it, title: it.title.trim() }))
                 .filter((it) => it.title.length > 0),
@@ -584,7 +633,11 @@ export function AddMeetingNoteDialog({
         setProposalOpen(true);
       },
       onError: (err: unknown) =>
-        toast({ title: "Next steps failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" }),
+        toast({
+          title: "Next steps failed",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        }),
     },
   });
   const createTask = useCreateTask();
@@ -840,7 +893,7 @@ export function AddMeetingNoteDialog({
             <TabsContent value="transcript" className="space-y-1.5 mt-0">
               <div className="flex items-center justify-between">
                 <Label htmlFor="mtg-transcript">Transcript</Label>
-             <Button
+                <Button
                   type="button"
                   size="sm"
                   variant="ghost"
@@ -907,7 +960,9 @@ export function AddMeetingNoteDialog({
               onClick={() => setGenerateAfterSave(true)}
               data-testid="button-save-and-generate-next-steps"
             >
-              {generate.isPending ? "Generating…" : "Save and generate next steps"}
+              {generate.isPending
+                ? "Generating…"
+                : "Save and generate next steps"}
             </Button>
           </DialogFooter>
         </form>
@@ -925,16 +980,24 @@ export function AddMeetingNoteDialog({
                     dueDate: proposal.dueDate ?? undefined,
                     assigneeUserId: proposal.assigneeUserId ?? undefined,
                     personIds: effectivePerson ? [effectivePerson] : undefined,
-                    organizationIds: effectiveFunder ? [effectiveFunder] : undefined,
-                    householdIds: effectiveHousehold ? [effectiveHousehold] : undefined,
+                    organizationIds: effectiveFunder
+                      ? [effectiveFunder]
+                      : undefined,
+                    householdIds: effectiveHousehold
+                      ? [effectiveHousehold]
+                      : undefined,
                   },
                 }),
               ),
             );
-            await queryClient.invalidateQueries({ queryKey: getListTasksQueryKey() });
+            await queryClient.invalidateQueries({
+              queryKey: getListTasksQueryKey(),
+            });
             setProposalOpen(false);
             setOpen(false);
-            toast({ title: `${selected.length} task${selected.length === 1 ? "" : "s"} created` });
+            toast({
+              title: `${selected.length} task${selected.length === 1 ? "" : "s"} created`,
+            });
           }}
         />
       </DialogContent>
@@ -942,7 +1005,7 @@ export function AddMeetingNoteDialog({
   );
 }
 
-function MeetingNextStepsProposalDialog({
+export function MeetingNextStepsProposalDialog({
   open,
   proposals,
   onOpenChange,
@@ -961,23 +1024,39 @@ function MeetingNextStepsProposalDialog({
         <DialogHeader>
           <DialogTitle>Review proposed next steps</DialogTitle>
           <DialogDescription>
-            Edit, remove, or add proposals. Nothing is created until you explicitly confirm.
+            Edit, remove, or add proposals. Nothing is created until you
+            explicitly confirm.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2 max-h-[55vh] overflow-y-auto">
           {draft.map((proposal, index) => (
-            <div key={index} className="grid grid-cols-[1fr_140px_140px_auto] gap-2 items-start">
+            <div
+              key={index}
+              className="grid grid-cols-[1fr_140px_140px_auto] gap-2 items-start"
+            >
               <Input
                 value={proposal.title}
                 onChange={(event) =>
-                  setDraft((items) => items.map((item, i) => i === index ? { ...item, title: event.target.value } : item))
+                  setDraft((items) =>
+                    items.map((item, i) =>
+                      i === index
+                        ? { ...item, title: event.target.value }
+                        : item,
+                    ),
+                  )
                 }
                 aria-label={`Proposed task ${index + 1}`}
               />
               <Input
                 value={proposal.assigneeName ?? ""}
                 onChange={(event) =>
-                  setDraft((items) => items.map((item, i) => i === index ? { ...item, assigneeName: event.target.value || null } : item))
+                  setDraft((items) =>
+                    items.map((item, i) =>
+                      i === index
+                        ? { ...item, assigneeName: event.target.value || null }
+                        : item,
+                    ),
+                  )
                 }
                 placeholder="Assignee"
                 aria-label={`Assignee for proposed task ${index + 1}`}
@@ -986,32 +1065,65 @@ function MeetingNextStepsProposalDialog({
                 type="date"
                 value={proposal.dueDate ?? ""}
                 onChange={(event) =>
-                  setDraft((items) => items.map((item, i) => i === index ? { ...item, dueDate: event.target.value || null } : item))
+                  setDraft((items) =>
+                    items.map((item, i) =>
+                      i === index
+                        ? { ...item, dueDate: event.target.value || null }
+                        : item,
+                    ),
+                  )
                 }
                 aria-label={`Due date for proposed task ${index + 1}`}
               />
-              <Button type="button" variant="ghost" size="icon" onClick={() => setDraft((items) => items.filter((_, i) => i !== index))} aria-label="Delete proposed task">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() =>
+                  setDraft((items) => items.filter((_, i) => i !== index))
+                }
+                aria-label="Delete proposed task"
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
           ))}
-          <Button type="button" variant="outline" onClick={() => setDraft((items) => [...items, {
-            title: "",
-            assigneeUserId: null,
-            assigneeName: null,
-            assignmentDate: new Date().toISOString().slice(0, 10),
-            dueDate: null,
-            description: null,
-          }])}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() =>
+              setDraft((items) => [
+                ...items,
+                {
+                  title: "",
+                  assigneeUserId: null,
+                  assigneeName: null,
+                  assignmentDate: new Date().toISOString().slice(0, 10),
+                  dueDate: null,
+                  description: null,
+                },
+              ])
+            }
+          >
             <Plus className="h-4 w-4 mr-1" /> Add task
           </Button>
         </div>
         <DialogFooter>
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => onOpenChange(false)}
+          >
+            Cancel
+          </Button>
           <Button
             type="button"
             disabled={draft.some((item) => !item.title.trim())}
-            onClick={() => void onConfirm(draft.map((item) => ({ ...item, title: item.title.trim() })))}
+            onClick={() =>
+              void onConfirm(
+                draft.map((item) => ({ ...item, title: item.title.trim() })),
+              )
+            }
             data-testid="button-confirm-create-next-steps"
           >
             Confirm and create tasks
@@ -1023,7 +1135,7 @@ function MeetingNextStepsProposalDialog({
 }
 
 /** Debounced cross-entity contact picker for the unpinned dialog. */
-type PickedContact =
+export type PickedContact =
   | { kind: "person"; id: string; label: string }
   | { kind: "organization"; id: string; label: string }
   | { kind: "household"; id: string; label: string };
@@ -1037,7 +1149,7 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
-function ContactPicker({
+export function ContactPicker({
   value,
   onChange,
 }: {

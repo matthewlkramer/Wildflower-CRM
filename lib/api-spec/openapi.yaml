@@ -3392,7 +3392,13 @@ paths:
           schema:
             {
               type: string,
-              enum: [verbal_no_letter, committed_unpaid, partially_paid, overdue_fixed_close],
+              enum:
+                [
+                  verbal_no_letter,
+                  committed_unpaid,
+                  partially_paid,
+                  overdue_fixed_close,
+                ],
             }
         - name: type
           in: query
@@ -5292,8 +5298,42 @@ paths:
           description: Editable proposals; no tasks are created by this endpoint.
           content:
             application/json:
-              { schema: { $ref: "#/components/schemas/MeetingNextStepsResult" } }
+              {
+                schema: { $ref: "#/components/schemas/MeetingNextStepsResult" },
+              }
         "404": { $ref: "#/components/responses/NotFound" }
+  /meeting-notes/{id}/draft-follow-up:
+    post:
+      operationId: draftMeetingFollowUp
+      tags: [meeting-notes]
+      summary: Draft an editable follow-up email from a saved meeting note. Nothing is sent.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Draft email content and suggested external recipients.
+          content:
+            application/json:
+              { schema: { $ref: "#/components/schemas/MeetingFollowUpDraft" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { description: OpenAI is not configured or unavailable. }
+  /meeting-media/process:
+    post:
+      operationId: processMeetingMedia
+      tags: [meeting-notes]
+      summary: OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            { schema: { $ref: "#/components/schemas/ProcessMeetingMediaBody" } }
+      responses:
+        "200":
+          description: Processed source file, ready to attach to a meeting note.
+          content:
+            application/json:
+              { schema: { $ref: "#/components/schemas/MeetingArtifact" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { description: OpenAI is not configured or unavailable. }
 
   # ─── Saved views (per-list-page filter+sort presets) ───────────────────────
   /saved-views:
@@ -8470,8 +8510,8 @@ paths:
           in: query
           required: false
           description: |
-             Optional set of `entities.id` slugs. When provided, only allocations
-             on those entities are included. Comma-separated form supported.
+            Optional set of `entities.id` slugs. When provided, only allocations
+            on those entities are included. Comma-separated form supported.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
@@ -12001,7 +12041,14 @@ paths:
                 type: object
                 required: [data, newsletter, unsubscribedToNewsletter]
                 properties:
-                  data: { type: array, items: { $ref: "#/components/schemas/NewsletterPreferenceEvent" } }
+                  data:
+                    {
+                      type: array,
+                      items:
+                        {
+                          $ref: "#/components/schemas/NewsletterPreferenceEvent",
+                        },
+                    }
                   newsletter: { type: boolean }
                   unsubscribedToNewsletter: { type: boolean }
     post:
@@ -12013,7 +12060,10 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/CreateNewsletterPreferenceEventBody" }
+            schema:
+              {
+                $ref: "#/components/schemas/CreateNewsletterPreferenceEventBody",
+              }
       responses:
         "201":
           description: Preference evidence recorded. Only later affirmative consent can lift an opt-out.
@@ -12378,12 +12428,31 @@ components:
       }
     NewsletterPreferenceEvent:
       type: object
-      required: [id, personId, eventType, recordedAt, source, sourceKey, evidence]
+      required:
+        [id, personId, eventType, recordedAt, source, sourceKey, evidence]
       properties:
         id: { type: string }
         personId: { type: string }
-        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out, legacy_selected, legacy_opted_out] }
-        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event time if known. Never substitute import time. }
+        eventType:
+          {
+            type: string,
+            enum:
+              [
+                consent_given,
+                staff_added,
+                staff_removed,
+                opted_out,
+                legacy_selected,
+                legacy_opted_out,
+              ],
+          }
+        occurredAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: Actual event time if known. Never substitute import time.,
+          }
         recordedAt: { type: string, format: date-time }
         source: { type: string }
         sourceKey: { type: string }
@@ -12394,12 +12463,28 @@ components:
       type: object
       required: [eventType, source, evidence, requestId]
       properties:
-        eventType: { type: string, enum: [consent_given, staff_added, staff_removed, opted_out] }
-        occurredAt: { type: string, format: date-time, nullable: true, description: Actual event date if known. Undated consent cannot lift an opt-out. }
+        eventType:
+          {
+            type: string,
+            enum: [consent_given, staff_added, staff_removed, opted_out],
+          }
+        occurredAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: Actual event date if known. Undated consent cannot lift an opt-out.,
+          }
         source: { type: string, minLength: 1, maxLength: 200 }
         sourceUrl: { type: string, maxLength: 2000, nullable: true }
         evidence: { type: string, minLength: 1, maxLength: 4000 }
-        requestId: { type: string, minLength: 1, maxLength: 100, description: Stable unique ID for retrying this event submission. }
+        requestId:
+          {
+            type: string,
+            minLength: 1,
+            maxLength: 100,
+            description: Stable unique ID for retrying this event submission.,
+          }
 
     CapacityRating:
       {
@@ -12605,7 +12690,14 @@ components:
         returned.
     FundingArrivalMonth:
       type: object
-      required: [month, committedAmount, prospectiveAmount, prospectiveWeightedAmount, sourceRecordIds]
+      required:
+        [
+          month,
+          committedAmount,
+          prospectiveAmount,
+          prospectiveWeightedAmount,
+          sourceRecordIds,
+        ]
       properties:
         month: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$" }
         committedAmount: { type: string }
@@ -12618,11 +12710,31 @@ components:
       properties:
         category: { $ref: "#/components/schemas/FundraisingCategory" }
         asOfDate: { type: string, format: date }
-        items: { type: array, items: { $ref: "#/components/schemas/FundingArrivalItem" } }
-        months: { type: array, items: { $ref: "#/components/schemas/FundingArrivalMonth" } }
+        items:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/FundingArrivalItem" },
+          }
+        months:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/FundingArrivalMonth" },
+          }
     FundingArrivalItem:
       type: object
-      required: [id, opportunityId, opportunityName, status, expectedDate, amount, weightedAmount, basis, overdue, note]
+      required:
+        [
+          id,
+          opportunityId,
+          opportunityName,
+          status,
+          expectedDate,
+          amount,
+          weightedAmount,
+          basis,
+          overdue,
+          note,
+        ]
       properties:
         id: { type: string }
         opportunityId: { type: string }
@@ -12631,7 +12743,17 @@ components:
         expectedDate: { type: string, format: date, nullable: true }
         amount: { type: string, nullable: true }
         weightedAmount: { type: string, nullable: true }
-        basis: { type: string, enum: [projected_close, explicit_payment, unscheduled, reimbursement_annual] }
+        basis:
+          {
+            type: string,
+            enum:
+              [
+                projected_close,
+                explicit_payment,
+                unscheduled,
+                reimbursement_annual,
+              ],
+          }
         overdue: { type: boolean }
         note: { type: string }
     LoanOrGrant:
@@ -13392,17 +13514,17 @@ components:
         openPipelineWeighted:
           {
             type: string,
-             description: "SUM(pledge_allocations.sub_amount × parent.win_probability) for status='open', NON-write-off, unarchived opps (of this category) with grant_year = this FY.",
+            description: "SUM(pledge_allocations.sub_amount × parent.win_probability) for status='open', NON-write-off, unarchived opps (of this category) with grant_year = this FY.",
           }
         committed:
           {
             type: string,
-             description: "Per-pledge UNPAID remainder (at face value) for status='pledge', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
+            description: "Per-pledge UNPAID remainder (at face value) for status='pledge', NON-write-off, unarchived opps (of this category) with grant_year = this FY. Disjoint from openPipelineWeighted (status='open' only).",
           }
         committedWeighted:
           {
             type: string,
-             description: "Per-pledge UNPAID remainder discounted by the pledge's current win_probability for status='pledge', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
+            description: "Per-pledge UNPAID remainder discounted by the pledge's current win_probability for status='pledge', NON-write-off, unarchived opps of this category with grant_year = this FY. The projection tile uses THIS, not the raw 100% committed.",
           }
         received:
           {
@@ -13499,7 +13621,7 @@ components:
           openAskWeighted,
           goal,
           goalGap,
-           contributionIds,
+          contributionIds,
         ]
       properties:
         grantYear:
@@ -13527,21 +13649,44 @@ components:
             description: "Legacy alias for openAskWeighted, as a numeric string.",
           }
         receivedGoalCredit:
-          { type: string, description: "Received gift allocation credit for the bucket." }
+          {
+            type: string,
+            description: "Received gift allocation credit for the bucket.",
+          }
         unpaidCommitment:
-          { type: string, description: "Face-value unpaid written commitment for the bucket." }
+          {
+            type: string,
+            description: "Face-value unpaid written commitment for the bucket.",
+          }
         unpaidCommitmentWeighted:
-          { type: string, description: "Probability-weighted unpaid written commitment." }
+          {
+            type: string,
+            description: "Probability-weighted unpaid written commitment.",
+          }
         openAsk:
           { type: string, description: "Face-value open ask for the bucket." }
         openAskWeighted:
-          { type: string, description: "Probability-weighted open ask for the bucket." }
+          {
+            type: string,
+            description: "Probability-weighted open ask for the bucket.",
+          }
         weightedProjection:
-          { type: string, description: "Shared forecast total before display rounding: received goal credit plus weighted unpaid commitments and weighted open asks." }
+          {
+            type: string,
+            description: "Shared forecast total before display rounding: received goal credit plus weighted unpaid commitments and weighted open asks.",
+          }
         goal:
-          { type: string, nullable: true, description: "Goal for the FY/entity/category bucket." }
+          {
+            type: string,
+            nullable: true,
+            description: "Goal for the FY/entity/category bucket.",
+          }
         goalGap:
-          { type: string, nullable: true, description: "Non-negative goal less weighted projection; null when no goal is set." }
+          {
+            type: string,
+            nullable: true,
+            description: "Non-negative goal less weighted projection; null when no goal is set.",
+          }
         contributionIds:
           {
             type: array,
@@ -13570,7 +13715,8 @@ components:
         entityId: { type: string, nullable: true }
         reasons:
           type: array
-          items: { $ref: "#/components/schemas/ProjectionForecastOmissionReason" }
+          items:
+            { $ref: "#/components/schemas/ProjectionForecastOmissionReason" }
         message:
           {
             type: string,
@@ -13609,7 +13755,11 @@ components:
         unpaidCommitmentWeighted: { type: string }
         openAsk: { type: string }
         openAskWeighted: { type: string }
-        weightedProjection: { type: string, description: "Shared forecast total before display rounding." }
+        weightedProjection:
+          {
+            type: string,
+            description: "Shared forecast total before display rounding.",
+          }
         goal: { type: string, nullable: true }
         goalGap: { type: string, nullable: true }
         contributionIds:
@@ -13695,7 +13845,10 @@ components:
         lastGiftDate: { type: string, nullable: true }
         lastGiftAmount: { type: string, nullable: true }
         giftOrPledgeSummary:
-          { $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary", nullable: true }
+          {
+            $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary",
+            nullable: true,
+          }
 
     TopPriorityPerson:
       type: object
@@ -13725,7 +13878,10 @@ components:
         lastGiftDate: { type: string, nullable: true }
         lastGiftAmount: { type: string, nullable: true }
         giftOrPledgeSummary:
-          { $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary", nullable: true }
+          {
+            $ref: "#/components/schemas/TopPriorityGiftOrPledgeSummary",
+            nullable: true,
+          }
 
     TopPriorities:
       type: object
@@ -13817,7 +13973,8 @@ components:
             description: "Parent opp's win_probability (0–1, numeric string).",
           }
         projectedCloseDate: { type: string, format: date, nullable: true }
-        projectedCloseMonthsOut: { type: integer, nullable: true, readOnly: true }
+        projectedCloseMonthsOut:
+          { type: integer, nullable: true, readOnly: true }
         organizationId: { type: string, nullable: true }
         organizationName: { type: string, nullable: true }
         householdId: { type: string, nullable: true }
@@ -14137,7 +14294,13 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            nullable: true,
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
         parentOrganizationId: { type: string, nullable: true }
         anonymous:
           {
@@ -14279,7 +14442,12 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
         parentOrganizationId: { type: string }
         x: { type: string }
         linkedin: { type: string }
@@ -14346,7 +14514,13 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            nullable: true,
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
         parentOrganizationId: { type: string, nullable: true }
         x: { type: string, nullable: true }
         linkedin: { type: string, nullable: true }
@@ -14689,7 +14863,13 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            nullable: true,
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
         newsletter: { type: boolean }
         unsubscribedToNewsletter: { type: boolean }
         childrenAtWf: { type: string, nullable: true }
@@ -14842,8 +15022,17 @@ components:
         interestsThematic: { type: array, items: { type: string } }
         interestsAges: { type: array, items: { type: string } }
         interestsGovModels: { type: array, items: { type: string } }
-        regionIds: { type: array, items: { type: string }, description: "Expressed funding interests; not home or office location. Blank means unknown." }
-        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
+        newsletter:
+          {
+            type: boolean,
+            description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out.,
+          }
         childrenAtWf: { type: string }
         meetingLink: { type: string }
         quickbooksCustomerId: { type: string }
@@ -14888,8 +15077,18 @@ components:
         interestsAges: { type: array, items: { type: string }, nullable: true }
         interestsGovModels:
           { type: array, items: { type: string }, nullable: true }
-        regionIds: { type: array, items: { type: string }, nullable: true, description: "Expressed funding interests; not home or office location. Blank means unknown." }
-        newsletter: { type: boolean, description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out. }
+        regionIds:
+          {
+            type: array,
+            items: { type: string },
+            nullable: true,
+            description: "Expressed funding interests; not home or office location. Blank means unknown.",
+          }
+        newsletter:
+          {
+            type: boolean,
+            description: Staff audience selection. Records a staff addition/removal event; never lifts an opt-out.,
+          }
         childrenAtWf: { type: string, nullable: true }
         meetingLink: { type: string, nullable: true }
         assistantPersonId: { type: string, nullable: true }
@@ -15280,7 +15479,15 @@ components:
     OpportunityOrPledge:
       type: object
       required:
-        [id, conditionsMet, writtenPledge, reportingRequired, loanOrGrant, createdAt, updatedAt]
+        [
+          id,
+          conditionsMet,
+          writtenPledge,
+          reportingRequired,
+          loanOrGrant,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string }
         name: { type: string, nullable: true }
@@ -24081,7 +24288,11 @@ components:
         # admin all-mailboxes review mode so reviewers can see whose
         # inbox produced each suggestion; null/omitted otherwise.
         mailboxUserName:
-          { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
+          {
+            type: string,
+            nullable: true,
+            description: "Denormalized display name of the mailbox user.",
+          }
         kind: { $ref: "#/components/schemas/EmailProposalKind" }
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         sourceMessageId: { type: string, nullable: true }
@@ -24421,7 +24632,12 @@ components:
         status: { $ref: "#/components/schemas/EmailProposalStatus" }
         reviewerNote: { type: string, nullable: true }
         mailboxUserId: { type: string }
-        mailboxUserName: { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
+        mailboxUserName:
+          {
+            type: string,
+            nullable: true,
+            description: "Denormalized display name of the mailbox user.",
+          }
         resolvedByUserId: { type: string, nullable: true }
         resolverName: { type: string, nullable: true }
         resolvedAt: { type: string, format: date-time, nullable: true }
@@ -24542,7 +24758,18 @@ components:
     MediaMention:
       type: object
       required:
-        [id, publicationName, url, canonicalUrl, relevanceScore, pinned, dismissed, filtered, createdAt, updatedAt]
+        [
+          id,
+          publicationName,
+          url,
+          canonicalUrl,
+          relevanceScore,
+          pinned,
+          dismissed,
+          filtered,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string }
         publicationName: { type: string }
@@ -24696,7 +24923,12 @@ components:
         id: { type: string }
         grantLeadId: { type: string }
         mailboxUserId: { type: string }
-        mailboxUserName: { type: string, nullable: true, description: "Denormalized display name of the mailbox user." }
+        mailboxUserName:
+          {
+            type: string,
+            nullable: true,
+            description: "Denormalized display name of the mailbox user.",
+          }
         gmailMessageId: { type: string, nullable: true }
         emailMessageId: { type: string, nullable: true }
         emailSentAt: { type: string, format: date-time, nullable: true }
@@ -24929,6 +25161,51 @@ components:
             nullable: true,
             description: "Set after this item was promoted into a task via /promote-action-item.",
           }
+    MeetingArtifactKind:
+      type: string
+      enum: [handwritten_notes, audio_recording]
+    MeetingArtifact:
+      type: object
+      required:
+        [
+          id,
+          kind,
+          objectPath,
+          fileName,
+          mimeType,
+          sizeBytes,
+          transcript,
+          createdAt,
+        ]
+      properties:
+        id: { type: string }
+        kind: { $ref: "#/components/schemas/MeetingArtifactKind" }
+        objectPath: { type: string }
+        fileName: { type: string }
+        mimeType: { type: string }
+        sizeBytes: { type: integer }
+        transcript: { type: string }
+        createdAt: { type: string, format: date-time }
+    ProcessMeetingMediaBody:
+      type: object
+      required: [kind, objectPath, fileName, mimeType, sizeBytes]
+      properties:
+        kind: { $ref: "#/components/schemas/MeetingArtifactKind" }
+        objectPath:
+          {
+            type: string,
+            description: "Normalized /objects/... path in private object storage.",
+          }
+        fileName: { type: string }
+        mimeType: { type: string }
+        sizeBytes: { type: integer }
+    MeetingFollowUpDraft:
+      type: object
+      required: [recipients, subject, body]
+      properties:
+        recipients: { type: array, items: { type: string } }
+        subject: { type: string }
+        body: { type: string }
     MeetingNote:
       type: object
       required:
@@ -24938,6 +25215,7 @@ components:
         title: { type: string, nullable: true }
         meetingDate: { type: string, format: date-time }
         attendees: { type: array, items: { type: string }, nullable: true }
+        manualNotes: { type: string, nullable: true }
         rawTranscript:
           {
             type: string,
@@ -24954,6 +25232,9 @@ components:
           type: array
           nullable: true
           items: { $ref: "#/components/schemas/MeetingActionItem" }
+        artifacts:
+          type: array
+          items: { $ref: "#/components/schemas/MeetingArtifact" }
         creatorUserId: { type: string }
         personId: { type: string, nullable: true }
         organizationId: { type: string, nullable: true }
@@ -24992,7 +25273,7 @@ components:
           items: { $ref: "#/components/schemas/MeetingNextStepProposal" }
     CreateMeetingNoteBody:
       type: object
-      description: "Exactly one of personId / funderId / householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow)."
+      description: "Exactly one of personId / organizationId / householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process."
       properties:
         transcript:
           {
@@ -25004,6 +25285,14 @@ components:
             type: string,
             description: "Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript.",
           }
+        manualNotes:
+          {
+            type: string,
+            description: "Verbatim notes typed during or after the meeting.",
+          }
+        artifacts:
+          type: array
+          items: { $ref: "#/components/schemas/MeetingArtifact" }
         title: { type: string }
         meetingDate:
           {
@@ -25022,11 +25311,15 @@ components:
         title: { type: string, nullable: true }
         meetingDate: { type: string, format: date-time }
         attendees: { type: array, items: { type: string }, nullable: true }
+        manualNotes: { type: string, nullable: true }
         aiSummary: { type: string, nullable: true }
         actionItems:
           type: array
           nullable: true
           items: { $ref: "#/components/schemas/MeetingActionItem" }
+        artifacts:
+          type: array
+          items: { $ref: "#/components/schemas/MeetingArtifact" }
         personId: { type: string, nullable: true }
         organizationId: { type: string, nullable: true }
         householdId: { type: string, nullable: true }

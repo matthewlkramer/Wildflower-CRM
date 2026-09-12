@@ -32,6 +32,7 @@ export const ListMeetingNotesResponse = zod.object({
   "title": zod.string().nullish(),
   "meetingDate": zod.string().datetime({}),
   "attendees": zod.array(zod.string()).nullish(),
+  "manualNotes": zod.string().nullish(),
   "rawTranscript": zod.string().nullish().describe('Always null when summaryOnly is true.'),
   "summaryOnly": zod.boolean().describe('Snapshot of the creator\'s email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.'),
   "aiSummary": zod.string().nullish(),
@@ -41,6 +42,16 @@ export const ListMeetingNotesResponse = zod.object({
   "dueDate": zod.string().date().nullish(),
   "promotedTaskId": zod.string().nullish().describe('Set after this item was promoted into a task via \/promote-action-item.')
 })).nullish(),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
+})).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
@@ -59,6 +70,17 @@ export const ListMeetingNotesResponse = zod.object({
 export const CreateMeetingNoteBody = zod.object({
   "transcript": zod.string().optional().describe('Raw pasted transcript. Dropped server-side before insert when the caller\'s email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems.'),
   "summary": zod.string().optional().describe('Hand-typed notes. Stored verbatim as aiSummary with no AI processing; no rawTranscript or actionItems are generated. Mutually exclusive with transcript.'),
+  "manualNotes": zod.string().optional().describe('Verbatim notes typed during or after the meeting.'),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
+})).optional(),
   "title": zod.string().optional(),
   "meetingDate": zod.string().datetime({}).optional().describe('Defaults to now if omitted.'),
   "attendees": zod.array(zod.string()).optional(),
@@ -66,7 +88,7 @@ export const CreateMeetingNoteBody = zod.object({
   "organizationId": zod.string().optional(),
   "householdId": zod.string().optional(),
   "calendarEventId": zod.string().optional()
-}).describe('Exactly one of personId \/ funderId \/ householdId must be set (contact XOR). Exactly one of `transcript` or `summary` must be provided — `transcript` runs through AI summarization, `summary` is stored verbatim as the note body (used by the hand-typed-notes flow).')
+}).describe('Exactly one of personId \/ organizationId \/ householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through \/meeting-media\/process.')
 
 export const GetMeetingNoteParams = zod.object({
   "id": zod.coerce.string()
@@ -77,6 +99,7 @@ export const GetMeetingNoteResponse = zod.object({
   "title": zod.string().nullish(),
   "meetingDate": zod.string().datetime({}),
   "attendees": zod.array(zod.string()).nullish(),
+  "manualNotes": zod.string().nullish(),
   "rawTranscript": zod.string().nullish().describe('Always null when summaryOnly is true.'),
   "summaryOnly": zod.boolean().describe('Snapshot of the creator\'s email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.'),
   "aiSummary": zod.string().nullish(),
@@ -86,6 +109,16 @@ export const GetMeetingNoteResponse = zod.object({
   "dueDate": zod.string().date().nullish(),
   "promotedTaskId": zod.string().nullish().describe('Set after this item was promoted into a task via \/promote-action-item.')
 })).nullish(),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
+})).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
@@ -103,6 +136,7 @@ export const UpdateMeetingNoteBody = zod.object({
   "title": zod.string().nullish(),
   "meetingDate": zod.string().datetime({}).optional(),
   "attendees": zod.array(zod.string()).nullish(),
+  "manualNotes": zod.string().nullish(),
   "aiSummary": zod.string().nullish(),
   "actionItems": zod.array(zod.object({
   "title": zod.string(),
@@ -110,6 +144,16 @@ export const UpdateMeetingNoteBody = zod.object({
   "dueDate": zod.string().date().nullish(),
   "promotedTaskId": zod.string().nullish().describe('Set after this item was promoted into a task via \/promote-action-item.')
 })).nullish(),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
+})).optional(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "householdId": zod.string().nullish()
@@ -120,6 +164,7 @@ export const UpdateMeetingNoteResponse = zod.object({
   "title": zod.string().nullish(),
   "meetingDate": zod.string().datetime({}),
   "attendees": zod.array(zod.string()).nullish(),
+  "manualNotes": zod.string().nullish(),
   "rawTranscript": zod.string().nullish().describe('Always null when summaryOnly is true.'),
   "summaryOnly": zod.boolean().describe('Snapshot of the creator\'s email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.'),
   "aiSummary": zod.string().nullish(),
@@ -129,6 +174,16 @@ export const UpdateMeetingNoteResponse = zod.object({
   "dueDate": zod.string().date().nullish(),
   "promotedTaskId": zod.string().nullish().describe('Set after this item was promoted into a task via \/promote-action-item.')
 })).nullish(),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
+})).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
@@ -168,5 +223,40 @@ export const GenerateMeetingNextStepsResponse = zod.object({
   "dueDate": zod.string().date().nullish(),
   "description": zod.string().nullish()
 }))
+})
+
+/**
+ * @summary Draft an editable follow-up email from a saved meeting note. Nothing is sent.
+ */
+export const DraftMeetingFollowUpParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const DraftMeetingFollowUpResponse = zod.object({
+  "recipients": zod.array(zod.string()),
+  "subject": zod.string(),
+  "body": zod.string()
+})
+
+/**
+ * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ */
+export const ProcessMeetingMediaBody = zod.object({
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string().describe('Normalized \/objects\/... path in private object storage.'),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})
+
+export const ProcessMeetingMediaResponse = zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({})
 })
 

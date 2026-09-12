@@ -44,6 +44,7 @@ import TopPriorities from "@/pages/top-priorities";
 import PaymentIntermediaries from "@/pages/payment-intermediaries";
 import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
 import Meetings from "@/pages/meetings";
+import MeetingWorkspace from "@/pages/meeting-workspace";
 import TripPlanner from "@/pages/trip-planner";
 import Newsletter from "@/pages/newsletter";
 import Layout from "@/components/layout";
@@ -234,6 +235,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/reconciliation/clusters"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/meetings"><ProtectedRoute component={Meetings} /></Route>
+          <Route path="/meetings/:id"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/trips"><ProtectedRoute component={TripPlanner} /></Route>
           <Route path="/newsletter"><ProtectedRoute component={Newsletter} /></Route>
           <Route path="/interactions"><Redirect to="/moves" /></Route>
