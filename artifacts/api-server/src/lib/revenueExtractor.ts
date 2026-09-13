@@ -17,9 +17,11 @@ import {
 import {
   and,
   eq,
+  ne,
   gte,
   lte,
   isNull,
+  notExists,
   inArray,
   or,
   sql,
@@ -145,8 +147,10 @@ export async function buildRevenueExtractorReport(
 ): Promise<RevenueExtractorReport> {
   const rules: EntityCodingRule[] = await loadEntityCodingRules();
 
-  // 1. Gifts in range (non-archived), with donor display + masking helpers, the
-  //    derived processor fee, and the linked opportunity's grant letter.
+  // 1. Select export-eligible gifts before deriving rows, fees, or blockers.
+  //    Accounting already tracks reimbursement grants in full. The opportunity
+  //    disbursement model identifies unallocated reimbursements; allocation
+  //    share tags also identify historical or standalone reimbursement gifts.
   const gifts = await db
     .select({
       id: giftsAndPayments.id,
@@ -192,6 +196,23 @@ export async function buildRevenueExtractorReport(
         isNull(giftsAndPayments.archivedAt),
         gte(giftsAndPayments.dateReceived, startDate),
         lte(giftsAndPayments.dateReceived, endDate),
+        or(
+          eq(giftsAndPayments.loanOrGrant, "loan"),
+          and(
+            or(
+              isNull(opportunitiesAndPledges.id),
+              ne(opportunitiesAndPledges.disbursementModel, "cost_reimbursement"),
+            ),
+            notExists(
+              db.select({ id: giftAllocations.id })
+                .from(giftAllocations)
+                .where(and(
+                  eq(giftAllocations.giftId, giftsAndPayments.id),
+                  inArray(giftAllocations.reimbursementType, ["direct", "indirect"]),
+                )),
+            ),
+          ),
+        ),
       ),
     );
 
