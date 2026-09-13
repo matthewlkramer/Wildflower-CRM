@@ -537,7 +537,7 @@ export function InlineEditBoolean({
   const FALSE = "false";
   const NULL_TOKEN = "__null__";
   const toToken = (v: boolean | null): string =>
-    v === null ? (allowNull ? NULL_TOKEN : FALSE) : v ? TRUE : FALSE;
+    v === null ? NULL_TOKEN : v ? TRUE : FALSE;
   const initialDraft = toToken(value);
   const [draft, setDraft] = useState<string>(initialDraft);
   const initialRef = useRef<string>(initialDraft);
@@ -564,9 +564,8 @@ export function InlineEditBoolean({
 
   const next: boolean | null =
     draft === NULL_TOKEN ? null : draft === TRUE ? true : false;
-  // Compare against the initial draft, not against `value`, so that
-  // when allowNull={false} and value is null, the synthetic `false`
-  // default draft does NOT count as dirty until the user picks something.
+  // Keep an unreviewed value distinct from false so either explicit answer
+  // changes the draft. Opening the editor alone must not record a decision.
   const dirty = draft !== initialRef.current;
   const trySave = () => {
     if (!dirty || busy) return;
@@ -584,12 +583,13 @@ export function InlineEditBoolean({
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          {allowNull ? (
+          {allowNull || value === null ? (
             <SelectItem
               value={NULL_TOKEN}
+              disabled={!allowNull}
               data-testid={testIdBase ? `option-${testIdBase}-null` : undefined}
             >
-              {nullLabel}
+              {allowNull ? nullLabel : "Not reviewed"}
             </SelectItem>
           ) : null}
           <SelectItem
