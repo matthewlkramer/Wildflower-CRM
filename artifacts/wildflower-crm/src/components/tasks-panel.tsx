@@ -13,6 +13,7 @@ import {
   getGetTaskProposalQueryKey,
   type Task,
   type TaskStatus,
+  type TaskKind,
   type TaskProposal,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -68,6 +69,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
+import { InlineEditSelect, InlineEditTextarea } from "@/components/inline-edit";
 import {
   EntityLinksEditor,
   EMPTY_LINKS,
@@ -94,10 +97,11 @@ const STATUS_VARIANT: Record<TaskStatus, "default" | "secondary" | "outline"> = 
   cancelled: "outline",
 };
 
-function formatDate(iso?: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
-}
+const TASK_KIND_OPTIONS: { value: TaskKind; label: string }[] = [
+  { value: "general", label: "General task" },
+  { value: "reporting_deadline", label: "Reporting deadline" },
+  { value: "thank_you_followup", label: "Thank-you follow-up" },
+];
 
 interface PanelContext {
   personId?: string;
@@ -218,9 +222,37 @@ export function TasksPanel(ctx: PanelContext) {
                     <> · Assigned to {userMap.get(t.assigneeUserId) ?? t.assigneeUserId}</>
                   ) : null}
                 </div>
-                {t.description ? (
-                  <p className="whitespace-pre-wrap text-muted-foreground">{t.description}</p>
-                ) : null}
+                <InlineEditSelect<TaskKind>
+                  label="Task type"
+                  value={t.kind}
+                  display={
+                    TASK_KIND_OPTIONS.find((option) => option.value === t.kind)
+                      ?.label ?? t.kind
+                  }
+                  options={TASK_KIND_OPTIONS}
+                  allowNull={false}
+                  align="left"
+                  testIdBase={`task-kind-${t.id}`}
+                  onSave={(kind) =>
+                    kind
+                      ? update.mutateAsync({ id: t.id, data: { kind } })
+                      : Promise.resolve()
+                  }
+                />
+                <InlineEditTextarea
+                  label="Task description and report links"
+                  value={t.description ?? null}
+                  display={
+                    <p className="whitespace-pre-wrap break-words text-muted-foreground">
+                      {t.description || "Add description or report links"}
+                    </p>
+                  }
+                  placeholder="Add notes and links to completed reports"
+                  testIdBase={`task-description-${t.id}`}
+                  onSave={(description) =>
+                    update.mutateAsync({ id: t.id, data: { description } })
+                  }
+                />
                 {t.mentionUserIds && t.mentionUserIds.length > 0 ? (
                   <div className="text-xs text-muted-foreground">
                     Mentions:{" "}
@@ -669,6 +701,7 @@ export function AddTaskDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<TaskKind>("general");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [assigneeUserId, setAssigneeUserId] = useState<string>("");
@@ -687,6 +720,7 @@ export function AddTaskDialog({
         toast({ title: "Task created" });
         setOpen(false);
         setTitle("");
+        setKind("general");
         setDescription("");
         setDueDate("");
         setAssigneeUserId("");
@@ -735,6 +769,7 @@ export function AddTaskDialog({
             create.mutate({
               data: {
                 title: title.trim(),
+                kind,
                 description: description.trim() || undefined,
                 dueDate: dueDate || undefined,
                 assigneeUserId: assigneeUserId || undefined,
@@ -750,6 +785,24 @@ export function AddTaskDialog({
           }}
           className="space-y-3"
         >
+          <div className="space-y-1.5">
+            <Label htmlFor="task-kind">Task type</Label>
+            <Select
+              value={kind}
+              onValueChange={(value) => setKind(value as TaskKind)}
+            >
+              <SelectTrigger id="task-kind" data-testid="select-new-task-kind">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TASK_KIND_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label htmlFor="task-title">Title</Label>
             <Input
