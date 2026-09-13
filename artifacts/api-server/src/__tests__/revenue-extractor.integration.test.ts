@@ -7,7 +7,9 @@ import type { Server } from "node:http";
  *
  * GET /api/revenue-extractor?startDate=&endDate= is the export the frontend
  * turns 1:1 into the finance CSV — so the report MUST contain every allocation
- * row the date filter matches, with no pagination or row cap. Locked in here:
+ * row the export scope and date filter match, with no pagination or row cap.
+ * Reimbursement grants are outside that scope, including fees and blockers.
+ * Locked in here:
  *
  *   - a batch larger than any typical page size (60 gifts) comes back complete;
  *   - the [startDate, endDate] range is INCLUSIVE on both ends and excludes
@@ -183,6 +185,91 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("revenue extractor export completeness", () => {
+  it("excludes reimbursement grants in full, including unallocated gifts, indirect shares, fees, and blockers", async () => {
+    const { opportunitiesAndPledges, paymentUnits, stripeStagedCharges } = await import("@workspace/db");
+    const id = `${RUN}_reimbursement`;
+    const oppId = `${id}_opp`;
+    const chargeId = `${id}_charge`;
+    const unitId = `${id}_unit`;
+    const date = "2097-05-01";
+    const report = () => getReport(`?startDate=${date}&endDate=${date}`);
+    const expectExcluded = async () => {
+      const { status, json } = await report();
+      expect(status).toBe(200);
+      expect(json.rows).toEqual([]);
+      expect(json.blockingIssues).toEqual([]);
+      expect(json.readyToExport).toBe(true);
+    };
+
+    try {
+      // A reimbursement needs no completed allocations, source, or reporting
+      // review to be excluded. Do not depend on gift-type display precedence
+      // or whether the originating opportunity is already a finalized pledge.
+      await db.insert(opportunitiesAndPledges).values({
+        id: oppId, name: "Reimbursement award", organizationId: ORG_ID,
+        disbursementModel: "cost_reimbursement",
+      });
+      await db.insert(schema.giftsAndPayments).values({
+        id, name: "Reimbursement payment", organizationId: ORG_ID,
+        amount: "100.00", dateReceived: date, opportunityId: oppId,
+      });
+      await db.insert(stripeStagedCharges).values({
+        id: chargeId, stripeAccountId: `${RUN}_account`, feeAmount: "3.00",
+      });
+      await db.insert(paymentUnits).values({
+        id: unitId, kind: "stripe_charge", stripeChargeId: chargeId,
+        giftId: id, grossAmount: "100.00",
+      });
+      await expectExcluded();
+
+      // Historical fixed-commitment records and standalone gifts can carry
+      // explicit reimbursement share tags. One tag excludes the whole gift.
+      await db.update(opportunitiesAndPledges).set({ disbursementModel: "fixed_commitment" })
+        .where(eqFn(opportunitiesAndPledges.id, oppId));
+      await db.insert(schema.giftAllocations).values([
+        { id: `${id}_direct`, giftId: id, subAmount: "90.00", reimbursementType: "direct" },
+        { id: `${id}_other`, giftId: id, subAmount: "10.00" },
+      ]);
+      await expectExcluded();
+      await db.update(schema.giftAllocations).set({ reimbursementType: "indirect" })
+        .where(eqFn(schema.giftAllocations.id, `${id}_direct`));
+      await expectExcluded();
+      await db.update(schema.giftsAndPayments).set({ opportunityId: null })
+        .where(eqFn(schema.giftsAndPayments.id, id));
+      await expectExcluded();
+
+      // Untagged gifts stay visible even if they do not count toward goals.
+      // Prove the fee fixture is effective and ordinary blockers are retained.
+      await db.update(schema.giftAllocations).set({ reimbursementType: null, countsTowardGoal: false })
+        .where(eqFn(schema.giftAllocations.giftId, id));
+      for (const opportunityId of [null, oppId]) {
+        await db.update(schema.giftsAndPayments).set({ opportunityId })
+          .where(eqFn(schema.giftsAndPayments.id, id));
+        const { status, json } = await report();
+        expect(status).toBe(200);
+        expect(json.rows?.filter((row) => !row.isFeeLine)).toHaveLength(2);
+        expect(json.rows?.filter((row) => row.isFeeLine)).toHaveLength(1);
+        expect(json.blockingIssues?.map((issue) => issue.giftId)).toContain(id);
+        expect(json.readyToExport).toBe(false);
+      }
+
+      // This grant-only scope must not change loan-principal treatment.
+      await db.update(schema.giftsAndPayments).set({ loanOrGrant: "loan" })
+        .where(eqFn(schema.giftsAndPayments.id, id));
+      await db.update(opportunitiesAndPledges).set({ disbursementModel: "cost_reimbursement" })
+        .where(eqFn(opportunitiesAndPledges.id, oppId));
+      await db.update(schema.giftAllocations).set({ reimbursementType: "direct" })
+        .where(eqFn(schema.giftAllocations.id, `${id}_direct`));
+      expect((await report()).json.rows?.some((row) => row.giftId === id)).toBe(true);
+    } finally {
+      await db.delete(paymentUnits).where(eqFn(paymentUnits.id, unitId));
+      await db.delete(stripeStagedCharges).where(eqFn(stripeStagedCharges.id, chargeId));
+      await db.delete(schema.giftAllocations).where(eqFn(schema.giftAllocations.giftId, id));
+      await db.delete(schema.giftsAndPayments).where(eqFn(schema.giftsAndPayments.id, id));
+      await db.delete(opportunitiesAndPledges).where(eqFn(opportunitiesAndPledges.id, oppId));
+    }
+  });
+
   it("uses the CRM reporting decision and tasks to resolve export blockers", async () => {
     const { opportunitiesAndPledges, tasks } = await import("@workspace/db");
     const oppId = `${RUN}_reporting`;

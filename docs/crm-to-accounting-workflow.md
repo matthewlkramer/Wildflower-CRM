@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-12
+last_verified: 2026-09-13
 ---
 
 # CRM-to-accounting workflow
@@ -77,6 +77,20 @@ are removed after that project is verified.
   coding-form importer for live work.
 
 ## Safeguards
+
+### Reimbursement grants
+
+Reimbursement grants are outside **Export for QB** because Accounting already
+has their information. Exclude the entire payment, including direct and indirect
+shares, other allocations, processor fees, and export blockers. A grant is in
+this scope when its linked opportunity has `disbursementModel=cost_reimbursement`
+or any gift allocation has `reimbursementType=direct` or `indirect`. This also
+covers historical reimbursement payments whose opportunity still uses a fixed
+commitment. Apply the rule once in the shared report builder so the preview and
+CSV agree. Loan principal keeps its existing treatment. This export scope does
+not change fundraising totals, gift records, or pledge payment calculations.
+
+### Gifts in export scope
 
 1. Every gift must have exactly one donor, an amount, a received date, and at
    least one allocation.

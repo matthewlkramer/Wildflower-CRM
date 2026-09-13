@@ -4634,10 +4634,14 @@ paths:
       tags: [revenue-extractor]
       summary: Finance-facing Revenue Extractor — one row per gift allocation (plus a negative processor-fee line) with derived QuickBooks coding.
       description: |
-        Returns the Revenue Extractor rows for all non-archived gifts whose
+        Returns the Revenue Extractor rows for non-archived gifts whose
         date_received falls in the [startDate, endDate] range (inclusive). One row
         per gift allocation, plus a separate negative processor-fee line per gift
-        that carries fees. Every column (Object Code, Location, Revenue Type,
+        that carries fees. Reimbursement grants are excluded from both rows and
+        export blockers because Accounting already tracks them: a grant linked
+        to a cost_reimbursement opportunity or with any direct/indirect
+        reimbursement allocation is excluded in full, including fees. Loan
+        principal retains its existing export treatment. Every column (Object Code, Location, Revenue Type,
         Restriction Type, etc.) is DERIVED on demand from the CRM record via the
         shared coding engine — the CRM stays the definitive source of the coding
         inputs; QuickBooks stays authoritative on disagreement (surfaced via the

@@ -166,6 +166,7 @@ export default function RevenueExtractor() {
             columns. QuickBooks stays authoritative — rows where the CRM-derived
             coding disagrees with the linked QuickBooks snapshot are flagged. The
             Name column respects anonymous masking, and archived gifts are excluded.
+            {" "}Reimbursement grants are excluded because Accounting already tracks them.
           </>
         }
       />

@@ -10,8 +10,10 @@ import { buildRevenueExtractorReport } from "../lib/revenueExtractor";
  *   GET /revenue-extractor?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
  *
  * One row per gift allocation (plus a separate negative processor-fee line per
- * gift that carries fees) for all non-archived gifts whose date_received falls
- * in the inclusive range. Both dates are required and validated with a Date
+ * gift that carries fees) for non-archived, non-reimbursement gifts whose
+ * date_received falls in the inclusive range. Reimbursement grants are excluded
+ * by the shared report builder, including their fees and blockers.
+ * Both dates are required and validated with a Date
  * round-trip (a syntactically-valid but nonsense date like 2026-13-40 that the
  * DB would reject with a 500 is caught here → 400).
  */
