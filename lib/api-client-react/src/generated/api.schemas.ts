@@ -2586,6 +2586,7 @@ export interface GiftOrPayment {
   /** Document attachments on the linked thank-you email (PDF / DOCX / etc.). Populated only on the detail endpoint. */
   readonly thankYouAttachments?: readonly ThankYouAttachment[] | null;
   grantLetterUrl?: string | null;
+  sourceRecordUrl?: string | null;
   grantLetterFilename?: string | null;
   /** Stamped server-side when grantLetterUrl is set; cleared when it is removed. */
   readonly grantLetterUploadedAt?: string | null;
@@ -3179,6 +3180,7 @@ export interface UpdateGiftOrPaymentBody {
   /** FK to fundraising_campaigns.slug. Null clears the campaign link. */
   campaignSlug?: string | null;
   grantLetterUrl?: string | null;
+  sourceRecordUrl?: string | null;
   grantLetterFilename?: string | null;
   thankYouLetterUrl?: string | null;
   thankYouLetterFilename?: string | null;

@@ -899,6 +899,16 @@ function GiftView({ gift }: { gift: GiftOrPaymentDetail }) {
                     </a>
                   </Row>
                 ) : null}
+                <Row label="Online source">
+                  <InlineEditText
+                    label="Online source"
+                    testIdBase="gift-source-url"
+                    value={gift.sourceRecordUrl ?? null}
+                    display={gift.sourceRecordUrl ?? "—"}
+                    placeholder="Donorbox donation or campaign URL"
+                    onSave={(next) => patch({ sourceRecordUrl: next })}
+                  />
+                </Row>
                 {gift.donorbox ? (
                   <Row label="Donorbox donation">
                     <a
