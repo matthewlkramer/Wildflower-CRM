@@ -312,6 +312,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),

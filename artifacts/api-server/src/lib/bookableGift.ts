@@ -24,9 +24,9 @@
 //      those are already required by #3 and #6, so no separate flag is needed).
 //   6. Intended usage — every allocation has an intendedUsage; when it is
 //      'project', a fundableProjectId is set.
-//   7. Restriction evidence — if ANY axis is donor_restricted, the gift needs
-//      BOTH the exact governing source language on each restricted allocation
-//      and either a grant letter or an online-source link.
+//   7. Governing evidence — institutional (organization-donor) gifts need a
+//      grant letter or online source even when unrestricted. Any donor-restricted
+//      gift also needs that evidence and exact language on restricted allocations.
 //   8. Reporting deadline — if the linked opportunity says reporting is
 //      required, a reporting_deadline task must exist for that opportunity.
 //
@@ -66,7 +66,7 @@ export const BOOKABLE_REASON_LABELS: Record<BookableReason, string> = {
   missing_intended_usage: "Intended usage missing on an allocation",
   missing_fundable_project: "Fundable project missing for a project allocation",
   missing_restriction_evidence:
-    "Restricted gift needs a grant letter or online-source link",
+    "Institutional or restricted gift needs a grant letter or governing online source",
   missing_restriction_language:
     "Restricted allocation needs the exact governing source language",
   missing_reporting_requirement_decision:
@@ -160,7 +160,11 @@ export function deriveGiftBookable(input: BookableGiftInput): {
       a.timeRestrictionType,
     ),
   );
-  if (restricted && !present(input.grantLetterUrl) && !present(input.sourceRecordUrl))
+  if (
+    (present(input.organizationId) || restricted) &&
+    !present(input.grantLetterUrl) &&
+    !present(input.sourceRecordUrl)
+  )
     reasons.push("missing_restriction_evidence");
   if (
     allocs.some(
@@ -259,14 +263,17 @@ export function giftIsIncompleteExpr(
                 WHERE ore.id = gi.opportunity_id
                   AND ore.grant_letter_url IS NOT NULL
               )
-              AND EXISTS (
-                SELECT 1 FROM gift_allocations gar
-                WHERE gar.gift_id = ${giftIdSql}
-                  AND (
-                    gar.regional_restriction_type = 'donor_restricted'
-                    OR gar.other_restriction_type = 'donor_restricted'
-                    OR gar.time_restriction_type = 'donor_restricted'
-                  )
+              AND (
+                gi.organization_id IS NOT NULL
+                OR EXISTS (
+                  SELECT 1 FROM gift_allocations gar
+                  WHERE gar.gift_id = ${giftIdSql}
+                    AND (
+                      gar.regional_restriction_type = 'donor_restricted'
+                      OR gar.other_restriction_type = 'donor_restricted'
+                      OR gar.time_restriction_type = 'donor_restricted'
+                    )
+                )
               )
             )
           )

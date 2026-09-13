@@ -16434,6 +16434,7 @@ components:
         # Mirrors the pledge's grant_letter_* columns; distinct from the linked
         # pledge's own grant letter (which the gift page surfaces read-only).
         grantLetterUrl: { type: string, nullable: true }
+        sourceRecordUrl: { type: string, nullable: true }
         grantLetterFilename: { type: string, nullable: true }
         grantLetterUploadedAt:
           {
@@ -16934,6 +16935,7 @@ components:
             description: "FK to fundraising_campaigns.slug. Null clears the campaign link.",
           }
         grantLetterUrl: { type: string, nullable: true }
+        sourceRecordUrl: { type: string, nullable: true }
         grantLetterFilename: { type: string, nullable: true }
         thankYouLetterUrl: { type: string, nullable: true }
         thankYouLetterFilename: { type: string, nullable: true }

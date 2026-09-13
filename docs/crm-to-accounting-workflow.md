@@ -29,7 +29,9 @@ are removed after that project is verified.
 ## Sources of truth
 
 - Gift header: donor, received date, gift amount, memo/description, title or
-  reference number, source-record link, and payment provenance.
+  reference number, source-record link, and payment provenance. On an existing
+  gift, use **Online source** beside the grant-letter fields to save or clear a
+  Donorbox donation, campaign, or other governing source URL.
 - Gift allocations: allocation amount, fiscal year, recipient entity, intended
   use/project/region, spending period, restriction axes, and exact governing
   restriction language.
@@ -82,7 +84,11 @@ are removed after that project is verified.
    project allocations must identify the project.
 3. Every donor-restricted allocation must carry the exact governing source
    language and the gift/linked opportunity must retain a grant letter or source
-   record link.
+   record link. Institutional gifts (where the donor is an organization) require
+   a grant letter or governing online source even when coded unrestricted or
+   general operations. The source must support the restrictions or their absence;
+   a tax acknowledgment alone is not evidence of donor intent. Campaign evidence
+   can be retained using the gift's **Online source** field.
 4. Every new opportunity requires an explicit yes/no reporting decision. An
    unreviewed historical answer blocks export; a yes also requires a Reporting
    Deadline task.

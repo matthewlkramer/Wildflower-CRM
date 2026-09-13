@@ -103,6 +103,7 @@ export const ListGiftsAndPaymentsResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -237,6 +238,7 @@ export const GetGiftOrPaymentResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -345,6 +347,7 @@ export const UpdateGiftOrPaymentBody = zod.object({
   "tags": zod.string().nullish(),
   "campaignSlug": zod.string().nullish().describe('FK to fundraising_campaigns.slug. Null clears the campaign link.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "thankYouLetterUrl": zod.string().nullish(),
   "thankYouLetterFilename": zod.string().nullish()
@@ -392,6 +395,7 @@ export const UpdateGiftOrPaymentResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -532,6 +536,7 @@ export const LinkThankYouEmailResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -793,6 +798,7 @@ export const UntieGiftPaymentUnitResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -1059,6 +1065,7 @@ export const ArchiveGiftOrPaymentResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
@@ -1151,6 +1158,7 @@ export const UnarchiveGiftOrPaymentResponse = zod.object({
   "downloadUrl": zod.string()
 })).nullish().describe('Document attachments on the linked thank-you email (PDF \/ DOCX \/ etc.). Populated only on the detail endpoint.'),
   "grantLetterUrl": zod.string().nullish(),
+  "sourceRecordUrl": zod.string().nullish(),
   "grantLetterFilename": zod.string().nullish(),
   "grantLetterUploadedAt": zod.string().datetime({}).nullish().describe('Stamped server-side when grantLetterUrl is set; cleared when it is removed.'),
   "thankYouLetterUrl": zod.string().nullish(),
