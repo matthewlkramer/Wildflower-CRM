@@ -56,3 +56,7 @@ db_backup/
 attached_assets/balance_history_*.csv
 lib/api-spec/.codegen-out/
 .vercel
+
+# Private curated CRM import inputs remain in Replit.
+docs/imports/wildflower-news-batch-*.json
+docs/imports/wildflower-update-source-register.json

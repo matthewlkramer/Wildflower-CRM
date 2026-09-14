@@ -30,3 +30,623 @@ export const UpdateWildflowerUpdateResponse = zod.object({
   "updatedByUserId": zod.string().nullish()
 })
 
+/**
+ * @summary List dated, sourced Wildflower news and progress items
+ */
+export const listWildflowerUpdateItemsQueryIncludeArchivedDefault = false;
+export const listWildflowerUpdateItemsQueryLimitDefault = 50;
+export const listWildflowerUpdateItemsQueryLimitMax = 10000;
+
+export const listWildflowerUpdateItemsQueryPageDefault = 1;
+
+
+
+export const ListWildflowerUpdateItemsQueryParams = zod.object({
+  "search": zod.coerce.string().optional(),
+  "dateFrom": zod.coerce.string().date().optional(),
+  "dateTo": zod.coerce.string().date().optional(),
+  "status": zod.array(zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement'])).optional(),
+  "interest": zod.array(zod.coerce.string()).optional(),
+  "geography": zod.array(zod.coerce.string()).optional(),
+  "sourceType": zod.array(zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft'])).optional(),
+  "includeArchived": zod.coerce.boolean().default(listWildflowerUpdateItemsQueryIncludeArchivedDefault),
+  "limit": zod.coerce.number().min(1).max(listWildflowerUpdateItemsQueryLimitMax).default(listWildflowerUpdateItemsQueryLimitDefault),
+  "page": zod.coerce.number().min(1).default(listWildflowerUpdateItemsQueryPageDefault)
+})
+
+
+
+export const listWildflowerUpdateItemsResponseDataItemEventDateStartMonthMax = 12;
+
+
+export const listWildflowerUpdateItemsResponseDataItemEventDateEndMonthMax = 12;
+
+export const listWildflowerUpdateItemsResponseDataItemEventDateMonthMax = 12;
+
+
+export const listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationMonthMax = 12;
+
+
+export const listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationStartMonthMax = 12;
+
+
+export const listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const ListWildflowerUpdateItemsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']),
+  "thematicTags": zod.array(zod.string()),
+  "ageTags": zod.array(zod.string()),
+  "governanceTags": zod.array(zod.string()),
+  "fundingRegionIds": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(listWildflowerUpdateItemsResponseDataItemSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})),
+  "relatedLinks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "url": zod.string().url()
+})),
+  "archivedAt": zod.string().datetime({}).nullable(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})),
+  "pagination": zod.object({
+  "page": zod.number(),
+  "limit": zod.number(),
+  "total": zod.number()
+})
+})
+
+/**
+ * @summary Create a dated Wildflower news or progress item
+ */
+
+
+export const createWildflowerUpdateItemBodyEventDateStartMonthMax = 12;
+
+
+export const createWildflowerUpdateItemBodyEventDateEndMonthMax = 12;
+
+export const createWildflowerUpdateItemBodyEventDateMonthMax = 12;
+
+export const createWildflowerUpdateItemBodyPreparationStatusDefault = `eligible`;
+export const createWildflowerUpdateItemBodyThematicTagsDefault = [];
+export const createWildflowerUpdateItemBodyAgeTagsDefault = [];
+export const createWildflowerUpdateItemBodyGovernanceTagsDefault = [];
+export const createWildflowerUpdateItemBodyFundingRegionIdsDefault = [];
+export const createWildflowerUpdateItemBodySourcesItemPublicationMonthMax = 12;
+
+
+export const createWildflowerUpdateItemBodySourcesItemPublicationStartMonthMax = 12;
+
+
+export const createWildflowerUpdateItemBodySourcesItemPublicationEndMonthMax = 12;
+
+
+export const createWildflowerUpdateItemBodyRelatedLinksDefault = [];
+
+export const CreateWildflowerUpdateItemBody = zod.object({
+  "title": zod.string(),
+  "details": zod.string().describe('One paragraph of details without line breaks.'),
+  "qualification": zod.string().nullish(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(createWildflowerUpdateItemBodyEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(createWildflowerUpdateItemBodyEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(createWildflowerUpdateItemBodyEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']).default(createWildflowerUpdateItemBodyPreparationStatusDefault),
+  "thematicTags": zod.array(zod.string()).default(createWildflowerUpdateItemBodyThematicTagsDefault),
+  "ageTags": zod.array(zod.string()).default(createWildflowerUpdateItemBodyAgeTagsDefault),
+  "governanceTags": zod.array(zod.string()).default(createWildflowerUpdateItemBodyGovernanceTagsDefault),
+  "fundingRegionIds": zod.array(zod.string()).default(createWildflowerUpdateItemBodyFundingRegionIdsDefault),
+  "sources": zod.array(zod.object({
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(createWildflowerUpdateItemBodySourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(createWildflowerUpdateItemBodySourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(createWildflowerUpdateItemBodySourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})).min(1),
+  "relatedLinks": zod.array(zod.object({
+  "title": zod.string(),
+  "url": zod.string().url()
+})).default(createWildflowerUpdateItemBodyRelatedLinksDefault)
+})
+
+/**
+ * @summary Get one dated Wildflower news or progress item
+ */
+export const GetWildflowerUpdateItemParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const getWildflowerUpdateItemResponseEventDateStartMonthMax = 12;
+
+
+export const getWildflowerUpdateItemResponseEventDateEndMonthMax = 12;
+
+export const getWildflowerUpdateItemResponseEventDateMonthMax = 12;
+
+
+export const getWildflowerUpdateItemResponseSourcesItemPublicationMonthMax = 12;
+
+
+export const getWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax = 12;
+
+
+export const getWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const GetWildflowerUpdateItemResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(getWildflowerUpdateItemResponseEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(getWildflowerUpdateItemResponseEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(getWildflowerUpdateItemResponseEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']),
+  "thematicTags": zod.array(zod.string()),
+  "ageTags": zod.array(zod.string()),
+  "governanceTags": zod.array(zod.string()),
+  "fundingRegionIds": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(getWildflowerUpdateItemResponseSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(getWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(getWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})),
+  "relatedLinks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "url": zod.string().url()
+})),
+  "archivedAt": zod.string().datetime({}).nullable(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * @summary Patch a dated Wildflower news or progress item
+ */
+export const UpdateWildflowerUpdateItemParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const updateWildflowerUpdateItemBodyEventDateStartMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemBodyEventDateEndMonthMax = 12;
+
+export const updateWildflowerUpdateItemBodyEventDateMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemBodySourcesItemPublicationMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemBodySourcesItemPublicationStartMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemBodySourcesItemPublicationEndMonthMax = 12;
+
+
+
+
+export const UpdateWildflowerUpdateItemBody = zod.object({
+  "title": zod.string().optional(),
+  "details": zod.string().optional().describe('One paragraph of details without line breaks.'),
+  "qualification": zod.string().nullish(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(updateWildflowerUpdateItemBodyEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(updateWildflowerUpdateItemBodyEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(updateWildflowerUpdateItemBodyEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}).optional(),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']).optional(),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']).optional(),
+  "thematicTags": zod.array(zod.string()).optional(),
+  "ageTags": zod.array(zod.string()).optional(),
+  "governanceTags": zod.array(zod.string()).optional(),
+  "fundingRegionIds": zod.array(zod.string()).optional(),
+  "sources": zod.array(zod.object({
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(updateWildflowerUpdateItemBodySourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(updateWildflowerUpdateItemBodySourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(updateWildflowerUpdateItemBodySourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})).min(1).optional(),
+  "relatedLinks": zod.array(zod.object({
+  "title": zod.string(),
+  "url": zod.string().url()
+})).optional()
+}).describe('All fields are optional. When sources or relatedLinks are supplied, they replace the complete collection.')
+
+
+
+export const updateWildflowerUpdateItemResponseEventDateStartMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemResponseEventDateEndMonthMax = 12;
+
+export const updateWildflowerUpdateItemResponseEventDateMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemResponseSourcesItemPublicationMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax = 12;
+
+
+export const updateWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const UpdateWildflowerUpdateItemResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(updateWildflowerUpdateItemResponseEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(updateWildflowerUpdateItemResponseEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(updateWildflowerUpdateItemResponseEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']),
+  "thematicTags": zod.array(zod.string()),
+  "ageTags": zod.array(zod.string()),
+  "governanceTags": zod.array(zod.string()),
+  "fundingRegionIds": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(updateWildflowerUpdateItemResponseSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(updateWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(updateWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})),
+  "relatedLinks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "url": zod.string().url()
+})),
+  "archivedAt": zod.string().datetime({}).nullable(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * Requires exactly one personId or organizationId. Interests and funding regions are read from the saved CRM record; callers cannot supply substitute matching inputs.
+ * @summary List eligible Wildflower updates relevant to one saved donor entity
+ */
+export const listRelevantWildflowerUpdateItemsQueryLimitDefault = 20;
+export const listRelevantWildflowerUpdateItemsQueryLimitMax = 100;
+
+
+
+export const ListRelevantWildflowerUpdateItemsQueryParams = zod.object({
+  "personId": zod.coerce.string().optional(),
+  "organizationId": zod.coerce.string().optional(),
+  "limit": zod.coerce.number().min(1).max(listRelevantWildflowerUpdateItemsQueryLimitMax).default(listRelevantWildflowerUpdateItemsQueryLimitDefault)
+})
+
+
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemEventDateStartMonthMax = 12;
+
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemEventDateEndMonthMax = 12;
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemEventDateMonthMax = 12;
+
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationMonthMax = 12;
+
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationStartMonthMax = 12;
+
+
+export const listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const ListRelevantWildflowerUpdateItemsResponse = zod.object({
+  "data": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "topicMatches": zod.array(zod.string()),
+  "geographyMatches": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(listRelevantWildflowerUpdateItemsResponseDataItemSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+}))
+}))
+})
+
+/**
+ * @summary Soft-delete a Wildflower update item
+ */
+export const ArchiveWildflowerUpdateItemParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const archiveWildflowerUpdateItemResponseEventDateStartMonthMax = 12;
+
+
+export const archiveWildflowerUpdateItemResponseEventDateEndMonthMax = 12;
+
+export const archiveWildflowerUpdateItemResponseEventDateMonthMax = 12;
+
+
+export const archiveWildflowerUpdateItemResponseSourcesItemPublicationMonthMax = 12;
+
+
+export const archiveWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax = 12;
+
+
+export const archiveWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const ArchiveWildflowerUpdateItemResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(archiveWildflowerUpdateItemResponseEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(archiveWildflowerUpdateItemResponseEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(archiveWildflowerUpdateItemResponseEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']),
+  "thematicTags": zod.array(zod.string()),
+  "ageTags": zod.array(zod.string()),
+  "governanceTags": zod.array(zod.string()),
+  "fundingRegionIds": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(archiveWildflowerUpdateItemResponseSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(archiveWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(archiveWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})),
+  "relatedLinks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "url": zod.string().url()
+})),
+  "archivedAt": zod.string().datetime({}).nullable(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * @summary Restore a soft-deleted Wildflower update item
+ */
+export const UnarchiveWildflowerUpdateItemParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+export const unarchiveWildflowerUpdateItemResponseEventDateStartMonthMax = 12;
+
+
+export const unarchiveWildflowerUpdateItemResponseEventDateEndMonthMax = 12;
+
+export const unarchiveWildflowerUpdateItemResponseEventDateMonthMax = 12;
+
+
+export const unarchiveWildflowerUpdateItemResponseSourcesItemPublicationMonthMax = 12;
+
+
+export const unarchiveWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax = 12;
+
+
+export const unarchiveWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax = 12;
+
+
+
+export const UnarchiveWildflowerUpdateItemResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "details": zod.string(),
+  "qualification": zod.string().nullable(),
+  "importKey": zod.string().nullable(),
+  "eventDate": zod.object({
+  "precision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "year": zod.number().min(1).nullish(),
+  "startYear": zod.number().min(1).nullish(),
+  "startMonth": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseEventDateStartMonthMax).nullish(),
+  "endYear": zod.number().min(1).nullish(),
+  "endMonth": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseEventDateEndMonthMax).nullish(),
+  "month": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseEventDateMonthMax).nullish(),
+  "season": zod.string().nullish()
+}),
+  "status": zod.enum(['completed', 'reported_progress', 'work_in_progress', 'proposed_work', 'announcement']),
+  "preparationStatus": zod.enum(['eligible', 'hold_for_confirmation']),
+  "thematicTags": zod.array(zod.string()),
+  "ageTags": zod.array(zod.string()),
+  "governanceTags": zod.array(zod.string()),
+  "fundingRegionIds": zod.array(zod.string()),
+  "sources": zod.array(zod.object({
+  "id": zod.string(),
+  "sourceType": zod.enum(['sent_newsletter', 'published_article', 'donor_proposal', 'draft']),
+  "title": zod.string(),
+  "url": zod.string().url(),
+  "publicationDatePrecision": zod.enum(['exact', 'month', 'year', 'season', 'date_range', 'school_year', 'month_range', 'unknown']),
+  "publicationDate": zod.string().date().nullish(),
+  "publicationEndDate": zod.string().date().nullish(),
+  "publicationYear": zod.number().min(1).nullish(),
+  "publicationMonth": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseSourcesItemPublicationMonthMax).nullish(),
+  "publicationStartYear": zod.number().min(1).nullish(),
+  "publicationStartMonth": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseSourcesItemPublicationStartMonthMax).nullish(),
+  "publicationEndYear": zod.number().min(1).nullish(),
+  "publicationEndMonth": zod.number().min(1).max(unarchiveWildflowerUpdateItemResponseSourcesItemPublicationEndMonthMax).nullish(),
+  "publicationSeason": zod.string().nullish()
+})),
+  "relatedLinks": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "url": zod.string().url()
+})),
+  "archivedAt": zod.string().datetime({}).nullable(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+

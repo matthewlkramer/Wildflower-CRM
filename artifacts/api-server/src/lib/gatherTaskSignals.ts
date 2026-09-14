@@ -15,6 +15,12 @@ import {
 } from "@workspace/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { deriveGiftTypeExpr } from "./giftTypeDerived";
+import { logger } from "./logger";
+import { getSchoolsInGeographiesOfInterest } from "./schoolGeographyMeetingPrep";
+import {
+  getRelevantWildflowerUpdates,
+  type RelevantWildflowerUpdate,
+} from "./wildflowerUpdateRelevance";
 
 /**
  * Read-only relationship snapshot for a single CRM entity (a person or an
@@ -38,6 +44,7 @@ export interface TaskSignals {
     /** issuesGrants flag for orgs; always false for people. */
     issuesGrants: boolean;
     interests: string[];
+    fundingRegionIds: string[];
   };
   recentGifts: Array<{
     date: string | null;
@@ -76,6 +83,8 @@ export interface TaskSignals {
     opened: boolean;
     clicked: boolean;
   }>;
+  schoolGeographySection?: string;
+  relevantWildflowerUpdates: RelevantWildflowerUpdate[];
 }
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -206,6 +215,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
         ...(p.interestsAges ?? []),
         ...(p.interestsGovModels ?? []),
       ],
+      fundingRegionIds: p.regionIds ?? [],
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
@@ -250,6 +260,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       opened: n.opened,
       clicked: n.clicked,
     })),
+    relevantWildflowerUpdates: [],
   };
 }
 
@@ -363,6 +374,7 @@ async function gatherOrganizationSignals(
         ...(o.interestsAges ?? []),
         ...(o.interestsGovModels ?? []),
       ],
+      fundingRegionIds: o.regionIds ?? [],
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
@@ -402,6 +414,7 @@ async function gatherOrganizationSignals(
       title: m.title,
     })),
     recentNewsletterEngagement: [],
+    relevantWildflowerUpdates: [],
   };
 }
 
@@ -413,7 +426,48 @@ export async function gatherTaskSignals(args: {
   personId?: string | null;
   organizationId?: string | null;
 }): Promise<TaskSignals | null> {
-  if (args.personId) return gatherPersonSignals(args.personId);
-  if (args.organizationId) return gatherOrganizationSignals(args.organizationId);
-  return null;
+  const signals = args.personId
+    ? await gatherPersonSignals(args.personId)
+    : args.organizationId
+      ? await gatherOrganizationSignals(args.organizationId)
+      : null;
+  if (!signals) return null;
+  let schoolGeographySection: string;
+  try {
+    schoolGeographySection = await getSchoolsInGeographiesOfInterest(
+      signals.entity.fundingRegionIds,
+    );
+  } catch (error) {
+    logger.warn(
+      {
+        errClass: error instanceof Error ? error.constructor.name : typeof error,
+        errMessage: error instanceof Error ? error.message : String(error),
+        entityId: signals.entity.id,
+      },
+      "canonical school lookup failed while generating relationship summary",
+    );
+    schoolGeographySection =
+      "Schools in Geographies of Interest\nLive school information is unavailable for this generation. Please refresh to try again.";
+  }
+  let relevantWildflowerUpdates: RelevantWildflowerUpdate[] = [];
+  try {
+    relevantWildflowerUpdates = await getRelevantWildflowerUpdates({
+      interests: signals.entity.interests,
+      fundingRegionIds: signals.entity.fundingRegionIds,
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        errClass: error instanceof Error ? error.constructor.name : typeof error,
+        errMessage: error instanceof Error ? error.message : String(error),
+        entityId: signals.entity.id,
+      },
+      "Wildflower update relevance lookup failed while generating relationship summary",
+    );
+  }
+  return {
+    ...signals,
+    schoolGeographySection,
+    relevantWildflowerUpdates,
+  };
 }
