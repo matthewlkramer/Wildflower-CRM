@@ -85,6 +85,7 @@ function row(grantYear: string | null, entityId: string | null) {
     unpaidCommitmentWeighted: "1500",
     openAsk: "900",
     openAskWeighted: "700",
+    weightedProjection: "3200",
     goal: "5000",
     goalGap: "1800",
   };
@@ -250,6 +251,26 @@ function render() {
 }
 
 describe("projections forecast distinctions", () => {
+  it("shows received actuals for past years and the authoritative weighted total for current years", () => {
+    render();
+    const current = container.querySelector(
+      `[data-testid="row-projection-${currentFy}"]`,
+    );
+    const historical = container.querySelector(
+      '[data-testid="row-projection-fy2025"]',
+    );
+    expect(
+      current?.querySelector('[data-testid="projection-cell-total"]')
+        ?.textContent,
+    ).toContain("$3,200");
+    expect(current?.textContent).toContain("Received + weighted pipeline");
+    expect(
+      historical?.querySelector('[data-testid="projection-cell-total"]')
+        ?.textContent,
+    ).toContain("$1,000");
+    expect(historical?.textContent).not.toContain("weighted pipeline");
+    expect(historical?.textContent).not.toContain("Unpaid commitments");
+  });
   it("shows authoritative total components, face value, and separated diagnostics", () => {
     render();
 

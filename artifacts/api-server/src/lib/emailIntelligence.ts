@@ -24,7 +24,12 @@ import {
 } from "drizzle-orm";
 import { logger } from "./logger";
 import { newId } from "./helpers";
-import { proposeActionsForProposal } from "./proposeActions";
+import {
+  proposeActionsForProposal,
+  type ProposedAction,
+} from "./proposeActions";
+import { loadInternalDomains } from "./emailMatcher";
+import { replySenderName } from "./replyAddressIdentity";
 import {
   domainOf,
   extractGrantOpportunities,
@@ -102,7 +107,11 @@ export async function processIntelForUnmatched(args: {
     }
   } catch (err) {
     logger.warn(
-      { err, mailboxUserId: args.mailboxUserId, gmailMessageId: args.gmailMessageId },
+      {
+        err,
+        mailboxUserId: args.mailboxUserId,
+        gmailMessageId: args.gmailMessageId,
+      },
       "Email intelligence (unmatched) failed",
     );
   }
@@ -184,7 +193,9 @@ export async function processIntelForMatched(args: {
           ),
         );
       const senderPersonIds = [
-        ...new Set(senderRows.map((r) => r.personId).filter((id): id is string => !!id)),
+        ...new Set(
+          senderRows.map((r) => r.personId).filter((id): id is string => !!id),
+        ),
       ];
       if (senderPersonIds.length === 1) {
         await handleSignature(args, senderPersonIds[0]);
@@ -192,7 +203,11 @@ export async function processIntelForMatched(args: {
     }
   } catch (err) {
     logger.warn(
-      { err, mailboxUserId: args.mailboxUserId, messageRowId: args.messageRowId },
+      {
+        err,
+        mailboxUserId: args.mailboxUserId,
+        messageRowId: args.messageRowId,
+      },
       "Email intelligence (matched) failed",
     );
   }
@@ -210,7 +225,11 @@ async function handleLinkedIn(args: {
   bodyHtml: string | null;
   emailSentAt: Date | null;
 }): Promise<void> {
-  const items = extractLinkedInJobChanges(args.bodyText, args.bodyHtml, args.subject);
+  const items = extractLinkedInJobChanges(
+    args.bodyText,
+    args.bodyHtml,
+    args.subject,
+  );
   if (items.length === 0) return;
 
   for (const it of items) {
@@ -220,12 +239,16 @@ async function handleLinkedIn(args: {
     // for strangers — an unmatched (or ambiguously-matched) name is
     // noise, not a prospect signal. Skip anything we can't pin to
     // exactly one existing person.
-    const resolvedPersonId = personId && personId !== "ambiguous" ? personId : null;
+    const resolvedPersonId =
+      personId && personId !== "ambiguous" ? personId : null;
     if (!resolvedPersonId) continue;
 
     // Skip if the person's current primary funder already matches the
     // detected new company — no signal to surface.
-    const alreadyCurrent = await isPersonAlreadyAtCompany(resolvedPersonId, it.newCompany);
+    const alreadyCurrent = await isPersonAlreadyAtCompany(
+      resolvedPersonId,
+      it.newCompany,
+    );
     if (alreadyCurrent) continue;
 
     await upsertProposal({
@@ -267,7 +290,9 @@ async function handleBounce(args: {
   const rows = await db
     .select({ id: emails.id, personId: emails.personId })
     .from(emails)
-    .where(eq(sql`lower(${emails.email})`, parsed.recipient.trim().toLowerCase()))
+    .where(
+      eq(sql`lower(${emails.email})`, parsed.recipient.trim().toLowerCase()),
+    )
     .orderBy(emails.id);
   if (rows.length === 0) return;
   // An address belongs to at most one person, though the same address may also
@@ -477,7 +502,9 @@ async function handleAutoResponder(args: {
     move.newCompany?.toLowerCase() ?? "",
     move.newEmail?.toLowerCase() ?? "",
     move.leftCompany?.toLowerCase() ?? "",
-  ].filter(Boolean).join("|");
+  ]
+    .filter(Boolean)
+    .join("|");
   if (!dedupeSig) return;
 
   await upsertProposal({
@@ -520,7 +547,12 @@ async function handleSignature(
   const ownerDomain = domainOf(args.ownerEmail);
   const sigDomain = domainOf(sig.email);
   const fromDomain = domainOf(args.fromEmail);
-  if (sig.email && args.ownerEmail && sig.email === args.ownerEmail.toLowerCase()) return;
+  if (
+    sig.email &&
+    args.ownerEmail &&
+    sig.email === args.ownerEmail.toLowerCase()
+  )
+    return;
   if (sigDomain && ownerDomain && sigDomain === ownerDomain) return;
   if (sig.email && fromDomain && sigDomain && sigDomain !== fromDomain) return;
 
@@ -540,7 +572,11 @@ async function handleSignature(
   // the parser almost certainly grabbed a signature belonging to
   // someone else in the thread (a forwarded/quoted participant). Drop
   // it rather than copy a stranger's title/phone onto our person.
-  if (sig.name && person.fullName && !namesPlausiblyMatch(sig.name, person.fullName)) {
+  if (
+    sig.name &&
+    person.fullName &&
+    !namesPlausiblyMatch(sig.name, person.fullName)
+  ) {
     return;
   }
 
@@ -557,7 +593,10 @@ async function handleSignature(
     const currentEntityRows = await db
       .select({ orgName: organizations.name })
       .from(peopleEntityRoles)
-      .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
+      .leftJoin(
+        organizations,
+        eq(organizations.id, peopleEntityRoles.organizationId),
+      )
       .where(
         and(
           eq(peopleEntityRoles.personId, personId),
@@ -570,7 +609,8 @@ async function handleSignature(
     const sigLower = sig.company.toLowerCase();
     const matched = currentNames.some(
       (name) =>
-        name.toLowerCase().includes(sigLower) || sigLower.includes(name.toLowerCase()),
+        name.toLowerCase().includes(sigLower) ||
+        sigLower.includes(name.toLowerCase()),
     );
     if (!matched) companyDrift = true;
   }
@@ -614,6 +654,7 @@ async function upsertProposal(args: {
   subjectDomain?: string | null;
   emailSentAt?: Date | null;
   payload: Record<string, unknown>;
+  proposedActions?: ProposedAction[];
 }): Promise<void> {
   const id = newId();
   const inserted = await db
@@ -632,6 +673,13 @@ async function upsertProposal(args: {
       subjectDomain: args.subjectDomain ?? null,
       emailSentAt: args.emailSentAt ?? null,
       payload: args.payload,
+      ...(args.proposedActions
+        ? {
+            proposedActions: args.proposedActions,
+            actionsAnalyzedAt: new Date(),
+            actionsModel: "reply-address-evidence",
+          }
+        : {}),
     })
     .onConflictDoNothing({
       // The unique index on (mailbox_user_id, dedupe_key) is partial —
@@ -656,11 +704,112 @@ async function upsertProposal(args: {
   // hundreds of unthrottled concurrent AI calls. Those jobs run a
   // sequential phase-D sweep afterwards instead. Defaults to the
   // normal inline behavior when unset.
-  if (inserted.length > 0 && process.env.SKIP_INLINE_ACTION_PROPOSAL !== "1") {
+  if (
+    !args.proposedActions &&
+    inserted.length > 0 &&
+    process.env.SKIP_INLINE_ACTION_PROPOSAL !== "1"
+  ) {
     const newProposalId = inserted[0].id;
     void proposeActionsForProposal(newProposalId).catch((err) => {
-      logger.warn({ err, proposalId: newProposalId }, "proposeActionsForProposal threw");
+      logger.warn(
+        { err, proposalId: newProposalId },
+        "proposeActionsForProposal threw",
+      );
     });
+  }
+}
+
+/** Metadata-only, reviewable suggestion. A matching username alone is never
+ * identity evidence. The old address remains valid unless a user changes it. */
+export async function processReplyAddressChange(args: {
+  mailboxUserId: string;
+  mailboxEmail: string;
+  fromAddresses: string[];
+  fromHeader: string;
+  gmailThreadId?: string | null;
+  gmailMessageId: string;
+  sentAt: Date;
+}): Promise<void> {
+  try {
+    if (args.fromAddresses.length !== 1 || !args.gmailThreadId) return;
+    const newEmail = args.fromAddresses[0].trim().toLowerCase();
+    if (newEmail === args.mailboxEmail.toLowerCase()) return;
+    const domain = newEmail.split("@")[1];
+    if (!domain || (await loadInternalDomains()).has(domain)) return;
+    const name = replySenderName(args.fromHeader);
+    if (!name) return;
+    const known = await db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(sql`LOWER(${emails.email}) = ${newEmail}`)
+      .limit(1);
+    if (known.length) return;
+    const candidates = await db.execute<{
+      id: string;
+      full_name: string;
+      old_email: string;
+    }>(sql`
+      SELECT p.id, p.full_name, MIN(LOWER(e.email)) AS old_email
+      FROM people p JOIN emails e ON e.person_id = p.id
+      WHERE LOWER(REGEXP_REPLACE(BTRIM(p.full_name), '\\s+', ' ', 'g')) = LOWER(${name})
+        AND p.deceased = false
+        AND EXISTS (
+          SELECT 1 FROM email_messages sent
+          WHERE sent.mailbox_user_id = ${args.mailboxUserId}
+            AND sent.gmail_thread_id = ${args.gmailThreadId}
+            AND sent.direction = 'sent' AND sent.sent_at < ${args.sentAt}
+            AND LOWER(e.email) = ANY(SELECT LOWER(addr) FROM unnest(sent.to_emails) addr)
+        )
+      GROUP BY p.id, p.full_name
+      LIMIT 2
+    `);
+    if (candidates.rows.length !== 1) return;
+    const person = candidates.rows[0];
+    const dedupeKey = `reply-address:${person.id}:${newEmail}`;
+    const prior = await db
+      .select({ id: emailProposals.id })
+      .from(emailProposals)
+      .where(
+        and(
+          eq(emailProposals.mailboxUserId, args.mailboxUserId),
+          eq(emailProposals.dedupeKey, dedupeKey),
+        ),
+      )
+      .limit(1);
+    if (prior.length) return;
+    const reason = `A reply from ${newEmail} used the name ${person.full_name} in a thread previously sent to ${person.old_email}. Review before making it primary.`;
+    await upsertProposal({
+      mailboxUserId: args.mailboxUserId,
+      kind: "signature_update",
+      dedupeKey,
+      targetPersonId: person.id,
+      subjectEmail: newEmail,
+      subjectName: person.full_name,
+      subjectDomain: domain,
+      emailSentAt: args.sentAt,
+      payload: {
+        signalType: "reply_address_change",
+        oldEmail: person.old_email,
+        newEmail,
+        parsed: { name: person.full_name, email: newEmail },
+        gmailMessageId: args.gmailMessageId,
+        gmailThreadId: args.gmailThreadId,
+        evidence: reason,
+      },
+      proposedActions: [
+        {
+          type: "add_email",
+          personId: person.id,
+          personName: person.full_name,
+          emailAddress: newEmail,
+          emailType: "work",
+          setPrimary: true,
+          reason,
+        },
+      ],
+    });
+  } catch (err) {
+    logger.warn({ err }, "Reply address change detection failed");
   }
 }
 
@@ -692,7 +841,18 @@ async function findPersonByName(
 // matches, so a false "match" just lets the existing domain guards do
 // their job.
 const NAME_SUFFIXES = new Set([
-  "jr", "sr", "ii", "iii", "iv", "v", "phd", "md", "esq", "mba", "rn", "do",
+  "jr",
+  "sr",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "phd",
+  "md",
+  "esq",
+  "mba",
+  "rn",
+  "do",
 ]);
 
 function namesPlausiblyMatch(a: string, b: string): boolean {
@@ -712,9 +872,7 @@ function namesPlausiblyMatch(a: string, b: string): boolean {
   const bLast = bt[bt.length - 1];
   const lastMatch = aLast === bLast;
   const firstMatch =
-    aFirst === bFirst ||
-    aFirst.startsWith(bFirst) ||
-    bFirst.startsWith(aFirst); // nickname/initial tolerance
+    aFirst === bFirst || aFirst.startsWith(bFirst) || bFirst.startsWith(aFirst); // nickname/initial tolerance
   return lastMatch && firstMatch;
 }
 
@@ -726,7 +884,10 @@ async function isPersonAlreadyAtCompany(
   const rows = await db
     .select({ name: organizations.name })
     .from(peopleEntityRoles)
-    .innerJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
+    .innerJoin(
+      organizations,
+      eq(organizations.id, peopleEntityRoles.organizationId),
+    )
     .where(
       and(
         eq(peopleEntityRoles.personId, personId),
@@ -737,7 +898,8 @@ async function isPersonAlreadyAtCompany(
   return rows.some(
     (r) =>
       r.name &&
-      (r.name.toLowerCase().includes(target) || target.includes(r.name.toLowerCase())),
+      (r.name.toLowerCase().includes(target) ||
+        target.includes(r.name.toLowerCase())),
   );
 }
 
@@ -763,7 +925,8 @@ function isDocumentMime(mime: string | null | undefined): boolean {
   if (m === "application/msword") return true;
   if (m === "application/vnd.ms-excel") return true;
   if (m === "application/vnd.ms-powerpoint") return true;
-  if (m.startsWith("application/vnd.openxmlformats-officedocument")) return true;
+  if (m.startsWith("application/vnd.openxmlformats-officedocument"))
+    return true;
   if (m.startsWith("application/vnd.oasis.opendocument")) return true;
   return false;
 }
@@ -801,7 +964,11 @@ export async function processIntelForOutbound(args: {
     await detectThankYou(args);
   } catch (err) {
     logger.warn(
-      { err, mailboxUserId: args.mailboxUserId, messageRowId: args.messageRowId },
+      {
+        err,
+        mailboxUserId: args.mailboxUserId,
+        messageRowId: args.messageRowId,
+      },
       "Email intelligence (outbound) failed",
     );
   }
@@ -849,7 +1016,9 @@ async function detectThankYou(args: {
   // directly; when several match we emit one proposal per gift and let
   // the reviewer pick the right one — payload.giftId is the suggestion,
   // not the only option.
-  const windowStart = new Date(args.sentAt.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const windowStart = new Date(
+    args.sentAt.getTime() - 30 * 24 * 60 * 60 * 1000,
+  );
   const windowEnd = new Date(args.sentAt.getTime() + 1 * 24 * 60 * 60 * 1000);
   const startDate = windowStart.toISOString().slice(0, 10);
   const endDate = windowEnd.toISOString().slice(0, 10);
@@ -931,9 +1100,7 @@ async function detectThankYou(args: {
  * three donor kinds a gift can carry under Donor XOR. Each set is a
  * de-duped array of ids; any may be empty. Exported for testing.
  */
-export async function resolveThankYouDonors(
-  recipients: string[],
-): Promise<{
+export async function resolveThankYouDonors(recipients: string[]): Promise<{
   organizationIds: string[];
   personIds: string[];
   householdIds: string[];

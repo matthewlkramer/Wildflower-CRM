@@ -47,6 +47,11 @@ export function calendarEventSelection() {
 
   return {
     ...getTableColumns(calendarEvents),
+    absentAttendeeEmails: sql<string[]>`ARRAY(
+      SELECT a.email_address FROM calendar_event_attendance a
+      WHERE a.physical_event_key = ${calendarEventPhysicalKeySql()} AND a.absent
+      ORDER BY a.email_address
+    )`.as("absentAttendeeEmails"),
     meetingNoteId: sql<string | null>`(
       select mn.id
       from meeting_notes mn

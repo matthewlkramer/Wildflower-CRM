@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { calendarEvents, meetingNoteDismissals } from "@workspace/db/schema";
+import {
+  calendarEvents,
+  calendarEventAttendance,
+  meetingNoteDismissals,
+} from "@workspace/db/schema";
 import {
   and,
   asc,
@@ -18,6 +22,7 @@ import {
 import {
   ListCalendarEventsQueryParams,
   UpdateCalendarEventPrivacyBody,
+  UpdateCalendarEventAttendanceBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -47,6 +52,76 @@ import {
  */
 const router: IRouter = Router();
 router.use(requireAuth);
+
+router.patch(
+  "/calendar-events/:id/attendance",
+  asyncHandler(async (req, res) => {
+    const user = getAppUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    const body = parseOrBadRequest(
+      UpdateCalendarEventAttendanceBody,
+      req.body,
+      res,
+    );
+    if (!body) return;
+    const where = and(
+      eq(calendarEvents.id, paramId(req)),
+      calendarEventVisibleToCaller(user.id),
+    );
+    const [event] = await db.select().from(calendarEvents).where(where);
+    if (!event) return notFound(res, "calendar event");
+    const emailAddress = body.emailAddress.trim().toLowerCase();
+    if (
+      !event.attendeeEmails?.some(
+        (email) => email.trim().toLowerCase() === emailAddress,
+      )
+    ) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: "Choose an invitee from this meeting.",
+        });
+      return;
+    }
+    await db.transaction(async (tx) => {
+      await tx
+        .insert(calendarEventAttendance)
+        .values({
+          physicalEventKey: calendarEventDismissalKey(event),
+          emailAddress,
+          absent: body.absent,
+          updatedByUserId: user.id,
+        })
+        .onConflictDoUpdate({
+          target: [
+            calendarEventAttendance.physicalEventKey,
+            calendarEventAttendance.emailAddress,
+          ],
+          set: {
+            absent: body.absent,
+            updatedByUserId: user.id,
+            updatedAt: new Date(),
+          },
+        });
+      await recordAudit(tx, req, {
+        action: "update",
+        entityType: "calendar_event",
+        entityId: event.id,
+        summary: `${body.absent ? "Marked absent" : "Cleared absence"}: ${emailAddress}`,
+        metadata: { emailAddress, absent: body.absent },
+      });
+    });
+    const [updated] = await db
+      .select(calendarEventSelection())
+      .from(calendarEvents)
+      .where(where);
+    res.json(updated);
+  }),
+);
 
 router.get(
   "/calendar-events",
@@ -100,7 +175,10 @@ router.get(
             .select({ id: meetingNoteDismissals.id })
             .from(meetingNoteDismissals)
             .where(
-              eq(meetingNoteDismissals.gcalEventId, calendarEventPhysicalKeySql()),
+              eq(
+                meetingNoteDismissals.gcalEventId,
+                calendarEventPhysicalKeySql(),
+              ),
             ),
         ),
       );

@@ -82,6 +82,7 @@ beforeAll(async () => {
       gcalEventId: PHYSICAL_EVENT_ID,
       startAt,
       summary: `Dismiss me ${RUN}`,
+      attendeeEmails: ["Tom@example.org", "turahn@example.org"],
       isPrivate: false,
     },
     {
@@ -145,6 +146,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
+  await db.delete(schema.calendarEventAttendance).where(drizzle.eq(schema.calendarEventAttendance.physicalEventKey, PHYSICAL_EVENT_ID));
+  await db.delete(schema.auditLog).where(drizzle.eq(schema.auditLog.entityId, EVENT_ID));
   const dismissals = await db
     .select({ id: schema.meetingNoteDismissals.id })
     .from(schema.meetingNoteDismissals)
@@ -188,6 +191,20 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
+  it("preserves absence across synced copies, supports undo and enforces visibility and invitees", async () => {
+    const mark = (id: string, emailAddress: string, absent: boolean) => request(`/api/calendar-events/${id}/attendance`, {
+      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emailAddress, absent }),
+    });
+    expect((await mark(PRIVATE_EVENT_ID, "turahn@example.org", true)).status).toBe(404);
+    expect((await mark(EVENT_ID, "stranger@example.org", true)).status).toBe(400);
+    const result = await mark(EVENT_ID, "TURAHN@example.org", true);
+    expect(result.status).toBe(200);
+    expect(result.json.absentAttendeeEmails).toEqual(["turahn@example.org"]);
+    expect(result.json.attendeeEmails).toContain("turahn@example.org");
+    await db.update(schema.calendarEvents).set({ summary: `Synced ${RUN}` }).where(drizzle.eq(schema.calendarEvents.id, EVENT_ID));
+    expect((await request(`/api/calendar-events/${EVENT_COPY_ID}`)).json.absentAttendeeEmails).toEqual(["turahn@example.org"]);
+    expect((await mark(EVENT_ID, "turahn@example.org", false)).json.absentAttendeeEmails).toEqual([]);
+  });
   it("keeps unrelated legacy events with blank Google ids separate", async () => {
     const events = await request(
       `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,

@@ -1235,7 +1235,14 @@ paths:
         - {
             name: minThreads,
             in: query,
-            schema: { type: integer, minimum: 1, default: 2 },
+            schema: { type: integer, minimum: 1 },
+            description: "Optional minimum known thread count. Historical unmatched headers do not retain thread IDs.",
+          }
+        - {
+            name: minMessages,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 2 },
+            description: "Minimum distinct sent messages, including the caller's unmatched headers.",
           }
       responses:
         "200":
@@ -6064,6 +6071,31 @@ paths:
               },
           }
         "404": { $ref: "#/components/responses/NotFound" }
+  /calendar-events/{id}/attendance:
+    patch:
+      operationId: updateCalendarEventAttendance
+      tags: [calendar-events]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [emailAddress, absent]
+              properties:
+                emailAddress: { type: string, format: email }
+                absent: { type: boolean }
+      responses:
+        "200":
+          description: Attendance saved without changing the Google invitation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarEvent" }
+        "400": { description: Address is not an invitee }
+        "404": { description: Meeting not found or not visible }
+
   /calendar-events/{id}/privacy:
     patch:
       operationId: updateCalendarEventPrivacy
@@ -23894,6 +23926,11 @@ components:
         description: { type: string, nullable: true }
         location: { type: string, nullable: true }
         attendeeEmails: { type: array, items: { type: string }, nullable: true }
+        absentAttendeeEmails:
+          type: array
+          items: { type: string }
+          readOnly: true
+          description: "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs."
         organizerEmail: { type: string, nullable: true }
         status: { type: string, nullable: true }
         transparency:
@@ -24676,6 +24713,10 @@ components:
         mailboxUserName: { type: string, nullable: true }
         domain: { type: string, nullable: true }
         threadCount: { type: integer }
+        sentMessageCount: { type: integer }
+        threadCountComplete:
+          type: boolean
+          description: "False when some evidence consists of historical unmatched headers without thread IDs."
         firstSeenAt: { type: string, format: date-time }
         lastSeenAt: { type: string, format: date-time }
         lastSubject: { type: string, nullable: true }

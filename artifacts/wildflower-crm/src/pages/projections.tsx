@@ -137,9 +137,9 @@ export default function Projections() {
           Projections
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Plan expected fundraising by fiscal year and recipient. The forecast
-          separates grants and revenue from loan capital, keeps historical years
-          visible, and clearly identifies unknown information.
+          Past fiscal years show amounts received. Current and future years show
+          amounts received plus probability-weighted outstanding pledges and
+          open opportunities, by recipient.
         </p>
       </div>
 
@@ -706,26 +706,44 @@ function ArrivalDetails({
 function ProjectionCell({ row }: { row: ProjectionByFyEntityRow }) {
   const money = (value: string | null | undefined) =>
     value == null ? "—" : formatCurrency(value);
+  const historical =
+    /^fy\d{4}$/.test(row.grantYear ?? "") &&
+    Number(row.grantYear!.slice(2)) < currentFiscalYearEndYear();
   return (
     <div className="min-w-[15rem] space-y-1 text-right text-xs tabular-nums">
-      <ProjectionValue
-        label="Received goal credit"
-        value={money(row.receivedGoalCredit)}
-      />
-      <ProjectionValue
-        label="Face-value unpaid commitments"
-        value={money(row.unpaidCommitment)}
-      />
-      <ProjectionValue
-        label="Probability-weighted unpaid commitments"
-        value={money(row.unpaidCommitmentWeighted)}
-      />
-      <ProjectionValue
-        label="Probability-weighted open asks"
-        value={money(row.openAskWeighted)}
-      />
-      <ProjectionValue label="Goal" value={money(row.goal)} />
-      <ProjectionValue label="Goal gap" value={money(row.goalGap)} />
+      <div className="text-sm" data-testid="projection-cell-total">
+        <ProjectionValue
+          label={historical ? "Received" : "Received + weighted pipeline"}
+          value={money(
+            historical ? row.receivedGoalCredit : row.weightedProjection,
+          )}
+        />
+      </div>
+      {!historical && (
+        <details className="pt-1">
+          <summary className="cursor-pointer text-muted-foreground">
+            Breakdown
+          </summary>
+          <ProjectionValue
+            label="Received"
+            value={money(row.receivedGoalCredit)}
+          />
+          <ProjectionValue
+            label="Face-value unpaid commitments"
+            value={money(row.unpaidCommitment)}
+          />
+          <ProjectionValue
+            label="Probability-weighted unpaid commitments"
+            value={money(row.unpaidCommitmentWeighted)}
+          />
+          <ProjectionValue
+            label="Probability-weighted open asks"
+            value={money(row.openAskWeighted)}
+          />
+          <ProjectionValue label="Goal" value={money(row.goal)} />
+          <ProjectionValue label="Goal gap" value={money(row.goalGap)} />
+        </details>
+      )}
     </div>
   );
 }

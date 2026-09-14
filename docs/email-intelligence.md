@@ -14,6 +14,22 @@ it, but you don't need to read code to follow along.
 
 ## The big picture in one paragraph
 
+The **New correspondents** view includes unmatched sent-message headers from
+the caller's mailbox, as well as retained CRM mail. It requires two distinct
+sent messages in the last 60 days by default. Historical unmatched headers
+do not contain thread IDs, so the screen shows sent-message counts. Admin
+all-mailboxes mode includes other owners' shared retained mail only; their
+unmatched headers remain private. Sharing a username with a known address
+does not establish that two addresses belong to the same person.
+
+**Contact updates** can flag a reply from a new address when its full sender
+name matches a unique CRM person previously emailed in that same mailbox and
+thread. This metadata-only detector proposes adding the address as primary
+while retaining the old address. It never edits the contact automatically,
+does not run in summary-only mailboxes, and does not re-open a previously
+reviewed suggestion for the same person and address. This detector runs on
+newly processed mail; it does not silently reprocess previously synced history.
+
 Each fundraiser connects their Gmail. In the background, the CRM reads
 their mail, figures out which messages involve people or organizations
 already in the CRM, and quietly watches for a handful of useful "signals"

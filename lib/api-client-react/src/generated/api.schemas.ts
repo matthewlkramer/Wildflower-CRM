@@ -8078,6 +8078,8 @@ export interface CalendarEvent {
   description?: string | null;
   location?: string | null;
   attendeeEmails?: string[] | null;
+  /** Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs. */
+  readonly absentAttendeeEmails?: readonly string[];
   organizerEmail?: string | null;
   status?: string | null;
   /** Google Calendar transparency. `transparent` events do not reduce trip availability. */
@@ -8814,6 +8816,9 @@ export interface UnrecognizedCorrespondent {
   mailboxUserName?: string | null;
   domain?: string | null;
   threadCount: number;
+  sentMessageCount?: number;
+  /** False when some evidence consists of historical unmatched headers without thread IDs. */
+  threadCountComplete?: boolean;
   firstSeenAt: string;
   lastSeenAt: string;
   lastSubject?: string | null;
@@ -10567,9 +10572,16 @@ allMailboxes?: boolean;
  */
 days?: number;
 /**
+ * Optional minimum known thread count. Historical unmatched headers do not retain thread IDs.
  * @minimum 1
  */
 minThreads?: number;
+/**
+ * Minimum distinct sent messages, including the caller's unmatched headers.
+ * @minimum 1
+ * @maximum 100
+ */
+minMessages?: number;
 };
 
 export type ListRegionsParams = {
@@ -11744,6 +11756,11 @@ export const ListCalendarEventsOrder = {
   asc: 'asc',
   desc: 'desc',
 } as const;
+
+export type UpdateCalendarEventAttendanceBody = {
+  emailAddress: string;
+  absent: boolean;
+};
 
 export type AdminResyncGoogleUser200 = { [key: string]: unknown };
 

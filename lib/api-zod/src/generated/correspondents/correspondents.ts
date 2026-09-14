@@ -11,7 +11,9 @@ import * as zod from 'zod';
 export const listUnrecognizedCorrespondentsQueryDaysDefault = 60;
 export const listUnrecognizedCorrespondentsQueryDaysMax = 365;
 
-export const listUnrecognizedCorrespondentsQueryMinThreadsDefault = 2;
+
+export const listUnrecognizedCorrespondentsQueryMinMessagesDefault = 2;
+export const listUnrecognizedCorrespondentsQueryMinMessagesMax = 100;
 
 
 
@@ -19,7 +21,8 @@ export const ListUnrecognizedCorrespondentsQueryParams = zod.object({
   "mailboxUserId": zod.coerce.string().optional(),
   "allMailboxes": zod.coerce.boolean().optional().describe('Admin-only: when true, aggregate unrecognized correspondents across ALL synced mailboxes (each row carries mailboxUserId + mailboxUserName). Ignored for non-admins.'),
   "days": zod.coerce.number().min(1).max(listUnrecognizedCorrespondentsQueryDaysMax).default(listUnrecognizedCorrespondentsQueryDaysDefault),
-  "minThreads": zod.coerce.number().min(1).default(listUnrecognizedCorrespondentsQueryMinThreadsDefault)
+  "minThreads": zod.coerce.number().min(1).optional().describe('Optional minimum known thread count. Historical unmatched headers do not retain thread IDs.'),
+  "minMessages": zod.coerce.number().min(1).max(listUnrecognizedCorrespondentsQueryMinMessagesMax).default(listUnrecognizedCorrespondentsQueryMinMessagesDefault).describe('Minimum distinct sent messages, including the caller\'s unmatched headers.')
 })
 
 export const ListUnrecognizedCorrespondentsResponse = zod.object({
@@ -30,6 +33,8 @@ export const ListUnrecognizedCorrespondentsResponse = zod.object({
   "mailboxUserName": zod.string().nullish(),
   "domain": zod.string().nullish(),
   "threadCount": zod.number(),
+  "sentMessageCount": zod.number().optional(),
+  "threadCountComplete": zod.boolean().optional().describe('False when some evidence consists of historical unmatched headers without thread IDs.'),
   "firstSeenAt": zod.string().datetime({}),
   "lastSeenAt": zod.string().datetime({}),
   "lastSubject": zod.string().nullish()

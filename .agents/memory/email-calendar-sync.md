@@ -19,6 +19,13 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
 
 ## Email intelligence (AI proposals)
 
+- New-correspondent discovery combines retained mail with owner-only
+  `email_sync_skip` headers; count distinct messages, not invented historical
+  threads. Reply-address proposals require same-mailbox outbound thread
+  evidence plus an unambiguous full sender name. See `docs/email-intelligence.md`.
+- Meeting absence lives in `calendar_event_attendance` using the shared physical
+  event key; never write attendance into Google's `attendee_emails` array.
+
 - [AI proposal call resilience](wildflower-ai-proposal-resilience.md) — per-proposal Anthropic call must use withRateLimitRetry + shared aiProposalLimit; SDK maxRetries:0; sweep retry phase drains error backlog w/o 24h cooldown.
 - [email-intel AI failure recovery](email-intel-failure-recovery.md) — errored-pending self-heal via analyzePendingForUser retry (cooldown-gated under per-user gmail lock; manual retry resets actionsError+actionsAnalyzedAt); BUT pending+analyzed_at NULL+no-error has NO auto path — only manual owner /retry unsticks ([stuck-analyzing](email-intel-stuck-analyzing.md)).
 - [email-intel propose-alternative + note append](email-intel-propose-alternative.md) — reviewer guidance re-runs AI in place (stays pending); accept/reject/revise all APPEND to reviewerNote, never overwrite (prompt-tuning signal).

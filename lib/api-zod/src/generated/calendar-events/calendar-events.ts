@@ -43,6 +43,7 @@ export const ListCalendarEventsResponse = zod.object({
   "description": zod.string().nullish(),
   "location": zod.string().nullish(),
   "attendeeEmails": zod.array(zod.string()).nullish(),
+  "absentAttendeeEmails": zod.array(zod.string()).optional().describe('Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.'),
   "organizerEmail": zod.string().nullish(),
   "status": zod.string().nullish(),
   "transparency": zod.string().nullish().describe('Google Calendar transparency. `transparent` events do not reduce trip availability.'),
@@ -80,6 +81,44 @@ export const GetCalendarEventResponse = zod.object({
   "description": zod.string().nullish(),
   "location": zod.string().nullish(),
   "attendeeEmails": zod.array(zod.string()).nullish(),
+  "absentAttendeeEmails": zod.array(zod.string()).optional().describe('Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.'),
+  "organizerEmail": zod.string().nullish(),
+  "status": zod.string().nullish(),
+  "transparency": zod.string().nullish().describe('Google Calendar transparency. `transparent` events do not reduce trip availability.'),
+  "googleVisibility": zod.string().nullish().describe('Google Calendar visibility (`default`, `public`, `private`, or `confidential`).'),
+  "htmlLink": zod.string().nullish(),
+  "isPrivate": zod.boolean(),
+  "privateSetByUserId": zod.string().nullish(),
+  "matchedPersonIds": zod.array(zod.string()).nullish(),
+  "matchedOrganizationIds": zod.array(zod.string()).nullish(),
+  "matchedHouseholdIds": zod.array(zod.string()).nullish(),
+  "meetingNoteId": zod.string().nullable().describe('The note linked to this physical Google Calendar event, if one exists.'),
+  "linkedNoteCount": zod.number().describe('Number of free-form CRM notes linked to this physical Google Calendar event.'),
+  "hasMeetingNotes": zod.boolean().describe('True when either a structured meeting note or a free-form CRM note is linked to this physical Google Calendar event.'),
+  "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
+})
+
+export const UpdateCalendarEventAttendanceParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UpdateCalendarEventAttendanceBody = zod.object({
+  "emailAddress": zod.string().email(),
+  "absent": zod.boolean()
+})
+
+export const UpdateCalendarEventAttendanceResponse = zod.object({
+  "id": zod.string(),
+  "calendarUserId": zod.string(),
+  "gcalCalendarId": zod.string(),
+  "gcalEventId": zod.string(),
+  "startAt": zod.string().datetime({}),
+  "endAt": zod.string().datetime({}).nullish(),
+  "summary": zod.string().nullish(),
+  "description": zod.string().nullish(),
+  "location": zod.string().nullish(),
+  "attendeeEmails": zod.array(zod.string()).nullish(),
+  "absentAttendeeEmails": zod.array(zod.string()).optional().describe('Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.'),
   "organizerEmail": zod.string().nullish(),
   "status": zod.string().nullish(),
   "transparency": zod.string().nullish().describe('Google Calendar transparency. `transparent` events do not reduce trip availability.'),
@@ -115,6 +154,7 @@ export const UpdateCalendarEventPrivacyResponse = zod.object({
   "description": zod.string().nullish(),
   "location": zod.string().nullish(),
   "attendeeEmails": zod.array(zod.string()).nullish(),
+  "absentAttendeeEmails": zod.array(zod.string()).optional().describe('Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.'),
   "organizerEmail": zod.string().nullish(),
   "status": zod.string().nullish(),
   "transparency": zod.string().nullish().describe('Google Calendar transparency. `transparent` events do not reduce trip availability.'),
