@@ -411,10 +411,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * AI-generated "where this relationship stands" snapshot, computed on demand from the person's recent CRM activity (never persisted).
 
  */
-export const getGetPersonRelationshipSummaryUrl = (id: string, params?: GetPersonRelationshipSummaryParams,) => {
+export const getGetPersonRelationshipSummaryUrl = (id: string,
+    params?: GetPersonRelationshipSummaryParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -425,7 +427,8 @@ export const getGetPersonRelationshipSummaryUrl = (id: string, params?: GetPerso
   return stringifiedParams.length > 0 ? `/api/people/${id}/relationship-summary?${stringifiedParams}` : `/api/people/${id}/relationship-summary`
 }
 
-export const getPersonRelationshipSummary = async (id: string, params?: GetPersonRelationshipSummaryParams, options?: RequestInit): Promise<RelationshipSummary> => {
+export const getPersonRelationshipSummary = async (id: string,
+    params?: GetPersonRelationshipSummaryParams, options?: RequestInit): Promise<RelationshipSummary> => {
 
   return customFetch<RelationshipSummary>(getGetPersonRelationshipSummaryUrl(id,params),
   {
@@ -440,14 +443,16 @@ export const getPersonRelationshipSummary = async (id: string, params?: GetPerso
 
 
 
-export const getGetPersonRelationshipSummaryQueryKey = (id: string, params?: GetPersonRelationshipSummaryParams,) => {
+export const getGetPersonRelationshipSummaryQueryKey = (id: string,
+    params?: GetPersonRelationshipSummaryParams,) => {
     return [
     `/api/people/${id}/relationship-summary`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetPersonRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, params?: GetPersonRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetPersonRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string,
+    params?: GetPersonRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -456,7 +461,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonRelationshipSummary>>> = ({ signal }) => getPersonRelationshipSummary(id, params, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPersonRelationshipSummary>>> = ({ signal }) => getPersonRelationshipSummary(id,params, { signal, ...requestOptions });
 
 
 
@@ -471,7 +476,8 @@ export type GetPersonRelationshipSummaryQueryError = ErrorType<NotFoundResponse>
 
 
 export function useGetPersonRelationshipSummary<TData = Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
- id: string, params?: GetPersonRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: string,
+    params?: GetPersonRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPersonRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 

@@ -10988,14 +10988,6 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
-export type GetOrganizationRelationshipSummaryParams = {
-/**
- * Include meeting-only school and Wildflower update context.
- * @default false
- */
-meetingPreparation?: boolean;
-};
-
 export type ListOrganizationsLifetimeGivingPresence = typeof ListOrganizationsLifetimeGivingPresence[keyof typeof ListOrganizationsLifetimeGivingPresence];
 
 
@@ -11019,6 +11011,13 @@ export const ListOrganizationsPrimaryContactPresence = {
   has: 'has',
   blank: 'blank',
 } as const;
+
+export type GetOrganizationRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ */
+meetingPreparation?: boolean;
+};
 
 export type ListPaymentIntermediariesParams = {
 search?: string;
@@ -11160,14 +11159,6 @@ page?: PageParameter;
 
 export type ListPeopleLifetimeGivingPresence = typeof ListPeopleLifetimeGivingPresence[keyof typeof ListPeopleLifetimeGivingPresence];
 
-export type GetPersonRelationshipSummaryParams = {
-/**
- * Include meeting-only school and Wildflower update context.
- * @default false
- */
-meetingPreparation?: boolean;
-};
-
 
 export const ListPeopleLifetimeGivingPresence = {
   has: 'has',
@@ -11214,6 +11205,13 @@ export const ListPeopleNewsletterStatusItem = {
   unsubscribed: 'unsubscribed',
   not_subscribed: 'not_subscribed',
 } as const;
+
+export type GetPersonRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ */
+meetingPreparation?: boolean;
+};
 
 export type ListPeopleEntityRolesParams = {
 personId?: string;

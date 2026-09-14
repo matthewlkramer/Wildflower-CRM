@@ -328,10 +328,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * AI-generated "where this relationship stands" snapshot, computed on demand from the organization's recent CRM activity (never persisted).
 
  */
-export const getGetOrganizationRelationshipSummaryUrl = (id: string, params?: GetOrganizationRelationshipSummaryParams,) => {
+export const getGetOrganizationRelationshipSummaryUrl = (id: string,
+    params?: GetOrganizationRelationshipSummaryParams,) => {
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -342,7 +344,8 @@ export const getGetOrganizationRelationshipSummaryUrl = (id: string, params?: Ge
   return stringifiedParams.length > 0 ? `/api/organizations/${id}/relationship-summary?${stringifiedParams}` : `/api/organizations/${id}/relationship-summary`
 }
 
-export const getOrganizationRelationshipSummary = async (id: string, params?: GetOrganizationRelationshipSummaryParams, options?: RequestInit): Promise<RelationshipSummary> => {
+export const getOrganizationRelationshipSummary = async (id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: RequestInit): Promise<RelationshipSummary> => {
 
   return customFetch<RelationshipSummary>(getGetOrganizationRelationshipSummaryUrl(id,params),
   {
@@ -357,14 +360,16 @@ export const getOrganizationRelationshipSummary = async (id: string, params?: Ge
 
 
 
-export const getGetOrganizationRelationshipSummaryQueryKey = (id: string, params?: GetOrganizationRelationshipSummaryParams,) => {
+export const getGetOrganizationRelationshipSummaryQueryKey = (id: string,
+    params?: GetOrganizationRelationshipSummaryParams,) => {
     return [
     `/api/organizations/${id}/relationship-summary`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -373,7 +378,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id, params, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id,params, { signal, ...requestOptions });
 
 
 
@@ -388,7 +393,8 @@ export type GetOrganizationRelationshipSummaryQueryError = ErrorType<NotFoundRes
 
 
 export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
- id: string, params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
