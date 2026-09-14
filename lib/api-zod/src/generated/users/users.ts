@@ -8,6 +8,127 @@
 import * as zod from 'zod';
 
 
+/**
+ * Admin-only directory of all CRM users, including archived and pre-added users. Does not expose credentials.
+ */
+export const AdminListUsersResponseItem = zod.object({
+  "id": zod.string(),
+  "clerkId": zod.string().optional(),
+  "email": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "displayName": zod.string().nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
+  "defaultFund": zod.string().nullish(),
+  "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+export const AdminListUsersResponse = zod.array(AdminListUsersResponseItem)
+
+/**
+ * Pre-add a Wildflower Google sign-in user. Does not send an invitation email or create a Google account. Existing emails return 409.
+ */
+export const adminCreateUserBodyEmailMax = 254;
+
+export const adminCreateUserBodyFirstNameMax = 100;
+
+export const adminCreateUserBodyLastNameMax = 100;
+
+export const adminCreateUserBodyDisplayNameMax = 200;
+
+
+
+export const AdminCreateUserBody = zod.object({
+  "email": zod.string().email().max(adminCreateUserBodyEmailMax),
+  "firstName": zod.string().max(adminCreateUserBodyFirstNameMax).nullish(),
+  "lastName": zod.string().max(adminCreateUserBodyLastNameMax).nullish(),
+  "displayName": zod.string().max(adminCreateUserBodyDisplayNameMax).nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only'])
+}).describe('New role assignments support team_member, finance, and admin. The legacy read_only role is rejected.')
+
+/**
+ * Admin-only name and role changes. Login email is immutable here. Admins cannot change their own role.
+ */
+export const AdminUpdateUserParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const adminUpdateUserBodyFirstNameMax = 100;
+
+export const adminUpdateUserBodyLastNameMax = 100;
+
+export const adminUpdateUserBodyDisplayNameMax = 200;
+
+
+
+export const AdminUpdateUserBody = zod.object({
+  "firstName": zod.string().max(adminUpdateUserBodyFirstNameMax).nullish(),
+  "lastName": zod.string().max(adminUpdateUserBodyLastNameMax).nullish(),
+  "displayName": zod.string().max(adminUpdateUserBodyDisplayNameMax).nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']).optional()
+}).describe('The legacy read_only role may be preserved for existing accounts but cannot be newly assigned.')
+
+export const AdminUpdateUserResponse = zod.object({
+  "id": zod.string(),
+  "clerkId": zod.string().optional(),
+  "email": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "displayName": zod.string().nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
+  "defaultFund": zod.string().nullish(),
+  "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * Admin-only deactivation. Preserves ownership and history. Cannot deactivate yourself.
+ */
+export const ArchiveUserParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ArchiveUserResponse = zod.object({
+  "id": zod.string(),
+  "clerkId": zod.string().optional(),
+  "email": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "displayName": zod.string().nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
+  "defaultFund": zod.string().nullish(),
+  "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
+ * Admin-only restoration of CRM access.
+ */
+export const UnarchiveUserParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UnarchiveUserResponse = zod.object({
+  "id": zod.string(),
+  "clerkId": zod.string().optional(),
+  "email": zod.string(),
+  "firstName": zod.string().nullish(),
+  "lastName": zod.string().nullish(),
+  "displayName": zod.string().nullish(),
+  "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
+  "defaultFund": zod.string().nullish(),
+  "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
 export const ListUsersResponseItem = zod.object({
   "id": zod.string(),
   "clerkId": zod.string().optional(),
@@ -18,6 +139,7 @@ export const ListUsersResponseItem = zod.object({
   "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
   "defaultFund": zod.string().nullish(),
   "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -33,6 +155,7 @@ export const GetCurrentUserResponse = zod.object({
   "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
   "defaultFund": zod.string().nullish(),
   "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -51,6 +174,7 @@ export const UpdateCurrentUserResponse = zod.object({
   "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']),
   "defaultFund": zod.string().nullish(),
   "emailSyncMode": zod.enum(['full', 'summary_only']).describe('Per-user Gmail sync privacy mode. `full` stores the email body + attachments. `summary_only` stores only an AI-generated one-line topic summary; body and attachments are never persisted, and intelligence\/proposals are skipped for messages from this mailbox. The setting applies to NEW emails synced after the change; existing emails are not retroactively edited.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })

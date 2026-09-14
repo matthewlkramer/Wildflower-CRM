@@ -1319,6 +1319,76 @@ paths:
             }
 
   # ─── Users ──────────────────────────────────────────────────────────────────
+  /admin/users:
+    get:
+      operationId: adminListUsers
+      tags: [users]
+      description: Admin-only directory of all CRM users, including archived and pre-added users. Does not expose credentials.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/User" } }
+    post:
+      operationId: adminCreateUser
+      tags: [users]
+      description: Pre-add a Wildflower Google sign-in user. Does not send an invitation email or create a Google account. Existing emails return 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCreateUserBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /admin/users/{id}:
+    patch:
+      operationId: adminUpdateUser
+      tags: [users]
+      description: Admin-only name and role changes. Login email is immutable here. Admins cannot change their own role.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUpdateUserBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /users/{id}/archive:
+    post:
+      operationId: archiveUser
+      tags: [users]
+      description: Admin-only deactivation. Preserves ownership and history. Cannot deactivate yourself.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+  /users/{id}/unarchive:
+    post:
+      operationId: unarchiveUser
+      tags: [users]
+      description: Admin-only restoration of CRM access.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
   /users:
     get:
       operationId: listUsers
@@ -12883,8 +12953,27 @@ components:
         role: { $ref: "#/components/schemas/UserRole" }
         defaultFund: { type: string, nullable: true }
         emailSyncMode: { $ref: "#/components/schemas/EmailSyncMode" }
+        archivedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    AdminCreateUserBody:
+      type: object
+      description: New role assignments support team_member, finance, and admin. The legacy read_only role is rejected.
+      required: [email, role]
+      properties:
+        email: { type: string, format: email, maxLength: 254 }
+        firstName: { type: string, maxLength: 100, nullable: true }
+        lastName: { type: string, maxLength: 100, nullable: true }
+        displayName: { type: string, maxLength: 200, nullable: true }
+        role: { $ref: "#/components/schemas/UserRole" }
+    AdminUpdateUserBody:
+      type: object
+      description: The legacy read_only role may be preserved for existing accounts but cannot be newly assigned.
+      properties:
+        firstName: { type: string, maxLength: 100, nullable: true }
+        lastName: { type: string, maxLength: 100, nullable: true }
+        displayName: { type: string, maxLength: 200, nullable: true }
+        role: { $ref: "#/components/schemas/UserRole" }
     EmailSyncMode:
       type: string
       enum: [full, summary_only]

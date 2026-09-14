@@ -184,7 +184,7 @@ export default function Admin() {
         </p>
       </div>
 
-      <Tabs defaultValue="funds-goals" className="space-y-6">
+      <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") === "users" ? "users" : "funds-goals"} className="space-y-6">
         <TabsList className="flex h-auto flex-wrap justify-start gap-1">
           <TabsTrigger value="funds-goals">Funds &amp; Goals</TabsTrigger>
           {isAdmin && <TabsTrigger value="integrations">Integrations / Sync</TabsTrigger>}
@@ -223,6 +223,7 @@ export default function Admin() {
 
         {isAdmin && (
           <TabsContent value="users" className="space-y-8">
+            <p><a className="underline" href="/admin/users">Manage users, roles, and access</a></p>
             <ReassignOwnerSection />
           </TabsContent>
         )}

@@ -67,6 +67,9 @@ unverified and confirm against code before relying on it.
 
 ## Other canonical documents
 
+- [`user-management.md`](user-management.md) — admin user directory, Google
+  first-sign-in adoption, roles, and deactivation/restoration boundaries.
+
 - [`change-recipes.md`](change-recipes.md) — step-by-step recipes for routine
   change types (contract change, schema change, new derived fact, etc.).
 - [`../lib/db/SCHEMA.md`](../lib/db/SCHEMA.md) — per-table map of the physical

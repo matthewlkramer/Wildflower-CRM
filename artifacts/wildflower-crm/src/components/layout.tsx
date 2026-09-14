@@ -116,6 +116,7 @@ const navItems: NavEntry[] = [
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
   { href: "/admin/feedback", label: "Feedback", icon: MessageSquare, adminOnly: true },
+  { href: "/admin/users", label: "Users", icon: Users, adminOnly: true },
   { href: "/admin/future-functionality", label: "Future functionality possibilities", icon: Lightbulb, adminOnly: true },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },

@@ -27,6 +27,7 @@ import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import FiscalYearReport from "@/pages/fiscal-year-report";
 import Admin from "@/pages/admin";
 import AdminFeedback from "@/pages/admin-feedback";
+import AdminUsers from "@/pages/admin-users";
 import FutureFunctionality from "@/pages/future-functionality";
 import AuditLog from "@/pages/audit-log";
 import PotentialDuplicates from "@/pages/potential-duplicates";
@@ -203,6 +204,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/sign-up/*?" component={SignUpPage} />
           
           <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+          <Route path="/admin/users"><ProtectedRoute component={AdminUsers} /></Route>
           <Route path="/top-priorities"><ProtectedRoute component={TopPriorities} /></Route>
           
           <Route path="/individuals"><ProtectedRoute component={Individuals} /></Route>

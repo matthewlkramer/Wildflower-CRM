@@ -45,7 +45,7 @@ function makeRepo(seed: User[] = []) {
     },
     async findByEmail(email) {
       calls.findByEmail++;
-      return rows.find((r) => r.email === email);
+      return rows.find((r) => r.email.toLowerCase() === email.toLowerCase());
     },
     async adoptByEmail(existing, clerkId, identity) {
       calls.adoptByEmail++;
@@ -89,6 +89,15 @@ function identityFetcherFor(
 }
 
 describe("resolveAuthenticatedUser", () => {
+  it("adopts an admin-added profile on mixed-case first Google sign-in and preserves its role", async () => {
+    const seeded = makeUser({ clerkId: "pending_u_seed", email: "PERSON@wildflowerschools.org", role: "finance" });
+    const { repo, calls } = makeRepo([seeded]);
+    const result = await resolveAuthenticatedUser("clerk_new", undefined, repo,
+      identityFetcherFor("Person@WildflowerSchools.org"));
+    expect(result).toMatchObject({ ok: true, user: { id: seeded.id, role: "finance" } });
+    expect(calls.adoptByEmail).toBe(1);
+    expect(calls.provision).toBe(0);
+  });
   it("returns the existing row by clerkId without touching email branches", async () => {
     const existing = makeUser({ id: "u1", clerkId: "clerk_known" });
     const { repo, calls } = makeRepo([existing]);

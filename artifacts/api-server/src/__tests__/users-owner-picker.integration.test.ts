@@ -126,6 +126,7 @@ describe.skipIf(!HAS_DB)("owner picker user list", () => {
   }, 30_000);
 
   it("includeArchived=true (admin archive screen) still sees everything", async () => {
+    auth.current.role = "admin";
     const ids = await listUsers(true);
     for (const id of ALL_IDS) expect(ids).toContain(id);
   }, 30_000);
