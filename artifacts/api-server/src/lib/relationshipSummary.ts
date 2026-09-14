@@ -40,6 +40,9 @@ Rules:
 const MEETING_PREPARATION_RULES = `
 - Sourced Wildflower news/progress below is eligible context only when it has a citation. Include its date as recorded (month/year/season/range/unknown, never an invented exact date), cite the source URL/title, and label work_in_progress or proposed_work explicitly as planned work. Never present a draft without a source as an achievement.`;
 
+const RECORD_PAGE_RULES = `
+- Keep this record-page summary compact. Do not enumerate schools, school status or risk details, funding geographies, markets, cities, or regions. Those details belong in the single-meeting preparation briefing. You may describe a regional opportunity broadly when it is material to the relationship.`;
+
 export interface RelationshipSummaryResult {
   summary: string;
   nextSteps: string[];
@@ -214,7 +217,9 @@ export async function generateRelationshipSummary(args: {
             {
               model: MODEL,
               max_tokens: 1024,
-              system: args.meetingPreparation ? `${SYSTEM}${MEETING_PREPARATION_RULES}` : SYSTEM,
+              system: args.meetingPreparation
+                ? `${SYSTEM}${MEETING_PREPARATION_RULES}`
+                : `${SYSTEM}${RECORD_PAGE_RULES}`,
               messages: [{ role: "user", content: fmtSignals(signals) }],
             },
             { timeout: 60000, maxRetries: 0 },

@@ -87,6 +87,9 @@ describe("relationship summary context", () => {
     expect(result?.summary).toBe(
       "Example Foundation has no recorded activity yet.",
     );
+    expect(mocks.createMessage.mock.calls[0]?.[0]?.system).toContain(
+      "Do not enumerate schools",
+    );
   });
 
   it("includes school context in the single-meeting preparation response", async () => {
@@ -101,5 +104,8 @@ describe("relationship summary context", () => {
     });
     expect(mocks.gatherTaskSignals).not.toHaveBeenCalled();
     expect(result?.summary).toContain("Example School — Boston, MA");
+    expect(mocks.createMessage.mock.calls[0]?.[0]?.system).not.toContain(
+      "Do not enumerate schools",
+    );
   });
 });
