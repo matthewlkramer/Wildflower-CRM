@@ -60,6 +60,24 @@ rate-limit, server, and network failures are retried safely, while a failed
 lookup preserves the existing “Live school information is unavailable for this
 generation” behavior.
 
+The source-owned v1 envelope contains `apiVersion`, `generatedAt`, and `schools`.
+CRM validates that envelope and adapts `schoolId`, `schoolName`, `schoolStatus`,
+`physicalLocation`, and `supportEntries` into its briefing model. Support
+classifications come from WFTLS `matchingClassifications`, including an
+Inflection/Crisis assignment whose primary type is Ops Guide. WFTLS owns the
+current/non-archived filtering. Source location text is preserved; geography
+matching recognizes the source formatter's comma-separated city/state and ZIP
+components without inventing missing geography or exact opening dates.
+
+For a 401, check the deployed WFTLS route before changing a secret: this narrow
+bearer-authenticated endpoint must run before user-session enforcement. Its
+current errors include `missing_bearer_token` or `invalid_bearer_token`; a plain
+session-authentication response can indicate an older deployment or middleware
+interception. Both apps use `WFTLS_MEETING_PREP_API_TOKEN`, and changes to the
+workspace or secrets do not prove they are present in the published runtime.
+Verify with a server-side request after publication, reporting only status and
+record count. Never print the token, Authorization header, or school records.
+
 ## Ongoing money-evidence syncs (pull-only)
 
 - **QuickBooks** — per-realm OAuth connections (`quickbooks_connections`) pull
