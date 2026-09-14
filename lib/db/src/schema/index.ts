@@ -85,3 +85,4 @@ export * from "./newsletterHistory";
 export * from "./tripPlans";
 
 export * from "./newsletterPreferences";
+export * from "./calendarEventAttendance";

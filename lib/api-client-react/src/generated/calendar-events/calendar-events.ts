@@ -25,6 +25,7 @@ import type {
   CalendarEventList,
   ListCalendarEventsParams,
   NotFoundResponse,
+  UpdateCalendarEventAttendanceBody,
   UpdateCalendarEventPrivacyBody
 } from '../api.schemas';
 
@@ -183,7 +184,72 @@ export function useGetCalendarEvent<TData = Awaited<ReturnType<typeof getCalenda
 
 
 
-export const getUpdateCalendarEventPrivacyUrl = (id: string,) => {
+export const getUpdateCalendarEventAttendanceUrl = (id: string,) => {
+
+
+
+
+  return `/api/calendar-events/${id}/attendance`
+}
+
+export const updateCalendarEventAttendance = async (id: string,
+    updateCalendarEventAttendanceBody: UpdateCalendarEventAttendanceBody, options?: RequestInit): Promise<CalendarEvent> => {
+
+  return customFetch<CalendarEvent>(getUpdateCalendarEventAttendanceUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateCalendarEventAttendanceBody,)
+  }
+);}
+
+
+
+
+export const getUpdateCalendarEventAttendanceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEventAttendance>>, TError,{id: string;data: BodyType<UpdateCalendarEventAttendanceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEventAttendance>>, TError,{id: string;data: BodyType<UpdateCalendarEventAttendanceBody>}, TContext> => {
+
+const mutationKey = ['updateCalendarEventAttendance'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendarEventAttendance>>, {id: string;data: BodyType<UpdateCalendarEventAttendanceBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateCalendarEventAttendance(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCalendarEventAttendanceMutationResult = NonNullable<Awaited<ReturnType<typeof updateCalendarEventAttendance>>>
+    export type UpdateCalendarEventAttendanceMutationBody = BodyType<UpdateCalendarEventAttendanceBody>
+    export type UpdateCalendarEventAttendanceMutationError = ErrorType<void>
+
+    export const useUpdateCalendarEventAttendance = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendarEventAttendance>>, TError,{id: string;data: BodyType<UpdateCalendarEventAttendanceBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCalendarEventAttendance>>,
+        TError,
+        {id: string;data: BodyType<UpdateCalendarEventAttendanceBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateCalendarEventAttendanceMutationOptions(options));
+    }
+    export const getUpdateCalendarEventPrivacyUrl = (id: string,) => {
 
 
 

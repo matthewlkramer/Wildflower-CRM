@@ -21,6 +21,7 @@ import {
   useGetPerson,
   useProcessMeetingMedia,
   useUpdateMeetingNote,
+  useUpdateCalendarEventAttendance,
   type MeetingArtifact,
   type MeetingNextStepProposal,
 } from "@workspace/api-client-react";
@@ -321,6 +322,24 @@ export default function MeetingWorkspacePage() {
   );
 
   const create = useCreateMeetingNote();
+  const attendance = useUpdateCalendarEventAttendance({
+    mutation: {
+      onSuccess: () => {
+        void queryClient.invalidateQueries({
+          queryKey: getGetCalendarEventQueryKey(eventId),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: getListCalendarEventsQueryKey(),
+        });
+      },
+      onError: (error) =>
+        toast({
+          title: "Could not save attendance",
+          description: error.message,
+          variant: "destructive",
+        }),
+    },
+  });
   const update = useUpdateMeetingNote();
   const processMedia = useProcessMeetingMedia();
   const generate = useGenerateMeetingNextSteps();
@@ -492,7 +511,13 @@ export default function MeetingWorkspacePage() {
             event.data?.summary?.trim() ||
             (isNewMeeting ? "Meeting" : undefined),
           meetingDate: event.data?.startAt ?? startedAtRef.current,
-          attendees: event.data?.attendeeEmails ?? undefined,
+          attendees:
+            event.data?.attendeeEmails?.filter(
+              (email) =>
+                !event.data?.absentAttendeeEmails?.includes(
+                  email.trim().toLowerCase(),
+                ),
+            ) ?? undefined,
           calendarEventId: event.data?.id,
           manualNotes: manualNotes.trim() || undefined,
           artifacts: artifacts.length ? artifacts : undefined,
@@ -628,6 +653,56 @@ export default function MeetingWorkspacePage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="space-y-6">
+          {!!event.data?.attendeeEmails?.length && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Attendance</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Mark invited people who did not attend. The calendar
+                  invitation stays intact.
+                </p>
+                {[
+                  ...new Set(
+                    event.data.attendeeEmails.map((email) =>
+                      email.trim().toLowerCase(),
+                    ),
+                  ),
+                ].map((email) => {
+                  const absent =
+                    event.data?.absentAttendeeEmails?.includes(email) ?? false;
+                  return (
+                    <div
+                      key={email}
+                      className="flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm">{email}</p>
+                        <span className="text-xs text-muted-foreground">
+                          {absent ? "Absent" : "Invited"}
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={attendance.isPending}
+                        aria-label={`${absent ? "Clear absence for" : "Mark absent:"} ${email}`}
+                        onClick={() =>
+                          attendance.mutate({
+                            id: eventId,
+                            data: { emailAddress: email, absent: !absent },
+                          })
+                        }
+                      >
+                        {absent ? "Undo absence" : "Mark absent"}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">

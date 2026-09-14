@@ -80,9 +80,10 @@ unverified and confirm against code before relying on it.
 - [`trip-planner.md`](trip-planner.md) — **ratified** travel planning,
   visit-list drafting, and Gmail/Calendar-derived outreach and availability
   rules.
-- [`feedback-proposals.md`](feedback-proposals.md) — context boundaries,
-  generation/revision lifecycle, and the human-gated coding-agent handoff for
-  the in-app feedback queue.
+- The current in-app feedback queue keeps reports, captured context, optional
+  private screenshots, status, and admin notes. The retired AI proposal and
+  handoff design is recorded in [`feedback-proposals.md`](feedback-proposals.md)
+  as historical context.
 - [`enrichment-field-audit.md`](enrichment-field-audit.md) — reviewed
   Individual/Organization enrichment candidates, evidence priorities, and the
   external-provider safety boundary.

@@ -442,6 +442,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   flags a stuck mailbox. `email_sync_skip`, `correspondent_ignore`,
   `person_suppression_windows`, `calendar_meeting_filters` — suppression and
   matching controls. `internal_email_domains` — staff-domain singleton.
+- `calendar_event_attendance` stores CRM-owned absence by physical event key
+  and normalized invitee email. Calendar sync retains the original invitation
+  list and never overwrites attendance. Visible meeting viewers can mark or
+  undo absence; private meetings retain their existing visibility boundary.
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
   `meeting_note_dismissals`, `notes`. Structured meeting notes and free-form CRM
   notes can both point to a synced calendar event; the free-form note link is

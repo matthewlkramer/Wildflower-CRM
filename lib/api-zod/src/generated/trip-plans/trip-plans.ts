@@ -189,6 +189,12 @@ export const GetTripPlanResponse = zod
           description: zod.string().nullish(),
           location: zod.string().nullish(),
           attendeeEmails: zod.array(zod.string()).nullish(),
+          absentAttendeeEmails: zod
+            .array(zod.string())
+            .optional()
+            .describe(
+              "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.",
+            ),
           organizerEmail: zod.string().nullish(),
           status: zod.string().nullish(),
           transparency: zod
@@ -452,6 +458,12 @@ export const DraftTripVisitsResponse = zod
           description: zod.string().nullish(),
           location: zod.string().nullish(),
           attendeeEmails: zod.array(zod.string()).nullish(),
+          absentAttendeeEmails: zod
+            .array(zod.string())
+            .optional()
+            .describe(
+              "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.",
+            ),
           organizerEmail: zod.string().nullish(),
           status: zod.string().nullish(),
           transparency: zod

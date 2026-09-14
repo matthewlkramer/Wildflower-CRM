@@ -25,12 +25,20 @@ import {
   GmailNotFoundError,
   type GmailMessage,
 } from "./gmail";
-import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
-import { matchEmails, isMatchEmpty, type EmailMatchResult } from "./emailMatcher";
+import {
+  getValidGoogleAccessTokenForUser,
+  type ActiveGoogleGrant,
+} from "./googleTokenStore";
+import {
+  matchEmails,
+  isMatchEmpty,
+  type EmailMatchResult,
+} from "./emailMatcher";
 import { isCalendarInviteMessage } from "./calendarInviteDetector";
 import { uploadAttachment } from "./emailAttachmentStore";
 import {
   processIntelForMatched,
+  processReplyAddressChange,
   processIntelForOutbound,
   processIntelForUnmatched,
   shouldFetchFullForIntel,
@@ -232,13 +240,12 @@ export async function syncUserGmail(userId: string): Promise<GmailSyncOutcome> {
       .update(emailSyncState)
       .set({
         lastSyncedAt: new Date(),
-        lastError: report.errors > 0
-          ? `${report.errors} message(s) failed; will retry next run`
-          : null,
-        noProgressRuns:
+        lastError:
           report.errors > 0
-            ? sql`${emailSyncState.noProgressRuns} + 1`
-            : 0,
+            ? `${report.errors} message(s) failed; will retry next run`
+            : null,
+        noProgressRuns:
+          report.errors > 0 ? sql`${emailSyncState.noProgressRuns} + 1` : 0,
         updatedAt: new Date(),
       })
       .where(eq(emailSyncState.mailboxUserId, userId));
@@ -364,7 +371,11 @@ export async function runIncrementalPass(
 
   while (pagesProcessed < HISTORY_MAX_PAGES_PER_RUN) {
     const currentPageToken: string | null = pageToken;
-    const page = await listHistory(grant.accessToken, startHistoryId, currentPageToken);
+    const page = await listHistory(
+      grant.accessToken,
+      startHistoryId,
+      currentPageToken,
+    );
     pagesProcessed++;
     latestHistoryId = page.historyId ?? latestHistoryId;
 
@@ -607,6 +618,19 @@ async function processOneMessage(
     if (!Number.isNaN(parsed.getTime())) messageDate = parsed;
   }
 
+  // Contact updates can arrive from addresses not yet linked to the CRM.
+  if (!summaryOnly) {
+    await processReplyAddressChange({
+      mailboxUserId: grant.userId,
+      mailboxEmail: grant.googleEmail,
+      fromAddresses: fromAddrs,
+      fromHeader: getHeader(meta.payload, "From") ?? "",
+      gmailThreadId: meta.threadId,
+      gmailMessageId: gmailId,
+      sentAt: messageDate,
+    });
+  }
+
   // Trusted operational exception to ordinary relationship-email matching:
   // Matthew's scheduled QuickBooks report is machine mail, so it will not
   // match a CRM correspondent. Detect it from metadata, validate the exact
@@ -671,7 +695,10 @@ async function processOneMessage(
   try {
     match = await matchEmails(allAddrs, grant.googleEmail, messageDate);
   } catch (e) {
-    logger.warn({ err: e, userId: grant.userId, gmailId }, "Matcher query failed");
+    logger.warn(
+      { err: e, userId: grant.userId, gmailId },
+      "Matcher query failed",
+    );
     return false;
   }
 
@@ -701,7 +728,11 @@ async function processOneMessage(
     // go straight to the skip-row insert below.
     if (!summaryOnly && shouldFetchFullForIntel(fromFirst, subject)) {
       try {
-        const fullForIntel = await getMessage(grant.accessToken, gmailId, "full");
+        const fullForIntel = await getMessage(
+          grant.accessToken,
+          gmailId,
+          "full",
+        );
         const partsForIntel = extractMessageParts(fullForIntel.payload);
         await processIntelForUnmatched({
           mailboxUserId: grant.userId,
@@ -1008,7 +1039,11 @@ async function processOneMessage(
   let attachmentErrorsThisPass = 0;
   for (const att of parts.attachments) {
     try {
-      const bytes = await getAttachmentBytes(grant.accessToken, gmailId, att.attachmentId);
+      const bytes = await getAttachmentBytes(
+        grant.accessToken,
+        gmailId,
+        att.attachmentId,
+      );
       const storageKey = await uploadAttachment({
         userId: grant.userId,
         gmailMessageId: gmailId,
@@ -1029,7 +1064,10 @@ async function processOneMessage(
           storageKey,
         })
         .onConflictDoNothing({
-          target: [emailAttachments.emailMessageId, emailAttachments.gmailAttachmentId],
+          target: [
+            emailAttachments.emailMessageId,
+            emailAttachments.gmailAttachmentId,
+          ],
           // The unique index is partial (WHERE gmail_attachment_id IS
           // NOT NULL) — Postgres requires the ON CONFLICT clause to
           // repeat that predicate so the planner can match the partial
@@ -1046,7 +1084,12 @@ async function processOneMessage(
       }
     } catch (e) {
       logger.warn(
-        { err: e, userId: grant.userId, gmailId, attachmentId: att.attachmentId },
+        {
+          err: e,
+          userId: grant.userId,
+          gmailId,
+          attachmentId: att.attachmentId,
+        },
         "Failed to fetch / store attachment; will retry next sync",
       );
       // One attachment failure shouldn't poison the whole message —

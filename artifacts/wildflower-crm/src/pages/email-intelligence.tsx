@@ -20,7 +20,7 @@ import {
   usePersonSearch,
   usePersonName,
 } from "@/components/entity-picker";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { decodeHtmlEntities } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +61,7 @@ const KIND_TABS: { value: Kind; label: string }[] = [
   { value: "auto_responder_move", label: "Moved (auto-reply)" },
   { value: "bounce_invalid", label: "Hard bounces" },
   { value: "bounce_soft", label: "Soft bounces" },
-  { value: "signature_update", label: "Signature updates" },
+  { value: "signature_update", label: "Contact updates" },
   { value: "thank_you_acknowledgment", label: "Thank-you acks" },
   { value: "wildflower_update", label: "Wildflower updates" },
 ];
@@ -1251,7 +1251,7 @@ function summarizeProposal(p: {
     case "bounce_soft":
       return `Soft bounce: ${p.subjectEmail ?? "?"}`;
     case "signature_update":
-      return `Signature update: ${p.subjectName ?? p.subjectEmail ?? "Someone"}`;
+      return `${(p.payload as Record<string, unknown>)?.signalType === "reply_address_change" ? "Reply from a new address" : "Signature update"}: ${p.subjectName ?? p.subjectEmail ?? "Someone"}`;
     case "thank_you_acknowledgment": {
       const funder = (payload.funderName as string | undefined) ?? p.subjectName;
       const amount = payload.giftAmount as number | undefined;
@@ -1349,6 +1349,11 @@ function ProposalDetail({
           {cell("Company", parsed.company)}
           {cell("Phone", parsed.phone)}
           {cell("Email", parsed.email)}
+          {payload.signalType === "reply_address_change" && <>
+            {cell("Previously emailed", payload.oldEmail)}
+            {cell("Evidence", payload.evidence)}
+            <p className="text-xs text-muted-foreground">Accepting makes the new address primary and keeps the previous address on file.</p>
+          </>}
           {payload.companyDrift ? (
             <Badge variant="outline" className="mt-2">
               Company differs from CRM
@@ -1592,8 +1597,8 @@ function UnrecognizedCorrespondents({
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          Nobody outside the CRM you've been emailing repeatedly. Nice
-          inbox hygiene.
+          No unfamiliar addresses with at least two sent emails were found
+          in the available mail from the past 60 days.
         </CardContent>
       </Card>
     );
@@ -1604,6 +1609,10 @@ function UnrecognizedCorrespondents({
         <CardTitle className="text-base">
           People you've been emailing who aren't in the CRM
         </CardTitle>
+        <CardDescription>
+          Addresses sent at least two emails in the past 60 days. Includes your
+          unmatched email headers; other mailboxes include shared CRM mail only.
+        </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
         <ul className="divide-y">
@@ -1629,7 +1638,7 @@ function UnrecognizedCorrespondents({
                     ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    {r.threadCount} thread{r.threadCount === 1 ? "" : "s"} ·
+                    {r.sentMessageCount} sent emails ·
                     last on {new Date(r.lastSeenAt).toLocaleDateString()}
                     {r.lastSubject ? ` · "${r.lastSubject}"` : ""}
                   </div>
