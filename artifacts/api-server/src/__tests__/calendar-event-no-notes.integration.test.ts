@@ -15,6 +15,7 @@ const PRIVATE_EVENT_ID = `${RUN}_private`;
 const PHYSICAL_EVENT_ID = `${RUN}_physical`;
 const BLANK_EVENT_A_ID = `${RUN}_blank_a`;
 const BLANK_EVENT_B_ID = `${RUN}_blank_b`;
+const BIRTHDAY_EVENT_ID = `${RUN}_birthday`;
 const BLANK_NOTE_ID = `${RUN}_blank_note`;
 
 const { currentUser } = vi.hoisted(() => ({
@@ -130,6 +131,15 @@ beforeAll(async () => {
       summary: `Legacy B ${RUN}`,
       isPrivate: false,
     },
+    {
+      id: BIRTHDAY_EVENT_ID,
+      calendarUserId: USER_ID,
+      gcalCalendarId: "primary",
+      gcalEventId: BIRTHDAY_EVENT_ID,
+      startAt,
+      summary: `Birthday celebration ${RUN}`,
+      isPrivate: false,
+    },
   ]);
   await db.insert(schema.notes).values({
     id: BLANK_NOTE_ID,
@@ -180,6 +190,7 @@ afterAll(async () => {
         PRIVATE_EVENT_ID,
         BLANK_EVENT_A_ID,
         BLANK_EVENT_B_ID,
+        BIRTHDAY_EVENT_ID,
       ]),
     );
   await db
@@ -239,6 +250,20 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
     expect(notesForB.json.data.map((note: { id: string }) => note.id)).not.toContain(
       BLANK_NOTE_ID,
     );
+  });
+
+  it("suppresses birthdays from meeting lists while preserving direct source evidence", async () => {
+    const events = await request(
+      `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,
+    );
+    expect(events.status).toBe(200);
+    expect(events.json.data.map((event: { id: string }) => event.id)).not.toContain(
+      BIRTHDAY_EVENT_ID,
+    );
+
+    const sourceEvent = await request(`/api/calendar-events/${BIRTHDAY_EVENT_ID}`);
+    expect(sourceEvent.status).toBe(200);
+    expect(sourceEvent.json.id).toBe(BIRTHDAY_EVENT_ID);
   });
 
   it("durably hides every synced copy from the notes queue", async () => {
