@@ -28,6 +28,7 @@ import type {
   EnrichmentSuggestionList,
   ExportOrganizationsCsvParams,
   ForbiddenResponse,
+  GetOrganizationRelationshipSummaryParams,
   ListOrganizationsParams,
   MergeOrganizationsBody,
   MergeResult,
@@ -327,17 +328,26 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * AI-generated "where this relationship stands" snapshot, computed on demand from the organization's recent CRM activity (never persisted).
 
  */
-export const getGetOrganizationRelationshipSummaryUrl = (id: string,) => {
+export const getGetOrganizationRelationshipSummaryUrl = (id: string,
+    params?: GetOrganizationRelationshipSummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/organizations/${id}/relationship-summary`
+  return stringifiedParams.length > 0 ? `/api/organizations/${id}/relationship-summary?${stringifiedParams}` : `/api/organizations/${id}/relationship-summary`
 }
 
-export const getOrganizationRelationshipSummary = async (id: string, options?: RequestInit): Promise<RelationshipSummary> => {
+export const getOrganizationRelationshipSummary = async (id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: RequestInit): Promise<RelationshipSummary> => {
 
-  return customFetch<RelationshipSummary>(getGetOrganizationRelationshipSummaryUrl(id),
+  return customFetch<RelationshipSummary>(getGetOrganizationRelationshipSummaryUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -350,23 +360,25 @@ export const getOrganizationRelationshipSummary = async (id: string, options?: R
 
 
 
-export const getGetOrganizationRelationshipSummaryQueryKey = (id: string,) => {
+export const getGetOrganizationRelationshipSummaryQueryKey = (id: string,
+    params?: GetOrganizationRelationshipSummaryParams,) => {
     return [
-    `/api/organizations/${id}/relationship-summary`
+    `/api/organizations/${id}/relationship-summary`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetOrganizationRelationshipSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRelationshipSummaryQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getGetOrganizationRelationshipSummaryQueryKey(id,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>> = ({ signal }) => getOrganizationRelationshipSummary(id,params, { signal, ...requestOptions });
 
 
 
@@ -381,11 +393,12 @@ export type GetOrganizationRelationshipSummaryQueryError = ErrorType<NotFoundRes
 
 
 export function useGetOrganizationRelationshipSummary<TData = Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError = ErrorType<NotFoundResponse>>(
- id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: string,
+    params?: GetOrganizationRelationshipSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getOrganizationRelationshipSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetOrganizationRelationshipSummaryQueryOptions(id,options)
+  const queryOptions = getGetOrganizationRelationshipSummaryQueryOptions(id,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

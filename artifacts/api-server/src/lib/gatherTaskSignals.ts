@@ -84,7 +84,7 @@ export interface TaskSignals {
     clicked: boolean;
   }>;
   schoolGeographySection?: string;
-  relevantWildflowerUpdates: RelevantWildflowerUpdate[];
+  relevantWildflowerUpdates?: RelevantWildflowerUpdate[];
 }
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -260,7 +260,6 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       opened: n.opened,
       clicked: n.clicked,
     })),
-    relevantWildflowerUpdates: [],
   };
 }
 
@@ -414,7 +413,6 @@ async function gatherOrganizationSignals(
       title: m.title,
     })),
     recentNewsletterEngagement: [],
-    relevantWildflowerUpdates: [],
   };
 }
 
@@ -426,11 +424,17 @@ export async function gatherTaskSignals(args: {
   personId?: string | null;
   organizationId?: string | null;
 }): Promise<TaskSignals | null> {
-  const signals = args.personId
-    ? await gatherPersonSignals(args.personId)
-    : args.organizationId
-      ? await gatherOrganizationSignals(args.organizationId)
-      : null;
+  if (args.personId) return gatherPersonSignals(args.personId);
+  if (args.organizationId) return gatherOrganizationSignals(args.organizationId);
+  return null;
+}
+
+/** Add the school and donor-talking-point context used only on a single meeting. */
+export async function gatherMeetingPreparationSignals(args: {
+  personId?: string | null;
+  organizationId?: string | null;
+}): Promise<TaskSignals | null> {
+  const signals = await gatherTaskSignals(args);
   if (!signals) return null;
   let schoolGeographySection: string;
   try {
@@ -444,7 +448,7 @@ export async function gatherTaskSignals(args: {
         errMessage: error instanceof Error ? error.message : String(error),
         entityId: signals.entity.id,
       },
-      "canonical school lookup failed while generating relationship summary",
+      "canonical school lookup failed while generating meeting preparation",
     );
     schoolGeographySection =
       "Schools in Geographies of Interest\nLive school information is unavailable for this generation. Please refresh to try again.";
@@ -462,7 +466,7 @@ export async function gatherTaskSignals(args: {
         errMessage: error instanceof Error ? error.message : String(error),
         entityId: signals.entity.id,
       },
-      "Wildflower update relevance lookup failed while generating relationship summary",
+      "Wildflower update relevance lookup failed while generating meeting preparation",
     );
   }
   return {

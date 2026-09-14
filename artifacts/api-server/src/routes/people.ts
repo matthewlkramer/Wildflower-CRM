@@ -582,7 +582,10 @@ router.get(
   "/people/:id/relationship-summary",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const result = await generateRelationshipSummary({ personId: id });
+    const result = await generateRelationshipSummary({
+      personId: id,
+      meetingPreparation: req.query.meetingPreparation === "true",
+    });
     if (!result) return notFound(res, "person");
     res.json(result);
   }),

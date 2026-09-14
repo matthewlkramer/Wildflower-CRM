@@ -144,10 +144,10 @@ function ContactPreparation({ contact }: { contact: ContactRef | null }) {
     );
   }
   if (contact.kind === "person") {
-    return <PersonRelationshipSummaryCard personId={contact.id} />;
+    return <PersonRelationshipSummaryCard personId={contact.id} meetingPreparation />;
   }
   if (contact.kind === "organization") {
-    return <OrganizationRelationshipSummaryCard organizationId={contact.id} />;
+    return <OrganizationRelationshipSummaryCard organizationId={contact.id} meetingPreparation />;
   }
   return (
     <p className="text-sm text-muted-foreground">

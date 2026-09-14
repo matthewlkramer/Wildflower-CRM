@@ -336,6 +336,12 @@ export const GetOrganizationRelationshipSummaryParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const getOrganizationRelationshipSummaryQueryMeetingPreparationDefault = false;
+
+export const GetOrganizationRelationshipSummaryQueryParams = zod.object({
+  "meetingPreparation": zod.coerce.boolean().default(getOrganizationRelationshipSummaryQueryMeetingPreparationDefault).describe('Include meeting-only school and Wildflower update context.')
+})
+
 export const getOrganizationRelationshipSummaryResponseNextStepsMax = 3;
 
 

@@ -522,7 +522,10 @@ router.get(
   "/organizations/:id/relationship-summary",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const result = await generateRelationshipSummary({ organizationId: id });
+    const result = await generateRelationshipSummary({
+      organizationId: id,
+      meetingPreparation: req.query.meetingPreparation === "true",
+    });
     if (!result) return notFound(res, "organization");
     res.json(result);
   }),

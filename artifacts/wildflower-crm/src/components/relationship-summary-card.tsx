@@ -26,6 +26,7 @@ function SummaryShell({
   isError,
   error,
   onRefresh,
+  title = "Relationship summary",
 }: {
   data: RelationshipSummary | undefined;
   isLoading: boolean;
@@ -33,6 +34,7 @@ function SummaryShell({
   isError: boolean;
   error: unknown;
   onRefresh: () => void;
+  title?: string;
 }) {
   const empty = data?.summary === NO_SUMMARY;
   return (
@@ -43,7 +45,7 @@ function SummaryShell({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           <Sparkles className="h-3.5 w-3.5" />
-          Relationship summary
+          {title}
         </div>
         <div className="flex items-center gap-2">
           {data?.generatedAt ? (
@@ -58,7 +60,7 @@ function SummaryShell({
             className="h-7 w-7 text-muted-foreground hover:text-foreground"
             onClick={onRefresh}
             disabled={isFetching}
-            aria-label="Refresh relationship summary"
+            aria-label={`Refresh ${title.toLowerCase()}`}
             data-testid="button-refresh-relationship-summary"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
@@ -114,12 +116,15 @@ function SummaryShell({
 
 export function OrganizationRelationshipSummaryCard({
   organizationId,
+  meetingPreparation = false,
 }: {
   organizationId: string;
+  meetingPreparation?: boolean;
 }) {
-  const q = useGetOrganizationRelationshipSummary(organizationId, {
+  const params = meetingPreparation ? { meetingPreparation: true } : undefined;
+  const q = useGetOrganizationRelationshipSummary(organizationId, params, {
     query: {
-      queryKey: getGetOrganizationRelationshipSummaryQueryKey(organizationId),
+      queryKey: getGetOrganizationRelationshipSummaryQueryKey(organizationId, params),
       enabled: !!organizationId,
       staleTime: Infinity,
       refetchOnWindowFocus: false,
@@ -134,14 +139,22 @@ export function OrganizationRelationshipSummaryCard({
       isError={q.isError}
       error={q.error}
       onRefresh={() => void q.refetch()}
+      title={meetingPreparation ? "Meeting briefing" : undefined}
     />
   );
 }
 
-export function PersonRelationshipSummaryCard({ personId }: { personId: string }) {
-  const q = useGetPersonRelationshipSummary(personId, {
+export function PersonRelationshipSummaryCard({
+  personId,
+  meetingPreparation = false,
+}: {
+  personId: string;
+  meetingPreparation?: boolean;
+}) {
+  const params = meetingPreparation ? { meetingPreparation: true } : undefined;
+  const q = useGetPersonRelationshipSummary(personId, params, {
     query: {
-      queryKey: getGetPersonRelationshipSummaryQueryKey(personId),
+      queryKey: getGetPersonRelationshipSummaryQueryKey(personId, params),
       enabled: !!personId,
       staleTime: Infinity,
       refetchOnWindowFocus: false,
@@ -156,6 +169,7 @@ export function PersonRelationshipSummaryCard({ personId }: { personId: string }
       isError={q.isError}
       error={q.error}
       onRefresh={() => void q.refetch()}
+      title={meetingPreparation ? "Meeting briefing" : undefined}
     />
   );
 }

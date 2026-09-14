@@ -11012,6 +11012,13 @@ export const ListOrganizationsPrimaryContactPresence = {
   blank: 'blank',
 } as const;
 
+export type GetOrganizationRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ */
+meetingPreparation?: boolean;
+};
+
 export type ListPaymentIntermediariesParams = {
 search?: string;
 type?: PaymentIntermediaryType;
@@ -11198,6 +11205,13 @@ export const ListPeopleNewsletterStatusItem = {
   unsubscribed: 'unsubscribed',
   not_subscribed: 'not_subscribed',
 } as const;
+
+export type GetPersonRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ */
+meetingPreparation?: boolean;
+};
 
 export type ListPeopleEntityRolesParams = {
 personId?: string;

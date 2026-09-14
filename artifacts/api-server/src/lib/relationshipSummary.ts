@@ -1,6 +1,6 @@
 import { anthropic, withRateLimitRetry } from "@workspace/integrations-anthropic-ai";
 import { aiProposalLimit } from "./aiConcurrency";
-import { gatherTaskSignals, type TaskSignals } from "./gatherTaskSignals";
+import { gatherMeetingPreparationSignals, gatherTaskSignals, type TaskSignals } from "./gatherTaskSignals";
 import { logger } from "./logger";
 
 const MODEL = "claude-sonnet-4-6";
@@ -34,9 +34,11 @@ Rules:
 - Ground every claim in the snapshot (a dated gift, an open opportunity and its stage, the last-contacted date, a recent meeting or email). Never invent facts, amounts, or interactions not present in the data.
 - Do not include recommendations, advice, or next steps in summary.
 - Return nextSteps separately. Each must cite a specific evidence item (media mention, recorded interest/current initiative, or recent newsletter engagement) and be actionable. Never give generic "send a warm email" advice.
-- Sourced Wildflower news/progress below is eligible context only when it has a citation. Include its date as recorded (month/year/season/range/unknown, never an invented exact date), cite the source URL/title, and label work_in_progress or proposed_work explicitly as planned work. Never present a draft without a source as an achievement.
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
+
+const MEETING_PREPARATION_RULES = `
+- Sourced Wildflower news/progress below is eligible context only when it has a citation. Include its date as recorded (month/year/season/range/unknown, never an invented exact date), cite the source URL/title, and label work_in_progress or proposed_work explicitly as planned work. Never present a draft without a source as an achievement.`;
 
 export interface RelationshipSummaryResult {
   summary: string;
@@ -116,10 +118,12 @@ function fmtSignals(signals: TaskSignals): string {
   if (signals.recentNewsletterEngagement.length === 0) lines.push("  (none)");
   for (const n of signals.recentNewsletterEngagement)
     lines.push(`  - ${n.date ?? "?"}: ${n.subject ?? "(untitled)"} — ${n.clicked ? "clicked" : n.opened ? "opened" : "not opened"}`);
-  lines.push("");
-  lines.push("RELEVANT SOURCED WILDFLOWER NEWS / PROGRESS:");
-  if (signals.relevantWildflowerUpdates.length === 0) lines.push("  (none)");
-  for (const update of signals.relevantWildflowerUpdates) {
+  if (signals.relevantWildflowerUpdates) {
+    lines.push("");
+    lines.push("RELEVANT SOURCED WILDFLOWER NEWS / PROGRESS:");
+    if (signals.relevantWildflowerUpdates.length === 0) lines.push("  (none)");
+  }
+  for (const update of signals.relevantWildflowerUpdates ?? []) {
     const date = update.eventDate.startDate
       ? update.eventDate.endDate
         ? `${update.eventDate.startDate} to ${update.eventDate.endDate}`
@@ -194,8 +198,11 @@ const errMessage = (err: unknown): string =>
 export async function generateRelationshipSummary(args: {
   personId?: string | null;
   organizationId?: string | null;
+  meetingPreparation?: boolean;
 }): Promise<RelationshipSummaryResult | null> {
-  const signals = await gatherTaskSignals(args);
+  const signals = args.meetingPreparation
+    ? await gatherMeetingPreparationSignals(args)
+    : await gatherTaskSignals(args);
   if (!signals) return null;
 
   const generatedAt = new Date().toISOString();
@@ -207,7 +214,7 @@ export async function generateRelationshipSummary(args: {
             {
               model: MODEL,
               max_tokens: 1024,
-              system: SYSTEM,
+              system: args.meetingPreparation ? `${SYSTEM}${MEETING_PREPARATION_RULES}` : SYSTEM,
               messages: [{ role: "user", content: fmtSignals(signals) }],
             },
             { timeout: 60000, maxRetries: 0 },
@@ -228,7 +235,7 @@ export async function generateRelationshipSummary(args: {
       const parsed = parseModelOutput(text);
       return {
         ...parsed,
-        summary: signals.schoolGeographySection
+        summary: args.meetingPreparation && signals.schoolGeographySection
           ? `${parsed.summary}\n\n${signals.schoolGeographySection}`
           : parsed.summary,
         generatedAt,
@@ -241,7 +248,7 @@ export async function generateRelationshipSummary(args: {
       "generateRelationshipSummary failed; returning placeholder",
     );
     return {
-      summary: signals.schoolGeographySection
+      summary: args.meetingPreparation && signals.schoolGeographySection
         ? `${PLACEHOLDER}\n\n${signals.schoolGeographySection}`
         : PLACEHOLDER,
       nextSteps: [],
