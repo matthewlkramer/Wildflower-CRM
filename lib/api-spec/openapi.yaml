@@ -2346,7 +2346,12 @@ paths:
       description: >
         AI-generated "where this relationship stands" snapshot, computed on
         demand from the organization's recent CRM activity (never persisted).
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - name: meetingPreparation
+          in: query
+          description: Include meeting-only school and Wildflower update context.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           {
@@ -2878,7 +2883,12 @@ paths:
       description: >
         AI-generated "where this relationship stands" snapshot, computed on
         demand from the person's recent CRM activity (never persisted).
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - name: meetingPreparation
+          in: query
+          description: Include meeting-only school and Wildflower update context.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           {

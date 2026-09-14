@@ -356,6 +356,12 @@ export const GetPersonRelationshipSummaryParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const getPersonRelationshipSummaryQueryMeetingPreparationDefault = false;
+
+export const GetPersonRelationshipSummaryQueryParams = zod.object({
+  "meetingPreparation": zod.coerce.boolean().default(getPersonRelationshipSummaryQueryMeetingPreparationDefault).describe('Include meeting-only school and Wildflower update context.')
+})
+
 export const getPersonRelationshipSummaryResponseNextStepsMax = 3;
 
 

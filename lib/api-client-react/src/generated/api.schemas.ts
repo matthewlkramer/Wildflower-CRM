@@ -10988,6 +10988,14 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
+export type GetOrganizationRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ * @default false
+ */
+meetingPreparation?: boolean;
+};
+
 export type ListOrganizationsLifetimeGivingPresence = typeof ListOrganizationsLifetimeGivingPresence[keyof typeof ListOrganizationsLifetimeGivingPresence];
 
 
@@ -11151,6 +11159,14 @@ page?: PageParameter;
 };
 
 export type ListPeopleLifetimeGivingPresence = typeof ListPeopleLifetimeGivingPresence[keyof typeof ListPeopleLifetimeGivingPresence];
+
+export type GetPersonRelationshipSummaryParams = {
+/**
+ * Include meeting-only school and Wildflower update context.
+ * @default false
+ */
+meetingPreparation?: boolean;
+};
 
 
 export const ListPeopleLifetimeGivingPresence = {
