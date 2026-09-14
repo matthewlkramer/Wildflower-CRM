@@ -16,6 +16,7 @@ const PHYSICAL_EVENT_ID = `${RUN}_physical`;
 const BLANK_EVENT_A_ID = `${RUN}_blank_a`;
 const BLANK_EVENT_B_ID = `${RUN}_blank_b`;
 const BLANK_NOTE_ID = `${RUN}_blank_note`;
+const BIRTHDAY_EVENT_ID = `${RUN}_birthday`;
 
 const { currentUser } = vi.hoisted(() => ({
   currentUser: { id: "", role: "team_member" as string },
@@ -130,6 +131,15 @@ beforeAll(async () => {
       summary: `Legacy B ${RUN}`,
       isPrivate: false,
     },
+    {
+      id: BIRTHDAY_EVENT_ID,
+      calendarUserId: USER_ID,
+      gcalCalendarId: "birthdays",
+      gcalEventId: `${RUN}_birthday_physical`,
+      startAt,
+      summary: `Pat's Birthday ${RUN}`,
+      isPrivate: false,
+    },
   ]);
   await db.insert(schema.notes).values({
     id: BLANK_NOTE_ID,
@@ -146,8 +156,17 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
-  await db.delete(schema.calendarEventAttendance).where(drizzle.eq(schema.calendarEventAttendance.physicalEventKey, PHYSICAL_EVENT_ID));
-  await db.delete(schema.auditLog).where(drizzle.eq(schema.auditLog.entityId, EVENT_ID));
+  await db
+    .delete(schema.calendarEventAttendance)
+    .where(
+      drizzle.eq(
+        schema.calendarEventAttendance.physicalEventKey,
+        PHYSICAL_EVENT_ID,
+      ),
+    );
+  await db
+    .delete(schema.auditLog)
+    .where(drizzle.eq(schema.auditLog.entityId, EVENT_ID));
   const dismissals = await db
     .select({ id: schema.meetingNoteDismissals.id })
     .from(schema.meetingNoteDismissals)
@@ -180,6 +199,7 @@ afterAll(async () => {
         PRIVATE_EVENT_ID,
         BLANK_EVENT_A_ID,
         BLANK_EVENT_B_ID,
+        BIRTHDAY_EVENT_ID,
       ]),
     );
   await db
@@ -192,18 +212,34 @@ afterAll(async () => {
 
 describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
   it("preserves absence across synced copies, supports undo and enforces visibility and invitees", async () => {
-    const mark = (id: string, emailAddress: string, absent: boolean) => request(`/api/calendar-events/${id}/attendance`, {
-      method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emailAddress, absent }),
-    });
-    expect((await mark(PRIVATE_EVENT_ID, "turahn@example.org", true)).status).toBe(404);
-    expect((await mark(EVENT_ID, "stranger@example.org", true)).status).toBe(400);
+    const mark = (id: string, emailAddress: string, absent: boolean) =>
+      request(`/api/calendar-events/${id}/attendance`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailAddress, absent }),
+      });
+    expect(
+      (await mark(PRIVATE_EVENT_ID, "turahn@example.org", true)).status,
+    ).toBe(404);
+    expect((await mark(EVENT_ID, "stranger@example.org", true)).status).toBe(
+      400,
+    );
     const result = await mark(EVENT_ID, "TURAHN@example.org", true);
     expect(result.status).toBe(200);
     expect(result.json.absentAttendeeEmails).toEqual(["turahn@example.org"]);
     expect(result.json.attendeeEmails).toContain("turahn@example.org");
-    await db.update(schema.calendarEvents).set({ summary: `Synced ${RUN}` }).where(drizzle.eq(schema.calendarEvents.id, EVENT_ID));
-    expect((await request(`/api/calendar-events/${EVENT_COPY_ID}`)).json.absentAttendeeEmails).toEqual(["turahn@example.org"]);
-    expect((await mark(EVENT_ID, "turahn@example.org", false)).json.absentAttendeeEmails).toEqual([]);
+    await db
+      .update(schema.calendarEvents)
+      .set({ summary: `Synced ${RUN}` })
+      .where(drizzle.eq(schema.calendarEvents.id, EVENT_ID));
+    expect(
+      (await request(`/api/calendar-events/${EVENT_COPY_ID}`)).json
+        .absentAttendeeEmails,
+    ).toEqual(["turahn@example.org"]);
+    expect(
+      (await mark(EVENT_ID, "turahn@example.org", false)).json
+        .absentAttendeeEmails,
+    ).toEqual([]);
   });
   it("keeps unrelated legacy events with blank Google ids separate", async () => {
     const events = await request(
@@ -233,12 +269,30 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
     const notesForB = await request(
       `/api/notes?calendarEventId=${BLANK_EVENT_B_ID}&limit=20`,
     );
-    expect(notesForA.json.data.map((note: { id: string }) => note.id)).toContain(
-      BLANK_NOTE_ID,
+    expect(
+      notesForA.json.data.map((note: { id: string }) => note.id),
+    ).toContain(BLANK_NOTE_ID);
+    expect(
+      notesForB.json.data.map((note: { id: string }) => note.id),
+    ).not.toContain(BLANK_NOTE_ID);
+  });
+
+  it("suppresses birthdays from meeting lists while retaining the source record", async () => {
+    const events = await request(
+      `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,
     );
-    expect(notesForB.json.data.map((note: { id: string }) => note.id)).not.toContain(
-      BLANK_NOTE_ID,
+    expect(events.status).toBe(200);
+    expect(
+      events.json.data.some(
+        (event: { id: string }) => event.id === BIRTHDAY_EVENT_ID,
+      ),
+    ).toBe(false);
+
+    const sourceRecord = await request(
+      `/api/calendar-events/${BIRTHDAY_EVENT_ID}`,
     );
+    expect(sourceRecord.status).toBe(200);
+    expect(sourceRecord.json.summary).toContain("Birthday");
   });
 
   it("durably hides every synced copy from the notes queue", async () => {
@@ -283,12 +337,8 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
     );
     expect(queue.status).toBe(200);
     expect(
-      queue.json.data
-        .map((event: { id: string }) => event.id)
-        .sort(),
-    ).toEqual(
-      [CONTROL_EVENT_ID, BLANK_EVENT_A_ID, BLANK_EVENT_B_ID].sort(),
-    );
+      queue.json.data.map((event: { id: string }) => event.id).sort(),
+    ).toEqual([CONTROL_EVENT_ID, BLANK_EVENT_A_ID, BLANK_EVENT_B_ID].sort());
 
     const evidence = await request(
       `/api/calendar-events?search=${encodeURIComponent(RUN)}&limit=20`,

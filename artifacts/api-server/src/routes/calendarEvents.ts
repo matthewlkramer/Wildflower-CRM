@@ -79,12 +79,10 @@ router.patch(
         (email) => email.trim().toLowerCase() === emailAddress,
       )
     ) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "Choose an invitee from this meeting.",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "Choose an invitee from this meeting.",
+      });
       return;
     }
     await db.transaction(async (tx) => {
@@ -134,7 +132,13 @@ router.get(
     const q = parseOrBadRequest(ListCalendarEventsQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [calendarEventVisibleToCaller(user.id)];
+    const filters: SQL[] = [
+      calendarEventVisibleToCaller(user.id),
+      // Birthday reminders are calendar metadata rather than relationship
+      // meetings. Keep the synced evidence available by id, while suppressing
+      // it from every list that uses this shared endpoint.
+      sql`COALESCE(${calendarEvents.summary}, '') NOT ILIKE '%birthday%'`,
+    ];
     if (q.search) {
       const term = `%${q.search}%`;
       const orClause = or(
