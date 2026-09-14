@@ -134,7 +134,12 @@ router.get(
     const q = parseOrBadRequest(ListCalendarEventsQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [calendarEventVisibleToCaller(user.id)];
+    const filters: SQL[] = [
+      calendarEventVisibleToCaller(user.id),
+      // Birthdays come from shared calendars but are not meetings and should not
+      // appear anywhere that consumes the meeting-list endpoint.
+      sql`COALESCE(${calendarEvents.summary}, '') NOT ILIKE '%birthday%'`,
+    ];
     if (q.search) {
       const term = `%${q.search}%`;
       const orClause = or(

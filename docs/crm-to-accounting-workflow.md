@@ -37,7 +37,10 @@ are removed after that project is verified.
   restriction language.
 - Opportunity: donor reporting required, grant letter, commitment, and payment
   schedule.
-- Reporting Deadline tasks: each required report and due date.
+- Reporting Deadline tasks: each required report and due date. Use **Add task**
+  with type **Reporting deadline** to add missed or historical deadlines, retain
+  report URLs in the task description, and mark completed reports **Done**.
+  Existing tasks expose their type and description for corrections.
 - Tax/thank-you acknowledgement attachment: the durable acknowledgement file
   retained in the CRM's acknowledgement attachment field. It is stewardship and
   tax-compliance evidence, not restriction evidence and not an accounting-coding

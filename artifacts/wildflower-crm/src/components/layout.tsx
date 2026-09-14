@@ -94,7 +94,6 @@ const navItems: NavEntry[] = [
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/pledges", label: "Pledges", icon: HandCoins },
   { href: "/gifts", label: "Gifts", icon: Gift },
-  { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
 
@@ -106,13 +105,14 @@ const navItems: NavEntry[] = [
   { href: "/newsletter", label: "Newsletter", icon: Newspaper },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
-  { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
 
-  { section: "Finance" },
+  { section: "Finance & Operations" },
+  { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
+  { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/cash-flow", label: "Cash flow", icon: HandCoins },
   { href: "/reconciliation/deposits", label: "Reconciliation", icon: Scale },
-  { href: "/revenue-extractor", label: "Export for QB", icon: FileBarChart },
+  { href: "/revenue-extractor", label: "Accounting Data", icon: FileBarChart },
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
