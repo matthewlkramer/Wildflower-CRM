@@ -45,7 +45,7 @@ function makeRepo(seed: User[] = []) {
     },
     async findByEmail(email) {
       calls.findByEmail++;
-      return rows.find((r) => r.email === email);
+      return rows.find((r) => r.email.toLowerCase() === email.toLowerCase());
     },
     async adoptByEmail(existing, clerkId, identity) {
       calls.adoptByEmail++;
@@ -90,7 +90,7 @@ function identityFetcherFor(
 
 describe("resolveAuthenticatedUser", () => {
   it("adopts an admin-added profile on mixed-case first Google sign-in and preserves its role", async () => {
-    const seeded = makeUser({ clerkId: "pending_u_seed", role: "finance" });
+    const seeded = makeUser({ clerkId: "pending_u_seed", email: "PERSON@wildflowerschools.org", role: "finance" });
     const { repo, calls } = makeRepo([seeded]);
     const result = await resolveAuthenticatedUser("clerk_new", undefined, repo,
       identityFetcherFor("Person@WildflowerSchools.org"));

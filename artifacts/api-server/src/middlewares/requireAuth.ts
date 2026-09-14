@@ -2,7 +2,7 @@ import type { RequestHandler } from "express";
 import { getAuth } from "@clerk/express";
 import { db } from "@workspace/db";
 import { users, type User } from "@workspace/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { setAppUser } from "../lib/appRequest";
 import { fetchClerkIdentity, type ClerkIdentity } from "../lib/clerkIdentity";
@@ -149,8 +149,14 @@ const dbUserRepo: UserRepo = {
     db
       .select()
       .from(users)
-      .where(eq(users.email, email))
-      .then((rows) => rows[0]),
+      .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+      .limit(2)
+      .then((rows) => {
+        // Legacy seeded rows may preserve email capitalization. Never choose
+        // arbitrarily if historical duplicates differ only by case.
+        if (rows.length > 1) throw new Error("Ambiguous CRM user email");
+        return rows[0];
+      }),
   adoptByEmail: (existing, clerkId, identity) =>
     db
       .update(users)
