@@ -46,7 +46,7 @@ export const AdminCreateUserBody = zod.object({
   "lastName": zod.string().max(adminCreateUserBodyLastNameMax).nullish(),
   "displayName": zod.string().max(adminCreateUserBodyDisplayNameMax).nullish(),
   "role": zod.enum(['admin', 'team_member', 'finance', 'read_only'])
-})
+}).describe('New role assignments support team_member, finance, and admin. The legacy read_only role is rejected.')
 
 /**
  * Admin-only name and role changes. Login email is immutable here. Admins cannot change their own role.
@@ -68,7 +68,7 @@ export const AdminUpdateUserBody = zod.object({
   "lastName": zod.string().max(adminUpdateUserBodyLastNameMax).nullish(),
   "displayName": zod.string().max(adminUpdateUserBodyDisplayNameMax).nullish(),
   "role": zod.enum(['admin', 'team_member', 'finance', 'read_only']).optional()
-})
+}).describe('The legacy read_only role may be preserved for existing accounts but cannot be newly assigned.')
 
 export const AdminUpdateUserResponse = zod.object({
   "id": zod.string(),

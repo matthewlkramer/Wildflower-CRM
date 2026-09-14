@@ -12958,6 +12958,7 @@ components:
         updatedAt: { type: string, format: date-time }
     AdminCreateUserBody:
       type: object
+      description: New role assignments support team_member, finance, and admin. The legacy read_only role is rejected.
       required: [email, role]
       properties:
         email: { type: string, format: email, maxLength: 254 }
@@ -12967,6 +12968,7 @@ components:
         role: { $ref: "#/components/schemas/UserRole" }
     AdminUpdateUserBody:
       type: object
+      description: The legacy read_only role may be preserved for existing accounts but cannot be newly assigned.
       properties:
         firstName: { type: string, maxLength: 100, nullable: true }
         lastName: { type: string, maxLength: 100, nullable: true }

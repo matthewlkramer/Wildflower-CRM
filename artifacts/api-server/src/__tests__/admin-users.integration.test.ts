@@ -127,6 +127,18 @@ describe.skipIf(!HAS_DB)("admin user management", () => {
     expect(
       (
         await request("/admin/users", "POST", {
+          email: "legacy@wildflowerschools.org",
+          role: "read_only",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (await request(`/admin/users/${otherId}`, "PATCH", { role: "read_only" }))
+        .status,
+    ).toBe(400);
+    expect(
+      (
+        await request("/admin/users", "POST", {
           email: "outsider@example.org",
           role: "team_member",
         })

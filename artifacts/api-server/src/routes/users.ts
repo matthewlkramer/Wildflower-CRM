@@ -51,14 +51,22 @@ router.post(
     if (!requireAdmin(req, res)) return;
     const body = parseOrBadRequest(AdminCreateUserBody, req.body, res);
     if (!body) return;
-    const email = body.email.trim().toLowerCase();
-    if (!email.endsWith("@wildflowerschools.org")) {
+    if (body.role === "read_only") {
       res
         .status(400)
         .json({
-          error: "wildflower_email_required",
-          message: "Use a @wildflowerschools.org Google sign-in address.",
+          error: "role_unavailable",
+          message:
+            "Read-only access is not available for new assignments. Choose Team member, Finance, or Admin.",
         });
+      return;
+    }
+    const email = body.email.trim().toLowerCase();
+    if (!email.endsWith("@wildflowerschools.org")) {
+      res.status(400).json({
+        error: "wildflower_email_required",
+        message: "Use a @wildflowerschools.org Google sign-in address.",
+      });
       return;
     }
     const row = await db.transaction(async (tx) => {
@@ -68,13 +76,11 @@ router.post(
         .from(users)
         .where(sql`lower(${users.email}) = ${email}`);
       if (existing.length) {
-        res
-          .status(409)
-          .json({
-            error: "user_exists",
-            message:
-              "This email is already in the directory. Edit or restore the existing user.",
-          });
+        res.status(409).json({
+          error: "user_exists",
+          message:
+            "This email is already in the directory. Edit or restore the existing user.",
+        });
         return;
       }
       const id = newId();
@@ -245,17 +251,24 @@ async function changeUser(
       notFound(res, "user");
       return;
     }
+    if (patch.role === "read_only" && before.role !== "read_only") {
+      res
+        .status(400)
+        .json({
+          error: "role_unavailable",
+          message: "Read-only access is not available for new assignments.",
+        });
+      return;
+    }
     if (
       before.id === getAppUser(req)!.id &&
       (patch.archivedAt || (patch.role && patch.role !== before.role))
     ) {
-      res
-        .status(400)
-        .json({
-          error: "cannot_change_own_access",
-          message:
-            "Another admin must change your role or deactivate your account.",
-        });
+      res.status(400).json({
+        error: "cannot_change_own_access",
+        message:
+          "Another admin must change your role or deactivate your account.",
+      });
       return;
     }
     const changes = diffChanges(

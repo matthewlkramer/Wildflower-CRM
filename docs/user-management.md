@@ -19,6 +19,12 @@ ownership. First-login email is normalized to lowercase. Existing Google/Clerk
 sign-in eligibility remains the primary account gate; this directory is not an
 invite-only allowlist and does not change existing role permissions elsewhere.
 
+New role assignments are limited to Team member, Finance, and Admin. Historical
+`read_only` users remain visible and editable, but that role cannot be assigned
+to another user: read-only enforcement is not yet uniform across CRM routes.
+The page shows the legacy option disabled rather than promising access limits
+that the existing application does not consistently enforce.
+
 Adding a profile accepts only a `@wildflowerschools.org` address. It does not
 create a Google account or send mail. An existing email, including a deactivated
 one, returns a conflict and must be edited/restored explicitly. Login email and

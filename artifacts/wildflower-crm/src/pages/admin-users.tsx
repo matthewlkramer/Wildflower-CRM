@@ -41,7 +41,7 @@ const roles: Record<UserRole, string> = {
   team_member: "Team member",
   admin: "Admin",
   finance: "Finance",
-  read_only: "Read only",
+  read_only: "Read only (legacy)",
 };
 const selectClass =
   "h-10 rounded-md border border-input bg-background px-3 text-sm";
@@ -373,8 +373,14 @@ export default function AdminUsers() {
                 onChange={(event) => setRole(event.target.value as UserRole)}
               >
                 {Object.entries(roles).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
+                  <option
+                    key={value}
+                    value={value}
+                    disabled={value === "read_only"}
+                  >
+                    {value === "read_only"
+                      ? "Read only — unavailable for new assignments"
+                      : label}
                   </option>
                 ))}
               </select>

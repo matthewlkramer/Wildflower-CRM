@@ -823,6 +823,9 @@ export interface User {
   updatedAt: string;
 }
 
+/**
+ * New role assignments support team_member, finance, and admin. The legacy read_only role is rejected.
+ */
 export interface AdminCreateUserBody {
   /** @maxLength 254 */
   email: string;
@@ -835,6 +838,9 @@ export interface AdminCreateUserBody {
   role: UserRole;
 }
 
+/**
+ * The legacy read_only role may be preserved for existing accounts but cannot be newly assigned.
+ */
 export interface AdminUpdateUserBody {
   /** @maxLength 100 */
   firstName?: string | null;
