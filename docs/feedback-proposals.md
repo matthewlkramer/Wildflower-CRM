@@ -1,9 +1,15 @@
 ---
-status: current-status
-last_verified: 2026-09-11
+status: historical
+last_verified: 2026-09-14
 ---
 
 # Feedback implementation proposals
+
+This proposal workflow was retired by migration 0248 and the simplified
+`admin-feedback.tsx` screen. The current queue stores reports, captured context,
+optional private screenshots, status, and admin notes in `app_feedback`.
+There is no AI proposal generator or implementation handoff in the running CRM.
+The remainder of this document records the retired design for historical context.
 
 The in-app feedback queue stores user reports in `app_feedback`. Each feedback
 item has at most one durable `app_feedback_proposals` row containing one concise
