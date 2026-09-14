@@ -79,7 +79,7 @@ export async function resolveAuthenticatedUser(
       // nameless `<clerkId>@unknown.com` row that owns nothing.
       const normalizedClaim = claimEmail?.trim() || undefined;
       const identity = await identityFetcher(clerkId);
-      const email = normalizedClaim ?? identity?.email ?? undefined;
+      const email = (normalizedClaim ?? identity?.email)?.trim().toLowerCase() || undefined;
 
       // First-login adoption: if a pre-seeded user row exists with the same
       // email, claim it by updating its clerkId rather than inserting a

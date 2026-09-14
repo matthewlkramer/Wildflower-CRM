@@ -5,6 +5,8 @@ description: Routing index for CRM feature/domain lessons — gifts, pledges, op
 
 # CRM domain notes
 
+- User management reuses the existing user identity and first-login email adoption. Never add a second invitation/role authority or expose extension tokens in directory responses. See [canonical user-management behavior](../../docs/user-management.md).
+
 One-line routing entries for CRM app-domain lessons. Read only the topic files
 relevant to the task.
 

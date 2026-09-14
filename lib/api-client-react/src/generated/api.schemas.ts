@@ -818,8 +818,31 @@ export interface User {
   role: UserRole;
   defaultFund?: string | null;
   emailSyncMode: EmailSyncMode;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AdminCreateUserBody {
+  /** @maxLength 254 */
+  email: string;
+  /** @maxLength 100 */
+  firstName?: string | null;
+  /** @maxLength 100 */
+  lastName?: string | null;
+  /** @maxLength 200 */
+  displayName?: string | null;
+  role: UserRole;
+}
+
+export interface AdminUpdateUserBody {
+  /** @maxLength 100 */
+  firstName?: string | null;
+  /** @maxLength 100 */
+  lastName?: string | null;
+  /** @maxLength 200 */
+  displayName?: string | null;
+  role?: UserRole;
 }
 
 export interface UpdateCurrentUserBody {
