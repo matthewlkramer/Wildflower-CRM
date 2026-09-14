@@ -193,6 +193,17 @@ describe("Schools in Geographies of Interest", () => {
 });
 
 describe("WFTLS meeting-prep contract", () => {
+  const v1 = (schools: unknown[] = []) => ({
+    apiVersion: "v1", generatedAt: "2026-09-14T17:30:00.000Z", schools,
+  });
+  const sourceSchool = (overrides: Record<string, unknown> = {}) => ({
+    schoolId: "example-school", schoolName: "Example School", schoolStatus: "emerging",
+    physicalLocation: null, targetGeography: "Boston, Massachusetts, United States",
+    ssjStage: "planning", projectedOpenDate: null, projectedOpenYear: 2027,
+    currentReadinessRating: "Medium", currentStatusNarrative: "Seeking a site",
+    riskFactors: null, watchlist: null, supportEntries: [], ...overrides,
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.unstubAllGlobals();
@@ -201,7 +212,7 @@ describe("WFTLS meeting-prep contract", () => {
   it("uses the narrow GET endpoint and bearer auth without exposing the token", async () => {
     vi.stubEnv("WFTLS_BASE_URL", "https://wftls.example.test/");
     vi.stubEnv("WFTLS_MEETING_PREP_API_TOKEN", "secret-token");
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ schools: [] }), {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(v1()), {
       status: 200, headers: { "content-type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetchMock);
@@ -225,7 +236,7 @@ describe("WFTLS meeting-prep contract", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response("", { status: 503 }))
       .mockResolvedValueOnce(new Response("", { status: 429 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ schools: [] }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(v1()), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await fetchWftlsMeetingPrep();
     expect(fetchMock).toHaveBeenCalledTimes(3);
@@ -236,10 +247,60 @@ describe("WFTLS meeting-prep contract", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects malformed responses instead of falling back", async () => {
+  it("adapts the WFTLS v1 response through geography matching and briefing output", async () => {
     vi.stubEnv("WFTLS_BASE_URL", "https://wftls.example.test");
     vi.stubEnv("WFTLS_MEETING_PREP_API_TOKEN", "token");
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ schools: [{ id: 4 }] }), { status: 200 }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(v1([
+      sourceSchool(),
+      sourceSchool({
+        schoolId: "open-school", schoolName: "Open School", schoolStatus: "open",
+        targetGeography: null, physicalLocation: "123 Example St, Boston, MA 02108, United States",
+        riskFactors: "Lease uncertainty", watchlist: "Enrollment watch",
+        supportEntries: [{
+          supportEntryId: "support-1", type: "Ops Guide", assignmentTypes: ["Inflection"],
+          matchingClassifications: ["Inflection"], status: "current", ownerOrGuide: "Example Guide",
+          startDate: "2026-09-01", endDate: null, lastModifiedAt: "2026-09-10T12:00:00.000Z",
+          summaryOrUpdate: null,
+        }],
+      }),
+      sourceSchool({ schoolId: "other-state", schoolName: "Wrong State School", targetGeography: "Boston, ME" }),
+    ])), { status: 200 })));
+    const result = await fetchWftlsMeetingPrep();
+    expect(result.schools[0]).toMatchObject({ id: "example-school", projectedOpen: "2027", archived: false });
+    const section = formatSchoolsInGeographiesOfInterest(input({ fundingRegionIds: ["boston"], schools: result.schools }));
+    expect(section).toContain("Example School — Boston, Massachusetts, United States");
+    expect(section).toContain("Projected open: 2027; Readiness: Medium");
+    expect(section).toContain("Open School — 123 Example St, Boston, MA 02108, United States");
+    expect(section).toContain("Inflection — Status: current; Owner: Example Guide");
+    expect(section).toContain("Risk factors: Lease uncertainty");
+    expect(section).not.toContain("Wrong State School");
+  });
+
+  it("preserves nulls and does not infer geography or support classifications", async () => {
+    vi.stubEnv("WFTLS_BASE_URL", "https://wftls.example.test");
+    vi.stubEnv("WFTLS_MEETING_PREP_API_TOKEN", "token");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(v1([
+      sourceSchool({
+        targetGeography: "Boston", projectedOpenYear: null, currentReadinessRating: null,
+        supportEntries: [{ supportEntryId: "support-2", type: "Ops Guide", assignmentTypes: ["Coaching"],
+          matchingClassifications: [], status: "current", startDate: null, endDate: null,
+          ownerOrGuide: null, lastModifiedAt: null, summaryOrUpdate: null }],
+      }),
+    ])), { status: 200 })));
+    const result = await fetchWftlsMeetingPrep();
+    expect(result.schools[0]).toMatchObject({ projectedOpen: null, readiness: null, supports: [] });
+    expect(formatSchoolsInGeographiesOfInterest(input({ schools: result.schools }))).not.toContain("Example School");
+  });
+
+  it.each([
+    { schools: [] },
+    { ...v1(), apiVersion: "v2" },
+    v1([{ id: 4 }]),
+    v1([sourceSchool({ supportEntries: "invalid" })]),
+  ])("rejects malformed or incompatible responses instead of falling back", async (body) => {
+    vi.stubEnv("WFTLS_BASE_URL", "https://wftls.example.test");
+    vi.stubEnv("WFTLS_MEETING_PREP_API_TOKEN", "token");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
     await expect(fetchWftlsMeetingPrep()).rejects.toBeInstanceOf(WftlsResponseValidationError);
     expect(fetchMock).toHaveBeenCalledTimes(1);

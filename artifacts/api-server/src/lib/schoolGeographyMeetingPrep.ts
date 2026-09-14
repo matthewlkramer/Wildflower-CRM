@@ -17,6 +17,7 @@ type Location = {
   city: string | null;
   state: string | null;
   targetGeography: string | null;
+  displayText?: string | null;
 };
 
 type Support = {
@@ -52,48 +53,83 @@ type School = MeetingPrepSchool;
  * The WFTLS response is intentionally kept as a small, versioned contract.
  */
 const nullableText = z.string().nullable().default(null);
-const meetingPrepLocationSchema = z
-  .object({
-    city: nullableText,
-    state: nullableText,
-    targetGeography: nullableText,
-  })
-  .strict();
 const meetingPrepSupportSchema = z
   .object({
-    type: z.string(),
+    supportEntryId: z.string().min(1),
+    type: nullableText,
+    assignmentTypes: z.array(z.string()),
+    matchingClassifications: z.array(z.string()),
     status: nullableText,
     startDate: nullableText,
     endDate: nullableText,
-    owner: nullableText,
-    guide: nullableText,
-    lastModified: nullableText,
-    active: z.boolean().default(false),
-    archived: z.boolean().default(false),
+    ownerOrGuide: nullableText,
+    lastModifiedAt: nullableText,
+    summaryOrUpdate: nullableText,
   })
   .strict();
 const meetingPrepSchoolSchema = z
   .object({
-    id: z.string().min(1),
-    name: z.string(),
-    status: nullableText,
-    stage: nullableText,
-    projectedOpen: nullableText,
-    readiness: nullableText,
-    narrative: nullableText,
+    schoolId: z.string().min(1),
+    schoolName: z.string(),
+    schoolStatus: z.enum(["emerging", "open"]),
+    ssjStage: nullableText,
+    projectedOpenDate: nullableText,
+    projectedOpenYear: z.number().int().nullable(),
+    currentReadinessRating: nullableText,
+    currentStatusNarrative: nullableText,
     riskFactors: nullableText,
     watchlist: nullableText,
     targetGeography: nullableText,
-    locations: z.array(meetingPrepLocationSchema).default([]),
-    supports: z.array(meetingPrepSupportSchema).default([]),
-    archived: z.boolean().default(false),
+    physicalLocation: nullableText,
+    supportEntries: z.array(meetingPrepSupportSchema),
   })
   .strict();
 const meetingPrepResponseSchema = z
-  .object({ schools: z.array(meetingPrepSchoolSchema) })
+  .object({
+    apiVersion: z.literal("v1"),
+    generatedAt: z.string().datetime(),
+    schools: z.array(meetingPrepSchoolSchema),
+  })
   .strict();
 
-export type WftlsMeetingPrepResponse = z.infer<typeof meetingPrepResponseSchema>;
+type WftlsMeetingPrepResponse = z.infer<typeof meetingPrepResponseSchema>;
+
+/** Translate the source-owned v1 contract into the briefing's internal model. */
+function adaptWftlsSchool(row: WftlsMeetingPrepResponse["schools"][number]): MeetingPrepSchool {
+  const locations: Location[] = [];
+  if (row.physicalLocation) locations.push(wftlsLocation(row.physicalLocation, null));
+  if (row.targetGeography) locations.push(wftlsLocation(row.targetGeography, row.targetGeography));
+  return {
+    id: row.schoolId,
+    name: row.schoolName,
+    status: row.schoolStatus,
+    stage: row.ssjStage,
+    projectedOpen: row.projectedOpenDate ?? (row.projectedOpenYear == null ? null : String(row.projectedOpenYear)),
+    readiness: row.currentReadinessRating,
+    narrative: row.currentStatusNarrative,
+    riskFactors: row.riskFactors,
+    watchlist: row.watchlist,
+    targetGeography: row.targetGeography,
+    locations,
+    // WFTLS includes only current, non-archived schools and support entries.
+    archived: false,
+    supports: row.supportEntries.flatMap((support) =>
+      [...new Set(support.matchingClassifications.map((value) => value.trim().toLowerCase()))]
+        .filter((value) => value === "inflection" || value === "crisis")
+        .map((value) => ({
+          type: value === "inflection" ? "Inflection" : "Crisis",
+          status: support.status,
+          startDate: support.startDate,
+          endDate: support.endDate,
+          owner: support.ownerOrGuide,
+          guide: null,
+          lastModified: support.lastModifiedAt,
+          active: true,
+          archived: false,
+        })),
+    ),
+  };
+}
 
 export class WftlsConfigurationError extends Error {
   constructor(message: string) {
@@ -183,6 +219,20 @@ function sameState(left: string | null | undefined, right: string | null | undef
   return [...leftVariants].some((value) => rightVariants.has(value));
 }
 
+/** WFTLS formats locations as comma-separated components, with state + ZIP. */
+function wftlsLocation(text: string, targetGeography: string | null): Location {
+  const parts = text.split(",").map((part) => part.trim());
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const state = parts[index].replace(/\s+\d{5}(?:-\d{4})?$/, "");
+    const key = norm(state);
+    if (STATE_NAMES.has(key) || [...STATE_NAMES.values()].some((name) => norm(name) === key)) {
+      return { city: index > 0 ? parts[index - 1] || null : null, state, targetGeography, displayText: text };
+    }
+  }
+  // Preserve source text without guessing a city or state from an unknown format.
+  return { city: null, state: null, targetGeography, displayText: text };
+}
+
 function stateForRegion(region: RegionRow, byId: Map<string, RegionRow>): RegionRow | null {
   let cursor: RegionRow | undefined = region;
   const seen = new Set<string>();
@@ -195,6 +245,8 @@ function stateForRegion(region: RegionRow, byId: Map<string, RegionRow>): Region
 }
 
 function displayLocation(locations: Location[]): string {
+  const sourceText = locations.find((entry) => entry.displayText)?.displayText;
+  if (sourceText) return sourceText;
   const location = locations.find((entry) => entry.city || entry.state);
   if (location) {
     return [location.city, location.state].filter(Boolean).join(", ") || NOT_RECORDED;
@@ -308,7 +360,7 @@ function waitForRetry(attempt: number): Promise<void> {
  * Fetch the source-owned school meeting-preparation view. This is deliberately
  * the only WFTLS request in this module: no alternate source fallback is permitted.
  */
-export async function fetchWftlsMeetingPrep(): Promise<WftlsMeetingPrepResponse> {
+export async function fetchWftlsMeetingPrep(): Promise<{ schools: MeetingPrepSchool[] }> {
   const { url, token } = wftlsUrl();
   let lastTransportError: unknown;
   for (let attempt = 1; attempt <= WFTLS_MAX_ATTEMPTS; attempt += 1) {
@@ -336,7 +388,7 @@ export async function fetchWftlsMeetingPrep(): Promise<WftlsMeetingPrepResponse>
       }
       const parsed = meetingPrepResponseSchema.safeParse(body);
       if (!parsed.success) throw new WftlsResponseValidationError();
-      return parsed.data;
+      return { schools: parsed.data.schools.map(adaptWftlsSchool) };
     } catch (error) {
       if (error instanceof WftlsHttpError || error instanceof WftlsResponseValidationError) {
         throw error;
