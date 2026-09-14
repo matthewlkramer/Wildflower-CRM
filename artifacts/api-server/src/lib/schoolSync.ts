@@ -28,9 +28,9 @@ import { listAllRecords, type AirtableRecord } from "./airtableClient";
  *     scope; gifts_and_payments has no school column.)
  */
 
-const BASE_ID = "appJBT9a4f3b7hWQ2";
-const TABLE_ID = "tblfdVLTc9ij4TaLh"; // Schools
-const VIEW_ID = "viwfya5VZGmb7vu0s"; // Data for CRM in Replit
+export const WILDFLOWER_SCHOOLS_AIRTABLE_BASE_ID = "appJBT9a4f3b7hWQ2";
+export const WILDFLOWER_SCHOOLS_AIRTABLE_TABLE_ID = "tblfdVLTc9ij4TaLh"; // Schools
+export const WILDFLOWER_SCHOOLS_AIRTABLE_VIEW_ID = "viwfya5VZGmb7vu0s"; // Data for CRM in Replit
 
 type SchoolStatus = (typeof schoolStatusEnum.enumValues)[number];
 type GovernanceModel = (typeof governanceModelEnum.enumValues)[number];
@@ -144,9 +144,9 @@ export async function syncSchoolsFromAirtable(
   opts: SchoolSyncOptions = {},
 ): Promise<SchoolSyncSummary> {
   const records = await listAllRecords({
-    baseId: BASE_ID,
-    tableId: TABLE_ID,
-    viewId: VIEW_ID,
+    baseId: WILDFLOWER_SCHOOLS_AIRTABLE_BASE_ID,
+    tableId: WILDFLOWER_SCHOOLS_AIRTABLE_TABLE_ID,
+    viewId: WILDFLOWER_SCHOOLS_AIRTABLE_VIEW_ID,
     ...(opts.maxPages != null ? { maxPages: opts.maxPages } : {}),
     ...(opts.pageSize != null ? { pageSize: opts.pageSize } : {}),
   });

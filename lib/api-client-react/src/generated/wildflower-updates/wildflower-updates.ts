@@ -21,9 +21,17 @@ import type {
 
 import type {
   BadRequestResponse,
+  CreateWildflowerUpdateItemBody,
   ForbiddenResponse,
+  ListRelevantWildflowerUpdateItemsParams,
+  ListWildflowerUpdateItemsParams,
+  NotFoundResponse,
   UpdateWildflowerUpdateBody,
-  WildflowerUpdateConfig
+  UpdateWildflowerUpdateItemBody,
+  WildflowerRelevantUpdateItemList,
+  WildflowerUpdateConfig,
+  WildflowerUpdateItem,
+  WildflowerUpdateItemList
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -181,5 +189,521 @@ export const useUpdateWildflowerUpdate = <TError = ErrorType<BadRequestResponse 
         TContext
       > => {
       return useMutation(getUpdateWildflowerUpdateMutationOptions(options));
+    }
+    /**
+ * @summary List dated, sourced Wildflower news and progress items
+ */
+export const getListWildflowerUpdateItemsUrl = (params?: ListWildflowerUpdateItemsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wildflower-update-items?${stringifiedParams}` : `/api/wildflower-update-items`
+}
+
+export const listWildflowerUpdateItems = async (params?: ListWildflowerUpdateItemsParams, options?: RequestInit): Promise<WildflowerUpdateItemList> => {
+  
+  return customFetch<WildflowerUpdateItemList>(getListWildflowerUpdateItemsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListWildflowerUpdateItemsQueryKey = (params?: ListWildflowerUpdateItemsParams,) => {
+    return [
+    `/api/wildflower-update-items`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListWildflowerUpdateItemsQueryOptions = <TData = Awaited<ReturnType<typeof listWildflowerUpdateItems>>, TError = ErrorType<unknown>>(params?: ListWildflowerUpdateItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWildflowerUpdateItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWildflowerUpdateItemsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWildflowerUpdateItems>>> = ({ signal }) => listWildflowerUpdateItems(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWildflowerUpdateItems>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWildflowerUpdateItemsQueryResult = NonNullable<Awaited<ReturnType<typeof listWildflowerUpdateItems>>>
+export type ListWildflowerUpdateItemsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List dated, sourced Wildflower news and progress items
+ */
+
+export function useListWildflowerUpdateItems<TData = Awaited<ReturnType<typeof listWildflowerUpdateItems>>, TError = ErrorType<unknown>>(
+ params?: ListWildflowerUpdateItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWildflowerUpdateItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWildflowerUpdateItemsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Create a dated Wildflower news or progress item
+ */
+export const getCreateWildflowerUpdateItemUrl = () => {
+
+
+  
+
+  return `/api/wildflower-update-items`
+}
+
+export const createWildflowerUpdateItem = async (createWildflowerUpdateItemBody: CreateWildflowerUpdateItemBody, options?: RequestInit): Promise<WildflowerUpdateItem> => {
+  
+  return customFetch<WildflowerUpdateItem>(getCreateWildflowerUpdateItemUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createWildflowerUpdateItemBody,)
+  }
+);}
+  
+
+
+
+export const getCreateWildflowerUpdateItemMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWildflowerUpdateItem>>, TError,{data: BodyType<CreateWildflowerUpdateItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createWildflowerUpdateItem>>, TError,{data: BodyType<CreateWildflowerUpdateItemBody>}, TContext> => {
+
+const mutationKey = ['createWildflowerUpdateItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createWildflowerUpdateItem>>, {data: BodyType<CreateWildflowerUpdateItemBody>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createWildflowerUpdateItem(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateWildflowerUpdateItemMutationResult = NonNullable<Awaited<ReturnType<typeof createWildflowerUpdateItem>>>
+    export type CreateWildflowerUpdateItemMutationBody = BodyType<CreateWildflowerUpdateItemBody>
+    export type CreateWildflowerUpdateItemMutationError = ErrorType<BadRequestResponse | void>
+
+    /**
+ * @summary Create a dated Wildflower news or progress item
+ */
+export const useCreateWildflowerUpdateItem = <TError = ErrorType<BadRequestResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createWildflowerUpdateItem>>, TError,{data: BodyType<CreateWildflowerUpdateItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createWildflowerUpdateItem>>,
+        TError,
+        {data: BodyType<CreateWildflowerUpdateItemBody>},
+        TContext
+      > => {
+      return useMutation(getCreateWildflowerUpdateItemMutationOptions(options));
+    }
+    /**
+ * @summary Get one dated Wildflower news or progress item
+ */
+export const getGetWildflowerUpdateItemUrl = (id: string,) => {
+
+
+  
+
+  return `/api/wildflower-update-items/${id}`
+}
+
+export const getWildflowerUpdateItem = async (id: string, options?: RequestInit): Promise<WildflowerUpdateItem> => {
+  
+  return customFetch<WildflowerUpdateItem>(getGetWildflowerUpdateItemUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getGetWildflowerUpdateItemQueryKey = (id: string,) => {
+    return [
+    `/api/wildflower-update-items/${id}`
+    ] as const;
+    }
+
+    
+export const getGetWildflowerUpdateItemQueryOptions = <TData = Awaited<ReturnType<typeof getWildflowerUpdateItem>>, TError = ErrorType<NotFoundResponse>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdateItem>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWildflowerUpdateItemQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWildflowerUpdateItem>>> = ({ signal }) => getWildflowerUpdateItem(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdateItem>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWildflowerUpdateItemQueryResult = NonNullable<Awaited<ReturnType<typeof getWildflowerUpdateItem>>>
+export type GetWildflowerUpdateItemQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Get one dated Wildflower news or progress item
+ */
+
+export function useGetWildflowerUpdateItem<TData = Awaited<ReturnType<typeof getWildflowerUpdateItem>>, TError = ErrorType<NotFoundResponse>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWildflowerUpdateItem>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWildflowerUpdateItemQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Patch a dated Wildflower news or progress item
+ */
+export const getUpdateWildflowerUpdateItemUrl = (id: string,) => {
+
+
+  
+
+  return `/api/wildflower-update-items/${id}`
+}
+
+export const updateWildflowerUpdateItem = async (id: string,
+    updateWildflowerUpdateItemBody: UpdateWildflowerUpdateItemBody, options?: RequestInit): Promise<WildflowerUpdateItem> => {
+  
+  return customFetch<WildflowerUpdateItem>(getUpdateWildflowerUpdateItemUrl(id),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateWildflowerUpdateItemBody,)
+  }
+);}
+  
+
+
+
+export const getUpdateWildflowerUpdateItemMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWildflowerUpdateItem>>, TError,{id: string;data: BodyType<UpdateWildflowerUpdateItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWildflowerUpdateItem>>, TError,{id: string;data: BodyType<UpdateWildflowerUpdateItemBody>}, TContext> => {
+
+const mutationKey = ['updateWildflowerUpdateItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWildflowerUpdateItem>>, {id: string;data: BodyType<UpdateWildflowerUpdateItemBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateWildflowerUpdateItem(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWildflowerUpdateItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateWildflowerUpdateItem>>>
+    export type UpdateWildflowerUpdateItemMutationBody = BodyType<UpdateWildflowerUpdateItemBody>
+    export type UpdateWildflowerUpdateItemMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
+
+    /**
+ * @summary Patch a dated Wildflower news or progress item
+ */
+export const useUpdateWildflowerUpdateItem = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWildflowerUpdateItem>>, TError,{id: string;data: BodyType<UpdateWildflowerUpdateItemBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWildflowerUpdateItem>>,
+        TError,
+        {id: string;data: BodyType<UpdateWildflowerUpdateItemBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateWildflowerUpdateItemMutationOptions(options));
+    }
+    /**
+ * Requires exactly one personId or organizationId. Interests and funding regions are read from the saved CRM record; callers cannot supply substitute matching inputs.
+ * @summary List eligible Wildflower updates relevant to one saved donor entity
+ */
+export const getListRelevantWildflowerUpdateItemsUrl = (params?: ListRelevantWildflowerUpdateItemsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/wildflower-update-items/relevant?${stringifiedParams}` : `/api/wildflower-update-items/relevant`
+}
+
+export const listRelevantWildflowerUpdateItems = async (params?: ListRelevantWildflowerUpdateItemsParams, options?: RequestInit): Promise<WildflowerRelevantUpdateItemList> => {
+  
+  return customFetch<WildflowerRelevantUpdateItemList>(getListRelevantWildflowerUpdateItemsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListRelevantWildflowerUpdateItemsQueryKey = (params?: ListRelevantWildflowerUpdateItemsParams,) => {
+    return [
+    `/api/wildflower-update-items/relevant`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListRelevantWildflowerUpdateItemsQueryOptions = <TData = Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(params?: ListRelevantWildflowerUpdateItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRelevantWildflowerUpdateItemsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>> = ({ signal }) => listRelevantWildflowerUpdateItems(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRelevantWildflowerUpdateItemsQueryResult = NonNullable<Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>>
+export type ListRelevantWildflowerUpdateItemsQueryError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+
+/**
+ * @summary List eligible Wildflower updates relevant to one saved donor entity
+ */
+
+export function useListRelevantWildflowerUpdateItems<TData = Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
+ params?: ListRelevantWildflowerUpdateItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRelevantWildflowerUpdateItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRelevantWildflowerUpdateItemsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+/**
+ * @summary Soft-delete a Wildflower update item
+ */
+export const getArchiveWildflowerUpdateItemUrl = (id: string,) => {
+
+
+  
+
+  return `/api/wildflower-update-items/${id}/archive`
+}
+
+export const archiveWildflowerUpdateItem = async (id: string, options?: RequestInit): Promise<WildflowerUpdateItem> => {
+  
+  return customFetch<WildflowerUpdateItem>(getArchiveWildflowerUpdateItemUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getArchiveWildflowerUpdateItemMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['archiveWildflowerUpdateItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  archiveWildflowerUpdateItem(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveWildflowerUpdateItemMutationResult = NonNullable<Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>>
+    
+    export type ArchiveWildflowerUpdateItemMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Soft-delete a Wildflower update item
+ */
+export const useArchiveWildflowerUpdateItem = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveWildflowerUpdateItem>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getArchiveWildflowerUpdateItemMutationOptions(options));
+    }
+    /**
+ * @summary Restore a soft-deleted Wildflower update item
+ */
+export const getUnarchiveWildflowerUpdateItemUrl = (id: string,) => {
+
+
+  
+
+  return `/api/wildflower-update-items/${id}/unarchive`
+}
+
+export const unarchiveWildflowerUpdateItem = async (id: string, options?: RequestInit): Promise<WildflowerUpdateItem> => {
+  
+  return customFetch<WildflowerUpdateItem>(getUnarchiveWildflowerUpdateItemUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getUnarchiveWildflowerUpdateItemMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['unarchiveWildflowerUpdateItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unarchiveWildflowerUpdateItem(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnarchiveWildflowerUpdateItemMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>>
+    
+    export type UnarchiveWildflowerUpdateItemMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Restore a soft-deleted Wildflower update item
+ */
+export const useUnarchiveWildflowerUpdateItem = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unarchiveWildflowerUpdateItem>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getUnarchiveWildflowerUpdateItemMutationOptions(options));
     }
     

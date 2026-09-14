@@ -10058,6 +10058,230 @@ export interface UpdateWildflowerUpdateBody {
   content: string;
 }
 
+export type WildflowerUpdateDatePrecision = typeof WildflowerUpdateDatePrecision[keyof typeof WildflowerUpdateDatePrecision];
+
+
+export const WildflowerUpdateDatePrecision = {
+  exact: 'exact',
+  month: 'month',
+  year: 'year',
+  season: 'season',
+  date_range: 'date_range',
+  school_year: 'school_year',
+  month_range: 'month_range',
+  unknown: 'unknown',
+} as const;
+
+export type WildflowerUpdateStatus = typeof WildflowerUpdateStatus[keyof typeof WildflowerUpdateStatus];
+
+
+export const WildflowerUpdateStatus = {
+  completed: 'completed',
+  reported_progress: 'reported_progress',
+  work_in_progress: 'work_in_progress',
+  proposed_work: 'proposed_work',
+  announcement: 'announcement',
+} as const;
+
+export type WildflowerUpdatePreparationStatus = typeof WildflowerUpdatePreparationStatus[keyof typeof WildflowerUpdatePreparationStatus];
+
+
+export const WildflowerUpdatePreparationStatus = {
+  eligible: 'eligible',
+  hold_for_confirmation: 'hold_for_confirmation',
+} as const;
+
+export type WildflowerUpdateSourceType = typeof WildflowerUpdateSourceType[keyof typeof WildflowerUpdateSourceType];
+
+
+export const WildflowerUpdateSourceType = {
+  sent_newsletter: 'sent_newsletter',
+  published_article: 'published_article',
+  donor_proposal: 'donor_proposal',
+  draft: 'draft',
+} as const;
+
+export interface WildflowerUpdateEventDate {
+  precision: WildflowerUpdateDatePrecision;
+  startDate?: string | null;
+  endDate?: string | null;
+  /** @minimum 1 */
+  year?: number | null;
+  /** @minimum 1 */
+  startYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  startMonth?: number | null;
+  /** @minimum 1 */
+  endYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  endMonth?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  month?: number | null;
+  season?: string | null;
+}
+
+export interface WildflowerUpdateSource {
+  id: string;
+  sourceType: WildflowerUpdateSourceType;
+  title: string;
+  url: string;
+  publicationDatePrecision: WildflowerUpdateDatePrecision;
+  publicationDate?: string | null;
+  publicationEndDate?: string | null;
+  /** @minimum 1 */
+  publicationYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationMonth?: number | null;
+  /** @minimum 1 */
+  publicationStartYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationStartMonth?: number | null;
+  /** @minimum 1 */
+  publicationEndYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationEndMonth?: number | null;
+  publicationSeason?: string | null;
+}
+
+export interface WildflowerUpdateRelatedLink {
+  id: string;
+  title: string;
+  url: string;
+}
+
+export interface WildflowerUpdateItem {
+  id: string;
+  title: string;
+  details: string;
+  qualification: string | null;
+  importKey: string | null;
+  eventDate: WildflowerUpdateEventDate;
+  status: WildflowerUpdateStatus;
+  preparationStatus: WildflowerUpdatePreparationStatus;
+  thematicTags: string[];
+  ageTags: string[];
+  governanceTags: string[];
+  fundingRegionIds: string[];
+  sources: WildflowerUpdateSource[];
+  relatedLinks: WildflowerUpdateRelatedLink[];
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateWildflowerUpdateSourceBody {
+  sourceType: WildflowerUpdateSourceType;
+  title: string;
+  url: string;
+  publicationDatePrecision: WildflowerUpdateDatePrecision;
+  publicationDate?: string | null;
+  publicationEndDate?: string | null;
+  /** @minimum 1 */
+  publicationYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationMonth?: number | null;
+  /** @minimum 1 */
+  publicationStartYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationStartMonth?: number | null;
+  /** @minimum 1 */
+  publicationEndYear?: number | null;
+  /**
+   * @minimum 1
+   * @maximum 12
+   */
+  publicationEndMonth?: number | null;
+  publicationSeason?: string | null;
+}
+
+export interface CreateWildflowerUpdateRelatedLinkBody {
+  title: string;
+  url: string;
+}
+
+export interface CreateWildflowerUpdateItemBody {
+  title: string;
+  /** One paragraph of details without line breaks. */
+  details: string;
+  qualification?: string | null;
+  eventDate: WildflowerUpdateEventDate;
+  status: WildflowerUpdateStatus;
+  preparationStatus?: WildflowerUpdatePreparationStatus;
+  thematicTags?: string[];
+  ageTags?: string[];
+  governanceTags?: string[];
+  fundingRegionIds?: string[];
+  /** @minItems 1 */
+  sources: CreateWildflowerUpdateSourceBody[];
+  relatedLinks?: CreateWildflowerUpdateRelatedLinkBody[];
+}
+
+/**
+ * All fields are optional. When sources or relatedLinks are supplied, they replace the complete collection.
+ */
+export interface UpdateWildflowerUpdateItemBody {
+  title?: string;
+  /** One paragraph of details without line breaks. */
+  details?: string;
+  qualification?: string | null;
+  eventDate?: WildflowerUpdateEventDate;
+  status?: WildflowerUpdateStatus;
+  preparationStatus?: WildflowerUpdatePreparationStatus;
+  thematicTags?: string[];
+  ageTags?: string[];
+  governanceTags?: string[];
+  fundingRegionIds?: string[];
+  /** @minItems 1 */
+  sources?: CreateWildflowerUpdateSourceBody[];
+  relatedLinks?: CreateWildflowerUpdateRelatedLinkBody[];
+}
+
+export interface WildflowerUpdateItemList {
+  data: WildflowerUpdateItem[];
+  pagination: Pagination;
+}
+
+export interface WildflowerRelevantUpdateItem {
+  id: string;
+  title: string;
+  details: string;
+  qualification: string | null;
+  importKey: string | null;
+  status: WildflowerUpdateStatus;
+  eventDate: WildflowerUpdateEventDate;
+  topicMatches: string[];
+  geographyMatches: string[];
+  sources: WildflowerUpdateSource[];
+}
+
+export interface WildflowerRelevantUpdateItemList {
+  data: WildflowerRelevantUpdateItem[];
+}
+
 export interface AuditChange {
   field: string;
   from?: unknown;
@@ -12056,6 +12280,36 @@ export type ListPersonSuppressionWindowsParams = {
  * Filter to a specific person.
  */
 personId?: string;
+};
+
+export type ListWildflowerUpdateItemsParams = {
+search?: string;
+dateFrom?: string;
+dateTo?: string;
+status?: WildflowerUpdateStatus[];
+interest?: string[];
+geography?: string[];
+sourceType?: WildflowerUpdateSourceType[];
+includeArchived?: boolean;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListRelevantWildflowerUpdateItemsParams = {
+personId?: string;
+organizationId?: string;
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
 };
 
 export type ListAuditLogParams = {

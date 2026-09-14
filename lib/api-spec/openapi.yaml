@@ -10235,6 +10235,126 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
+  /wildflower-update-items:
+    get:
+      operationId: listWildflowerUpdateItems
+      tags: [wildflower-updates]
+      summary: List dated, sourced Wildflower news and progress items
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: dateFrom, in: query, schema: { type: string, format: date } }
+        - { name: dateTo, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, style: form, explode: false, schema: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateStatus" } } }
+        - { name: interest, in: query, style: form, explode: false, schema: { type: array, items: { type: string } } }
+        - { name: geography, in: query, style: form, explode: false, schema: { type: array, items: { type: string } } }
+        - { name: sourceType, in: query, style: form, explode: false, schema: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateSourceType" } } }
+        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Page" }
+      responses:
+        "200":
+          description: Paginated update items
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItemList" }
+    post:
+      operationId: createWildflowerUpdateItem
+      tags: [wildflower-updates]
+      summary: Create a dated Wildflower news or progress item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateWildflowerUpdateItemBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Duplicate item or source URL }
+
+  /wildflower-update-items/{id}:
+    get:
+      operationId: getWildflowerUpdateItem
+      tags: [wildflower-updates]
+      summary: Get one dated Wildflower news or progress item
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Update item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateWildflowerUpdateItem
+      tags: [wildflower-updates]
+      summary: Patch a dated Wildflower news or progress item
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateWildflowerUpdateItemBody" }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Duplicate item or source URL }
+
+  /wildflower-update-items/relevant:
+    get:
+      operationId: listRelevantWildflowerUpdateItems
+      tags: [wildflower-updates]
+      summary: List eligible Wildflower updates relevant to one saved donor entity
+      description: Requires exactly one personId or organizationId. Interests and funding regions are read from the saved CRM record; callers cannot supply substitute matching inputs.
+      parameters:
+        - { name: personId, in: query, schema: { type: string } }
+        - { name: organizationId, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Eligible relevant updates with match explanations and citations
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerRelevantUpdateItemList" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /wildflower-update-items/{id}/archive:
+    post:
+      operationId: archiveWildflowerUpdateItem
+      tags: [wildflower-updates]
+      summary: Soft-delete a Wildflower update item
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Archived item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /wildflower-update-items/{id}/unarchive:
+    post:
+      operationId: unarchiveWildflowerUpdateItem
+      tags: [wildflower-updates]
+      summary: Restore a soft-deleted Wildflower update item
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Restored item
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WildflowerUpdateItem" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ─── Audit log (admin) ──────────────────────────────────────────────────────
   /audit-log:
     get:
@@ -26344,6 +26464,168 @@ components:
       required: [content]
       properties:
         content: { type: string }
+
+    WildflowerUpdateDatePrecision:
+      type: string
+      enum: [exact, month, year, season, date_range, school_year, month_range, unknown]
+    WildflowerUpdateStatus:
+      type: string
+      enum: [completed, reported_progress, work_in_progress, proposed_work, announcement]
+    WildflowerUpdatePreparationStatus:
+      type: string
+      enum: [eligible, hold_for_confirmation]
+    WildflowerUpdateSourceType:
+      type: string
+      enum: [sent_newsletter, published_article, donor_proposal, draft]
+    WildflowerUpdateEventDate:
+      type: object
+      required: [precision]
+      properties:
+        precision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        year: { type: integer, minimum: 1, nullable: true }
+        startYear: { type: integer, minimum: 1, nullable: true }
+        startMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        endYear: { type: integer, minimum: 1, nullable: true }
+        endMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        month: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        season: { type: string, nullable: true }
+    WildflowerUpdateSource:
+      type: object
+      required: [id, sourceType, title, url, publicationDatePrecision]
+      properties:
+        id: { type: string }
+        sourceType: { $ref: "#/components/schemas/WildflowerUpdateSourceType" }
+        title: { type: string }
+        url: { type: string, format: uri }
+        publicationDatePrecision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        publicationDate: { type: string, format: date, nullable: true }
+        publicationEndDate: { type: string, format: date, nullable: true }
+        publicationYear: { type: integer, minimum: 1, nullable: true }
+        publicationMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationStartYear: { type: integer, minimum: 1, nullable: true }
+        publicationStartMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationEndYear: { type: integer, minimum: 1, nullable: true }
+        publicationEndMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationSeason: { type: string, nullable: true }
+    WildflowerUpdateRelatedLink:
+      type: object
+      required: [id, title, url]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        url: { type: string, format: uri }
+    WildflowerUpdateItem:
+      type: object
+      required: [id, title, details, qualification, importKey, eventDate, status, preparationStatus, thematicTags, ageTags, governanceTags, fundingRegionIds, sources, relatedLinks, archivedAt, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        details: { type: string }
+        qualification: { type: string, nullable: true }
+        importKey: { type: string, nullable: true }
+        eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
+        status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
+        preparationStatus: { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
+        thematicTags: { type: array, items: { type: string } }
+        ageTags: { type: array, items: { type: string } }
+        governanceTags: { type: array, items: { type: string } }
+        fundingRegionIds: { type: array, items: { type: string } }
+        sources: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateSource" } }
+        relatedLinks: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateRelatedLink" } }
+        archivedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CreateWildflowerUpdateSourceBody:
+      type: object
+      required: [sourceType, title, url, publicationDatePrecision]
+      properties:
+        sourceType: { $ref: "#/components/schemas/WildflowerUpdateSourceType" }
+        title: { type: string }
+        url: { type: string, format: uri }
+        publicationDatePrecision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        publicationDate: { type: string, format: date, nullable: true }
+        publicationEndDate: { type: string, format: date, nullable: true }
+        publicationYear: { type: integer, minimum: 1, nullable: true }
+        publicationMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationStartYear: { type: integer, minimum: 1, nullable: true }
+        publicationStartMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationEndYear: { type: integer, minimum: 1, nullable: true }
+        publicationEndMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationSeason: { type: string, nullable: true }
+    CreateWildflowerUpdateRelatedLinkBody:
+      type: object
+      required: [title, url]
+      properties:
+        title: { type: string }
+        url: { type: string, format: uri }
+    CreateWildflowerUpdateItemBody:
+      type: object
+      required: [title, details, eventDate, status, sources]
+      properties:
+        title: { type: string }
+        details: { type: string, description: One paragraph of details without line breaks. }
+        qualification: { type: string, nullable: true }
+        eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
+        status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
+        preparationStatus:
+          { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus", default: eligible }
+        thematicTags: { type: array, items: { type: string }, default: [] }
+        ageTags: { type: array, items: { type: string }, default: [] }
+        governanceTags: { type: array, items: { type: string }, default: [] }
+        fundingRegionIds: { type: array, items: { type: string }, default: [] }
+        sources:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
+        relatedLinks: { type: array, items: { $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody" }, default: [] }
+    UpdateWildflowerUpdateItemBody:
+      description: All fields are optional. When sources or relatedLinks are supplied, they replace the complete collection.
+      type: object
+      properties:
+        title: { type: string }
+        details: { type: string, description: One paragraph of details without line breaks. }
+        qualification: { type: string, nullable: true }
+        eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
+        status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
+        preparationStatus: { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
+        thematicTags: { type: array, items: { type: string } }
+        ageTags: { type: array, items: { type: string } }
+        governanceTags: { type: array, items: { type: string } }
+        fundingRegionIds: { type: array, items: { type: string } }
+        sources:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
+        relatedLinks: { type: array, items: { $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody" } }
+    WildflowerUpdateItemList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateItem" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    WildflowerRelevantUpdateItem:
+      type: object
+      required: [id, title, details, qualification, importKey, status, eventDate, topicMatches, geographyMatches, sources]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        details: { type: string }
+        qualification: { type: string, nullable: true }
+        importKey: { type: string, nullable: true }
+        status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
+        eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
+        topicMatches: { type: array, items: { type: string } }
+        geographyMatches: { type: array, items: { type: string } }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/WildflowerUpdateSource" }
+    WildflowerRelevantUpdateItemList:
+      type: object
+      required: [data]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/WildflowerRelevantUpdateItem" } }
 
     # ─── Audit log ────────────────────────────────────────────────────────────
     AuditChange:

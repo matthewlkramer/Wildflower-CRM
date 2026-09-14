@@ -34,6 +34,7 @@ Rules:
 - Ground every claim in the snapshot (a dated gift, an open opportunity and its stage, the last-contacted date, a recent meeting or email). Never invent facts, amounts, or interactions not present in the data.
 - Do not include recommendations, advice, or next steps in summary.
 - Return nextSteps separately. Each must cite a specific evidence item (media mention, recorded interest/current initiative, or recent newsletter engagement) and be actionable. Never give generic "send a warm email" advice.
+- Sourced Wildflower news/progress below is eligible context only when it has a citation. Include its date as recorded (month/year/season/range/unknown, never an invented exact date), cite the source URL/title, and label work_in_progress or proposed_work explicitly as planned work. Never present a draft without a source as an achievement.
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
 
@@ -115,6 +116,35 @@ function fmtSignals(signals: TaskSignals): string {
   if (signals.recentNewsletterEngagement.length === 0) lines.push("  (none)");
   for (const n of signals.recentNewsletterEngagement)
     lines.push(`  - ${n.date ?? "?"}: ${n.subject ?? "(untitled)"} — ${n.clicked ? "clicked" : n.opened ? "opened" : "not opened"}`);
+  lines.push("");
+  lines.push("RELEVANT SOURCED WILDFLOWER NEWS / PROGRESS:");
+  if (signals.relevantWildflowerUpdates.length === 0) lines.push("  (none)");
+  for (const update of signals.relevantWildflowerUpdates) {
+    const date = update.eventDate.startDate
+      ? update.eventDate.endDate
+        ? `${update.eventDate.startDate} to ${update.eventDate.endDate}`
+        : update.eventDate.startDate
+      : update.eventDate.year
+        ? `${update.eventDate.year}${update.eventDate.month ? `-${String(update.eventDate.month).padStart(2, "0")}` : ""}${update.eventDate.season ? ` (${update.eventDate.season})` : ""}`
+        : update.eventDate.startMonth
+          ? `${update.eventDate.startYear}-${String(update.eventDate.startMonth).padStart(2, "0")}–${update.eventDate.endYear}-${String(update.eventDate.endMonth).padStart(2, "0")}`
+        : update.eventDate.startYear
+          ? `${update.eventDate.startYear}-${String(update.eventDate.endYear ?? update.eventDate.startYear + 1).slice(-2)} school year`
+        : "(date unknown)";
+    const planned = update.status === "work_in_progress" || update.status === "proposed_work";
+    lines.push(`  - ${date}: ${update.title} [${planned ? "PLANNED / WORK IN PROGRESS" : update.status}] — ${update.details}`);
+    lines.push(`    topic match: ${update.topicMatches.join(", ") || "none"}; geography match: ${update.geographyMatches.join(", ") || "none"}`);
+    for (const source of update.sources) {
+      const publicationDate = source.publicationDate
+        ? source.publicationEndDate
+          ? `${source.publicationDate} to ${source.publicationEndDate}`
+          : source.publicationDate
+        : source.publicationYear
+          ? `${source.publicationYear}${source.publicationMonth ? `-${String(source.publicationMonth).padStart(2, "0")}` : ""}${source.publicationSeason ? ` (${source.publicationSeason})` : ""}`
+          : "(publication date unknown)";
+      lines.push(`    citation: ${source.title} — ${source.url} [published ${publicationDate}]`);
+    }
+  }
 
   return lines.join("\n");
 }
@@ -195,7 +225,14 @@ export async function generateRelationshipSummary(args: {
     for (const block of response.content) {
       if (block.type === "text") text += block.text;
     }
-     return { ...parseModelOutput(text), generatedAt };
+      const parsed = parseModelOutput(text);
+      return {
+        ...parsed,
+        summary: signals.schoolGeographySection
+          ? `${parsed.summary}\n\n${signals.schoolGeographySection}`
+          : parsed.summary,
+        generatedAt,
+      };
   } catch (err) {
     // Privacy: never log the err payload directly — Anthropic SDK errors
     // can echo the prompt back, and the prompt contains donor data.
@@ -203,6 +240,12 @@ export async function generateRelationshipSummary(args: {
       { errClass: errClass(err), errMessage: errMessage(err) },
       "generateRelationshipSummary failed; returning placeholder",
     );
-    return { summary: PLACEHOLDER, nextSteps: [], generatedAt };
+    return {
+      summary: signals.schoolGeographySection
+        ? `${PLACEHOLDER}\n\n${signals.schoolGeographySection}`
+        : PLACEHOLDER,
+      nextSteps: [],
+      generatedAt,
+    };
   }
 }

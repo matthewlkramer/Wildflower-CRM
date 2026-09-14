@@ -1205,3 +1205,29 @@ export const qboAccountingDispositionEnum = pgEnum(
   "qbo_accounting_disposition",
   ["consistent", "correction_needed", "corrected", "accepted_historical"],
 );
+
+/** Precision of a Wildflower news/progress event date. */
+export const wildflowerUpdateDatePrecisionEnum = pgEnum(
+  "wildflower_update_date_precision",
+  ["exact", "month", "year", "season", "date_range", "school_year", "month_range", "unknown"],
+);
+
+/** Provenance type for a sourced Wildflower news/progress item. */
+export const wildflowerUpdateSourceTypeEnum = pgEnum(
+  "wildflower_update_source_type",
+  ["sent_newsletter", "published_article", "donor_proposal", "draft"],
+);
+
+/** Staff-facing state of a Wildflower news/progress item. */
+export const wildflowerUpdateStatusEnum = pgEnum("wildflower_update_status", [
+  "completed",
+  "reported_progress",
+  "work_in_progress",
+  "proposed_work",
+  "announcement",
+]);
+
+export const wildflowerUpdatePreparationStatusEnum = pgEnum(
+  "wildflower_update_preparation_status",
+  ["eligible", "hold_for_confirmation"],
+);

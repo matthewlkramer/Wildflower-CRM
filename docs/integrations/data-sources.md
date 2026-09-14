@@ -14,6 +14,7 @@ per-table schema map is [`../../lib/db/SCHEMA.md`](../../lib/db/SCHEMA.md).
 | -------------------------------------------------- | -------------------------- | ------------------------------------------ |
 | Copper (via manually cleaned Airtable "CRM Files") | Historical CRM records     | **One-time import, CLOSED — never resync** |
 | Schools Airtable base                              | School directory           | Ongoing one-way mirror (Airtable → CRM)    |
+| WFTLS meeting-prep API                             | Live school meeting context | Narrow read-only request per prep generation |
 | QuickBooks Online                                  | Accounting evidence        | Ongoing pull-only sync                     |
 | Stripe                                             | Payment-processor evidence | Ongoing pull-only sync                     |
 | Donorbox                                           | Donor/purpose evidence     | Ongoing pull-only sync                     |
@@ -46,6 +47,18 @@ preserved for traceability only.
 ```bash
 AIRTABLE_TOKEN=... node lib/db/src/sync-schools-from-airtable.mjs
 ```
+
+### School meeting preparation (WFTLS)
+
+Meeting-preparation briefs use the WFTLS contract endpoint
+`GET /api/integrations/wfcrm/v1/schools/meeting-prep`, configured only on the
+server with `WFTLS_BASE_URL` and `WFTLS_MEETING_PREP_API_TOKEN`. This is a
+request-time, read-only lookup and is intentionally separate from the ongoing
+Airtable → CRM Schools mirror above. The meeting-prep path never reads Airtable
+and has no Airtable fallback. Its response is runtime-validated; transient
+rate-limit, server, and network failures are retried safely, while a failed
+lookup preserves the existing “Live school information is unavailable for this
+generation” behavior.
 
 ## Ongoing money-evidence syncs (pull-only)
 
