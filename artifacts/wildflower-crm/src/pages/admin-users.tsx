@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetCurrentUser,
@@ -46,7 +45,7 @@ const roles: Record<UserRole, string> = {
 const selectClass =
   "h-10 rounded-md border border-input bg-background px-3 text-sm";
 
-export default function AdminUsers() {
+export default function AdminUsers({ embedded = false }: { embedded?: boolean }) {
   const me = useGetCurrentUser();
   const isAdmin = me.data?.role === "admin";
   const directory = useAdminListUsers({
@@ -277,11 +276,12 @@ export default function AdminUsers() {
           </Table>
         </div>
       )}
-      <p className="text-sm">
-        <Link href="/admin?tab=users" className="underline">
-          Reassign records when someone leaves the team
-        </Link>
-      </p>
+      {!embedded && (
+        <p className="text-sm">
+          User access and record reassignment now live together on the Admin
+          page's Users tab.
+        </p>
+      )}
       <Dialog
         open={editing !== null}
         onOpenChange={(open) => {

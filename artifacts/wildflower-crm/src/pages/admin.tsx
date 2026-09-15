@@ -129,6 +129,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { formatEnum } from "@/lib/format";
+import AdminUsers from "@/pages/admin-users";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,8 +224,10 @@ export default function Admin() {
 
         {isAdmin && (
           <TabsContent value="users" className="space-y-8">
-            <p><a className="underline" href="/admin/users">Manage users, roles, and access</a></p>
-            <ReassignOwnerSection />
+            <AdminUsers embedded />
+            <div id="reassign-owner">
+              <ReassignOwnerSection />
+            </div>
           </TabsContent>
         )}
       </Tabs>
