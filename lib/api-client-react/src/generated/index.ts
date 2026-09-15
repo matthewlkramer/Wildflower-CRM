@@ -31,6 +31,7 @@ export * from "./google-sync/google-sync";
 export * from "./grant-leads/grant-leads";
 export * from "./health/health";
 export * from "./households/households";
+export * from "./integrations/integrations";
 export * from "./interactions/interactions";
 export * from "./internal-email-domains/internal-email-domains";
 export * from "./media-mentions/media-mentions";
