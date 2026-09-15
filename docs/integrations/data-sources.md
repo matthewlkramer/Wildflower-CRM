@@ -19,7 +19,7 @@ per-table schema map is [`../../lib/db/SCHEMA.md`](../../lib/db/SCHEMA.md).
 | Stripe                                             | Payment-processor evidence | Ongoing pull-only sync                     |
 | Donorbox                                           | Donor/purpose evidence     | Ongoing pull-only sync                     |
 | Gmail / Google Calendar                            | Communications             | Ongoing per-user sync                      |
-| Flodesk                                            | Newsletter audience + campaign evidence | Ongoing audience + MCP engagement sync; workbook backfill |
+| Flodesk                                            | Newsletter audience + campaign evidence | Ongoing audience + ChatGPT/MCP engagement sync; workbook backfill |
 | GDELT                                              | Media mentions             | Ongoing pull                               |
 
 ## Closed source: Copper / Airtable CRM Files
@@ -111,17 +111,27 @@ document set (see [`../README.md`](../README.md)).
   when the provider supplies none.
 
   The official Flodesk MCP is the ongoing source for sent-campaign and
-  recipient-level delivery, open, click, and clicked-link evidence. The
-  in-process off-hours scheduler discovers campaigns daily, refreshes a campaign
-  daily for 14 days after it is sent, then weekly, and records campaign
-  watermarks plus last-run counts. It uses Flodesk's stable email id, links an
-  existing historical row on exact normalized subject plus UTC send date, and
-  links recipients only through exact normalized CRM email identity. It never
-  creates people or changes newsletter preferences. Configure it with the
-  secret `FLODESK_MCP_URL`; add `FLODESK_MCP_AUTH_TOKEN` only when the connector
-  URL requires an externally managed bearer token. Set
-  `DISABLE_FLODESK_ENGAGEMENT_SYNC=1` to disable this path without disabling the
-  subscriber sync. Sync state remains in `flodesk_sync_state`.
+  recipient-level delivery, open, click, and clicked-link evidence. Until
+  Flodesk exposes a server-to-server MCP URL, a daily ChatGPT Work task bridges
+  the Flodesk app to WFCRM's authenticated remote MCP endpoint at
+  `/api/integrations/flodesk-chatgpt/mcp`. WFCRM's read-only planning tool owns
+  the cadence decision; the task fetches recipients only for campaigns returned
+  as due, imports every cursor page monotonically, and completes the run only
+  after all pages succeed. See
+  [`flodesk-chatgpt-bridge.md`](flodesk-chatgpt-bridge.md).
+
+  Both the bridge and the dormant direct connector reuse the same mutation
+  boundary: discover campaigns daily, refresh a campaign daily for 14 days
+  after send, then weekly, and record campaign watermarks plus last-run counts.
+  They use Flodesk's stable email id, link an existing historical row on exact
+  normalized subject plus UTC send date, and link recipients only through exact
+  normalized CRM email identity. Neither path creates people or changes
+  newsletter preferences. The direct path is configured with
+  `FLODESK_MCP_URL` and optional `FLODESK_MCP_AUTH_TOKEN`; the bridge uses only
+  `FLODESK_CHATGPT_MCP_AUTH_TOKEN`. Set
+  `DISABLE_FLODESK_ENGAGEMENT_SYNC=1` to disable the direct path without
+  disabling subscriber sync, and pause the ChatGPT task to disable the bridge.
+  Sync state remains in `flodesk_sync_state`.
 
   The canonical Flodesk workbook on `/newsletter` remains an idempotent
   historical/backfill path, not the ongoing feed. Workbook imports upsert

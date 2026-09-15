@@ -7,6 +7,8 @@ import {
 import { db } from "@workspace/db";
 import {
   emails,
+  flodeskSyncState,
+  FLODESK_SYNC_STATE_ID,
   newsletterCampaigns,
   newsletterEngagement,
 } from "@workspace/db/schema";
@@ -56,6 +58,20 @@ export interface FlodeskEngagementSyncSummary {
   campaignsChecked: number;
   campaignsRefreshed: number;
   engagementRecordsUpserted: number;
+}
+
+export interface FlodeskCampaignSyncPlan {
+  campaignsChecked: number;
+  dueCampaigns: FlodeskMcpCampaign[];
+}
+
+export interface FlodeskRecipientPageImportSummary {
+  campaignId: string;
+  providerCampaignId: string;
+  engagementRecordsUpserted: number;
+  linkedRecords: number;
+  unmatchedRecords: number;
+  campaignCompleted: boolean;
 }
 
 export function isFlodeskMcpConfigured(): boolean {
@@ -539,10 +555,10 @@ export function isFlodeskCampaignDue(
   );
 }
 
-async function findOrCreateCampaign(campaign: FlodeskMcpCampaign): Promise<{
+async function findStoredCampaign(campaign: FlodeskMcpCampaign): Promise<{
   id: string;
   lastEngagementSyncedAt: Date | null;
-}> {
+} | null> {
   const byProvider = await db
     .select({
       id: newsletterCampaigns.id,
@@ -570,7 +586,14 @@ async function findOrCreateCampaign(campaign: FlodeskMcpCampaign): Promise<{
         )
         .limit(1)
         .then((rows) => rows[0]);
-  const matched = byProvider ?? historical;
+  return byProvider ?? historical ?? null;
+}
+
+async function findOrCreateCampaign(campaign: FlodeskMcpCampaign): Promise<{
+  id: string;
+  lastEngagementSyncedAt: Date | null;
+}> {
+  const matched = await findStoredCampaign(campaign);
   const id = matched?.id ?? `flodesk:mcp:${campaign.providerCampaignId}`;
 
   await db
@@ -674,6 +697,122 @@ async function upsertRecipients(
       });
   }
   return recipients.length;
+}
+
+/**
+ * Read-only planning boundary used by the ChatGPT bridge. New campaigns are
+ * reported as due but are not persisted until recipient evidence arrives.
+ * That keeps a failed or abandoned scheduled task from creating empty
+ * campaigns or advancing any watermark.
+ */
+export async function planFlodeskCampaignEngagement(
+  campaigns: FlodeskMcpCampaign[],
+  now = new Date(),
+): Promise<FlodeskCampaignSyncPlan> {
+  const dueCampaigns: FlodeskMcpCampaign[] = [];
+  for (const campaign of campaigns) {
+    const stored = await findStoredCampaign(campaign);
+    if (
+      isFlodeskCampaignDue(
+        {
+          sentAt: campaign.sentAt,
+          lastEngagementSyncedAt: stored?.lastEngagementSyncedAt ?? null,
+        },
+        now,
+      )
+    ) {
+      dueCampaigns.push(campaign);
+    }
+  }
+  return { campaignsChecked: campaigns.length, dueCampaigns };
+}
+
+/**
+ * Accept one fully retrieved Flodesk recipient page. Page imports are
+ * monotonic and idempotent; only the page marked final advances the campaign
+ * watermark. If a scheduled task stops mid-pagination, the campaign remains
+ * due and the next run safely replays the pages.
+ */
+export async function importFlodeskRecipientPage(opts: {
+  campaign: FlodeskMcpCampaign;
+  recipients: FlodeskMcpRecipient[];
+  finalPage: boolean;
+  observedAt?: Date;
+}): Promise<FlodeskRecipientPageImportSummary> {
+  const observedAt = opts.observedAt ?? new Date();
+  const stored = await findOrCreateCampaign(opts.campaign);
+  const engagementRecordsUpserted = await upsertRecipients(
+    stored.id,
+    opts.recipients,
+  );
+  const linkedRecords = opts.recipients.length
+    ? await db
+        .select({
+          count: sql<number>`count(*) filter (where ${newsletterEngagement.emailId} is not null)::int`,
+        })
+        .from(newsletterEngagement)
+        .where(
+          and(
+            eq(newsletterEngagement.campaignId, stored.id),
+            sql`${newsletterEngagement.normalizedEmail} IN (${sql.join(
+              opts.recipients.map((row) => sql`${row.email}`),
+              sql`, `,
+            )})`,
+          ),
+        )
+        .then((rows) => Number(rows[0]?.count ?? 0))
+    : 0;
+
+  if (opts.finalPage) {
+    await db
+      .update(newsletterCampaigns)
+      .set({ lastEngagementSyncedAt: observedAt, updatedAt: observedAt })
+      .where(eq(newsletterCampaigns.id, stored.id));
+  }
+
+  return {
+    campaignId: stored.id,
+    providerCampaignId: opts.campaign.providerCampaignId,
+    engagementRecordsUpserted,
+    linkedRecords,
+    unmatchedRecords: engagementRecordsUpserted - linkedRecords,
+    campaignCompleted: opts.finalPage,
+  };
+}
+
+/** Record aggregate completion evidence after every due campaign finished. */
+export async function completeFlodeskEngagementBridgeRun(opts: {
+  campaignsChecked: number;
+  campaignsRefreshed: number;
+  engagementRecordsUpserted: number;
+  finishedAt?: Date;
+}): Promise<void> {
+  const finishedAt = opts.finishedAt ?? new Date();
+  await db
+    .insert(flodeskSyncState)
+    .values({
+      id: FLODESK_SYNC_STATE_ID,
+      lastRunStartedAt: finishedAt,
+      lastRunFinishedAt: finishedAt,
+      lastStatus: "ok",
+      campaignsChecked: opts.campaignsChecked,
+      campaignsRefreshed: opts.campaignsRefreshed,
+      engagementRecordsUpserted: opts.engagementRecordsUpserted,
+      lastError: null,
+      updatedAt: finishedAt,
+    })
+    .onConflictDoUpdate({
+      target: flodeskSyncState.id,
+      set: {
+        lastRunFinishedAt: finishedAt,
+        lastStatus: "ok",
+        campaignsChecked: opts.campaignsChecked,
+        campaignsRefreshed: opts.campaignsRefreshed,
+        engagementRecordsUpserted: opts.engagementRecordsUpserted,
+        lastError: null,
+        updatedAt: finishedAt,
+      },
+    });
 }
 
 export async function syncFlodeskCampaignEngagement(opts?: {
