@@ -33,7 +33,7 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
 
 ## Flodesk
 
-- [Flodesk subscriber sync](flodesk-subscriber-sync.md) — people→one segment; Basic auth (not Bearer)+User-Agent; no-op until API key+segment id set; inbound monotonic, Flodesk unsubscribe wins; advisory lock (9001,2).
+- [Flodesk subscriber + MCP evidence sync](flodesk-subscriber-sync.md) — people→one segment; Basic auth (not Bearer)+User-Agent; official MCP recipient analytics; inbound monotonic, Flodesk unsubscribe wins; daily-then-weekly campaign cadence; advisory lock (9001,2).
 
 ## Email-address data
 

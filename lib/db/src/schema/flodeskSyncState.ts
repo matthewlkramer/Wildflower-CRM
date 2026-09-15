@@ -1,17 +1,19 @@
 import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 /**
- * Singleton run-state for the Flodesk subscriber-sync job. There is exactly
- * one row, keyed by a fixed id (`SINGLETON`). The in-process scheduler reads
+ * Singleton run-state for the Flodesk subscriber + MCP engagement job. There
+ * is exactly one row, keyed by a fixed id (`SINGLETON`). The in-process scheduler reads
  * `lastRunFinishedAt` to decide whether a daily reconcile is due, and writes
  * back counts + status so the last run is observable without trawling logs. A
  * global pg advisory lock (not this row) is what prevents concurrent/overlapping
  * runs.
  *
- * This tracks the INBOUND reconcile only (Flodesk → CRM unsubscribes). Outbound
- * member pushes (CRM → Flodesk) happen inline on person create/update and are
- * not journaled here. `pullCursor` is an opaque resume hint for paginating the
- * Flodesk subscriber list across runs (nullable; a fresh full scan when null).
+ * This tracks the inbound reconcile (Flodesk → CRM unsubscribes and campaign
+ * engagement). Outbound member pushes (CRM → Flodesk) happen inline on person
+ * create/update and are not journaled here. `pullCursor` is an opaque resume
+ * hint for paginating the Flodesk subscriber list across runs (nullable; a
+ * fresh full scan when null). Campaign-specific cadence lives on
+ * `newsletter_campaigns.last_engagement_synced_at`.
  */
 export const flodeskSyncState = pgTable("flodesk_sync_state", {
   id: text("id").primaryKey(),
@@ -24,6 +26,9 @@ export const flodeskSyncState = pgTable("flodesk_sync_state", {
   pullCursor: text("pull_cursor"),
   subscribersChecked: integer("subscribers_checked"),
   unsubscribesApplied: integer("unsubscribes_applied"),
+  campaignsChecked: integer("campaigns_checked"),
+  campaignsRefreshed: integer("campaigns_refreshed"),
+  engagementRecordsUpserted: integer("engagement_records_upserted"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),

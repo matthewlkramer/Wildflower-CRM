@@ -1,5 +1,5 @@
 /**
- * Manual one-shot Flodesk unsubscribe reconcile (Flodesk → CRM).
+ * Manual one-shot Flodesk subscriber + campaign-engagement reconcile.
  *
  *   pnpm --filter @workspace/api-server run sync:flodesk
  *
@@ -10,8 +10,8 @@
  * Forces an immediate run (bypasses the daily-due check and the off-hours
  * window) but goes through `runFlodeskSyncIfDue`, so it takes the same global
  * advisory lock and records run-state — it will never collide with the
- * scheduled run or another manual invocation. Fails loudly when the Flodesk
- * API key / segment id are not configured.
+ * scheduled run or another manual invocation. The MCP evidence path is enabled
+ * by `FLODESK_MCP_URL` and optional `FLODESK_MCP_AUTH_TOKEN`.
  */
 import { logger } from "../lib/logger";
 import { runFlodeskSyncIfDue } from "../lib/flodeskSyncScheduler";
