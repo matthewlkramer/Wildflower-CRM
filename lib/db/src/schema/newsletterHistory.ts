@@ -8,14 +8,15 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { emails } from "./emails";
 
 /**
- * Source-evidence mirror of the addresses found in the imported Flodesk
- * workbook. Operational newsletter eligibility remains on `people.newsletter`
- * and `people.unsubscribed_to_newsletter`; this table preserves the import
- * evidence, including addresses that do not yet match a CRM record.
+ * Source-evidence mirror of addresses found in imported Flodesk data.
+ * Operational newsletter eligibility remains on `people.newsletter` and
+ * `people.unsubscribed_to_newsletter`; this table preserves source evidence,
+ * including addresses that do not yet match a CRM record.
  */
 export const newsletterContacts = pgTable(
   "newsletter_contacts",
@@ -45,22 +46,36 @@ export const newsletterContacts = pgTable(
 );
 
 /** One row per historical Flodesk newsletter. */
-export const newsletterCampaigns = pgTable("newsletter_campaigns", {
-  id: text("id").primaryKey(),
-  subject: text("subject").notNull(),
-  sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
-  sentTimeText: text("sent_time_text"),
-  previewUrl: text("preview_url"),
-  openRate: numeric("open_rate", { precision: 6, scale: 5 }),
-  clickRate: numeric("click_rate", { precision: 6, scale: 5 }),
-  sourceSheet: text("source_sheet").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const newsletterCampaigns = pgTable(
+  "newsletter_campaigns",
+  {
+    id: text("id").primaryKey(),
+    /** Stable Flodesk MCP email id; historical workbook rows are linked on first sync. */
+    providerCampaignId: text("provider_campaign_id"),
+    subject: text("subject").notNull(),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull(),
+    sentTimeText: text("sent_time_text"),
+    previewUrl: text("preview_url"),
+    openRate: numeric("open_rate", { precision: 6, scale: 5 }),
+    clickRate: numeric("click_rate", { precision: 6, scale: 5 }),
+    sourceSheet: text("source_sheet").notNull(),
+    /** Scheduler watermark for the per-recipient MCP evidence refresh. */
+    lastEngagementSyncedAt: timestamp("last_engagement_synced_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (t) => [
+    uniqueIndex("newsletter_campaigns_provider_id_uq")
+      .on(t.providerCampaignId)
+      .where(sql`${t.providerCampaignId} is not null`),
+  ],
+);
 
 /**
  * Recipient-level evidence. The composite key makes workbook imports

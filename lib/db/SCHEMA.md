@@ -478,6 +478,13 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `coding_form_rows`, `wildflower_updates` — app plumbing and operational
   state.
 
+`newsletter_campaigns.provider_campaign_id` is the stable Flodesk MCP email
+identity; `last_engagement_synced_at` controls the daily-for-14-days, then weekly
+recipient refresh. `newsletter_engagement` remains the sole per-campaign,
+per-email evidence table for workbook and MCP inputs. The MCP merge is monotonic
+for opens, clicks, counts, timestamps, and clicked-link sets. Exact normalized
+email is the only automatic CRM identity link.
+
 ## Anonymous records
 
 The `anonymous` flag on `organizations` and `people` masks the name to

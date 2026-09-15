@@ -1,6 +1,6 @@
 ---
 status: runbook
-last_verified: 2026-09-08
+last_verified: 2026-09-15
 ---
 
 # Data sources: provenance, sync ownership, and resync procedures
@@ -19,7 +19,7 @@ per-table schema map is [`../../lib/db/SCHEMA.md`](../../lib/db/SCHEMA.md).
 | Stripe                                             | Payment-processor evidence | Ongoing pull-only sync                     |
 | Donorbox                                           | Donor/purpose evidence     | Ongoing pull-only sync                     |
 | Gmail / Google Calendar                            | Communications             | Ongoing per-user sync                      |
-| Flodesk                                            | Newsletter audience + campaign evidence | Ongoing audience sync; reviewed workbook imports |
+| Flodesk                                            | Newsletter audience + campaign evidence | Ongoing audience + MCP engagement sync; workbook backfill |
 | GDELT                                              | Media mentions             | Ongoing pull                               |
 
 ## Closed source: Copper / Airtable CRM Files
@@ -108,9 +108,23 @@ document set (see [`../README.md`](../README.md)).
   configured segment membership; opt-out suppresses delivery. Resubscription
   sends a known affirmative opt-in timestamp for Flodesk to validate. Inbound
   unsubscribe observations append source evidence with an unknown event date
-  when the provider supplies none. Sync state remains in `flodesk_sync_state`. Historical
-  audience, campaign, open, and click evidence can also be imported from the
-  canonical Flodesk workbook on `/newsletter`. Imports upsert
+  when the provider supplies none.
+
+  The official Flodesk MCP is the ongoing source for sent-campaign and
+  recipient-level delivery, open, click, and clicked-link evidence. The
+  in-process off-hours scheduler discovers campaigns daily, refreshes a campaign
+  daily for 14 days after it is sent, then weekly, and records campaign
+  watermarks plus last-run counts. It uses Flodesk's stable email id, links an
+  existing historical row on exact normalized subject plus UTC send date, and
+  links recipients only through exact normalized CRM email identity. It never
+  creates people or changes newsletter preferences. Configure it with the
+  secret `FLODESK_MCP_URL`; add `FLODESK_MCP_AUTH_TOKEN` only when the connector
+  URL requires an externally managed bearer token. Set
+  `DISABLE_FLODESK_ENGAGEMENT_SYNC=1` to disable this path without disabling the
+  subscriber sync. Sync state remains in `flodesk_sync_state`.
+
+  The canonical Flodesk workbook on `/newsletter` remains an idempotent
+  historical/backfill path, not the ongoing feed. Workbook imports upsert
   `newsletter_contacts`, `newsletter_campaigns`, and `newsletter_engagement`
   by stable email/campaign keys, link exact CRM email matches, and never create
   people from unmatched addresses. Workbook imports never change operational
@@ -118,7 +132,10 @@ document set (see [`../README.md`](../README.md)).
   reports exact-email subscription-status differences and conservative possible
   email differences where an unmatched Flodesk address has one unambiguous
   exact-name CRM person match for human review. The workbook contains contact
-  data and must not be committed to the repository.
+  data and must not be committed to the repository. Flodesk reports bot/security
+  scanner clicks alongside human clicks, so CRM treats click data as directional
+  engagement evidence rather than proof of a human action.
+
 - **GDELT** — press coverage into `media_mentions`; cursor in
   `media_ingest_state`.
 
