@@ -12,10 +12,12 @@ It does not rewrite newsletter evidence or subscription preferences.
    ```
 
 2. Publish the application code from the same reviewed release.
-3. Add the Flodesk MCP connection URL as the `FLODESK_MCP_URL` Replit secret.
-   If the URL does not carry its own authorization, also add the scoped,
-   read-only token as `FLODESK_MCP_AUTH_TOKEN`.
-4. Run one manual verification from the Replit shell:
+3. Choose one evidence transport:
+   - direct server MCP: add `FLODESK_MCP_URL` and, when required, the scoped
+     read-only `FLODESK_MCP_AUTH_TOKEN` Replit secret; or
+   - temporary ChatGPT bridge: add `FLODESK_CHATGPT_MCP_AUTH_TOKEN` and follow
+     [`../../../docs/integrations/flodesk-chatgpt-bridge.md`](../../../docs/integrations/flodesk-chatgpt-bridge.md).
+4. For the direct transport, run one manual verification from the Replit shell:
 
    ```bash
    pnpm --filter @workspace/api-server run sync:flodesk
@@ -26,7 +28,8 @@ recipient-evidence counts. Re-running it is safe. Do not print either secret.
 
 ## Rollback
 
-Disable only the MCP evidence path with `DISABLE_FLODESK_ENGAGEMENT_SYNC=1`.
-The existing subscriber/unsubscribe synchronization continues independently.
-The added columns can remain in place; they are inert and preserve replay
-watermarks.
+Disable only the direct MCP evidence path with
+`DISABLE_FLODESK_ENGAGEMENT_SYNC=1`, or pause the ChatGPT scheduled task to
+disable the bridge. The existing subscriber/unsubscribe synchronization
+continues independently. The added columns can remain in place; they are inert
+and preserve replay watermarks.

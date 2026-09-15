@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import flodeskChatgptMcpRouter from "./flodeskChatgptMcp";
 import usersRouter from "./users";
 import regionsRouter from "./regions";
 import schoolsRouter from "./schools";
@@ -76,6 +77,10 @@ import enrichmentRouter from "./enrichment";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// Machine-to-machine bearer authentication lives inside this router, so it
+// must be mounted before the first sub-router that applies session auth at its
+// module root.
+router.use(flodeskChatgptMcpRouter);
 // emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
 // sub-routers below — usersRouter, regionsRouter, schoolsRouter, etc. —
 // apply `router.use(requireAuth)` at module top, and Express runs that

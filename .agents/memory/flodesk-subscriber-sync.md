@@ -53,6 +53,14 @@ watermark. Historical workbook rows are adopted only on exact normalized subject
 plus UTC send date. Recipients link only by exact normalized CRM email; unmatched
 evidence remains unmatched and no people are created.
 
+Until Flodesk exposes that server URL, the production bridge is a daily ChatGPT
+Work task using the official Flodesk app plus WFCRM's narrow remote MCP endpoint.
+`FLODESK_CHATGPT_MCP_AUTH_TOKEN` authenticates the WFCRM app. The planning tool
+keeps cadence authority in the CRM; recipient pages merge through the same
+monotonic functions, and only a final page advances the campaign watermark.
+Retire the ChatGPT task when the direct MCP path is verified; do not intentionally
+run both paths as parallel authorities.
+
 ## Historical/backfill boundary
 
 The reviewed Flodesk workbook import through `/newsletter` remains available for
