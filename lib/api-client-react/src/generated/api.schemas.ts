@@ -5,6 +5,26 @@
  * Wildflower Fundraising CRM API (Airtable-aligned schema)
  * OpenAPI spec version: 0.2.0
  */
+export type McpJsonRpcRequestParams = { [key: string]: unknown };
+
+export interface McpJsonRpcRequest {
+  jsonrpc: '2.0';
+  id?: string | number | null;
+  method: string;
+  params?: McpJsonRpcRequestParams;
+}
+
+export type McpJsonRpcResponseResult = { [key: string]: unknown };
+
+export type McpJsonRpcResponseError = { [key: string]: unknown };
+
+export interface McpJsonRpcResponse {
+  jsonrpc: '2.0';
+  id: string | number | null;
+  result?: McpJsonRpcResponseResult;
+  error?: McpJsonRpcResponseError;
+}
+
 export interface HealthStatus {
   status: string;
 }
