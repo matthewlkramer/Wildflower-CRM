@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   Camera,
+  GripHorizontal,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -47,6 +48,15 @@ export function FeedbackDialog() {
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [screenshotError, setScreenshotError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [dialogOffset, setDialogOffset] = useState({ x: 0, y: 0 });
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!screenshot) {
@@ -74,8 +84,40 @@ export function FeedbackDialog() {
     setPreparing(true);
     setContext(collectFeedbackContext());
     await capture();
+    setDialogOffset({ x: 0, y: 0 });
     setOpen(true);
     setPreparing(false);
+  };
+
+  const moveDialog = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    const dialog = dialogRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !dialog) return;
+
+    const margin = 8;
+    const width = dialog.offsetWidth;
+    const height = dialog.offsetHeight;
+    const centeredLeft = (window.innerWidth - width) / 2;
+    const centeredTop = (window.innerHeight - height) / 2;
+    const nextX = drag.originX + event.clientX - drag.startX;
+    const nextY = drag.originY + event.clientY - drag.startY;
+
+    setDialogOffset({
+      x: Math.min(
+        window.innerWidth - width - centeredLeft - margin,
+        Math.max(margin - centeredLeft, nextX),
+      ),
+      y: Math.min(
+        window.innerHeight - height - centeredTop - margin,
+        Math.max(margin - centeredTop, nextY),
+      ),
+    });
+  };
+
+  const stopDragging = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    event.currentTarget.releasePointerCapture(event.pointerId);
+    dragRef.current = null;
   };
 
   const reset = () => {
@@ -162,9 +204,44 @@ export function FeedbackDialog() {
           if (!next && !submitting) reset();
         }}
       >
-        <DialogContent className="max-w-2xl" data-feedback-ignore>
-          <DialogHeader>
-            <DialogTitle>Send feedback</DialogTitle>
+        <DialogContent
+          ref={dialogRef}
+          className="max-w-2xl"
+          overlayClassName="bg-black/20 backdrop-blur-none"
+          style={{
+            transform: `translate(calc(-50% + ${dialogOffset.x}px), calc(-50% + ${dialogOffset.y}px))`,
+          }}
+          data-feedback-ignore
+        >
+          <DialogHeader
+            className="-mx-6 -mt-6 cursor-grab select-none rounded-t-lg border-b bg-muted/35 px-6 py-4 pr-12 active:cursor-grabbing"
+            onPointerDown={(event) => {
+              if (event.button !== 0) return;
+              dragRef.current = {
+                pointerId: event.pointerId,
+                startX: event.clientX,
+                startY: event.clientY,
+                originX: dialogOffset.x,
+                originY: dialogOffset.y,
+              };
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={moveDialog}
+            onPointerUp={stopDragging}
+            onPointerCancel={stopDragging}
+            style={{ touchAction: "none" }}
+            data-testid="feedback-dialog-drag-handle"
+          >
+            <div className="flex items-center gap-2">
+              <GripHorizontal
+                className="h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <DialogTitle>Send feedback</DialogTitle>
+              <span className="ml-auto text-xs font-medium text-muted-foreground">
+                Drag to move
+              </span>
+            </div>
             <DialogDescription>
               Describe the issue or question. A private screenshot and the
               current page state are included when available, stored in the
