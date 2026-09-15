@@ -7,12 +7,18 @@ import {
   type FlodeskReconcileSummary,
 } from "./flodeskSync";
 import { isFlodeskConfigured } from "./flodeskClient";
+import {
+  isFlodeskMcpConfigured,
+  syncFlodeskCampaignEngagement,
+  type FlodeskEngagementSyncSummary,
+} from "./flodeskMcp";
 
 /**
- * In-process scheduler for the inbound Flodesk unsubscribe reconcile. Runs
+ * In-process scheduler for the inbound Flodesk reconcile. Runs
  * once a day during off-hours (America/Chicago), consistent with the media
- * ingest sweep — the subscriber scan is paginated and we'd rather keep it out
- * of business hours.
+ * ingest sweep. The subscriber API mirrors unsubscribes; the MCP path imports
+ * per-recipient campaign opens/clicks. Campaigns refresh daily for 14 days
+ * after send and weekly thereafter.
  *
  * Concurrency is guarded by a global pg advisory lock (a fixed key, distinct
  * from media ingest's and the per-user sync locks) so only one run happens at
@@ -79,6 +85,9 @@ async function markFinished(
   fields: {
     subscribersChecked?: number;
     unsubscribesApplied?: number;
+    campaignsChecked?: number;
+    campaignsRefreshed?: number;
+    engagementRecordsUpserted?: number;
     lastError?: string | null;
   },
 ): Promise<void> {
@@ -89,6 +98,9 @@ async function markFinished(
       lastStatus: status,
       subscribersChecked: fields.subscribersChecked ?? null,
       unsubscribesApplied: fields.unsubscribesApplied ?? null,
+      campaignsChecked: fields.campaignsChecked ?? null,
+      campaignsRefreshed: fields.campaignsRefreshed ?? null,
+      engagementRecordsUpserted: fields.engagementRecordsUpserted ?? null,
       lastError: fields.lastError ?? null,
       updatedAt: new Date(),
     })
@@ -97,15 +109,19 @@ async function markFinished(
 
 /**
  * Attempt one reconcile under the global advisory lock. Returns the
- * `FlodeskReconcileSummary` when a run actually executed (lock acquired + due),
+ * `FlodeskScheduledSyncSummary` when a run actually executed (lock acquired + due),
  * or `null` when skipped (lock contended, or not yet due and not forced).
  * Exported so the manual trigger reuses the same locking + state tracking.
  */
+export interface FlodeskScheduledSyncSummary extends FlodeskReconcileSummary {
+  engagement: FlodeskEngagementSyncSummary | null;
+}
+
 export async function runFlodeskSyncIfDue(opts?: {
   force?: boolean;
   maxPages?: number;
   perPage?: number;
-}): Promise<FlodeskReconcileSummary | null> {
+}): Promise<FlodeskScheduledSyncSummary | null> {
   const client = await pool.connect();
   try {
     const got = await client.query<{ pg_try_advisory_lock: boolean }>(
@@ -113,7 +129,9 @@ export async function runFlodeskSyncIfDue(opts?: {
       [LOCK_KEY1, LOCK_KEY2],
     );
     if (got.rows[0]?.pg_try_advisory_lock !== true) {
-      logger.debug("Flodesk reconcile lock contended — another run in progress");
+      logger.debug(
+        "Flodesk reconcile lock contended — another run in progress",
+      );
       return null;
     }
     try {
@@ -126,13 +144,32 @@ export async function runFlodeskSyncIfDue(opts?: {
       }
       await markRunning();
       try {
-        const summary = await reconcileFlodeskUnsubscribes({
-          ...(opts?.maxPages != null ? { maxPages: opts.maxPages } : {}),
-          ...(opts?.perPage != null ? { perPage: opts.perPage } : {}),
-        });
+        const subscriberSummary = isFlodeskConfigured()
+          ? await reconcileFlodeskUnsubscribes({
+              ...(opts?.maxPages != null ? { maxPages: opts.maxPages } : {}),
+              ...(opts?.perPage != null ? { perPage: opts.perPage } : {}),
+            })
+          : {
+              subscribersChecked: 0,
+              unsubscribedSeen: 0,
+              unsubscribesApplied: 0,
+              pages: 0,
+            };
+        const engagement =
+          isFlodeskMcpConfigured() &&
+          process.env["DISABLE_FLODESK_ENGAGEMENT_SYNC"] !== "1"
+            ? await syncFlodeskCampaignEngagement()
+            : null;
+        const summary: FlodeskScheduledSyncSummary = {
+          ...subscriberSummary,
+          engagement,
+        };
         await markFinished("ok", {
           subscribersChecked: summary.subscribersChecked,
           unsubscribesApplied: summary.unsubscribesApplied,
+          campaignsChecked: engagement?.campaignsChecked,
+          campaignsRefreshed: engagement?.campaignsRefreshed,
+          engagementRecordsUpserted: engagement?.engagementRecordsUpserted,
         });
         return summary;
       } catch (err) {
@@ -160,7 +197,7 @@ export async function runFlodeskSyncIfDue(opts?: {
 async function tick(): Promise<void> {
   const hour = chicagoHour(Date.now());
   if (hour < RUN_HOUR_START || hour >= RUN_HOUR_END) return;
-  if (!isFlodeskConfigured()) return;
+  if (!isFlodeskConfigured() && !isFlodeskMcpConfigured()) return;
   void runFlodeskSyncIfDue().catch((err) => {
     logger.error({ err }, "Flodesk reconcile tick failed");
   });
