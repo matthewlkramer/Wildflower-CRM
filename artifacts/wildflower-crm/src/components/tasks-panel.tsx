@@ -222,7 +222,7 @@ export function TasksPanel(ctx: PanelContext) {
                     <> · Assigned to {userMap.get(t.assigneeUserId) ?? t.assigneeUserId}</>
                   ) : null}
                 </div>
-                <InlineEditSelect<TaskKind>
+                <InlineEditSelect
                   label="Task type"
                   value={t.kind}
                   display={

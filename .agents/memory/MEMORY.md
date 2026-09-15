@@ -62,6 +62,7 @@ code/docs and update or archive the stale memory.
 - [Testing subagent budget](testing-subagent-budget.md) — runTest is capped at 10 iterations/task and infra-timeouts count; one tiny flow per plan, check users table to detect a dead subagent.
 - [Playwright e2e Clerk setup](playwright-e2e-clerk-setup.md) — 4 hard constraints to run committed e2e specs directly; the testing subagent bypasses all of them.
 - [clerk admin-gated e2e testing](clerk-admin-e2e-testing.md) — testClerkAuth provisions team_member; add a [DB] step to promote to admin or admin cards silently 403/hide.
+- [Vite component labels and JSX generics](vite-component-labels-jsx-generics.md) — explicit generics on JSX components can break preview transforms; prefer inferred props.
 
 ## High-risk operational notes
 
