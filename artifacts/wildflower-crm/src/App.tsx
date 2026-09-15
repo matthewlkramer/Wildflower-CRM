@@ -26,13 +26,8 @@ import GrantsCalendar from "@/pages/grants-calendar";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import FiscalYearReport from "@/pages/fiscal-year-report";
 import Admin from "@/pages/admin";
-import AdminFeedback from "@/pages/admin-feedback";
-import AdminUsers from "@/pages/admin-users";
-import FutureFunctionality from "@/pages/future-functionality";
 import AuditLog from "@/pages/audit-log";
-import PotentialDuplicates from "@/pages/potential-duplicates";
-import CleanupQueue from "@/pages/cleanup-queue";
-import RestrictionTextReview from "@/pages/restriction-text-review";
+import { AppImprovementsHub, DataCleanupHub } from "@/pages/admin-hubs";
 import RevenueExtractor from "@/pages/revenue-extractor";
 import FundableProjects from "@/pages/fundable-projects";
 import Campaigns from "@/pages/campaigns";
@@ -206,7 +201,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/sign-up/*?" component={SignUpPage} />
           
           <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
-          <Route path="/admin/users"><ProtectedRoute component={AdminUsers} /></Route>
+          <Route path="/admin/users"><Redirect to="/admin?tab=users" /></Route>
           <Route path="/top-priorities"><ProtectedRoute component={TopPriorities} /></Route>
           
           <Route path="/individuals"><ProtectedRoute component={Individuals} /></Route>
@@ -260,14 +255,16 @@ function ClerkProviderWithRoutes() {
           <Route path="/campaigns"><ProtectedRoute component={Campaigns} /></Route>
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
-          <Route path="/admin/feedback"><ProtectedRoute component={AdminFeedback} /></Route>
-          <Route path="/admin/future-functionality"><ProtectedRoute component={FutureFunctionality} /></Route>
+          <Route path="/admin/app-improvements"><ProtectedRoute component={AppImprovementsHub} /></Route>
+          <Route path="/admin/feedback"><Redirect to="/admin/app-improvements?tab=feedback" /></Route>
+          <Route path="/admin/future-functionality"><Redirect to="/admin/app-improvements?tab=future-functionality" /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
-          <Route path="/potential-duplicates"><ProtectedRoute component={PotentialDuplicates} /></Route>
           <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
           <Route path="/financial-corrections"><Redirect to="/reconciliation/deposits" /></Route>
-          <Route path="/cleanup-queue"><ProtectedRoute component={CleanupQueue} /></Route>
-          <Route path="/restriction-text-review"><ProtectedRoute component={RestrictionTextReview} /></Route>
+          <Route path="/data-cleanup"><ProtectedRoute component={DataCleanupHub} /></Route>
+          <Route path="/cleanup-queue"><Redirect to="/data-cleanup?tab=cleanup-queue" /></Route>
+          <Route path="/potential-duplicates"><Redirect to="/data-cleanup?tab=potential-duplicates" /></Route>
+          <Route path="/restriction-text-review"><Redirect to="/data-cleanup?tab=restriction-text-review" /></Route>
           
           <Route component={NotFound} />
         </Switch>

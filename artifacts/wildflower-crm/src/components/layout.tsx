@@ -28,7 +28,6 @@ import {
   Lightbulb,
   FileBarChart,
   ScrollText,
-  CopyCheck,
   ListChecks,
   Megaphone,
   Newspaper,
@@ -92,8 +91,6 @@ const navItems: NavEntry[] = [
   { section: "Fundraising" },
   { href: "/top-priorities", label: "Top Priorities", icon: Star },
   { href: "/opportunities", label: "Opportunities", icon: Target },
-  { href: "/pledges", label: "Pledges", icon: HandCoins },
-  { href: "/gifts", label: "Gifts", icon: Gift },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
 
@@ -107,23 +104,21 @@ const navItems: NavEntry[] = [
   { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
 
   { section: "Finance & Operations" },
+  { href: "/pledges", label: "Pledges", icon: HandCoins },
+  { href: "/gifts", label: "Gifts", icon: Gift },
   { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
   { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
   { href: "/projections", label: "Projections", icon: LineChart },
   { href: "/cash-flow", label: "Cash flow", icon: HandCoins },
   { href: "/reconciliation/deposits", label: "Reconciliation", icon: Scale },
   { href: "/revenue-extractor", label: "Accounting Data", icon: FileBarChart },
+  { href: "/data-cleanup", label: "Data Cleanup", icon: ListChecks },
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
-  { href: "/admin/feedback", label: "Feedback", icon: MessageSquare, adminOnly: true },
-  { href: "/admin/users", label: "Users", icon: Users, adminOnly: true },
-  { href: "/admin/future-functionality", label: "Future functionality possibilities", icon: Lightbulb, adminOnly: true },
+  { href: "/admin/app-improvements", label: "App Improvements", icon: MessageSquare, adminOnly: true },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
-  { href: "/potential-duplicates", label: "Potential Duplicates", icon: CopyCheck, adminOnly: true },
-  { href: "/cleanup-queue", label: "Cleanup Queue", icon: ListChecks },
-  { href: "/restriction-text-review", label: "Restriction Text Review", icon: ListChecks, adminOnly: true },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";
@@ -187,7 +182,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <CommandPaletteProvider>
     <SidebarCollapsedContext.Provider value={collapsed}>
-    <div className="flex min-h-screen bg-background">
+    <div
+      className="flex h-[100dvh] overflow-hidden bg-background"
+      data-testid="app-shell"
+    >
       {/* Desktop Sidebar (collapsible to an icon-only rail). */}
       <aside
         className={`hidden flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 md:flex ${collapsed ? "w-16" : "w-64"}`}
@@ -258,7 +256,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex h-14 items-center justify-between gap-2 border-b bg-background px-3 shadow-sm z-10">
+        <header
+          className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b bg-background px-3 shadow-sm"
+          data-testid="app-header"
+        >
           {/* Left: hamburger (mobile) + logo */}
           <div className="flex items-center gap-2">
             <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
