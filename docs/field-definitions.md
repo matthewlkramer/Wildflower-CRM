@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-12
+last_verified: 2026-09-21
 ---
 
 # Donor fields and shared cleanup work
@@ -29,8 +29,8 @@ data. Payment timing remains in the payment plan. These form changes do not
 alter recognition, donor identity, money amounts, or lifecycle rules.
 
 In Finance → Cash flow, standard one-time pipeline gifts use the
-projected close date as a labeled receipt estimate unless an explicit payment
-plan exists. Payment dates remain optional; the report shows the timing basis
+projected close date as their forecast cash-flow date unless an explicit payment
+plan exists. Payment dates remain optional; undated rows stay in the spreadsheet
 instead of creating missing-date cleanup items. This derived estimate does not
 change the stored meaning of commitment dates or fiscal-year credit. See
 [funding-arrivals-current-status.md](funding-arrivals-current-status.md).

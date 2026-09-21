@@ -89,7 +89,18 @@ missing-date queue tasks. Reimbursement annual plans are contextual rows,
 not award ceilings or additional monthly cash. Each item states its basis;
 only dated, known remaining amounts contribute to monthly totals.
 
- * @summary Authenticated monthly funding-arrival timing forecast.
+`rows` is the Cash flow page's opportunity-grain spreadsheet. Each
+allocation appears in at most one reporting pair: Seed Fund project
+allocations first, then donor-restricted regional allocations, then
+other Wildflower Foundation allocations. Open allocations contribute
+probability-weighted targets; unpaid pledge balances contribute
+committed amounts. Because historical payments are parent-level cash
+facts, each pledge's authoritative unpaid remainder is distributed
+proportionally across its current allocation plan. The row total is the
+sum of the six displayed reporting cells. `forecastDate` is the earliest
+remaining dated receipt estimate for the opportunity.
+
+ * @summary Authenticated cash-flow forecast for active opportunities and unpaid pledges.
  */
 export const GetFundingArrivalsByMonthQueryParams = zod.object({
   "entityId": zod.array(zod.coerce.string()).optional().describe('Optional recipient entity IDs. Accepts comma-separated or repeated\nvalues. Scope selects a parent schedule once; it does not attribute\nor prorate an installment to an individual recipient.\n'),
@@ -120,6 +131,22 @@ export const GetFundingArrivalsByMonthResponse = zod.object({
   "prospectiveAmount": zod.string(),
   "prospectiveWeightedAmount": zod.string(),
   "sourceRecordIds": zod.array(zod.string())
+})),
+  "rows": zod.array(zod.object({
+  "opportunityId": zod.string(),
+  "opportunityName": zod.string().nullable(),
+  "status": zod.enum(['pledge', 'open']),
+  "askAmount": zod.string().nullable(),
+  "weighting": zod.string().nullable().describe('Effective row weighting: 100% for a pledge, otherwise the opportunity\'s current win probability.'),
+  "foundationCommitted": zod.string(),
+  "foundationWeightedTarget": zod.string(),
+  "regionalCommitted": zod.string(),
+  "regionalWeightedTarget": zod.string(),
+  "seedFundCommitted": zod.string(),
+  "seedFundWeightedTarget": zod.string(),
+  "total": zod.string().describe('Sum of the six committed and weighted-target cells.'),
+  "forecastDate": zod.string().date().nullable(),
+  "forecastBasis": zod.enum(['projected_close', 'explicit_payment', 'unscheduled', 'reimbursement_annual']).nullable()
 }))
 })
 

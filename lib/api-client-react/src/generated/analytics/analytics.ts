@@ -142,7 +142,18 @@ missing-date queue tasks. Reimbursement annual plans are contextual rows,
 not award ceilings or additional monthly cash. Each item states its basis;
 only dated, known remaining amounts contribute to monthly totals.
 
- * @summary Authenticated monthly funding-arrival timing forecast.
+`rows` is the Cash flow page's opportunity-grain spreadsheet. Each
+allocation appears in at most one reporting pair: Seed Fund project
+allocations first, then donor-restricted regional allocations, then
+other Wildflower Foundation allocations. Open allocations contribute
+probability-weighted targets; unpaid pledge balances contribute
+committed amounts. Because historical payments are parent-level cash
+facts, each pledge's authoritative unpaid remainder is distributed
+proportionally across its current allocation plan. The row total is the
+sum of the six displayed reporting cells. `forecastDate` is the earliest
+remaining dated receipt estimate for the opportunity.
+
+ * @summary Authenticated cash-flow forecast for active opportunities and unpaid pledges.
  */
 export const getGetFundingArrivalsByMonthUrl = (params: GetFundingArrivalsByMonthParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -204,7 +215,7 @@ export type GetFundingArrivalsByMonthQueryError = ErrorType<BadRequestResponse>
 
 
 /**
- * @summary Authenticated monthly funding-arrival timing forecast.
+ * @summary Authenticated cash-flow forecast for active opportunities and unpaid pledges.
  */
 
 export function useGetFundingArrivalsByMonth<TData = Awaited<ReturnType<typeof getFundingArrivalsByMonth>>, TError = ErrorType<BadRequestResponse>>(
