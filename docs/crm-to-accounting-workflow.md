@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-12
+last_verified: 2026-09-21
 ---
 
 # CRM-to-accounting workflow
@@ -36,7 +36,17 @@ are removed after that project is verified.
   use/project/region, spending period, restriction axes, and exact governing
   restriction language.
 - Opportunity: donor reporting required, grant letter, commitment, and payment
-  schedule.
+  schedule. Its active grant-term set is the reviewed interpretation of that
+  letter; pledge allocations remain the accounting-coding authority.
+- Grant-term sets: versioned manual, agreement, or amendment interpretations.
+  AI analysis creates only a pending proposal. A person must revise or accept
+  it before it supersedes the active interpretation and updates allocations.
+- Grant-term outcomes: append-only evidence that a formal condition or donor
+  restriction was satisfied, missed, waived, or reopened. An overdue date is a
+  warning and never automatically records a missed outcome.
+- Grant spending checkpoints: cumulative, manually entered amounts spent as of
+  a date. They help staff monitor compliance with allowable/prohibited cost
+  rules and do not represent, link, or reconcile QuickBooks expenses.
 - Reporting Deadline tasks: each required report and due date. Use **Add task**
   with type **Reporting deadline** to add missed or historical deadlines, retain
   report URLs in the task description, and mark completed reports **Done**.
@@ -104,6 +114,24 @@ are removed after that project is verified.
    trail and post-run verification.
 9. Future QuickBooks automation must preserve the same preview and Finance
    approval gate; it may replace manual entry, not the controls.
+
+## Grant-agreement review rules
+
+1. A donor restriction limits use by purpose, project, entity/recipient,
+   school, geography, or time. A restriction to a force-restricted entity such
+   as Black Wildflowers Fund must never be displayed as unrestricted.
+2. A formal contribution condition requires both a substantive barrier and a
+   donor right of return or release. A report, receipt, invoice, audit right, or
+   later payment after reporting is not a condition by itself.
+3. Every AI-proposed term includes the agreement's verbatim supporting text and
+   page reference when visible. The human reviewer may revise or remove any
+   proposal, including accepting an agreement with no material terms.
+4. Provisional terms may be entered when an opportunity is created. Uploading a
+   new agreement does not change the active terms until a reviewer accepts the
+   new proposal.
+5. Allowable costs, prohibited costs, caps, and prior-approval rules are stored
+   as operational spending rules. Fulfillment and spending progress are entered
+   manually; neither is inferred from accounting transactions.
 
 ## Historical coding-form retirement gate
 

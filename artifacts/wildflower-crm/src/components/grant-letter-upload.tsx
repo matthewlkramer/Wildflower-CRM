@@ -6,7 +6,10 @@ import { useToast } from "@/hooks/use-toast";
 interface FileUploadFieldProps {
   url: string | null;
   filename: string | null;
-  onUploaded: (next: { url: string; filename: string }) => void;
+  onUploaded: (next: {
+    url: string;
+    filename: string;
+  }) => unknown | Promise<unknown>;
   onCleared: () => void;
   disabled?: boolean;
   // Button label when there is no file yet (e.g. "Upload grant letter").
@@ -43,7 +46,8 @@ export function FileUploadField({
           contentType: file.type || "application/octet-stream",
         }),
       });
-      if (!reqRes.ok) throw new Error(`Upload URL request failed: ${reqRes.status}`);
+      if (!reqRes.ok)
+        throw new Error(`Upload URL request failed: ${reqRes.status}`);
       const { uploadURL, objectPath } = (await reqRes.json()) as {
         uploadURL: string;
         objectPath: string;
@@ -56,7 +60,7 @@ export function FileUploadField({
       });
       if (!putRes.ok) throw new Error(`Upload failed: ${putRes.status}`);
 
-      onUploaded({
+      await onUploaded({
         url: `/api/storage${objectPath}`,
         filename: file.name,
       });
@@ -103,7 +107,11 @@ export function FileUploadField({
           onClick={() => inputRef.current?.click()}
           data-testid={`${testIdBase}-replace`}
         >
-          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Replace"}
+          {isUploading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            "Replace"
+          )}
         </Button>
         <input
           ref={inputRef}

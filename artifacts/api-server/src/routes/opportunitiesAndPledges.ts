@@ -1,9 +1,4 @@
-import {
-  Router,
-  type IRouter,
-  type Request,
-  type Response,
-} from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
 import { csvFilename, csvLine } from "../lib/csvExport";
@@ -73,9 +68,9 @@ const effectiveCloseDateExpr = effectiveProjectedCloseDateSql(
 
 const donorJoinSelect = {
   ...oppHeaderColumns,
-  effectiveProjectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`.as(
-    "effective_projected_close_date",
-  ),
+  effectiveProjectedCloseDate: sql<
+    string | null
+  >`${effectiveCloseDateExpr}::text`.as("effective_projected_close_date"),
   // Shared donor display names + priorities + anonymous/owner helpers
   // (see lib/donorJoinSelect.ts) — identical to the gifts route.
   ...donorDisplayColumns,
@@ -212,7 +207,9 @@ import {
   applyDerivedOppFields,
   canonicalWinProbability,
   deriveOppFields,
+  rollupConditional,
 } from "../lib/pledgeStage";
+import { loadGrantRestrictionRollup } from "../lib/grantRestriction";
 import { reimbursablePledgeExistsSql } from "../lib/reimbursablePlaceholder";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
@@ -313,298 +310,287 @@ async function buildOppListWhere(
   where: SQL | undefined;
   worklistOrder: (SQL | ReturnType<typeof asc>)[] | null;
 } | null> {
-    // Pre-normalize array params so the generated array<…> zod schemas
-    // accept the orval comma-form (single string).
-    const normalizedQuery = normalizeArrayQuery(
-      req.query as Record<string, unknown>,
-      OPP_ARRAY_PARAMS,
+  // Pre-normalize array params so the generated array<…> zod schemas
+  // accept the orval comma-form (single string).
+  const normalizedQuery = normalizeArrayQuery(
+    req.query as Record<string, unknown>,
+    OPP_ARRAY_PARAMS,
+  );
+  // Fiscal-year slugs are stored lowercase (`fy2026`). Preserve
+  // the prior route behavior of accepting manually-typed uppercase values
+  // by lowercasing here, after the comma-form split.
+  if (Array.isArray(normalizedQuery.fiscalYear)) {
+    normalizedQuery.fiscalYear = (normalizedQuery.fiscalYear as unknown[]).map(
+      (v) => (typeof v === "string" ? v.toLowerCase() : v),
     );
-    // Fiscal-year slugs are stored lowercase (`fy2026`). Preserve
-    // the prior route behavior of accepting manually-typed uppercase values
-    // by lowercasing here, after the comma-form split.
-    if (Array.isArray(normalizedQuery.fiscalYear)) {
-      normalizedQuery.fiscalYear = (
-        normalizedQuery.fiscalYear as unknown[]
-      ).map((v) => (typeof v === "string" ? v.toLowerCase() : v));
+  }
+  const q = parseOrBadRequest(
+    ListOpportunitiesAndPledgesQueryParams,
+    normalizedQuery,
+    res,
+  );
+  if (!q) return null;
+  const filters: SQL[] = [];
+  if (q.search) {
+    // Search the record name plus the donor display name (org / household /
+    // individual giver). The donor tables are already left-joined below, and
+    // the count query joins them too. Person name mirrors the
+    // individualGiverPersonName expression in donorJoinSelect.
+    //
+    // Tokenized (mirrors listGiftsAndPayments): each whitespace-separated
+    // word must match at least one of the searched fields (AND across
+    // words, OR across fields per word), so "fy26 peretsman" finds
+    // "FY26 Nancy Peretsman $200,000" even though the typed phrase is not
+    // a contiguous substring of any single field.
+    for (const word of q.search.split(/\s+/).filter(Boolean)) {
+      const term = `%${word}%`;
+      filters.push(
+        or(
+          ilike(opportunitiesAndPledges.name, term),
+          ilike(organizations.name, term),
+          ilike(households.name, term),
+          sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
+        )!,
+      );
     }
-    const q = parseOrBadRequest(
-      ListOpportunitiesAndPledgesQueryParams,
-      normalizedQuery,
-      res,
-    );
-    if (!q) return null;
-    const filters: SQL[] = [];
-    if (q.search) {
-      // Search the record name plus the donor display name (org / household /
-      // individual giver). The donor tables are already left-joined below, and
-      // the count query joins them too. Person name mirrors the
-      // individualGiverPersonName expression in donorJoinSelect.
-      //
-      // Tokenized (mirrors listGiftsAndPayments): each whitespace-separated
-      // word must match at least one of the searched fields (AND across
-      // words, OR across fields per word), so "fy26 peretsman" finds
-      // "FY26 Nancy Peretsman $200,000" even though the typed phrase is not
-      // a contiguous substring of any single field.
-      for (const word of q.search.split(/\s+/).filter(Boolean)) {
-        const term = `%${word}%`;
-        filters.push(
-          or(
-            ilike(opportunitiesAndPledges.name, term),
-            ilike(organizations.name, term),
-            ilike(households.name, term),
-            sql`(${personDisplayNameSql(people)}) ILIKE ${term}`,
-          )!,
-        );
-      }
-    }
-    {
-      const f = splitBlank(q.status as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0)
-        filters.push(
-          or(
-            isNull(opportunitiesAndPledges.status),
-            inArray(opportunitiesAndPledges.status, f.values as never[]),
-          )!,
-        );
-      else if (f.wantsBlank)
-        filters.push(isNull(opportunitiesAndPledges.status));
-      else if (f.values.length > 0)
-        filters.push(
+  }
+  {
+    const f = splitBlank(q.status as string[] | undefined);
+    if (f.wantsBlank && f.values.length > 0)
+      filters.push(
+        or(
+          isNull(opportunitiesAndPledges.status),
           inArray(opportunitiesAndPledges.status, f.values as never[]),
-        );
-    }
-    {
-      const f = splitBlank(q.stage as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0)
-        filters.push(
-          or(
-            isNull(opportunitiesAndPledges.stage),
-            inArray(opportunitiesAndPledges.stage, f.values as never[]),
-          )!,
-        );
-      else if (f.wantsBlank)
-        filters.push(isNull(opportunitiesAndPledges.stage));
-      else if (f.values.length > 0)
-        filters.push(
+        )!,
+      );
+    else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.status));
+    else if (f.values.length > 0)
+      filters.push(
+        inArray(opportunitiesAndPledges.status, f.values as never[]),
+      );
+  }
+  {
+    const f = splitBlank(q.stage as string[] | undefined);
+    if (f.wantsBlank && f.values.length > 0)
+      filters.push(
+        or(
+          isNull(opportunitiesAndPledges.stage),
           inArray(opportunitiesAndPledges.stage, f.values as never[]),
-        );
-    }
-    {
-      const f = splitBlank(q.type as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0)
-        filters.push(
-          or(
-            isNull(opportunitiesAndPledges.type),
-            inArray(opportunitiesAndPledges.type, f.values as never[]),
-          )!,
-        );
-      else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.type));
-      else if (f.values.length > 0)
-        filters.push(
+        )!,
+      );
+    else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.stage));
+    else if (f.values.length > 0)
+      filters.push(inArray(opportunitiesAndPledges.stage, f.values as never[]));
+  }
+  {
+    const f = splitBlank(q.type as string[] | undefined);
+    if (f.wantsBlank && f.values.length > 0)
+      filters.push(
+        or(
+          isNull(opportunitiesAndPledges.type),
           inArray(opportunitiesAndPledges.type, f.values as never[]),
-        );
-    }
-    if (q.organizationId)
-      filters.push(
-        eq(opportunitiesAndPledges.organizationId, q.organizationId),
+        )!,
       );
-    if (q.householdId)
-      filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
-    if (q.individualGiverPersonId)
+    else if (f.wantsBlank) filters.push(isNull(opportunitiesAndPledges.type));
+    else if (f.values.length > 0)
+      filters.push(inArray(opportunitiesAndPledges.type, f.values as never[]));
+  }
+  if (q.organizationId)
+    filters.push(eq(opportunitiesAndPledges.organizationId, q.organizationId));
+  if (q.householdId)
+    filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
+  if (q.individualGiverPersonId)
+    filters.push(
+      eq(
+        opportunitiesAndPledges.individualGiverPersonId,
+        q.individualGiverPersonId,
+      ),
+    );
+  {
+    const f = splitBlank(q.ownerUserId as string[] | undefined);
+    if (f.wantsBlank && f.values.length > 0)
       filters.push(
-        eq(
-          opportunitiesAndPledges.individualGiverPersonId,
-          q.individualGiverPersonId,
-        ),
+        or(
+          isNull(opportunitiesAndPledges.ownerUserId),
+          inArray(opportunitiesAndPledges.ownerUserId, f.values),
+        )!,
       );
-    {
-      const f = splitBlank(q.ownerUserId as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0)
-        filters.push(
-          or(
-            isNull(opportunitiesAndPledges.ownerUserId),
-            inArray(opportunitiesAndPledges.ownerUserId, f.values),
-          )!,
-        );
-      else if (f.wantsBlank)
-        filters.push(isNull(opportunitiesAndPledges.ownerUserId));
-      else if (f.values.length > 0)
-        filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
-    }
-    if (typeof q.writtenPledge === "boolean") {
-      filters.push(
-        q.writtenPledge
-          ? isNotNull(opportunitiesAndPledges.pledgeCommittedAt)
-          : isNull(opportunitiesAndPledges.pledgeCommittedAt),
-      );
-    }
-    // Page split uses the actual pledge boundary, not the legacy mirror.
-    if (q.pledgeView === "pledges") {
-      filters.push(isNotNull(opportunitiesAndPledges.pledgeCommittedAt));
-    } else if (q.pledgeView === "opportunities") {
-      filters.push(isNull(opportunitiesAndPledges.pledgeCommittedAt));
-    }
-    // Multi-value fiscal-year filter — matches opps that have at least
-    // one pledge_allocation row whose grant_year is in the selected set.
-    // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
-    // with three allocations should still count once).
-    // Fiscal-year filter — supports the "(Blank)" sentinel which matches
-    // opportunities with no pledge_allocation rows at all. Real fiscal years
-    // continue to use the EXISTS pattern so multi-allocation opps don't fan
-    // out into duplicate rows.
-    {
-      const fyRaw = (q.fiscalYear as string[] | undefined) ?? [];
-      const { wantsBlank, values: fyValues } = splitBlank(fyRaw);
-      const existsClause =
-        fyValues.length > 0
-          ? exists(
-              db
-                .select({ one: sql`1` })
-                .from(pledgeAllocations)
-                .where(
-                  and(
-                    eq(
-                      pledgeAllocations.pledgeOrOpportunityId,
-                      opportunitiesAndPledges.id,
-                    ),
-                    inArray(pledgeAllocations.grantYear, fyValues),
-                  ),
-                ),
-            )
-          : undefined;
-      const noAllocClause = wantsBlank
-        ? notExists(
+    else if (f.wantsBlank)
+      filters.push(isNull(opportunitiesAndPledges.ownerUserId));
+    else if (f.values.length > 0)
+      filters.push(inArray(opportunitiesAndPledges.ownerUserId, f.values));
+  }
+  if (typeof q.writtenPledge === "boolean") {
+    filters.push(
+      q.writtenPledge
+        ? isNotNull(opportunitiesAndPledges.pledgeCommittedAt)
+        : isNull(opportunitiesAndPledges.pledgeCommittedAt),
+    );
+  }
+  // Page split uses the actual pledge boundary, not the legacy mirror.
+  if (q.pledgeView === "pledges") {
+    filters.push(isNotNull(opportunitiesAndPledges.pledgeCommittedAt));
+  } else if (q.pledgeView === "opportunities") {
+    filters.push(isNull(opportunitiesAndPledges.pledgeCommittedAt));
+  }
+  // Multi-value fiscal-year filter — matches opps that have at least
+  // one pledge_allocation row whose grant_year is in the selected set.
+  // Use EXISTS rather than a JOIN so we don't fan rows out (one opp
+  // with three allocations should still count once).
+  // Fiscal-year filter — supports the "(Blank)" sentinel which matches
+  // opportunities with no pledge_allocation rows at all. Real fiscal years
+  // continue to use the EXISTS pattern so multi-allocation opps don't fan
+  // out into duplicate rows.
+  {
+    const fyRaw = (q.fiscalYear as string[] | undefined) ?? [];
+    const { wantsBlank, values: fyValues } = splitBlank(fyRaw);
+    const existsClause =
+      fyValues.length > 0
+        ? exists(
             db
               .select({ one: sql`1` })
               .from(pledgeAllocations)
               .where(
-                eq(
-                  pledgeAllocations.pledgeOrOpportunityId,
-                  opportunitiesAndPledges.id,
+                and(
+                  eq(
+                    pledgeAllocations.pledgeOrOpportunityId,
+                    opportunitiesAndPledges.id,
+                  ),
+                  inArray(pledgeAllocations.grantYear, fyValues),
                 ),
               ),
           )
         : undefined;
-      if (existsClause && noAllocClause)
-        filters.push(or(existsClause, noAllocClause)!);
-      else if (existsClause) filters.push(existsClause);
-      else if (noAllocClause) filters.push(noAllocClause);
-    }
-    // Entity filter — same EXISTS pattern as fiscalYear. Matches opps
-    // that have at least one pledge_allocation row pinned to one of
-    // the requested entity slugs. Driven by the global entity filter
-    // in the header (and the opps page's own entity multi-select).
-    const entitySelected = q.entityId ?? [];
-    if (entitySelected.length > 0) {
-      filters.push(
-        exists(
+    const noAllocClause = wantsBlank
+      ? notExists(
           db
             .select({ one: sql`1` })
             .from(pledgeAllocations)
             .where(
-              and(
-                eq(
-                  pledgeAllocations.pledgeOrOpportunityId,
-                  opportunitiesAndPledges.id,
-                ),
-                inArray(pledgeAllocations.entityId, entitySelected),
+              eq(
+                pledgeAllocations.pledgeOrOpportunityId,
+                opportunitiesAndPledges.id,
               ),
             ),
-        ),
-      );
-    }
-    const fundableProjectSelected =
-      (q.fundableProjectId as string[] | undefined) ?? [];
-    if (fundableProjectSelected.length > 0) {
-      filters.push(
-        exists(
-          db
-            .select({ one: sql`1` })
-            .from(pledgeAllocations)
-            .where(
-              and(
-                eq(
-                  pledgeAllocations.pledgeOrOpportunityId,
-                  opportunitiesAndPledges.id,
-                ),
-                inArray(
-                  pledgeAllocations.fundableProjectId,
-                  fundableProjectSelected,
-                ),
+        )
+      : undefined;
+    if (existsClause && noAllocClause)
+      filters.push(or(existsClause, noAllocClause)!);
+    else if (existsClause) filters.push(existsClause);
+    else if (noAllocClause) filters.push(noAllocClause);
+  }
+  // Entity filter — same EXISTS pattern as fiscalYear. Matches opps
+  // that have at least one pledge_allocation row pinned to one of
+  // the requested entity slugs. Driven by the global entity filter
+  // in the header (and the opps page's own entity multi-select).
+  const entitySelected = q.entityId ?? [];
+  if (entitySelected.length > 0) {
+    filters.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(pledgeAllocations)
+          .where(
+            and(
+              eq(
+                pledgeAllocations.pledgeOrOpportunityId,
+                opportunitiesAndPledges.id,
               ),
+              inArray(pledgeAllocations.entityId, entitySelected),
             ),
-        ),
-      );
-    }
-    // Presence filters on computed rollup fields (has value vs blank).
-    // Each mirrors the matching column expression in donorJoinSelect.
-    if (q.paidPresence === "has") {
-      filters.push(
-        sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) > 0`,
-      );
-    } else if (q.paidPresence === "blank") {
-      filters.push(
-        sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) <= 0`,
-      );
-    }
-    if (q.coveredFysPresence === "has") {
-      filters.push(
-        sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
-      );
-    } else if (q.coveredFysPresence === "blank") {
-      filters.push(
-        sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
-      );
-    }
-    if (q.entitiesPresence === "has") {
-      filters.push(
-        sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
-      );
-    } else if (q.entitiesPresence === "blank") {
-      filters.push(
-        sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
-      );
-    }
-    if (q.projectedCloseDatePresence === "has")
-      filters.push(
-        sql`${effectiveCloseDateExpr} IS NOT NULL`,
-      );
-    else if (q.projectedCloseDatePresence === "blank")
-      filters.push(sql`${effectiveCloseDateExpr} IS NULL`);
-    if (q.applicationDeadlinePresence === "has")
-      filters.push(
-        sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`,
-      );
-    else if (q.applicationDeadlinePresence === "blank")
-      filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NULL`);
-    if (q.winProbabilityPresence === "has")
-      filters.push(sql`${opportunitiesAndPledges.winProbability} IS NOT NULL`);
-    else if (q.winProbabilityPresence === "blank")
-      filters.push(sql`${opportunitiesAndPledges.winProbability} IS NULL`);
-    // Donor-lifecycle worklist preset — composite predicate shared verbatim
-    // with the dashboard worklist counts (see lib/worklists).
-    if (q.worklist)
-      filters.push(...oppWorklistConds(q.worklist as OppWorklist));
-    const archivedFilter = activeOnlyUnlessAdmin(
-      req,
-      opportunitiesAndPledges.archivedAt,
+          ),
+      ),
     );
-    if (archivedFilter) filters.push(archivedFilter);
-    const where = filters.length ? and(...filters) : undefined;
-    // Default order is newest projected-close first. Two worklists override it:
-    // verbal_no_letter surfaces the stalest (least-recently-updated) first, and
-    // partially_paid orders by the earliest scheduled installment
-    // (pledge_expected_payments) as the "most overdue" proxy, falling back to
-    // oldest projected close for pledges with no installment schedule.
-    const worklistOrder =
-      q.worklist === "verbal_no_letter"
-        ? [asc(opportunitiesAndPledges.updatedAt)]
-        : q.worklist === "partially_paid"
-          ? [
-              sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${effectiveCloseDateExpr}) ASC NULLS LAST`,
-            ]
-          : null;
-    return { q, where, worklistOrder };
+  }
+  const fundableProjectSelected =
+    (q.fundableProjectId as string[] | undefined) ?? [];
+  if (fundableProjectSelected.length > 0) {
+    filters.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(pledgeAllocations)
+          .where(
+            and(
+              eq(
+                pledgeAllocations.pledgeOrOpportunityId,
+                opportunitiesAndPledges.id,
+              ),
+              inArray(
+                pledgeAllocations.fundableProjectId,
+                fundableProjectSelected,
+              ),
+            ),
+          ),
+      ),
+    );
+  }
+  // Presence filters on computed rollup fields (has value vs blank).
+  // Each mirrors the matching column expression in donorJoinSelect.
+  if (q.paidPresence === "has") {
+    filters.push(
+      sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) > 0`,
+    );
+  } else if (q.paidPresence === "blank") {
+    filters.push(
+      sql`(SELECT COALESCE(SUM(gp.amount), 0) FROM gifts_and_payments gp WHERE gp.opportunity_id = ${opportunitiesAndPledges.id} AND gp.archived_at IS NULL) <= 0`,
+    );
+  }
+  if (q.coveredFysPresence === "has") {
+    filters.push(
+      sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
+    );
+  } else if (q.coveredFysPresence === "blank") {
+    filters.push(
+      sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.grantYear} IS NOT NULL)`,
+    );
+  }
+  if (q.entitiesPresence === "has") {
+    filters.push(
+      sql`EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
+    );
+  } else if (q.entitiesPresence === "blank") {
+    filters.push(
+      sql`NOT EXISTS (SELECT 1 FROM ${pledgeAllocations} WHERE ${pledgeAllocations.pledgeOrOpportunityId} = ${opportunitiesAndPledges.id} AND ${pledgeAllocations.entityId} IS NOT NULL)`,
+    );
+  }
+  if (q.projectedCloseDatePresence === "has")
+    filters.push(sql`${effectiveCloseDateExpr} IS NOT NULL`);
+  else if (q.projectedCloseDatePresence === "blank")
+    filters.push(sql`${effectiveCloseDateExpr} IS NULL`);
+  if (q.applicationDeadlinePresence === "has")
+    filters.push(
+      sql`${opportunitiesAndPledges.applicationDeadline} IS NOT NULL`,
+    );
+  else if (q.applicationDeadlinePresence === "blank")
+    filters.push(sql`${opportunitiesAndPledges.applicationDeadline} IS NULL`);
+  if (q.winProbabilityPresence === "has")
+    filters.push(sql`${opportunitiesAndPledges.winProbability} IS NOT NULL`);
+  else if (q.winProbabilityPresence === "blank")
+    filters.push(sql`${opportunitiesAndPledges.winProbability} IS NULL`);
+  // Donor-lifecycle worklist preset — composite predicate shared verbatim
+  // with the dashboard worklist counts (see lib/worklists).
+  if (q.worklist) filters.push(...oppWorklistConds(q.worklist as OppWorklist));
+  const archivedFilter = activeOnlyUnlessAdmin(
+    req,
+    opportunitiesAndPledges.archivedAt,
+  );
+  if (archivedFilter) filters.push(archivedFilter);
+  const where = filters.length ? and(...filters) : undefined;
+  // Default order is newest projected-close first. Two worklists override it:
+  // verbal_no_letter surfaces the stalest (least-recently-updated) first, and
+  // partially_paid orders by the earliest scheduled installment
+  // (pledge_expected_payments) as the "most overdue" proxy, falling back to
+  // oldest projected close for pledges with no installment schedule.
+  const worklistOrder =
+    q.worklist === "verbal_no_letter"
+      ? [asc(opportunitiesAndPledges.updatedAt)]
+      : q.worklist === "partially_paid"
+        ? [
+            sql`COALESCE((SELECT MIN(pep.expected_date) FROM pledge_expected_payments pep WHERE pep.pledge_or_opportunity_id = ${opportunitiesAndPledges.id}), ${effectiveCloseDateExpr}) ASC NULLS LAST`,
+          ]
+        : null;
+  return { q, where, worklistOrder };
 }
 
 router.get(
@@ -644,11 +630,7 @@ router.get(
             ),
           )
           .where(where)
-          .orderBy(
-            ...(worklistOrder ?? [
-              desc(effectiveCloseDateExpr),
-            ]),
-          )
+          .orderBy(...(worklistOrder ?? [desc(effectiveCloseDateExpr)]))
           .limit(limit)
           .offset(offset),
         db
@@ -753,16 +735,11 @@ router.get(
         )
         .leftJoin(
           primaryContact,
-          eq(
-            primaryContact.id,
-            opportunitiesAndPledges.primaryContactPersonId,
-          ),
+          eq(primaryContact.id, opportunitiesAndPledges.primaryContactPersonId),
         )
         .where(where)
         .orderBy(
-          ...(worklistOrder ?? [
-            desc(effectiveCloseDateExpr),
-          ]),
+          ...(worklistOrder ?? [desc(effectiveCloseDateExpr)]),
           // Stable tiebreak so batch pagination never skips/dupes rows.
           asc(opportunitiesAndPledges.id),
         )
@@ -913,6 +890,11 @@ router.get(
         varianceReasons: acc?.varianceReasons ?? [],
       };
     });
+    const conditionalRollup = rollupConditional(allocations);
+    const restrictionRollup = await loadGrantRestrictionRollup(
+      allocations,
+      id,
+    );
     res.json({
       ...maskOppDonorRow(row, getViewer(req)),
       allocations: allocationsWithActuals,
@@ -920,6 +902,9 @@ router.get(
       auditClose,
       flaggedForResearch,
       expectedPayments,
+      conditionalRollup: conditionalRollup.conditional,
+      conditionsMetRollup: conditionalRollup.conditionsMet,
+      ...restrictionRollup,
       ...planning,
     });
   }),
@@ -1652,11 +1637,17 @@ router.post(
       }
       const [allocations, installments] = await Promise.all([
         tx
-          .select({ id: pledgeAllocations.id, amount: pledgeAllocations.subAmount })
+          .select({
+            id: pledgeAllocations.id,
+            amount: pledgeAllocations.subAmount,
+          })
           .from(pledgeAllocations)
           .where(eq(pledgeAllocations.pledgeOrOpportunityId, id)),
         tx
-          .select({ id: pledgeExpectedPayments.id, amount: pledgeExpectedPayments.amount })
+          .select({
+            id: pledgeExpectedPayments.id,
+            amount: pledgeExpectedPayments.amount,
+          })
           .from(pledgeExpectedPayments)
           .where(eq(pledgeExpectedPayments.pledgeOrOpportunityId, id)),
       ]);
@@ -1697,15 +1688,20 @@ router.post(
         conflict: false as const,
         row: row!,
         oldTarget: lockedOldTarget,
-        allocationsAdjusted: scaledAllocations.filter((item) => item.amount != null).length,
-        installmentsAdjusted: scaledInstallments.filter((item) => item.amount != null).length,
+        allocationsAdjusted: scaledAllocations.filter(
+          (item) => item.amount != null,
+        ).length,
+        installmentsAdjusted: scaledInstallments.filter(
+          (item) => item.amount != null,
+        ).length,
       };
     });
 
     if (adjusted.conflict) {
       return res.status(409).json({
         error: "plan_amount_changed",
-        message: "The amount changed while this reduction was being saved. Reload and try again.",
+        message:
+          "The amount changed while this reduction was being saved. Reload and try again.",
       });
     }
 

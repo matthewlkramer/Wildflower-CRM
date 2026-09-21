@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Plus } from "lucide-react";
 import {
   useCreateOpportunityOrPledge,
+  createManualGrantTermSet,
   getListOpportunitiesAndPledgesQueryKey,
   type CreateOpportunityOrPledgeBody,
   type OpportunityStage,
@@ -80,6 +81,14 @@ type FormState = {
   projectedCloseMonthsOut: string;
   timingMode: "date" | "months";
   reportingRequired: "yes" | "no" | "";
+  restrictionDimension:
+    | "entity"
+    | "geography"
+    | "purpose"
+    | "time"
+    | "project"
+    | "school";
+  restrictionSummary: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -93,6 +102,8 @@ const EMPTY_FORM: FormState = {
   projectedCloseMonthsOut: "",
   timingMode: "date",
   reportingRequired: "",
+  restrictionDimension: "purpose",
+  restrictionSummary: "",
 };
 
 export function CreateOpportunityDialog({
@@ -153,6 +164,31 @@ export function CreateOpportunityDialog({
   const create = useCreateOpportunityOrPledge({
     mutation: {
       onSuccess: async (created) => {
+        const provisionalRestriction = form.restrictionSummary.trim();
+        if (created?.id && provisionalRestriction) {
+          try {
+            await createManualGrantTermSet(created.id, {
+              analysisSummary:
+                "Provisional restriction entered when the opportunity was created.",
+              terms: [
+                {
+                  kind: "donor_restriction",
+                  restrictionDimension: form.restrictionDimension,
+                  title: "Provisional donor restriction",
+                  summary: provisionalRestriction,
+                },
+              ],
+            });
+          } catch (error) {
+            toast({
+              title:
+                "Opportunity created, but the provisional restriction was not saved",
+              description:
+                error instanceof Error ? error.message : String(error),
+              variant: "destructive",
+            });
+          }
+        }
         await queryClient.invalidateQueries({
           queryKey: getListOpportunitiesAndPledgesQueryKey(),
         });
@@ -249,7 +285,7 @@ export function CreateOpportunityDialog({
             ))}
         </DialogTrigger>
       )}
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isPledge ? "New pledge setup" : "New opportunity"}
@@ -327,8 +363,7 @@ export function CreateOpportunityDialog({
               <Select
                 value={form.stage || "__none__"}
                 onValueChange={(v) => {
-                  const stage =
-                    v === "__none__" ? "" : (v as OpportunityStage);
+                  const stage = v === "__none__" ? "" : (v as OpportunityStage);
                   const rollingAllowed = [
                     "cold_lead",
                     "warm_lead",
@@ -387,6 +422,51 @@ export function CreateOpportunityDialog({
             </div>
           </div>
 
+          {form.loanOrGrant === "grant" ? (
+            <div className="space-y-2 rounded-lg border p-3">
+              <div>
+                <Label htmlFor="new-opportunity-restriction">
+                  Known donor restriction (optional)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Enter a provisional restriction now. An uploaded grant
+                  agreement can supersede it after human review.
+                </p>
+              </div>
+              <Select
+                value={form.restrictionDimension}
+                onValueChange={(value) =>
+                  setForm({
+                    ...form,
+                    restrictionDimension:
+                      value as FormState["restrictionDimension"],
+                  })
+                }
+              >
+                <SelectTrigger data-testid="select-new-opportunity-restriction-dimension">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="entity">Entity / fund</SelectItem>
+                  <SelectItem value="geography">Geography</SelectItem>
+                  <SelectItem value="purpose">Purpose</SelectItem>
+                  <SelectItem value="time">Time period</SelectItem>
+                  <SelectItem value="project">Project</SelectItem>
+                  <SelectItem value="school">School</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                id="new-opportunity-restriction"
+                value={form.restrictionSummary}
+                onChange={(event) =>
+                  setForm({ ...form, restrictionSummary: event.target.value })
+                }
+                placeholder="e.g. Restricted to Black Wildflowers Fund"
+                data-testid="input-new-opportunity-restriction"
+              />
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="new-opportunity-ask">Ask amount</Label>
@@ -404,21 +484,23 @@ export function CreateOpportunityDialog({
               />
             </div>
             {showAwardedAmount && (
-            <div className="space-y-1.5">
-              <Label htmlFor="new-opportunity-awarded">Committed amount / award ceiling</Label>
-              <Input
-                id="new-opportunity-awarded"
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.awardedAmount}
-                onChange={(e) =>
-                  setForm({ ...form, awardedAmount: e.target.value })
-                }
-                placeholder="Optional"
-                data-testid="input-new-opportunity-awarded"
-              />
-            </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="new-opportunity-awarded">
+                  Committed amount / award ceiling
+                </Label>
+                <Input
+                  id="new-opportunity-awarded"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.awardedAmount}
+                  onChange={(e) =>
+                    setForm({ ...form, awardedAmount: e.target.value })
+                  }
+                  placeholder="Optional"
+                  data-testid="input-new-opportunity-awarded"
+                />
+              </div>
             )}
           </div>
 
@@ -430,8 +512,10 @@ export function CreateOpportunityDialog({
                 setForm({
                   ...form,
                   timingMode: value as "date" | "months",
-                  projectedCloseDate: value === "months" ? "" : form.projectedCloseDate,
-                  projectedCloseMonthsOut: value === "date" ? "" : form.projectedCloseMonthsOut,
+                  projectedCloseDate:
+                    value === "months" ? "" : form.projectedCloseDate,
+                  projectedCloseMonthsOut:
+                    value === "date" ? "" : form.projectedCloseMonthsOut,
                 })
               }
             >
@@ -442,7 +526,11 @@ export function CreateOpportunityDialog({
                 <SelectItem value="date">Specific date</SelectItem>
                 <SelectItem
                   value="months"
-                  disabled={!["cold_lead", "warm_lead", "in_conversation"].includes(form.stage)}
+                  disabled={
+                    !["cold_lead", "warm_lead", "in_conversation"].includes(
+                      form.stage,
+                    )
+                  }
                 >
                   Months from now
                 </SelectItem>
@@ -453,7 +541,9 @@ export function CreateOpportunityDialog({
                 id="new-opportunity-close"
                 type="date"
                 value={form.projectedCloseDate}
-                onChange={(e) => setForm({ ...form, projectedCloseDate: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, projectedCloseDate: e.target.value })
+                }
                 data-testid="input-new-opportunity-close"
               />
             ) : (
@@ -462,7 +552,9 @@ export function CreateOpportunityDialog({
                 min="1"
                 step="1"
                 value={form.projectedCloseMonthsOut}
-                onChange={(e) => setForm({ ...form, projectedCloseMonthsOut: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, projectedCloseMonthsOut: e.target.value })
+                }
                 aria-label="Months from now"
                 data-testid="input-new-opportunity-close-months"
               />
