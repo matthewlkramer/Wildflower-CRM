@@ -56,6 +56,7 @@ export type CashFlowForecastRow = {
   opportunityId: string;
   opportunityName: string | null;
   status: "pledge" | "open";
+  stage: string | null;
   askAmount: string | null;
   weighting: string | null;
   foundationCommitted: string;
@@ -65,8 +66,11 @@ export type CashFlowForecastRow = {
   seedFundCommitted: string;
   seedFundWeightedTarget: string;
   total: string;
+  hasWeightedAskMismatch: boolean;
   forecastDate: string | null;
   forecastBasis: FundingArrivalItem["basis"] | null;
+  projectedCloseDate: string | null;
+  projectedCloseMonthsOut: number | null;
 };
 export type FundingArrivalItem = {
   id: string;
@@ -583,6 +587,7 @@ export async function getFundingArrivalsByMonth(
       id: opportunitiesAndPledges.id,
       name: opportunitiesAndPledges.name,
       status: sql<"pledge" | "open">`${opportunitiesAndPledges.status}::text`,
+      stage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
       winProbability: sql<
         string | null
       >`${opportunitiesAndPledges.winProbability}::text`,
@@ -1004,10 +1009,17 @@ export async function getFundingArrivalsByMonth(
         (sum, bucket) => sum + committed[bucket] + weightedTarget[bucket],
         0,
       );
+      const weightingValue =
+        opportunity.status === "pledge"
+          ? 1
+          : opportunity.winProbability == null
+            ? null
+            : money(opportunity.winProbability);
       return {
         opportunityId: opportunity.id,
         opportunityName: opportunity.name,
         status: opportunity.status,
+        stage: opportunity.stage,
         askAmount: askAmount == null ? null : decimal(askAmount),
         weighting:
           opportunity.status === "pledge" ? "1" : opportunity.winProbability,
@@ -1018,8 +1030,14 @@ export async function getFundingArrivalsByMonth(
         seedFundCommitted: decimal(committed.seedFund),
         seedFundWeightedTarget: decimal(weightedTarget.seedFund),
         total: decimal(total),
+        hasWeightedAskMismatch:
+          askAmount != null &&
+          weightingValue != null &&
+          Math.abs(total - askAmount * weightingValue) >= 0.005,
         forecastDate: firstDatedItem?.expectedDate ?? null,
         forecastBasis: firstDatedItem?.basis ?? null,
+        projectedCloseDate: opportunity.projectedCloseDate,
+        projectedCloseMonthsOut: opportunity.projectedCloseMonthsOut,
       } satisfies CashFlowForecastRow;
     })
     .sort(

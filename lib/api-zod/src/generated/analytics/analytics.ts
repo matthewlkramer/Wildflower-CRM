@@ -136,6 +136,7 @@ export const GetFundingArrivalsByMonthResponse = zod.object({
   "opportunityId": zod.string(),
   "opportunityName": zod.string().nullable(),
   "status": zod.enum(['pledge', 'open']),
+  "stage": zod.enum(['cold_lead', 'warm_lead', 'in_conversation', 'convince', 'conditional_commitment', 'probable_renewal', 'verbal_confirmation', 'written_commitment', 'cash_in', 'complete']).describe('Cultivation funnel position, separate from commitment and actual outcome.\nActive stages end at verbal_confirmation. Pledge finalization and payment\ndo not overwrite the recorded stage. conditional_commitment,\nwritten_commitment, cash_in, and complete remain only for historical API\ncompatibility and are normalized to verbal_confirmation by migration 0224.\n').nullable(),
   "askAmount": zod.string().nullable(),
   "weighting": zod.string().nullable().describe('Effective row weighting: 100% for a pledge, otherwise the opportunity\'s current win probability.'),
   "foundationCommitted": zod.string(),
@@ -145,8 +146,11 @@ export const GetFundingArrivalsByMonthResponse = zod.object({
   "seedFundCommitted": zod.string(),
   "seedFundWeightedTarget": zod.string(),
   "total": zod.string().describe('Sum of the six committed and weighted-target cells.'),
+  "hasWeightedAskMismatch": zod.boolean().describe('True when Total differs by at least half a cent from Ask amount multiplied by Current weighting. False when ask amount or weighting is unknown.'),
   "forecastDate": zod.string().date().nullable(),
-  "forecastBasis": zod.enum(['projected_close', 'explicit_payment', 'unscheduled', 'reimbursement_annual']).nullable()
+  "forecastBasis": zod.enum(['projected_close', 'explicit_payment', 'unscheduled', 'reimbursement_annual']).nullable(),
+  "projectedCloseDate": zod.string().date().nullable().describe('The stored specific projected close date. Mutually exclusive with projectedCloseMonthsOut.'),
+  "projectedCloseMonthsOut": zod.number().nullable().describe('The stored rolling projected-close offset. When forecastBasis is projected_close, forecastDate is its current calculated date.')
 }))
 })
 

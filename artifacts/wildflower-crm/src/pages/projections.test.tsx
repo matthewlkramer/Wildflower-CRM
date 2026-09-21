@@ -8,11 +8,28 @@ const currentFy = currentFiscalYearSlug();
 const nextFy = `fy${currentFiscalYearEndYear() + 1}`;
 const api = vi.hoisted(() => ({
   calls: [] as Array<Record<string, unknown> | undefined>,
+  updates: [] as Array<{ id: string; data: Record<string, unknown> }>,
+  invalidations: [] as Array<{ queryKey: unknown }>,
+  toasts: [] as Array<Record<string, unknown>>,
   revenueData: null as Record<string, unknown> | null,
   loanData: null as Record<string, unknown> | null,
   monthlyCalls: [] as Array<Record<string, unknown> | undefined>,
   monthlyRevenueData: null as Record<string, unknown> | null,
   monthlyLoanData: null as Record<string, unknown> | null,
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  useQueryClient: () => ({
+    invalidateQueries: async (request: { queryKey: unknown }) => {
+      api.invalidations.push(request);
+    },
+  }),
+}));
+
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({
+    toast: (request: Record<string, unknown>) => api.toasts.push(request),
+  }),
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
@@ -42,6 +59,15 @@ vi.mock("@workspace/api-client-react", () => ({
       error: null,
     };
   },
+  useUpdateOpportunityOrPledge: () => ({
+    mutateAsync: async (request: {
+      id: string;
+      data: Record<string, unknown>;
+    }) => {
+      api.updates.push(request);
+      return {};
+    },
+  }),
   useListEntities: () => ({
     data: [{ id: "recipient-a", name: "Recipient A" }],
   }),
@@ -58,8 +84,10 @@ vi.mock("@workspace/api-client-react", () => ({
   ],
   getGetFundingArrivalsByMonthQueryKey: (params: unknown) => [
     "monthly-cash",
-    params,
+    ...(params ? [params] : []),
   ],
+  getGetOpportunityOrPledgeQueryKey: (id: string) => ["opportunity", id],
+  getListOpportunitiesAndPledgesQueryKey: () => ["opportunities"],
   getListEntitiesQueryKey: () => ["entities"],
   getListFiscalYearsQueryKey: () => ["fiscal-years"],
 }));
@@ -129,6 +157,9 @@ const revenueDiagnostics = [
 
 beforeEach(() => {
   api.calls.length = 0;
+  api.updates.length = 0;
+  api.invalidations.length = 0;
+  api.toasts.length = 0;
   api.monthlyCalls.length = 0;
   api.revenueData = {
     rows: [
@@ -178,6 +209,7 @@ beforeEach(() => {
         opportunityId: "opp-close",
         opportunityName: "Pipeline Gift",
         status: "open",
+        stage: "warm_lead",
         askAmount: "2500",
         weighting: "0.5",
         foundationCommitted: "0",
@@ -187,13 +219,17 @@ beforeEach(() => {
         seedFundCommitted: "0",
         seedFundWeightedTarget: "125",
         total: "1375",
+        hasWeightedAskMismatch: true,
         forecastDate: "2026-10-01",
         forecastBasis: "projected_close",
+        projectedCloseDate: null,
+        projectedCloseMonthsOut: 1,
       },
       {
         opportunityId: "opp-explicit",
         opportunityName: "Committed Pledge",
         status: "pledge",
+        stage: "verbal_confirmation",
         askAmount: "1000",
         weighting: "1",
         foundationCommitted: "600",
@@ -203,8 +239,11 @@ beforeEach(() => {
         seedFundCommitted: "100",
         seedFundWeightedTarget: "0",
         total: "900",
+        hasWeightedAskMismatch: true,
         forecastDate: null,
         forecastBasis: null,
+        projectedCloseDate: null,
+        projectedCloseMonthsOut: null,
       },
     ],
   };
@@ -376,6 +415,40 @@ describe("projections forecast distinctions", () => {
 function openArrivals() {
   act(() => root.render(<CashFlow />));
 }
+
+function openActions(opportunityId = "opp-close"): HTMLElement {
+  const trigger = container.querySelector<HTMLButtonElement>(
+    `[data-testid="cash-flow-actions-${opportunityId}"]`,
+  );
+  expect(trigger).not.toBeNull();
+  act(() =>
+    trigger!.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })),
+  );
+  const menu = document.querySelector<HTMLElement>('[role="menu"]');
+  expect(menu).not.toBeNull();
+  return menu!;
+}
+
+function menuItem(menu: HTMLElement, label: string): HTMLElement {
+  const item = Array.from(
+    menu.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+  ).find((candidate) => candidate.textContent?.includes(label));
+  expect(item, label).not.toBeNull();
+  return item!;
+}
+
+function changeInput(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  act(() => {
+    setter?.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
 describe("cash-flow forecast spreadsheet", () => {
   it("renders one row per active opportunity or unpaid pledge with the requested allocation pairs", () => {
     openArrivals();
@@ -390,6 +463,14 @@ describe("cash-flow forecast spreadsheet", () => {
     expect(prospect.textContent).toContain("50%");
     expect(prospect.textContent).toContain("$1,375");
     expect(prospect.textContent).toContain("Oct 1, 2026");
+    expect(
+      prospect.querySelector('[data-testid="cash-flow-warning-opp-close"]'),
+    ).not.toBeNull();
+    expect(
+      prospect
+        .querySelector('[data-testid="cash-flow-date-opp-close"]')
+        ?.classList.contains("italic"),
+    ).toBe(true);
     expect(prospect.querySelector("a")?.getAttribute("href")).toBe(
       "/opportunities/opp-close",
     );
@@ -424,5 +505,88 @@ describe("cash-flow forecast spreadsheet", () => {
     expect(container.textContent).toContain(
       "No active opportunities or unpaid pledges match this scope.",
     );
+  });
+
+  it("switches a row directly to a rolling six-month close", async () => {
+    openArrivals();
+    const menu = openActions();
+    await act(async () => {
+      menuItem(menu, "Switch to rolling 6 month close").click();
+    });
+    expect(api.updates).toContainEqual({
+      id: "opp-close",
+      data: { projectedCloseMonthsOut: 6 },
+    });
+    expect(api.invalidations).toContainEqual({
+      queryKey: ["monthly-cash"],
+    });
+  });
+
+  it("validates and saves a custom rolling close between 1 and 24 months", async () => {
+    openArrivals();
+    const menu = openActions();
+    act(() => menuItem(menu, "Switch to rolling X month close").click());
+    const input = document.querySelector<HTMLInputElement>(
+      '[data-testid="cash-flow-months-input-opp-close"]',
+    );
+    expect(input).not.toBeNull();
+    changeInput(input!, "25");
+    const save = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.includes("Switch to rolling close"));
+    expect(save?.disabled).toBe(true);
+    changeInput(input!, "4");
+    expect(save?.disabled).toBe(false);
+    await act(async () => save!.click());
+    expect(api.updates.at(-1)).toEqual({
+      id: "opp-close",
+      data: { projectedCloseMonthsOut: 4 },
+    });
+  });
+
+  it("sets a specific close date and records dormant and lost outcomes", async () => {
+    openArrivals();
+    let menu = openActions();
+    act(() => menuItem(menu, "Edit close date").click());
+    const dateInput =
+      document.querySelector<HTMLInputElement>('input[type="date"]');
+    expect(dateInput).not.toBeNull();
+    changeInput(dateInput!, "2027-02-03");
+    const saveDate = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent?.includes("Save close date"));
+    await act(async () => saveDate!.click());
+    expect(api.updates.at(-1)).toEqual({
+      id: "opp-close",
+      data: { projectedCloseDate: "2027-02-03" },
+    });
+
+    menu = openActions();
+    act(() => menuItem(menu, "Mark dormant").click());
+    const confirmDormant = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Mark dormant");
+    await act(async () => confirmDormant!.click());
+    expect(api.updates.at(-1)).toEqual({
+      id: "opp-close",
+      data: {
+        lossType: "dormant",
+        actualCompletionDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    });
+
+    menu = openActions();
+    act(() => menuItem(menu, "Mark lost").click());
+    const confirmLost = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => button.textContent === "Mark lost");
+    await act(async () => confirmLost!.click());
+    expect(api.updates.at(-1)).toEqual({
+      id: "opp-close",
+      data: {
+        lossType: "lost",
+        actualCompletionDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      },
+    });
   });
 });

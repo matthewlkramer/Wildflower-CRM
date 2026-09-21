@@ -700,6 +700,7 @@ export interface CashFlowForecastRow {
   opportunityId: string;
   opportunityName: string | null;
   status: CashFlowForecastRowStatus;
+  stage: OpportunityStage | null;
   askAmount: string | null;
   /** Effective row weighting: 100% for a pledge, otherwise the opportunity's current win probability. */
   weighting: string | null;
@@ -711,8 +712,14 @@ export interface CashFlowForecastRow {
   seedFundWeightedTarget: string;
   /** Sum of the six committed and weighted-target cells. */
   total: string;
+  /** True when Total differs by at least half a cent from Ask amount multiplied by Current weighting. False when ask amount or weighting is unknown. */
+  hasWeightedAskMismatch: boolean;
   forecastDate: string | null;
   forecastBasis: 'projected_close' | 'explicit_payment' | 'unscheduled' | 'reimbursement_annual' | null;
+  /** The stored specific projected close date. Mutually exclusive with projectedCloseMonthsOut. */
+  projectedCloseDate: string | null;
+  /** The stored rolling projected-close offset. When forecastBasis is projected_close, forecastDate is its current calculated date. */
+  projectedCloseMonthsOut: number | null;
 }
 
 export interface FundingArrivalsByMonth {

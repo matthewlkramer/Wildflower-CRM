@@ -1,12 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetProjectionsByFyEntity,
   useGetFundingArrivalsByMonth,
   useListEntities,
   useListFiscalYears,
+  useUpdateOpportunityOrPledge,
   getGetProjectionsByFyEntityQueryKey,
   getGetFundingArrivalsByMonthQueryKey,
+  getGetOpportunityOrPledgeQueryKey,
+  getListOpportunitiesAndPledgesQueryKey,
   getListEntitiesQueryKey,
   getListFiscalYearsQueryKey,
   type CashFlowForecastRow,
@@ -15,6 +19,7 @@ import {
   type ProjectionCombinedFyRow,
   type ProjectionForecastDiagnostic,
   type GetFundingArrivalsByMonthParams,
+  type UpdateOpportunityOrPledgeBody,
 } from "@workspace/api-client-react";
 import {
   currentFiscalYearEndYear,
@@ -31,6 +36,36 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SkeletonRows } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { AlertTriangle, ChevronDown } from "lucide-react";
 
 const UNKNOWN_BUCKET = "__unknown__";
 type ProjectionCombinedForecastRow = ProjectionCombinedFyRow;
@@ -309,6 +344,23 @@ const cashFlowDateLabel = (date: string | null) =>
 const cashFlowMoney = (amount: string | null) =>
   amount == null ? "—" : formatCurrency(amount);
 
+const ROLLING_CLOSE_STAGES = ["cold_lead", "warm_lead", "in_conversation"];
+
+function todayInChicago(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+type CashFlowRowUpdate = (
+  row: CashFlowForecastRow,
+  body: UpdateOpportunityOrPledgeBody,
+  successTitle: string,
+) => Promise<boolean>;
+
 function CashFlowForecastTable({
   params,
 }: {
@@ -317,12 +369,46 @@ function CashFlowForecastTable({
   const query = useGetFundingArrivalsByMonth(params, {
     query: { queryKey: getGetFundingArrivalsByMonthQueryKey(params) },
   });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const update = useUpdateOpportunityOrPledge();
+  const [pendingOpportunityId, setPendingOpportunityId] = useState<
+    string | null
+  >(null);
+  const updateRow: CashFlowRowUpdate = async (row, body, successTitle) => {
+    setPendingOpportunityId(row.opportunityId);
+    try {
+      await update.mutateAsync({ id: row.opportunityId, data: body });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: getGetFundingArrivalsByMonthQueryKey(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: getGetOpportunityOrPledgeQueryKey(row.opportunityId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: getListOpportunitiesAndPledgesQueryKey(),
+        }),
+      ]);
+      toast({ title: successTitle });
+      return true;
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+      return false;
+    } finally {
+      setPendingOpportunityId(null);
+    }
+  };
   if (query.isLoading)
     return (
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table className="min-w-[1500px]">
           <TableBody>
-            <SkeletonRows cols={11} />
+            <SkeletonRows cols={12} />
           </TableBody>
         </Table>
       </div>
@@ -352,7 +438,7 @@ function CashFlowForecastTable({
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table
           aria-label="Opportunity cash-flow forecast"
-          className="min-w-[1500px]"
+          className="min-w-[1650px]"
         >
           <TableHeader>
             <TableRow>
@@ -383,6 +469,9 @@ function CashFlowForecastTable({
               <TableHead rowSpan={2} className="align-bottom border-l">
                 Forecast cash-flow date
               </TableHead>
+              <TableHead rowSpan={2} className="text-right align-bottom">
+                Actions
+              </TableHead>
             </TableRow>
             <TableRow>
               {["foundation", "regional", "seed"].flatMap((group) => [
@@ -402,7 +491,7 @@ function CashFlowForecastTable({
             {rows.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={11}
+                  colSpan={12}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No active opportunities or unpaid pledges match this scope.
@@ -410,7 +499,12 @@ function CashFlowForecastTable({
               </TableRow>
             ) : (
               rows.map((row) => (
-                <CashFlowForecastTableRow key={row.opportunityId} row={row} />
+                <CashFlowForecastTableRow
+                  key={row.opportunityId}
+                  row={row}
+                  busy={pendingOpportunityId === row.opportunityId}
+                  onUpdate={updateRow}
+                />
               ))
             )}
           </TableBody>
@@ -428,7 +522,15 @@ function CashFlowForecastTable({
   );
 }
 
-function CashFlowForecastTableRow({ row }: { row: CashFlowForecastRow }) {
+function CashFlowForecastTableRow({
+  row,
+  busy,
+  onUpdate,
+}: {
+  row: CashFlowForecastRow;
+  busy: boolean;
+  onUpdate: CashFlowRowUpdate;
+}) {
   const cells = [
     row.foundationCommitted,
     row.foundationWeightedTarget,
@@ -440,15 +542,29 @@ function CashFlowForecastTableRow({ row }: { row: CashFlowForecastRow }) {
   return (
     <TableRow data-testid={`cash-flow-row-${row.opportunityId}`}>
       <TableCell>
-        <Link
-          href={`/opportunities/${row.opportunityId}`}
-          className="font-medium text-primary hover:underline"
-        >
-          {row.opportunityName ?? "Unnamed opportunity"}
-        </Link>
-        <span className="block text-xs text-muted-foreground">
-          {row.status === "pledge" ? "Unpaid pledge" : "Opportunity"}
-        </span>
+        <div className="flex items-start gap-2">
+          {row.hasWeightedAskMismatch ? (
+            <span
+              className="mt-0.5 shrink-0 text-amber-600"
+              aria-label="Total does not equal ask amount times current weighting"
+              title="Total does not equal ask amount × current weighting"
+              data-testid={`cash-flow-warning-${row.opportunityId}`}
+            >
+              <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            </span>
+          ) : null}
+          <div>
+            <Link
+              href={`/opportunities/${row.opportunityId}`}
+              className="font-medium text-primary hover:underline"
+            >
+              {row.opportunityName ?? "Unnamed opportunity"}
+            </Link>
+            <span className="block text-xs text-muted-foreground">
+              {row.status === "pledge" ? "Unpaid pledge" : "Opportunity"}
+            </span>
+          </div>
+        </div>
       </TableCell>
       <TableCell className="text-right tabular-nums">
         {cashFlowMoney(row.askAmount)}
@@ -468,9 +584,320 @@ function CashFlowForecastTableRow({ row }: { row: CashFlowForecastRow }) {
         {cashFlowMoney(row.total)}
       </TableCell>
       <TableCell className="whitespace-nowrap border-l">
-        {cashFlowDateLabel(row.forecastDate)}
+        <span
+          className={
+            row.projectedCloseMonthsOut != null &&
+            row.forecastBasis === "projected_close"
+              ? "italic"
+              : undefined
+          }
+          title={
+            row.projectedCloseMonthsOut != null &&
+            row.forecastBasis === "projected_close"
+              ? `Calculated from ${row.projectedCloseMonthsOut} month${row.projectedCloseMonthsOut === 1 ? "" : "s"} from now`
+              : undefined
+          }
+          data-testid={`cash-flow-date-${row.opportunityId}`}
+        >
+          {cashFlowDateLabel(row.forecastDate)}
+        </span>
+      </TableCell>
+      <TableCell className="text-right">
+        <CashFlowRowActions row={row} busy={busy} onUpdate={onUpdate} />
       </TableCell>
     </TableRow>
+  );
+}
+
+function CashFlowRowActions({
+  row,
+  busy,
+  onUpdate,
+}: {
+  row: CashFlowForecastRow;
+  busy: boolean;
+  onUpdate: CashFlowRowUpdate;
+}) {
+  const [dialog, setDialog] = useState<
+    "rolling" | "date" | "dormant" | "lost" | null
+  >(null);
+  const [monthsDraft, setMonthsDraft] = useState(
+    String(row.projectedCloseMonthsOut ?? 6),
+  );
+  const [dateDraft, setDateDraft] = useState(
+    row.projectedCloseDate ??
+      (row.forecastBasis === "projected_close" ? (row.forecastDate ?? "") : ""),
+  );
+  const rollingAllowed = ROLLING_CLOSE_STAGES.includes(row.stage ?? "");
+  const months = Number(monthsDraft);
+  const validMonths = Number.isInteger(months) && months >= 1 && months <= 24;
+  const label = row.opportunityName ?? "this opportunity";
+
+  const openRollingDialog = () => {
+    setMonthsDraft(String(row.projectedCloseMonthsOut ?? 6));
+    setDialog("rolling");
+  };
+  const openDateDialog = () => {
+    setDateDraft(
+      row.projectedCloseDate ??
+        (row.forecastBasis === "projected_close"
+          ? (row.forecastDate ?? "")
+          : ""),
+    );
+    setDialog("date");
+  };
+  const saveRolling = async () => {
+    if (!validMonths) return;
+    if (
+      await onUpdate(
+        row,
+        { projectedCloseMonthsOut: months },
+        `Close timing switched to ${months} month${months === 1 ? "" : "s"} from now`,
+      )
+    ) {
+      setDialog(null);
+    }
+  };
+  const saveDate = async () => {
+    if (!dateDraft) return;
+    if (
+      await onUpdate(
+        row,
+        { projectedCloseDate: dateDraft },
+        "Projected close date updated",
+      )
+    ) {
+      setDialog(null);
+    }
+  };
+  const saveLoss = async () => {
+    if (dialog !== "dormant" && dialog !== "lost") return;
+    const lossType = dialog;
+    if (
+      await onUpdate(
+        row,
+        { lossType, actualCompletionDate: todayInChicago() },
+        lossType === "dormant" ? "Marked dormant" : "Marked lost",
+      )
+    ) {
+      setDialog(null);
+    }
+  };
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1"
+            disabled={busy}
+            aria-label={`Actions for ${label}`}
+            data-testid={`cash-flow-actions-${row.opportunityId}`}
+          >
+            Actions
+            <ChevronDown className="h-3.5 w-3.5" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuItem
+            disabled={!rollingAllowed || busy}
+            title={
+              rollingAllowed
+                ? undefined
+                : "Rolling close is available only through In conversation."
+            }
+            onSelect={() =>
+              void onUpdate(
+                row,
+                { projectedCloseMonthsOut: 6 },
+                "Close timing switched to 6 months from now",
+              )
+            }
+          >
+            Switch to rolling 6 month close
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!rollingAllowed || busy}
+            title={
+              rollingAllowed
+                ? undefined
+                : "Rolling close is available only through In conversation."
+            }
+            onSelect={openRollingDialog}
+          >
+            Switch to rolling X month close…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={busy}
+            onSelect={() => setDialog("dormant")}
+          >
+            Mark dormant…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={busy}
+            className="text-destructive focus:text-destructive"
+            onSelect={() => setDialog("lost")}
+          >
+            Mark lost…
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem disabled={busy} onSelect={openDateDialog}>
+            Edit close date…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog
+        open={dialog === "rolling"}
+        onOpenChange={(open) => !open && setDialog(null)}
+      >
+        <DialogContent
+          data-testid={`cash-flow-rolling-dialog-${row.opportunityId}`}
+        >
+          <DialogHeader>
+            <DialogTitle>Set a rolling close</DialogTitle>
+            <DialogDescription>
+              Enter how many months from now {label} should be expected to
+              close. The projected date will keep moving forward.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveRolling();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor={`cash-flow-months-${row.opportunityId}`}>
+                Future months to close
+              </Label>
+              <Input
+                id={`cash-flow-months-${row.opportunityId}`}
+                type="number"
+                min="1"
+                max="24"
+                step="1"
+                value={monthsDraft}
+                onChange={(event) => setMonthsDraft(event.target.value)}
+                disabled={busy}
+                autoFocus
+                data-testid={`cash-flow-months-input-${row.opportunityId}`}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter a whole number from 1 to 24.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialog(null)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!validMonths || busy}>
+                {busy ? "Saving…" : "Switch to rolling close"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={dialog === "date"}
+        onOpenChange={(open) => !open && setDialog(null)}
+      >
+        <DialogContent
+          data-testid={`cash-flow-date-dialog-${row.opportunityId}`}
+        >
+          <DialogHeader>
+            <DialogTitle>Edit projected close date</DialogTitle>
+            <DialogDescription>
+              Choose a specific projected close date for {label}. This replaces
+              any rolling months-from-now timing.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            className="space-y-4"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveDate();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor={`cash-flow-date-input-${row.opportunityId}`}>
+                Projected close date
+              </Label>
+              <Input
+                id={`cash-flow-date-input-${row.opportunityId}`}
+                type="date"
+                value={dateDraft}
+                onChange={(event) => setDateDraft(event.target.value)}
+                disabled={busy}
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDialog(null)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!dateDraft || busy}>
+                {busy ? "Saving…" : "Save close date"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog
+        open={dialog === "dormant" || dialog === "lost"}
+        onOpenChange={(open) => !open && setDialog(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Mark {label} {dialog === "lost" ? "lost" : "dormant"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This records the lifecycle outcome and removes the row from the
+              active cash-flow forecast.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(event) => {
+                event.preventDefault();
+                void saveLoss();
+              }}
+              className={
+                dialog === "lost"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : undefined
+              }
+            >
+              {busy
+                ? "Saving…"
+                : dialog === "lost"
+                  ? "Mark lost"
+                  : "Mark dormant"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 

@@ -543,6 +543,7 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     );
     expect(prospect).toMatchObject({
       status: "open",
+      stage: null,
       askAmount: "1000",
       weighting: "0.2500",
       foundationCommitted: "0",
@@ -552,8 +553,11 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
       seedFundCommitted: "0",
       seedFundWeightedTarget: "75",
       total: "150",
+      hasWeightedAskMismatch: true,
       forecastDate: "2097-02-10",
       forecastBasis: "projected_close",
+      projectedCloseDate: "2097-02-10",
+      projectedCloseMonthsOut: null,
     });
 
     const pledge = result.rows.find(
@@ -561,14 +565,18 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
     );
     expect(pledge).toMatchObject({
       status: "pledge",
+      stage: null,
       askAmount: "800",
       weighting: "1",
       foundationWeightedTarget: "0",
       regionalWeightedTarget: "0",
       seedFundWeightedTarget: "0",
       total: "600",
+      hasWeightedAskMismatch: true,
       forecastDate: "2097-03-15",
       forecastBasis: "explicit_payment",
+      projectedCloseDate: null,
+      projectedCloseMonthsOut: null,
     });
     expectMoney(pledge.foundationCommitted, 342.857142857);
     expectMoney(pledge.regionalCommitted, 171.428571429);

@@ -13035,6 +13035,7 @@ components:
           opportunityId,
           opportunityName,
           status,
+          stage,
           askAmount,
           weighting,
           foundationCommitted,
@@ -13044,13 +13045,21 @@ components:
           seedFundCommitted,
           seedFundWeightedTarget,
           total,
+          hasWeightedAskMismatch,
           forecastDate,
           forecastBasis,
+          projectedCloseDate,
+          projectedCloseMonthsOut,
         ]
       properties:
         opportunityId: { type: string }
         opportunityName: { type: string, nullable: true }
         status: { type: string, enum: [pledge, open] }
+        stage:
+          {
+            allOf: [{ $ref: "#/components/schemas/OpportunityStage" }],
+            nullable: true,
+          }
         askAmount: { type: string, nullable: true }
         weighting:
           {
@@ -13069,6 +13078,11 @@ components:
             type: string,
             description: Sum of the six committed and weighted-target cells.,
           }
+        hasWeightedAskMismatch:
+          {
+            type: boolean,
+            description: "True when Total differs by at least half a cent from Ask amount multiplied by Current weighting. False when ask amount or weighting is unknown.",
+          }
         forecastDate: { type: string, format: date, nullable: true }
         forecastBasis:
           {
@@ -13086,6 +13100,19 @@ components:
                 },
               ],
             nullable: true,
+          }
+        projectedCloseDate:
+          {
+            type: string,
+            format: date,
+            nullable: true,
+            description: "The stored specific projected close date. Mutually exclusive with projectedCloseMonthsOut.",
+          }
+        projectedCloseMonthsOut:
+          {
+            type: integer,
+            nullable: true,
+            description: "The stored rolling projected-close offset. When forecastBasis is projected_close, forecastDate is its current calculated date.",
           }
     FundingArrivalItem:
       type: object
