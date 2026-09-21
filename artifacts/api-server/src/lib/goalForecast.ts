@@ -50,6 +50,23 @@ export type FundingArrivalsByMonth = {
   asOfDate: string;
   items: FundingArrivalItem[];
   months: FundingArrivalMonth[];
+  rows: CashFlowForecastRow[];
+};
+export type CashFlowForecastRow = {
+  opportunityId: string;
+  opportunityName: string | null;
+  status: "pledge" | "open";
+  askAmount: string | null;
+  weighting: string | null;
+  foundationCommitted: string;
+  foundationWeightedTarget: string;
+  regionalCommitted: string;
+  regionalWeightedTarget: string;
+  seedFundCommitted: string;
+  seedFundWeightedTarget: string;
+  total: string;
+  forecastDate: string | null;
+  forecastBasis: FundingArrivalItem["basis"] | null;
 };
 export type FundingArrivalItem = {
   id: string;
@@ -199,15 +216,25 @@ function emptyMetrics(): ForecastMetrics {
  * Payments are grouped once per opportunity in the requested FY/entity scope,
  * then netted against the opportunity's allocation total.
  */
-export async function getGoalForecast(scope: ForecastScope): Promise<GoalForecast> {
+export async function getGoalForecast(
+  scope: ForecastScope,
+): Promise<GoalForecast> {
   const entityIds = scope.entityIds ?? [];
   const categoryGift = sql<string>`CASE WHEN ${giftsAndPayments.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
   const categoryOpp = sql<string>`CASE WHEN ${opportunitiesAndPledges.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
   const categoryGoal = sql<string>`CASE WHEN ${fiscalYearEntityGoals.loanOrGrant} = 'loan' THEN 'loan_capital' ELSE 'revenue' END`;
   const pledgeCounts = sql`(${pledgeAllocations.reimbursementType} IS DISTINCT FROM 'direct' AND NOT (${opportunitiesAndPledges.disbursementModel} = 'cost_reimbursement' AND ${pledgeAllocations.reimbursementType} IS NULL))`;
   const giftCounts = sql`${giftAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
-  const entityFilter = scopedEntityPredicate(giftAllocations.entityId, entityIds, scope.unknownEntityOnly);
-  const pledgeEntityFilter = scopedEntityPredicate(pledgeAllocations.entityId, entityIds, scope.unknownEntityOnly);
+  const entityFilter = scopedEntityPredicate(
+    giftAllocations.entityId,
+    entityIds,
+    scope.unknownEntityOnly,
+  );
+  const pledgeEntityFilter = scopedEntityPredicate(
+    pledgeAllocations.entityId,
+    entityIds,
+    scope.unknownEntityOnly,
+  );
 
   const goalEntityFilter = scope.unknownEntityOnly
     ? sql`false`
@@ -216,129 +243,230 @@ export async function getGoalForecast(scope: ForecastScope): Promise<GoalForecas
       : undefined;
 
   const [received, allocations, payments, goals] = await Promise.all([
-    db.select({
-      id: giftAllocations.id,
-      amount: sql<string>`${giftAllocations.subAmount}::text`,
-      entityId: giftAllocations.entityId,
-      intendedUsage: sql<string | null>`${giftAllocations.intendedUsage}::text`,
-      displayUsage: giftAllocations.displayUsage,
-      fundableProjectId: giftAllocations.fundableProjectId,
-      giftId: giftAllocations.giftId,
-      giftType: sql<string | null>`(${deriveGiftTypeExpr()})::text`,
-      dateReceived: sql<string | null>`${giftsAndPayments.dateReceived}::text`,
-      organizationId: giftsAndPayments.organizationId,
-      organizationName: organizations.name,
-      householdId: giftsAndPayments.householdId,
-      householdName: households.name,
-      individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
-      individualGiverPersonName: personDisplayNameSql,
-      organizationPriority: organizations.priority,
-      individualGiverPersonPriority: people.priority,
-      category: categoryGift,
-    }).from(giftAllocations)
-      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-      .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+    db
+      .select({
+        id: giftAllocations.id,
+        amount: sql<string>`${giftAllocations.subAmount}::text`,
+        entityId: giftAllocations.entityId,
+        intendedUsage: sql<
+          string | null
+        >`${giftAllocations.intendedUsage}::text`,
+        displayUsage: giftAllocations.displayUsage,
+        fundableProjectId: giftAllocations.fundableProjectId,
+        giftId: giftAllocations.giftId,
+        giftType: sql<string | null>`(${deriveGiftTypeExpr()})::text`,
+        dateReceived: sql<
+          string | null
+        >`${giftsAndPayments.dateReceived}::text`,
+        organizationId: giftsAndPayments.organizationId,
+        organizationName: organizations.name,
+        householdId: giftsAndPayments.householdId,
+        householdName: households.name,
+        individualGiverPersonId: giftsAndPayments.individualGiverPersonId,
+        individualGiverPersonName: personDisplayNameSql,
+        organizationPriority: organizations.priority,
+        individualGiverPersonPriority: people.priority,
+        category: categoryGift,
+      })
+      .from(giftAllocations)
+      .innerJoin(
+        giftsAndPayments,
+        eq(giftsAndPayments.id, giftAllocations.giftId),
+      )
+      .leftJoin(
+        organizations,
+        eq(organizations.id, giftsAndPayments.organizationId),
+      )
       .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
       .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
-      .where(and(
-        fyPredicate(giftAllocations.grantYear, scope.fiscalYearId),
-        isNull(giftsAndPayments.archivedAt),
-        eq(giftAllocations.countsTowardGoal, true),
-        giftCounts,
-        entityFilter,
-      )),
-    db.select({
-      id: pledgeAllocations.id,
-      opportunityId: opportunitiesAndPledges.id,
-      opportunityName: opportunitiesAndPledges.name,
-      opportunityStage: sql<string | null>`${opportunitiesAndPledges.stage}::text`,
-      status: opportunitiesAndPledges.status,
-      amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
-      entityId: pledgeAllocations.entityId,
-      intendedUsage: sql<string | null>`${pledgeAllocations.intendedUsage}::text`,
-      fundableProjectId: pledgeAllocations.fundableProjectId,
-      winProbability: sql<string | null>`${opportunitiesAndPledges.winProbability}::text`,
-      projectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`,
-      projectedCloseMonthsOut: opportunitiesAndPledges.projectedCloseMonthsOut,
-      organizationId: opportunitiesAndPledges.organizationId,
-      organizationName: organizations.name,
-      householdId: opportunitiesAndPledges.householdId,
-      householdName: households.name,
-      individualGiverPersonId: opportunitiesAndPledges.individualGiverPersonId,
-      individualGiverPersonName: personDisplayNameSql,
-      organizationPriority: organizations.priority,
-      individualGiverPersonPriority: people.priority,
-      category: categoryOpp,
-      disbursementModel: opportunitiesAndPledges.disbursementModel,
-      reimbursementType: pledgeAllocations.reimbursementType,
-    }).from(pledgeAllocations)
-      .innerJoin(opportunitiesAndPledges, eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId))
-      .leftJoin(organizations, eq(organizations.id, opportunitiesAndPledges.organizationId))
-      .leftJoin(households, eq(households.id, opportunitiesAndPledges.householdId))
-      .leftJoin(people, eq(people.id, opportunitiesAndPledges.individualGiverPersonId))
-      .where(and(
-        isNull(opportunitiesAndPledges.archivedAt),
-        inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
-        eq(opportunitiesAndPledges.isWriteOff, false),
-        fyPredicate(pledgeAllocations.grantYear, scope.fiscalYearId),
-        pledgeCounts,
-        pledgeEntityFilter,
-      )),
-    db.select({
-      opportunityId: giftsAndPayments.opportunityId,
-      amount: sql<string>`${giftAllocations.subAmount}::text`,
-    }).from(giftAllocations)
-      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-      .innerJoin(opportunitiesAndPledges, eq(opportunitiesAndPledges.id, giftsAndPayments.opportunityId))
-      .where(and(
-        fyPredicate(giftAllocations.grantYear, scope.fiscalYearId),
-        isNull(giftsAndPayments.archivedAt),
-        isNull(opportunitiesAndPledges.archivedAt),
-        inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
-        eq(giftAllocations.countsTowardGoal, true),
-        giftCounts,
-        entityFilter,
-      )),
-    db.select({
-      goal: sql<string | null>`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
-      category: categoryGoal,
-    }).from(fiscalYearEntityGoals).where(and(
-      scope.fiscalYearId == null ? sql`false` : eq(fiscalYearEntityGoals.fiscalYearId, scope.fiscalYearId),
-      goalEntityFilter,
-    )).groupBy(fiscalYearEntityGoals.loanOrGrant),
+      .where(
+        and(
+          fyPredicate(giftAllocations.grantYear, scope.fiscalYearId),
+          isNull(giftsAndPayments.archivedAt),
+          eq(giftAllocations.countsTowardGoal, true),
+          giftCounts,
+          entityFilter,
+        ),
+      ),
+    db
+      .select({
+        id: pledgeAllocations.id,
+        opportunityId: opportunitiesAndPledges.id,
+        opportunityName: opportunitiesAndPledges.name,
+        opportunityStage: sql<
+          string | null
+        >`${opportunitiesAndPledges.stage}::text`,
+        status: opportunitiesAndPledges.status,
+        amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
+        entityId: pledgeAllocations.entityId,
+        intendedUsage: sql<
+          string | null
+        >`${pledgeAllocations.intendedUsage}::text`,
+        fundableProjectId: pledgeAllocations.fundableProjectId,
+        winProbability: sql<
+          string | null
+        >`${opportunitiesAndPledges.winProbability}::text`,
+        projectedCloseDate: sql<string | null>`${effectiveCloseDateExpr}::text`,
+        projectedCloseMonthsOut:
+          opportunitiesAndPledges.projectedCloseMonthsOut,
+        organizationId: opportunitiesAndPledges.organizationId,
+        organizationName: organizations.name,
+        householdId: opportunitiesAndPledges.householdId,
+        householdName: households.name,
+        individualGiverPersonId:
+          opportunitiesAndPledges.individualGiverPersonId,
+        individualGiverPersonName: personDisplayNameSql,
+        organizationPriority: organizations.priority,
+        individualGiverPersonPriority: people.priority,
+        category: categoryOpp,
+        disbursementModel: opportunitiesAndPledges.disbursementModel,
+        reimbursementType: pledgeAllocations.reimbursementType,
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .leftJoin(
+        organizations,
+        eq(organizations.id, opportunitiesAndPledges.organizationId),
+      )
+      .leftJoin(
+        households,
+        eq(households.id, opportunitiesAndPledges.householdId),
+      )
+      .leftJoin(
+        people,
+        eq(people.id, opportunitiesAndPledges.individualGiverPersonId),
+      )
+      .where(
+        and(
+          isNull(opportunitiesAndPledges.archivedAt),
+          inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
+          eq(opportunitiesAndPledges.isWriteOff, false),
+          fyPredicate(pledgeAllocations.grantYear, scope.fiscalYearId),
+          pledgeCounts,
+          pledgeEntityFilter,
+        ),
+      ),
+    db
+      .select({
+        opportunityId: giftsAndPayments.opportunityId,
+        amount: sql<string>`${giftAllocations.subAmount}::text`,
+      })
+      .from(giftAllocations)
+      .innerJoin(
+        giftsAndPayments,
+        eq(giftsAndPayments.id, giftAllocations.giftId),
+      )
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, giftsAndPayments.opportunityId),
+      )
+      .where(
+        and(
+          fyPredicate(giftAllocations.grantYear, scope.fiscalYearId),
+          isNull(giftsAndPayments.archivedAt),
+          isNull(opportunitiesAndPledges.archivedAt),
+          inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
+          eq(giftAllocations.countsTowardGoal, true),
+          giftCounts,
+          entityFilter,
+        ),
+      ),
+    db
+      .select({
+        goal: sql<
+          string | null
+        >`NULLIF(SUM(${fiscalYearEntityGoals.goalAmount}), 0)::text`,
+        category: categoryGoal,
+      })
+      .from(fiscalYearEntityGoals)
+      .where(
+        and(
+          scope.fiscalYearId == null
+            ? sql`false`
+            : eq(fiscalYearEntityGoals.fiscalYearId, scope.fiscalYearId),
+          goalEntityFilter,
+        ),
+      )
+      .groupBy(fiscalYearEntityGoals.loanOrGrant),
   ]);
 
   const paid = new Map<string, number>();
   for (const row of payments) {
-    if (row.opportunityId) paid.set(row.opportunityId, (paid.get(row.opportunityId) ?? 0) + num(row.amount));
+    if (row.opportunityId)
+      paid.set(
+        row.opportunityId,
+        (paid.get(row.opportunityId) ?? 0) + num(row.amount),
+      );
   }
   const receivedRows: ForecastContribution[] = received.map((row) => ({
-    rowId: `received:${row.id}`, bucket: "received", amount: row.amount, weightedAmount: null,
-    category: categoryFrom(row.category), entityId: row.entityId, intendedUsage: row.intendedUsage,
-    displayUsage: row.displayUsage, fundableProjectId: row.fundableProjectId, giftId: row.giftId,
-    giftType: row.giftType, dateReceived: row.dateReceived, opportunityId: null, opportunityName: null,
-    opportunityStage: null, winProbability: null, projectedCloseDate: null, projectedCloseMonthsOut: null,
-    pledgedAmount: null, paidAmount: null, organizationId: row.organizationId, organizationName: row.organizationName,
-    householdId: row.householdId, householdName: row.householdName, individualGiverPersonId: row.individualGiverPersonId,
-    individualGiverPersonName: row.individualGiverPersonName, organizationPriority: row.organizationPriority,
+    rowId: `received:${row.id}`,
+    bucket: "received",
+    amount: row.amount,
+    weightedAmount: null,
+    category: categoryFrom(row.category),
+    entityId: row.entityId,
+    intendedUsage: row.intendedUsage,
+    displayUsage: row.displayUsage,
+    fundableProjectId: row.fundableProjectId,
+    giftId: row.giftId,
+    giftType: row.giftType,
+    dateReceived: row.dateReceived,
+    opportunityId: null,
+    opportunityName: null,
+    opportunityStage: null,
+    winProbability: null,
+    projectedCloseDate: null,
+    projectedCloseMonthsOut: null,
+    pledgedAmount: null,
+    paidAmount: null,
+    organizationId: row.organizationId,
+    organizationName: row.organizationName,
+    householdId: row.householdId,
+    householdName: row.householdName,
+    individualGiverPersonId: row.individualGiverPersonId,
+    individualGiverPersonName: row.individualGiverPersonName,
+    organizationPriority: row.organizationPriority,
     individualGiverPersonPriority: row.individualGiverPersonPriority,
   }));
-  const grouped = new Map<string, typeof allocations[number] & { total: number }>();
+  const grouped = new Map<
+    string,
+    (typeof allocations)[number] & { total: number }
+  >();
   const openRows: ForecastContribution[] = [];
   for (const row of allocations) {
     if (row.status === "open") {
       const amount = row.amount ?? "0";
       openRows.push({
-        rowId: `open:${row.id}`, bucket: "open", amount,
+        rowId: `open:${row.id}`,
+        bucket: "open",
+        amount,
         weightedAmount: decimal(num(amount) * num(row.winProbability)),
-        category: categoryFrom(row.category), entityId: row.entityId, intendedUsage: row.intendedUsage,
-        displayUsage: null, fundableProjectId: row.fundableProjectId, giftId: null, giftType: null, dateReceived: null,
-        opportunityId: row.opportunityId, opportunityName: row.opportunityName, opportunityStage: row.opportunityStage,
-        winProbability: row.winProbability, projectedCloseDate: row.projectedCloseDate,
-        projectedCloseMonthsOut: row.projectedCloseMonthsOut, pledgedAmount: null, paidAmount: null,
-        organizationId: row.organizationId, organizationName: row.organizationName, householdId: row.householdId,
-        householdName: row.householdName, individualGiverPersonId: row.individualGiverPersonId,
-        individualGiverPersonName: row.individualGiverPersonName, organizationPriority: row.organizationPriority,
+        category: categoryFrom(row.category),
+        entityId: row.entityId,
+        intendedUsage: row.intendedUsage,
+        displayUsage: null,
+        fundableProjectId: row.fundableProjectId,
+        giftId: null,
+        giftType: null,
+        dateReceived: null,
+        opportunityId: row.opportunityId,
+        opportunityName: row.opportunityName,
+        opportunityStage: row.opportunityStage,
+        winProbability: row.winProbability,
+        projectedCloseDate: row.projectedCloseDate,
+        projectedCloseMonthsOut: row.projectedCloseMonthsOut,
+        pledgedAmount: null,
+        paidAmount: null,
+        organizationId: row.organizationId,
+        organizationName: row.organizationName,
+        householdId: row.householdId,
+        householdName: row.householdName,
+        individualGiverPersonId: row.individualGiverPersonId,
+        individualGiverPersonName: row.individualGiverPersonName,
+        organizationPriority: row.organizationPriority,
         individualGiverPersonPriority: row.individualGiverPersonPriority,
       });
       continue;
@@ -350,36 +478,88 @@ export async function getGoalForecast(scope: ForecastScope): Promise<GoalForecas
   }
   const committedRows: ForecastContribution[] = [];
   for (const row of grouped.values()) {
-    const remainder = Math.max(0, row.total - (paid.get(row.opportunityId) ?? 0));
+    const remainder = Math.max(
+      0,
+      row.total - (paid.get(row.opportunityId) ?? 0),
+    );
     if (remainder <= 0) continue;
     committedRows.push({
-      rowId: `committed:${row.opportunityId}`, bucket: "committed", amount: decimal(remainder),
-      weightedAmount: decimal(remainder * num(row.winProbability)), category: categoryFrom(row.category),
-      entityId: null, intendedUsage: null, displayUsage: null, fundableProjectId: null, giftId: null,
-      giftType: null, dateReceived: null, opportunityId: row.opportunityId, opportunityName: row.opportunityName,
-      opportunityStage: row.opportunityStage, winProbability: row.winProbability, projectedCloseDate: row.projectedCloseDate,
-      projectedCloseMonthsOut: row.projectedCloseMonthsOut, pledgedAmount: decimal(row.total),
-      paidAmount: decimal(paid.get(row.opportunityId) ?? 0), organizationId: row.organizationId,
-      organizationName: row.organizationName, householdId: row.householdId, householdName: row.householdName,
-      individualGiverPersonId: row.individualGiverPersonId, individualGiverPersonName: row.individualGiverPersonName,
-      organizationPriority: row.organizationPriority, individualGiverPersonPriority: row.individualGiverPersonPriority,
+      rowId: `committed:${row.opportunityId}`,
+      bucket: "committed",
+      amount: decimal(remainder),
+      weightedAmount: decimal(remainder * num(row.winProbability)),
+      category: categoryFrom(row.category),
+      entityId: null,
+      intendedUsage: null,
+      displayUsage: null,
+      fundableProjectId: null,
+      giftId: null,
+      giftType: null,
+      dateReceived: null,
+      opportunityId: row.opportunityId,
+      opportunityName: row.opportunityName,
+      opportunityStage: row.opportunityStage,
+      winProbability: row.winProbability,
+      projectedCloseDate: row.projectedCloseDate,
+      projectedCloseMonthsOut: row.projectedCloseMonthsOut,
+      pledgedAmount: decimal(row.total),
+      paidAmount: decimal(paid.get(row.opportunityId) ?? 0),
+      organizationId: row.organizationId,
+      organizationName: row.organizationName,
+      householdId: row.householdId,
+      householdName: row.householdName,
+      individualGiverPersonId: row.individualGiverPersonId,
+      individualGiverPersonName: row.individualGiverPersonName,
+      organizationPriority: row.organizationPriority,
+      individualGiverPersonPriority: row.individualGiverPersonPriority,
     });
   }
-  const metrics = Object.fromEntries(FORECAST_CATEGORIES.map((category) => {
-    const receivedTotal = receivedRows.filter((r) => r.category === category).reduce((s, r) => s + num(r.amount), 0);
-    const committedTotal = committedRows.filter((r) => r.category === category).reduce((s, r) => s + num(r.amount), 0);
-    const committedWeighted = committedRows.filter((r) => r.category === category).reduce((s, r) => s + num(r.weightedAmount), 0);
-    const openTotal = openRows.filter((r) => r.category === category).reduce((s, r) => s + num(r.amount), 0);
-    const openWeighted = openRows.filter((r) => r.category === category).reduce((s, r) => s + num(r.weightedAmount), 0);
-    const goal = goals.find((g) => categoryFrom(g.category) === category)?.goal ?? null;
-    const weightedProjection = receivedTotal + committedWeighted + openWeighted;
-    return [category, {
-      received: decimal(receivedTotal), committed: decimal(committedTotal), committedWeighted: decimal(committedWeighted),
-      openAsk: decimal(openTotal), openWeighted: decimal(openWeighted), weightedProjection: decimal(weightedProjection),
-      goal, goalGap: goal == null ? null : decimal(Math.max(0, num(goal) - weightedProjection)),
-    }];
-  })) as Record<ForecastCategory, ForecastMetrics>;
-  return { fiscalYearId: scope.fiscalYearId, receivedRows, committedRows, openRows, metrics };
+  const metrics = Object.fromEntries(
+    FORECAST_CATEGORIES.map((category) => {
+      const receivedTotal = receivedRows
+        .filter((r) => r.category === category)
+        .reduce((s, r) => s + num(r.amount), 0);
+      const committedTotal = committedRows
+        .filter((r) => r.category === category)
+        .reduce((s, r) => s + num(r.amount), 0);
+      const committedWeighted = committedRows
+        .filter((r) => r.category === category)
+        .reduce((s, r) => s + num(r.weightedAmount), 0);
+      const openTotal = openRows
+        .filter((r) => r.category === category)
+        .reduce((s, r) => s + num(r.amount), 0);
+      const openWeighted = openRows
+        .filter((r) => r.category === category)
+        .reduce((s, r) => s + num(r.weightedAmount), 0);
+      const goal =
+        goals.find((g) => categoryFrom(g.category) === category)?.goal ?? null;
+      const weightedProjection =
+        receivedTotal + committedWeighted + openWeighted;
+      return [
+        category,
+        {
+          received: decimal(receivedTotal),
+          committed: decimal(committedTotal),
+          committedWeighted: decimal(committedWeighted),
+          openAsk: decimal(openTotal),
+          openWeighted: decimal(openWeighted),
+          weightedProjection: decimal(weightedProjection),
+          goal,
+          goalGap:
+            goal == null
+              ? null
+              : decimal(Math.max(0, num(goal) - weightedProjection)),
+        },
+      ];
+    }),
+  ) as Record<ForecastCategory, ForecastMetrics>;
+  return {
+    fiscalYearId: scope.fiscalYearId,
+    receivedRows,
+    committedRows,
+    openRows,
+    metrics,
+  };
 }
 
 /**
@@ -429,6 +609,7 @@ export async function getFundingArrivalsByMonth(
     asOfDate: today,
     items: [],
     months: [],
+    rows: [],
   };
   if (opportunities.length === 0) return result;
   const opportunityIds = opportunities.map((row) => row.id);
@@ -440,6 +621,8 @@ export async function getFundingArrivalsByMonth(
         opportunityId: pledgeAllocations.pledgeOrOpportunityId,
         entityId: pledgeAllocations.entityId,
         amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
+        fundableProjectId: pledgeAllocations.fundableProjectId,
+        regionalRestrictionType: pledgeAllocations.regionalRestrictionType,
         reimbursementType: pledgeAllocations.reimbursementType,
       })
       .from(pledgeAllocations)
@@ -493,6 +676,36 @@ export async function getFundingArrivalsByMonth(
   }
 
   const monthByKey = new Map<string, FundingArrivalMonth>();
+  type CashFlowBucket = "foundation" | "regional" | "seedFund";
+  type BucketAmounts = Record<CashFlowBucket, number>;
+  const emptyBuckets = (): BucketAmounts => ({
+    foundation: 0,
+    regional: 0,
+    seedFund: 0,
+  });
+  const bucketFor = (allocation: {
+    entityId: string | null;
+    fundableProjectId: string | null;
+    regionalRestrictionType: string;
+  }): CashFlowBucket | null => {
+    // An allocation must appear in exactly one pair. The explicit Seed Fund
+    // project wins over its other dimensions; a donor-restricted regional
+    // allocation wins over the Foundation catch-all.
+    if (allocation.fundableProjectId === "seed_fund") return "seedFund";
+    if (allocation.regionalRestrictionType === "donor_restricted")
+      return "regional";
+    if (allocation.entityId === "wildflower_foundation") return "foundation";
+    return null;
+  };
+  const rowAmountsByOpportunity = new Map<
+    string,
+    {
+      opportunity: (typeof opportunities)[number];
+      askAmount: number | null;
+      committed: BucketAmounts;
+      weightedTarget: BucketAmounts;
+    }
+  >();
   const money = (value: string | null | undefined) => num(value);
   const appendMonth = (
     month: string,
@@ -570,6 +783,35 @@ export async function getFundingArrivalsByMonth(
     const isReimbursement = opp.disbursementModel === "cost_reimbursement";
     // A fully covered plan has no future cash or routine timing work left.
     if (unpaid === 0) continue;
+
+    const plan = emptyBuckets();
+    for (const allocation of oppAllocations) {
+      const bucket = bucketFor(allocation);
+      if (bucket) plan[bucket] += money(allocation.amount);
+    }
+    const committed = emptyBuckets();
+    const weightedTarget = emptyBuckets();
+    if (opp.status === "open") {
+      for (const bucket of Object.keys(plan) as CashFlowBucket[]) {
+        weightedTarget[bucket] = plan[bucket] * money(opp.winProbability);
+      }
+    } else if (total != null && total > 0 && unpaid != null) {
+      // Linked payments are parent-level cash facts, so there is no canonical
+      // allocation-line match for every historical pledge. Preserve the
+      // authoritative parent remainder and distribute it across the requested
+      // allocation buckets in proportion to the current plan. This keeps the
+      // six displayed cells additive without inventing a stored payment link.
+      const remainingRatio = Math.max(0, Math.min(1, unpaid / total));
+      for (const bucket of Object.keys(plan) as CashFlowBucket[]) {
+        committed[bucket] = plan[bucket] * remainingRatio;
+      }
+    }
+    rowAmountsByOpportunity.set(opp.id, {
+      opportunity: opp,
+      askAmount: opp.askAmount == null ? total : money(opp.askAmount),
+      committed,
+      weightedTarget,
+    });
 
     const item = (
       id: string,
@@ -750,6 +992,45 @@ export async function getFundingArrivalsByMonth(
       ) ||
       a.id.localeCompare(b.id),
   );
+  result.rows = Array.from(rowAmountsByOpportunity.values())
+    .map(({ opportunity, askAmount, committed, weightedTarget }) => {
+      const firstDatedItem = result.items.find(
+        (item) =>
+          item.opportunityId === opportunity.id &&
+          item.expectedDate != null &&
+          item.basis !== "reimbursement_annual",
+      );
+      const total = (Object.keys(committed) as CashFlowBucket[]).reduce(
+        (sum, bucket) => sum + committed[bucket] + weightedTarget[bucket],
+        0,
+      );
+      return {
+        opportunityId: opportunity.id,
+        opportunityName: opportunity.name,
+        status: opportunity.status,
+        askAmount: askAmount == null ? null : decimal(askAmount),
+        weighting:
+          opportunity.status === "pledge" ? "1" : opportunity.winProbability,
+        foundationCommitted: decimal(committed.foundation),
+        foundationWeightedTarget: decimal(weightedTarget.foundation),
+        regionalCommitted: decimal(committed.regional),
+        regionalWeightedTarget: decimal(weightedTarget.regional),
+        seedFundCommitted: decimal(committed.seedFund),
+        seedFundWeightedTarget: decimal(weightedTarget.seedFund),
+        total: decimal(total),
+        forecastDate: firstDatedItem?.expectedDate ?? null,
+        forecastBasis: firstDatedItem?.basis ?? null,
+      } satisfies CashFlowForecastRow;
+    })
+    .sort(
+      (a, b) =>
+        (a.forecastDate ?? "9999-99-99").localeCompare(
+          b.forecastDate ?? "9999-99-99",
+        ) ||
+        (a.opportunityName ?? a.opportunityId).localeCompare(
+          b.opportunityName ?? b.opportunityId,
+        ),
+    );
   return result;
 }
 
@@ -782,42 +1063,56 @@ export async function getForecastMatrix(
   const giftCounts = sql`${giftAllocations.reimbursementType} IS DISTINCT FROM 'direct'`;
 
   const [giftAxes, pledgeAxes, goalAxes] = await Promise.all([
-    db.select({
-      fiscalYearId: giftAllocations.grantYear,
-      entityId: giftAllocations.entityId,
-      amount: sql<string | null>`${giftAllocations.subAmount}::text`,
-      category: categoryGift,
-    }).from(giftAllocations)
-      .innerJoin(giftsAndPayments, eq(giftsAndPayments.id, giftAllocations.giftId))
-      .where(and(
-        isNull(giftsAndPayments.archivedAt),
-        eq(giftAllocations.countsTowardGoal, true),
-        giftCounts,
-        entityFilter,
-      )),
-    db.select({
-      fiscalYearId: pledgeAllocations.grantYear,
-      entityId: pledgeAllocations.entityId,
-      amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
-      category: categoryOpp,
-    }).from(pledgeAllocations)
-      .innerJoin(opportunitiesAndPledges, eq(
-        opportunitiesAndPledges.id,
-        pledgeAllocations.pledgeOrOpportunityId,
-      ))
-      .where(and(
-        isNull(opportunitiesAndPledges.archivedAt),
-        inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
-        eq(opportunitiesAndPledges.isWriteOff, false),
-        pledgeCounts,
-        pledgeEntityFilter,
-      )),
-    db.select({
-      fiscalYearId: fiscalYearEntityGoals.fiscalYearId,
-      entityId: fiscalYearEntityGoals.entityId,
-      amount: sql<string | null>`${fiscalYearEntityGoals.goalAmount}::text`,
-      category: categoryGoal,
-    }).from(fiscalYearEntityGoals).where(goalEntityFilter),
+    db
+      .select({
+        fiscalYearId: giftAllocations.grantYear,
+        entityId: giftAllocations.entityId,
+        amount: sql<string | null>`${giftAllocations.subAmount}::text`,
+        category: categoryGift,
+      })
+      .from(giftAllocations)
+      .innerJoin(
+        giftsAndPayments,
+        eq(giftsAndPayments.id, giftAllocations.giftId),
+      )
+      .where(
+        and(
+          isNull(giftsAndPayments.archivedAt),
+          eq(giftAllocations.countsTowardGoal, true),
+          giftCounts,
+          entityFilter,
+        ),
+      ),
+    db
+      .select({
+        fiscalYearId: pledgeAllocations.grantYear,
+        entityId: pledgeAllocations.entityId,
+        amount: sql<string | null>`${pledgeAllocations.subAmount}::text`,
+        category: categoryOpp,
+      })
+      .from(pledgeAllocations)
+      .innerJoin(
+        opportunitiesAndPledges,
+        eq(opportunitiesAndPledges.id, pledgeAllocations.pledgeOrOpportunityId),
+      )
+      .where(
+        and(
+          isNull(opportunitiesAndPledges.archivedAt),
+          inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
+          eq(opportunitiesAndPledges.isWriteOff, false),
+          pledgeCounts,
+          pledgeEntityFilter,
+        ),
+      ),
+    db
+      .select({
+        fiscalYearId: fiscalYearEntityGoals.fiscalYearId,
+        entityId: fiscalYearEntityGoals.entityId,
+        amount: sql<string | null>`${fiscalYearEntityGoals.goalAmount}::text`,
+        category: categoryGoal,
+      })
+      .from(fiscalYearEntityGoals)
+      .where(goalEntityFilter),
   ]);
 
   const fiscalYearIds = new Set<string>([
@@ -842,29 +1137,35 @@ export async function getForecastMatrix(
   const fiscalYearAxis: Array<string | null> = Array.from(fiscalYearIds);
   if (hasUnknownFiscalYear) fiscalYearAxis.push(null);
   const recipientAxis: Array<string | null> = Array.from(recipientIds);
-  if (hasUnknownRecipient || recipientAxis.length === 0) recipientAxis.push(null);
+  if (hasUnknownRecipient || recipientAxis.length === 0)
+    recipientAxis.push(null);
 
   const [combined, cells] = await Promise.all([
-    Promise.all(fiscalYearAxis.map(async (fiscalYearId) => ({
-      fiscalYearId,
-      forecast: await getGoalForecast({ fiscalYearId, entityIds }),
-    }))),
-    Promise.all(fiscalYearAxis.flatMap((fiscalYearId) =>
-      recipientAxis.map(async (entityId) => ({
+    Promise.all(
+      fiscalYearAxis.map(async (fiscalYearId) => ({
         fiscalYearId,
-        entityId,
-        forecast: entityId == null
-          ? await getGoalForecast({
-              fiscalYearId,
-              entityIds: [],
-              unknownEntityOnly: true,
-            })
-          : await getGoalForecast({
-              fiscalYearId,
-              entityIds: [entityId],
-            }),
+        forecast: await getGoalForecast({ fiscalYearId, entityIds }),
       })),
-    )),
+    ),
+    Promise.all(
+      fiscalYearAxis.flatMap((fiscalYearId) =>
+        recipientAxis.map(async (entityId) => ({
+          fiscalYearId,
+          entityId,
+          forecast:
+            entityId == null
+              ? await getGoalForecast({
+                  fiscalYearId,
+                  entityIds: [],
+                  unknownEntityOnly: true,
+                })
+              : await getGoalForecast({
+                  fiscalYearId,
+                  entityIds: [entityId],
+                }),
+        })),
+      ),
+    ),
   ]);
 
   return {
@@ -879,30 +1180,37 @@ export async function getForecastDiagnostics(
   entityIds: string[] = [],
   category?: ForecastCategory,
 ): Promise<ForecastDiagnostic[]> {
-  const rows = await db.select({
-    opportunityId: opportunitiesAndPledges.id,
-    opportunityName: opportunitiesAndPledges.name,
-    status: opportunitiesAndPledges.status,
-    disbursementModel: opportunitiesAndPledges.disbursementModel,
-    winProbability: opportunitiesAndPledges.winProbability,
-    loanOrGrant: opportunitiesAndPledges.loanOrGrant,
-    allocationId: pledgeAllocations.id,
-    grantYear: pledgeAllocations.grantYear,
-    entityId: pledgeAllocations.entityId,
-    amount: pledgeAllocations.subAmount,
-    reimbursementType: pledgeAllocations.reimbursementType,
-  }).from(opportunitiesAndPledges)
-    .leftJoin(pledgeAllocations, eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id))
-    .where(and(
-      isNull(opportunitiesAndPledges.archivedAt),
-      inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
-      eq(opportunitiesAndPledges.isWriteOff, false),
-      category === "loan_capital"
-        ? eq(opportunitiesAndPledges.loanOrGrant, "loan")
-        : category === "revenue"
-          ? sql`${opportunitiesAndPledges.loanOrGrant} IS DISTINCT FROM 'loan'`
-          : undefined,
-    ));
+  const rows = await db
+    .select({
+      opportunityId: opportunitiesAndPledges.id,
+      opportunityName: opportunitiesAndPledges.name,
+      status: opportunitiesAndPledges.status,
+      disbursementModel: opportunitiesAndPledges.disbursementModel,
+      winProbability: opportunitiesAndPledges.winProbability,
+      loanOrGrant: opportunitiesAndPledges.loanOrGrant,
+      allocationId: pledgeAllocations.id,
+      grantYear: pledgeAllocations.grantYear,
+      entityId: pledgeAllocations.entityId,
+      amount: pledgeAllocations.subAmount,
+      reimbursementType: pledgeAllocations.reimbursementType,
+    })
+    .from(opportunitiesAndPledges)
+    .leftJoin(
+      pledgeAllocations,
+      eq(pledgeAllocations.pledgeOrOpportunityId, opportunitiesAndPledges.id),
+    )
+    .where(
+      and(
+        isNull(opportunitiesAndPledges.archivedAt),
+        inArray(opportunitiesAndPledges.status, ["open", "pledge"]),
+        eq(opportunitiesAndPledges.isWriteOff, false),
+        category === "loan_capital"
+          ? eq(opportunitiesAndPledges.loanOrGrant, "loan")
+          : category === "revenue"
+            ? sql`${opportunitiesAndPledges.loanOrGrant} IS DISTINCT FROM 'loan'`
+            : undefined,
+      ),
+    );
   const grouped = new Map<string, typeof rows>();
   for (const row of rows) {
     const list = grouped.get(row.opportunityId) ?? [];
@@ -911,34 +1219,51 @@ export async function getForecastDiagnostics(
   }
   const output: ForecastDiagnostic[] = [];
   for (const [opportunityId, all] of grouped) {
-    const scopeRows = entityIds.length === 0
-      ? all
-      : all.filter((row) => row.entityId == null || entityIds.includes(row.entityId));
+    const scopeRows =
+      entityIds.length === 0
+        ? all
+        : all.filter(
+            (row) => row.entityId == null || entityIds.includes(row.entityId),
+          );
     if (all.length > 0 && scopeRows.length === 0) continue;
     const header = all[0];
     const reasons = new Set<string>();
     if (all.length === 0 || all[0].allocationId == null) {
-      reasons.add(header.disbursementModel === "cost_reimbursement" ? "unused_capacity" : "no_allocations");
+      reasons.add(
+        header.disbursementModel === "cost_reimbursement"
+          ? "unused_capacity"
+          : "no_allocations",
+      );
     }
     for (const row of scopeRows) {
       if (row.allocationId == null) continue;
       if (row.amount == null) reasons.add("missing_amount");
       if (row.grantYear == null) reasons.add("missing_fiscal_year");
       if (row.entityId == null) reasons.add("missing_recipient");
-      if (row.disbursementModel === "cost_reimbursement" && row.reimbursementType == null) {
+      if (
+        row.disbursementModel === "cost_reimbursement" &&
+        row.reimbursementType == null
+      ) {
         reasons.add("missing_reimbursement_type");
       }
-      if (row.reimbursementType === "direct") reasons.add("direct_reimbursement_excluded");
+      if (row.reimbursementType === "direct")
+        reasons.add("direct_reimbursement_excluded");
     }
     if (
-      header.status === "open" && num(header.winProbability) === 0 &&
+      header.status === "open" &&
+      num(header.winProbability) === 0 &&
       scopeRows.some((row) => row.amount != null && num(row.amount) > 0)
-    ) reasons.add("zero_weight_early_prospect");
+    )
+      reasons.add("zero_weight_early_prospect");
     if (reasons.size === 0) continue;
-    const context = scopeRows.find((row) =>
-      row.amount == null || row.grantYear == null || row.entityId == null ||
-      row.reimbursementType === "direct"
-    ) ?? scopeRows[0];
+    const context =
+      scopeRows.find(
+        (row) =>
+          row.amount == null ||
+          row.grantYear == null ||
+          row.entityId == null ||
+          row.reimbursementType === "direct",
+      ) ?? scopeRows[0];
     output.push({
       opportunityId,
       opportunityName: header.opportunityName,
@@ -949,9 +1274,11 @@ export async function getForecastDiagnostics(
       message: reasons.has("unused_capacity")
         ? "Cost-reimbursement award has unused capacity; no drawdown plan is recorded."
         : reasons.has("missing_recipient") &&
-        scopeRows.some((row) => row.entityId == null && row.grantYear != null)
-        ? "A known-year amount can be included in the all-recipients forecast but is omitted from a selected-recipient forecast until a recipient is assigned."
-        : null,
+            scopeRows.some(
+              (row) => row.entityId == null && row.grantYear != null,
+            )
+          ? "A known-year amount can be included in the all-recipients forecast but is omitted from a selected-recipient forecast until a recipient is assigned."
+          : null,
     });
   }
   return output;

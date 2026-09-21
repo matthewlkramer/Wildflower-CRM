@@ -171,57 +171,42 @@ beforeEach(() => {
   api.monthlyRevenueData = {
     category: "revenue",
     asOfDate: "2026-09-12",
-    items: [
+    items: [],
+    months: [],
+    rows: [
       {
-        id: "close",
         opportunityId: "opp-close",
         opportunityName: "Pipeline Gift",
         status: "open",
-        expectedDate: "2026-10-01",
-        amount: "2000",
-        weightedAmount: "1000",
-        basis: "projected_close",
-        overdue: false,
-        note: "Estimated from close date.",
+        askAmount: "2500",
+        weighting: "0.5",
+        foundationCommitted: "0",
+        foundationWeightedTarget: "1000",
+        regionalCommitted: "0",
+        regionalWeightedTarget: "250",
+        seedFundCommitted: "0",
+        seedFundWeightedTarget: "125",
+        total: "1375",
+        forecastDate: "2026-10-01",
+        forecastBasis: "projected_close",
       },
       {
-        id: "explicit",
         opportunityId: "opp-explicit",
         opportunityName: "Committed Pledge",
         status: "pledge",
-        expectedDate: "2026-08-01",
-        amount: "1000",
-        weightedAmount: "1000",
-        basis: "explicit_payment",
-        overdue: true,
-        note: "Recorded payment plan.",
-      },
-      {
-        id: "unknown",
-        opportunityId: "opp-unknown",
-        opportunityName: "Untimed Pledge",
-        status: "pledge",
-        expectedDate: null,
-        amount: null,
-        weightedAmount: null,
-        basis: "unscheduled",
-        overdue: false,
-        note: "No timing estimate recorded.",
-      },
-      {
-        id: "annual",
-        opportunityId: "opp-reimb",
-        opportunityName: "Reimbursement",
-        status: "pledge",
-        expectedDate: null,
-        amount: "10000",
-        weightedAmount: null,
-        basis: "reimbursement_annual",
-        overdue: false,
-        note: "Annual plan context only.",
+        askAmount: "1000",
+        weighting: "1",
+        foundationCommitted: "600",
+        foundationWeightedTarget: "0",
+        regionalCommitted: "200",
+        regionalWeightedTarget: "0",
+        seedFundCommitted: "100",
+        seedFundWeightedTarget: "0",
+        total: "900",
+        forecastDate: null,
+        forecastBasis: null,
       },
     ],
-    months: [],
   };
 
   api.monthlyLoanData = {
@@ -229,6 +214,7 @@ beforeEach(() => {
     asOfDate: "2026-09-12",
     items: [],
     months: [],
+    rows: [],
   };
 });
 
@@ -390,225 +376,53 @@ describe("projections forecast distinctions", () => {
 function openArrivals() {
   act(() => root.render(<CashFlow />));
 }
-function clickButton(text: string) {
-  const button = [...container.querySelectorAll("button")].find((button) =>
-    button.textContent?.includes(text),
-  );
-  expect(button).toBeTruthy();
-  act(() => button!.click());
-}
-function filterBy(label: string, value: string) {
-  act(() => {
-    const select = container.querySelector<HTMLSelectElement>(
-      `select[aria-label="${label}"]`,
+describe("cash-flow forecast spreadsheet", () => {
+  it("renders one row per active opportunity or unpaid pledge with the requested allocation pairs", () => {
+    openArrivals();
+    expect(container.textContent).toContain("Wildflower Foundation");
+    expect(container.textContent).toContain("Region-restricted");
+    expect(container.textContent).toContain("Seed Fund");
+    const prospect = container.querySelector(
+      '[data-testid="cash-flow-row-opp-close"]',
     )!;
-    select.value = value;
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
-function addArrival(overrides: Record<string, unknown>) {
-  (api.monthlyRevenueData!.items as Array<Record<string, unknown>>).push({
-    id: "future",
-    opportunityId: "future-opp",
-    opportunityName: "Future gift",
-    status: "open",
-    expectedDate: "2027-09-01",
-    amount: "700",
-    weightedAmount: "350",
-    basis: "projected_close",
-    overdue: false,
-    note: "Receipt estimate",
-    ...overrides,
-  });
-}
-
-describe("monthly cash outlook", () => {
-  it("starts with twelve current months and keeps older, later and undated expectations separate", () => {
-    addArrival({});
-    openArrivals();
-    const months = [
-      ...container.querySelectorAll('[data-testid^="row-monthly-"]'),
-    ];
-    expect(months).toHaveLength(12);
-    expect(months[0].textContent).toContain("Sep 2026");
-    expect(months[11].textContent).toContain("Aug 2027");
-    expect(
-      container.querySelector('[data-testid="row-monthly-2026-08"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('[data-testid="arrival-group-older"]')
-        ?.textContent,
-    ).toContain("$1,000");
-    expect(
-      container.querySelector('[data-testid="arrival-group-later"]')
-        ?.textContent,
-    ).toContain("$350");
-    expect(container.querySelector('[data-testid="arrival-close"]')).toBeNull();
-    clickButton("Oct 2026");
-    expect(
-      container.querySelector('[data-testid="arrival-close"]')?.textContent,
-    ).toContain("Projected close date");
-    expect(
-      container
-        .querySelector('[data-testid="arrival-close"] a')
-        ?.getAttribute("href"),
-    ).toBe("/opportunities/opp-close#payment-plan");
-    clickButton("Oct 2026");
-    expect(container.querySelector('[data-testid="arrival-close"]')).toBeNull();
-    clickButton("Earlier outstanding");
-    expect(
-      container.querySelector('[data-testid="arrival-explicit"]')?.textContent,
-    ).toContain("Overdue expected payment");
-    clickButton("Beyond the next");
-    expect(
-      container.querySelector('[data-testid="arrival-future"]'),
-    ).not.toBeNull();
-    clickButton("Timing not estimated");
-    expect(
-      container.querySelector('[data-testid="arrival-unknown"]')?.textContent,
-    ).toContain("Unknown");
-    clickButton("Annual reimbursement plans");
-    expect(
-      container.querySelector('[data-testid="arrival-annual"]')?.textContent,
-    ).toContain("Not included");
-    expect(
-      container.querySelector(
-        '[data-testid="arrival-group-annual"] table[aria-label$="totals"]',
-      ),
-    ).toBeNull();
-    expect(container.textContent).not.toContain("Needs attention");
-  });
-
-  it("combines status and timing filters and updates the expanded details and totals together", () => {
-    addArrival({
-      id: "explicit-open",
-      opportunityName: "Explicit prospect",
-      expectedDate: "2026-10-15",
-      amount: "300",
-      weightedAmount: "90",
-      basis: "explicit_payment",
-    });
-    addArrival({
-      id: "explicit-pledge",
-      status: "pledge",
-      opportunityName: "October pledge",
-      expectedDate: "2026-10-31",
-      amount: "100",
-      weightedAmount: "100",
-      basis: "explicit_payment",
-    });
-    openArrivals();
-    clickButton("Oct 2026");
-    filterBy("Funding status", "open");
-    filterBy("Timing basis", "explicit_payment");
-    const month = container.querySelector(
-      '[data-testid="row-monthly-2026-10"]',
+    expect(prospect.textContent).toContain("Pipeline Gift");
+    expect(prospect.textContent).toContain("$2,500");
+    expect(prospect.textContent).toContain("50%");
+    expect(prospect.textContent).toContain("$1,375");
+    expect(prospect.textContent).toContain("Oct 1, 2026");
+    expect(prospect.querySelector("a")?.getAttribute("href")).toBe(
+      "/opportunities/opp-close",
+    );
+    const pledge = container.querySelector(
+      '[data-testid="cash-flow-row-opp-explicit"]',
     )!;
-    expect(
-      [...month.querySelectorAll("td")]
-        .slice(1)
-        .map((cell) => cell.textContent),
-    ).toEqual(["$0", "$300", "$90"]);
-    expect(
-      container.querySelector('[data-testid="arrival-explicit-open"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-testid="arrival-explicit-pledge"]'),
-    ).toBeNull();
-    expect(container.querySelector('[data-testid="arrival-close"]')).toBeNull();
-    expect(
-      container.querySelector('[data-testid="arrival-group-older"]'),
-    ).toBeNull();
-    clickButton("Clear filters");
-    expect(
-      [...month.querySelectorAll("td")]
-        .slice(1)
-        .map((cell) => cell.textContent),
-    ).toEqual(["$100", "$2,300", "$1,090"]);
-    expect(
-      container.querySelector('[data-testid="arrival-close"]'),
-    ).not.toBeNull();
+    expect(pledge.textContent).toContain("Unpaid pledge");
+    expect(pledge.textContent).toContain("100%");
+    expect(pledge.textContent).toContain("$900");
+    expect(container.textContent).toContain(
+      "The Total column adds those six cells",
+    );
   });
 
-  it("retains unknown dated amounts and probabilities without counting annual plans as cash", () => {
-    addArrival({
-      id: "unknown-dated",
-      expectedDate: "2026-09-30",
-      amount: null,
-      weightedAmount: null,
-    });
-    addArrival({
-      id: "unknown-probability",
-      expectedDate: "2026-09-30",
-      amount: "500",
-      weightedAmount: null,
-    });
-    openArrivals();
-    const month = container.querySelector(
-      '[data-testid="row-monthly-2026-09"]',
-    )!;
-    expect(month.textContent).toContain("$500");
-    expect(month.textContent).toContain("Plus unknown amounts");
-    clickButton("Sep 2026");
-    expect(
-      container.querySelector('[data-testid="arrival-unknown-dated"]')
-        ?.textContent,
-    ).toContain("Unknown");
-    filterBy("Timing basis", "reimbursement_annual");
-    expect(
-      container.querySelector('[data-testid="arrival-group-annual"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-testid="row-monthly-2026-09"]')
-        ?.textContent,
-    ).not.toContain("$10,000");
-    expect(
-      container.querySelector('[data-testid="arrival-group-undated"]'),
-    ).toBeNull();
-  });
-
-  it("uses the report date across year boundaries and includes the last day of the twelfth month", () => {
-    api.monthlyRevenueData!.asOfDate = "2026-12-31";
-    addArrival({ id: "last-month", expectedDate: "2027-11-30" });
-    addArrival({ id: "next-window", expectedDate: "2027-12-01" });
-    openArrivals();
-    const months = [
-      ...container.querySelectorAll('[data-testid^="row-monthly-"]'),
-    ];
-    expect(months[0].textContent).toContain("Dec 2026");
-    expect(months[11].textContent).toContain("Nov 2027");
-    clickButton("Nov 2027");
-    expect(
-      container.querySelector('[data-testid="arrival-last-month"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-testid="arrival-next-window"]'),
-    ).toBeNull();
-    clickButton("Beyond the next");
-    expect(
-      container.querySelector('[data-testid="arrival-next-window"]'),
-    ).not.toBeNull();
-  });
-
-  it("shows an empty filtered result and keeps recipient/category scope in the request", () => {
+  it("keeps recipient and category scope in the request", () => {
     openArrivals();
     expect(api.monthlyCalls.at(-1)).toEqual({
       entityId: ["recipient-a"],
       category: "revenue",
     });
-    filterBy("Funding status", "pledge");
-    filterBy("Timing basis", "projected_close");
-    expect(container.textContent).toContain(
-      "No funding records match these filters.",
-    );
-    expect(
-      container.querySelectorAll('[data-testid^="row-monthly-"]'),
-    ).toHaveLength(12);
-    clickButton("Loans / Loan Capital");
+    act(() => {
+      container
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="projections-category-loan_capital"]',
+        )!
+        .click();
+    });
     expect(api.monthlyCalls.at(-1)).toEqual({
       entityId: ["recipient-a"],
       category: "loan_capital",
     });
-    expect(container.textContent).not.toContain("Pipeline Gift");
+    expect(container.textContent).toContain(
+      "No active opportunities or unpaid pledges match this scope.",
+    );
   });
 });

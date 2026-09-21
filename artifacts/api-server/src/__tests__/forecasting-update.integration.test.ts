@@ -35,6 +35,8 @@ const ENTITY_C_ID = `${RUN}_entity_c`;
 const ENTITY_D_ID = `${RUN}_entity_d`;
 const PROJECT_A_ID = `${RUN}_project_a`;
 const PROJECT_B_ID = `${RUN}_project_b`;
+const FOUNDATION_ENTITY_ID = "wildflower_foundation";
+const SEED_FUND_PROJECT_ID = "seed_fund";
 const FY_DATE_PARTS = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Chicago",
   year: "numeric",
@@ -69,6 +71,7 @@ let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
 let server: Server | undefined;
 let baseUrl = "";
 let fiscalYearWasCreated = false;
+let seedFundProjectWasCreated = false;
 let gen = 0;
 
 function nextId(label: string): string {
@@ -210,6 +213,17 @@ beforeAll(async () => {
     { id: PROJECT_A_ID, name: `${RUN} Project A` },
     { id: PROJECT_B_ID, name: `${RUN} Project B` },
   ]);
+  const existingSeedFundProject = await db
+    .select({ id: schema.fundableProjects.id })
+    .from(schema.fundableProjects)
+    .where(eqFn(schema.fundableProjects.id, SEED_FUND_PROJECT_ID));
+  if (existingSeedFundProject.length === 0) {
+    seedFundProjectWasCreated = true;
+    await db.insert(schema.fundableProjects).values({
+      id: SEED_FUND_PROJECT_ID,
+      name: "Seed Fund",
+    });
+  }
   const existingFy = await db
     .select({ id: schema.fiscalYears.id })
     .from(schema.fiscalYears)
@@ -277,6 +291,11 @@ afterAll(async () => {
   await db
     .delete(schema.fundableProjects)
     .where(inArrayFn(schema.fundableProjects.id, [PROJECT_A_ID, PROJECT_B_ID]));
+  if (seedFundProjectWasCreated) {
+    await db
+      .delete(schema.fundableProjects)
+      .where(eqFn(schema.fundableProjects.id, SEED_FUND_PROJECT_ID));
+  }
   await db
     .delete(schema.organizations)
     .where(eqFn(schema.organizations.id, ORG_ID));
@@ -458,6 +477,102 @@ describe.skipIf(!HAS_DB)("allocation-grain forecasting regression", () => {
       expect.arrayContaining([crossRecipientId]),
     );
     expectMoney(scopedCross.committedAmount, 100);
+  }, 60_000);
+
+  it("builds the cash-flow spreadsheet from mutually exclusive Foundation, regional, and Seed Fund allocation buckets", async () => {
+    const prospectId = await insertOpportunity({
+      status: "open",
+      askAmount: "1000.00",
+      winProbability: "0.2500",
+      projectedCloseDate: "2097-02-10",
+    });
+    await insertPledgeAllocation(prospectId, {
+      subAmount: "100.00",
+      entityId: FOUNDATION_ENTITY_ID,
+    });
+    await insertPledgeAllocation(prospectId, {
+      subAmount: "200.00",
+      entityId: FOUNDATION_ENTITY_ID,
+      regionalRestrictionType: "donor_restricted",
+    });
+    await insertPledgeAllocation(prospectId, {
+      subAmount: "300.00",
+      entityId: FOUNDATION_ENTITY_ID,
+      regionalRestrictionType: "donor_restricted",
+      fundableProjectId: SEED_FUND_PROJECT_ID,
+    });
+    await insertPledgeAllocation(prospectId, {
+      subAmount: "50.00",
+      entityId: ENTITY_B_ID,
+    });
+
+    const pledgeId = await insertOpportunity({
+      status: "pledge",
+      askAmount: "800.00",
+      winProbability: "0.5000",
+    });
+    await insertPledgeAllocation(pledgeId, {
+      subAmount: "400.00",
+      entityId: FOUNDATION_ENTITY_ID,
+    });
+    await insertPledgeAllocation(pledgeId, {
+      subAmount: "200.00",
+      entityId: FOUNDATION_ENTITY_ID,
+      regionalRestrictionType: "donor_restricted",
+    });
+    await insertPledgeAllocation(pledgeId, {
+      subAmount: "100.00",
+      entityId: FOUNDATION_ENTITY_ID,
+      fundableProjectId: SEED_FUND_PROJECT_ID,
+    });
+    await insertExpectedPayment(pledgeId, "2097-03-15", "700.00");
+    await insertGift(
+      "100.00",
+      pledgeId,
+      "100.00",
+      FOUNDATION_ENTITY_ID,
+      "grant",
+      null,
+    );
+
+    const result = await getJson(
+      `/api/funding-arrivals-by-month?category=revenue&entityId=${FOUNDATION_ENTITY_ID}`,
+    );
+    const prospect = result.rows.find(
+      (row: any) => row.opportunityId === prospectId,
+    );
+    expect(prospect).toMatchObject({
+      status: "open",
+      askAmount: "1000",
+      weighting: "0.2500",
+      foundationCommitted: "0",
+      foundationWeightedTarget: "25",
+      regionalCommitted: "0",
+      regionalWeightedTarget: "50",
+      seedFundCommitted: "0",
+      seedFundWeightedTarget: "75",
+      total: "150",
+      forecastDate: "2097-02-10",
+      forecastBasis: "projected_close",
+    });
+
+    const pledge = result.rows.find(
+      (row: any) => row.opportunityId === pledgeId,
+    );
+    expect(pledge).toMatchObject({
+      status: "pledge",
+      askAmount: "800",
+      weighting: "1",
+      foundationWeightedTarget: "0",
+      regionalWeightedTarget: "0",
+      seedFundWeightedTarget: "0",
+      total: "600",
+      forecastDate: "2097-03-15",
+      forecastBasis: "explicit_payment",
+    });
+    expectMoney(pledge.foundationCommitted, 342.857142857);
+    expectMoney(pledge.regionalCommitted, 171.428571429);
+    expectMoney(pledge.seedFundCommitted, 85.714285714);
   }, 60_000);
 
   it("caps excessive schedules, preserves partial writeoffs, and exposes missing collection information", async () => {

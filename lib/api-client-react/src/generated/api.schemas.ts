@@ -688,11 +688,39 @@ export interface FundingArrivalItem {
   note: string;
 }
 
+export type CashFlowForecastRowStatus = typeof CashFlowForecastRowStatus[keyof typeof CashFlowForecastRowStatus];
+
+
+export const CashFlowForecastRowStatus = {
+  pledge: 'pledge',
+  open: 'open',
+} as const;
+
+export interface CashFlowForecastRow {
+  opportunityId: string;
+  opportunityName: string | null;
+  status: CashFlowForecastRowStatus;
+  askAmount: string | null;
+  /** Effective row weighting: 100% for a pledge, otherwise the opportunity's current win probability. */
+  weighting: string | null;
+  foundationCommitted: string;
+  foundationWeightedTarget: string;
+  regionalCommitted: string;
+  regionalWeightedTarget: string;
+  seedFundCommitted: string;
+  seedFundWeightedTarget: string;
+  /** Sum of the six committed and weighted-target cells. */
+  total: string;
+  forecastDate: string | null;
+  forecastBasis: 'projected_close' | 'explicit_payment' | 'unscheduled' | 'reimbursement_annual' | null;
+}
+
 export interface FundingArrivalsByMonth {
   category: FundraisingCategory;
   asOfDate: string;
   items: FundingArrivalItem[];
   months: FundingArrivalMonth[];
+  rows: CashFlowForecastRow[];
 }
 
 /**

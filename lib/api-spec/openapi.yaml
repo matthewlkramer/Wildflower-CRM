@@ -8578,7 +8578,7 @@ paths:
     get:
       operationId: getFundingArrivalsByMonth
       tags: [analytics]
-      summary: Authenticated monthly funding-arrival timing forecast.
+      summary: Authenticated cash-flow forecast for active opportunities and unpaid pledges.
       description: |
         Returns receipt estimates and their timing basis for active, unarchived,
         non-writeoff pledges and opportunities. `pledge` rows are committed;
@@ -8598,6 +8598,17 @@ paths:
         missing-date queue tasks. Reimbursement annual plans are contextual rows,
         not award ceilings or additional monthly cash. Each item states its basis;
         only dated, known remaining amounts contribute to monthly totals.
+
+        `rows` is the Cash flow page's opportunity-grain spreadsheet. Each
+        allocation appears in at most one reporting pair: Seed Fund project
+        allocations first, then donor-restricted regional allocations, then
+        other Wildflower Foundation allocations. Open allocations contribute
+        probability-weighted targets; unpaid pledge balances contribute
+        committed amounts. Because historical payments are parent-level cash
+        facts, each pledge's authoritative unpaid remainder is distributed
+        proportionally across its current allocation plan. The row total is the
+        sum of the six displayed reporting cells. `forecastDate` is the earliest
+        remaining dated receipt estimate for the opportunity.
       parameters:
         - name: entityId
           in: query
@@ -12998,7 +13009,7 @@ components:
         sourceRecordIds: { type: array, items: { type: string } }
     FundingArrivalsByMonth:
       type: object
-      required: [category, asOfDate, items, months]
+      required: [category, asOfDate, items, months, rows]
       properties:
         category: { $ref: "#/components/schemas/FundraisingCategory" }
         asOfDate: { type: string, format: date }
@@ -13011,6 +13022,70 @@ components:
           {
             type: array,
             items: { $ref: "#/components/schemas/FundingArrivalMonth" },
+          }
+        rows:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/CashFlowForecastRow" },
+          }
+    CashFlowForecastRow:
+      type: object
+      required:
+        [
+          opportunityId,
+          opportunityName,
+          status,
+          askAmount,
+          weighting,
+          foundationCommitted,
+          foundationWeightedTarget,
+          regionalCommitted,
+          regionalWeightedTarget,
+          seedFundCommitted,
+          seedFundWeightedTarget,
+          total,
+          forecastDate,
+          forecastBasis,
+        ]
+      properties:
+        opportunityId: { type: string }
+        opportunityName: { type: string, nullable: true }
+        status: { type: string, enum: [pledge, open] }
+        askAmount: { type: string, nullable: true }
+        weighting:
+          {
+            type: string,
+            nullable: true,
+            description: "Effective row weighting: 100% for a pledge, otherwise the opportunity's current win probability.",
+          }
+        foundationCommitted: { type: string }
+        foundationWeightedTarget: { type: string }
+        regionalCommitted: { type: string }
+        regionalWeightedTarget: { type: string }
+        seedFundCommitted: { type: string }
+        seedFundWeightedTarget: { type: string }
+        total:
+          {
+            type: string,
+            description: Sum of the six committed and weighted-target cells.,
+          }
+        forecastDate: { type: string, format: date, nullable: true }
+        forecastBasis:
+          {
+            allOf:
+              [
+                {
+                  type: string,
+                  enum:
+                    [
+                      projected_close,
+                      explicit_payment,
+                      unscheduled,
+                      reimbursement_annual,
+                    ],
+                },
+              ],
+            nullable: true,
           }
     FundingArrivalItem:
       type: object
