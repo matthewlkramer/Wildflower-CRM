@@ -26,6 +26,8 @@ import {
   type PeopleEntityRole,
   type DisbursementModel,
   useGetCurrentUser,
+  analyzeGrantAgreement,
+  getGetGrantTermsWorkspaceQueryKey,
 } from "@workspace/api-client-react";
 import {
   PlanningBadge,
@@ -40,6 +42,7 @@ import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
 import { FileUploadField } from "@/components/grant-letter-upload";
+import { GrantTermsPanel } from "@/components/grant-terms-panel";
 import { ReportingDeadlinesDialog } from "@/components/reporting-deadlines-dialog";
 import { CommitmentLifecycleCard } from "@/components/commitment-lifecycle-card";
 import {
@@ -197,7 +200,9 @@ export default function OpportunityDetail({
 function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
   useEffect(() => {
     if (window.location.hash === "#payment-plan") {
-      document.getElementById("payment-plan")?.scrollIntoView?.({ block: "start" });
+      document
+        .getElementById("payment-plan")
+        ?.scrollIntoView?.({ block: "start" });
     }
   }, [opp.id]);
   const queryClient = useQueryClient();
@@ -464,21 +469,22 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
   ) : (
     (opp.name ?? `Untitled ${opp.id}`)
   );
-  const donorHeader = (opp.payments ?? []).length > 0 ? (
-    donorDisplay
-  ) : (
-    <InlineEditDonor
-      testIdBase="opp-donor"
-      align="left"
-      value={{
-        organizationId: opp.organizationId ?? null,
-        individualGiverPersonId: opp.individualGiverPersonId ?? null,
-        householdId: opp.householdId ?? null,
-      }}
-      display={donorDisplay}
-      onSave={saveDonor}
-    />
-  );
+  const donorHeader =
+    (opp.payments ?? []).length > 0 ? (
+      donorDisplay
+    ) : (
+      <InlineEditDonor
+        testIdBase="opp-donor"
+        align="left"
+        value={{
+          organizationId: opp.organizationId ?? null,
+          individualGiverPersonId: opp.individualGiverPersonId ?? null,
+          householdId: opp.householdId ?? null,
+        }}
+        display={donorDisplay}
+        onSave={saveDonor}
+      />
+    );
   const headerTitle = (
     <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
       <span>{donorHeader}</span>
@@ -1019,7 +1025,9 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
           onSave={(next) => {
             if (
               opp.projectedCloseMonthsOut != null &&
-              !["cold_lead", "warm_lead", "in_conversation"].includes(next ?? "")
+              !["cold_lead", "warm_lead", "in_conversation"].includes(
+                next ?? "",
+              )
             ) {
               toast({
                 title: "Set a specific close date first",
@@ -1092,7 +1100,9 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
         <InlineEditCloseDates
           projected={opp.projectedCloseDate ?? null}
           monthsOut={opp.projectedCloseMonthsOut ?? null}
-          effective={opp.effectiveProjectedCloseDate ?? opp.projectedCloseDate ?? null}
+          effective={
+            opp.effectiveProjectedCloseDate ?? opp.projectedCloseDate ?? null
+          }
           stage={opp.stage ?? null}
           actual={opp.actualCompletionDate ?? null}
           onSave={(body) => patch(body)}
@@ -1155,12 +1165,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
 
   // Once money is linked, changing the donor also changes the meaning of the
   // payment. Keep it read-only and require an explicit correction workflow.
-  const donorSubtitle =
-    linkedPayments.length > 0 ? (
-      grantName
-    ) : (
-      grantName
-    );
+  const donorSubtitle = linkedPayments.length > 0 ? grantName : grantName;
 
   return (
     <>
@@ -1284,12 +1289,37 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                     uploadLabel="Upload grant letter"
                     toastTitle="Grant letter uploaded"
                     testIdBase="opp-grant-letter"
-                    onUploaded={(next) =>
-                      patch({
+                    onUploaded={async (next) => {
+                      await patch({
                         grantLetterUrl: next.url,
                         grantLetterFilename: next.filename,
-                      })
-                    }
+                      });
+                      toast({
+                        title: "Analyzing grant agreement",
+                        description:
+                          "A proposed list of terms will be ready for review shortly.",
+                      });
+                      try {
+                        await analyzeGrantAgreement(opp.id, {
+                          documentUrl: next.url,
+                          documentFilename: next.filename,
+                          source: "grant_agreement",
+                        });
+                        await queryClient.invalidateQueries({
+                          queryKey: getGetGrantTermsWorkspaceQueryKey(opp.id),
+                        });
+                        toast({ title: "Grant agreement review ready" });
+                      } catch (error) {
+                        toast({
+                          title: "Grant letter saved, but analysis failed",
+                          description:
+                            error instanceof Error
+                              ? error.message
+                              : String(error),
+                          variant: "destructive",
+                        });
+                      }
+                    }}
                     onCleared={() =>
                       patch({ grantLetterUrl: null, grantLetterFilename: null })
                     }
@@ -1393,14 +1423,14 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
             </RelatedCard>
 
             <section id="payment-plan" className="scroll-mt-6">
-            <RelatedCard
-              title="Payment plan"
-              count={(opp.expectedPayments ?? []).length || undefined}
-            >
-              <div className="px-2 py-1">
-                <InstallmentSchedule opp={opp} />
-              </div>
-            </RelatedCard>
+              <RelatedCard
+                title="Payment plan"
+                count={(opp.expectedPayments ?? []).length || undefined}
+              >
+                <div className="px-2 py-1">
+                  <InstallmentSchedule opp={opp} />
+                </div>
+              </RelatedCard>
             </section>
 
             <RelatedCard
@@ -1493,6 +1523,13 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
         }
         right={
           <>
+            <GrantTermsPanel
+              opportunityId={opp.id}
+              grantLetterUrl={opp.grantLetterUrl ?? null}
+              grantLetterFilename={opp.grantLetterFilename ?? null}
+              allocations={opp.allocations ?? []}
+              expectedPayments={opp.expectedPayments ?? []}
+            />
             <CommitmentLifecycleCard opp={opp} />
             <RelatedCard
               title="People"
@@ -1745,9 +1782,7 @@ function InlineEditAmounts({
     if (!reductionBody || busy) return;
     run(
       () =>
-        proportional
-          ? onReducePlan(reductionBody)
-          : onSave(reductionBody),
+        proportional ? onReducePlan(reductionBody) : onSave(reductionBody),
       () => {
         setReductionBody(null);
         setEditing(false);
@@ -1883,7 +1918,9 @@ function InlineEditCloseDates({
     projectedDraft.trim().length === 0 ? null : projectedDraft;
   const actualNext = actualDraft.trim().length === 0 ? null : actualDraft;
   const monthsNext = monthsDraft.trim() === "" ? null : Number(monthsDraft);
-  const rollingAllowed = ["cold_lead", "warm_lead", "in_conversation"].includes(stage ?? "");
+  const rollingAllowed = ["cold_lead", "warm_lead", "in_conversation"].includes(
+    stage ?? "",
+  );
   const validMonths =
     monthsNext != null && Number.isInteger(monthsNext) && monthsNext > 0;
   const dirty =
@@ -1916,40 +1953,44 @@ function InlineEditCloseDates({
           aria-label="Projected close timing mode"
         >
           <option value="date">Specific date</option>
-          <option value="months" disabled={!rollingAllowed}>Months from now</option>
+          <option value="months" disabled={!rollingAllowed}>
+            Months from now
+          </option>
         </select>
       </label>
       {timingMode === "date" ? (
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="w-20 shrink-0 text-left">Projected</span>
-        <Input
-          type="date"
-          value={projectedDraft}
-          onChange={(e) => setProjectedDraft(e.target.value)}
-          aria-label="Projected close date"
-          disabled={busy}
-          data-testid="input-opp-projected-close"
-          className="h-8"
-        />
-      </label>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="w-20 shrink-0 text-left">Projected</span>
+          <Input
+            type="date"
+            value={projectedDraft}
+            onChange={(e) => setProjectedDraft(e.target.value)}
+            aria-label="Projected close date"
+            disabled={busy}
+            data-testid="input-opp-projected-close"
+            className="h-8"
+          />
+        </label>
       ) : (
-      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="w-20 shrink-0 text-left">Months</span>
-        <Input
-          type="number"
-          min="1"
-          step="1"
-          value={monthsDraft}
-          onChange={(e) => setMonthsDraft(e.target.value)}
-          aria-label="Months from now"
-          disabled={busy}
-          data-testid="input-opp-projected-close-months"
-          className="h-8"
-        />
-      </label>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="w-20 shrink-0 text-left">Months</span>
+          <Input
+            type="number"
+            min="1"
+            step="1"
+            value={monthsDraft}
+            onChange={(e) => setMonthsDraft(e.target.value)}
+            aria-label="Months from now"
+            disabled={busy}
+            data-testid="input-opp-projected-close-months"
+            className="h-8"
+          />
+        </label>
       )}
       {timingMode === "months" && !validMonths ? (
-        <p className="text-xs text-destructive">Enter a positive whole number of months.</p>
+        <p className="text-xs text-destructive">
+          Enter a positive whole number of months.
+        </p>
       ) : null}
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <span className="w-20 shrink-0 text-left">Completed</span>

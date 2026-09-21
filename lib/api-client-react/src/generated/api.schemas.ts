@@ -2445,8 +2445,12 @@ export interface OpportunityOrPledge {
   conditionsMet: OpportunityConditionsMet;
   /** Derived from the opportunity's pledge allocations: conditional when ANY allocation carries a conditional condition, else unconditional. Drives win-probability. Null when no allocation is set. */
   readonly conditionalRollup?: OpportunityConditional | null;
-  /** Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'. */
+  /** Derived from the opportunity's pledge allocations: yes when every conditional allocation is met, partial when at least one is met or partly met, otherwise no. */
   readonly conditionsMetRollup?: OpportunityConditionsMet;
+  /** Derived from the active reviewed term set, allocation donor-restriction axes, and active force-restricted entity policy. Null only while restriction status is not yet determinable. */
+  readonly restricted?: boolean | null;
+  /** Human-readable reasons supporting the derived restricted result. */
+  readonly restrictionBasis?: readonly string[];
   /** Derived from the opportunity's pledge allocations: true when ANY allocation is conditional='reimbursable'. A reimbursable grant is a pledge paid as many real 1:1 reimbursement checks, so the UI warns before booking a single placeholder gift for the full award amount against it. */
   readonly reimbursable?: boolean;
   individualGiverPersonId?: string | null;
@@ -2879,6 +2883,239 @@ export interface OpportunityPlanReductionResult {
   installmentsAdjusted: number;
   /** Always zero: posted payment facts are never edited by this action. */
   postedPaymentsAdjusted: OpportunityPlanReductionResultPostedPaymentsAdjusted;
+}
+
+export type GrantTermSetSource = typeof GrantTermSetSource[keyof typeof GrantTermSetSource];
+
+
+export const GrantTermSetSource = {
+  manual: 'manual',
+  grant_agreement: 'grant_agreement',
+  amendment: 'amendment',
+} as const;
+
+export type GrantTermSetStatus = typeof GrantTermSetStatus[keyof typeof GrantTermSetStatus];
+
+
+export const GrantTermSetStatus = {
+  pending_review: 'pending_review',
+  active: 'active',
+  superseded: 'superseded',
+  rejected: 'rejected',
+} as const;
+
+export type GrantTermKind = typeof GrantTermKind[keyof typeof GrantTermKind];
+
+
+export const GrantTermKind = {
+  donor_restriction: 'donor_restriction',
+  condition: 'condition',
+  reporting_requirement: 'reporting_requirement',
+  payment_requirement: 'payment_requirement',
+  spending_rule: 'spending_rule',
+  other_requirement: 'other_requirement',
+} as const;
+
+export type GrantRestrictionDimension = typeof GrantRestrictionDimension[keyof typeof GrantRestrictionDimension];
+
+
+export const GrantRestrictionDimension = {
+  entity: 'entity',
+  geography: 'geography',
+  purpose: 'purpose',
+  time: 'time',
+  project: 'project',
+  school: 'school',
+} as const;
+
+export type GrantSpendingRuleType = typeof GrantSpendingRuleType[keyof typeof GrantSpendingRuleType];
+
+
+export const GrantSpendingRuleType = {
+  allowable_cost: 'allowable_cost',
+  prohibited_cost: 'prohibited_cost',
+  cap: 'cap',
+  prior_approval: 'prior_approval',
+} as const;
+
+export type GrantTermOutcome = typeof GrantTermOutcome[keyof typeof GrantTermOutcome];
+
+
+export const GrantTermOutcome = {
+  pending: 'pending',
+  satisfied: 'satisfied',
+  missed: 'missed',
+  waived: 'waived',
+} as const;
+
+export type GrantTermOutcomeAction = typeof GrantTermOutcomeAction[keyof typeof GrantTermOutcomeAction];
+
+
+export const GrantTermOutcomeAction = {
+  satisfied: 'satisfied',
+  missed: 'missed',
+  waived: 'waived',
+  reopened: 'reopened',
+} as const;
+
+export interface GrantTermInput {
+  /** Allocation this term governs; null means every allocation on the opportunity. */
+  pledgeAllocationId?: string | null;
+  expectedPaymentId?: string | null;
+  kind: GrantTermKind;
+  restrictionDimension?: GrantRestrictionDimension | null;
+  spendingRuleType?: GrantSpendingRuleType | null;
+  /**
+   * @minLength 1
+   * @maxLength 240
+   */
+  title: string;
+  /**
+   * @minLength 1
+   * @maxLength 10000
+   */
+  summary: string;
+  /**
+   * Verbatim supporting text from the governing document; never a paraphrase.
+   * @maxLength 20000
+   */
+  exactQuote?: string | null;
+  /** @maxLength 100 */
+  sourcePage?: string | null;
+  /** @pattern ^\\d+(\\.\\d{1,2})?$ */
+  amount?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  dueDate?: string | null;
+  /** @maxLength 10000 */
+  barrier?: string | null;
+  /** @maxLength 10000 */
+  returnOrReleaseRight?: string | null;
+  /** @maxLength 10000 */
+  consequence?: string | null;
+  /** @maxItems 100 */
+  categories?: string[] | null;
+  /** @pattern ^\\d+(\\.\\d{1,2})?$ */
+  capAmount?: string | null;
+  /** @pattern ^(0(\\.\\d{1,4})?|1(\\.0{1,4})?)$ */
+  capPercent?: string | null;
+}
+
+export interface SaveGrantTermSetBody {
+  /** @maxLength 20000 */
+  analysisSummary?: string | null;
+  /**
+   * @minItems 0
+   * @maxItems 200
+   */
+  terms: GrantTermInput[];
+}
+
+export type AnalyzeGrantAgreementBodySource = typeof AnalyzeGrantAgreementBodySource[keyof typeof AnalyzeGrantAgreementBodySource];
+
+
+export const AnalyzeGrantAgreementBodySource = {
+  grant_agreement: 'grant_agreement',
+  amendment: 'amendment',
+} as const;
+
+export interface AnalyzeGrantAgreementBody {
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  documentUrl: string;
+  /**
+   * @minLength 1
+   * @maxLength 500
+   */
+  documentFilename: string;
+  source?: AnalyzeGrantAgreementBodySource;
+}
+
+export type GrantTerm = GrantTermInput & {
+  id: string;
+  termSetId: string;
+  currentOutcome: GrantTermOutcome;
+  /** Derived when a pending term's due date has passed; overdue never automatically records a missed outcome. */
+  readonly overdue: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export interface GrantTermSet {
+  id: string;
+  opportunityId: string;
+  source: GrantTermSetSource;
+  status: GrantTermSetStatus;
+  sourceDocumentUrl?: string | null;
+  sourceDocumentFilename?: string | null;
+  analysisSummary?: string | null;
+  aiModel?: string | null;
+  promptVersion?: string | null;
+  createdByUserId: string;
+  reviewedByUserId?: string | null;
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  terms: GrantTerm[];
+}
+
+export interface GrantTermOutcomeEvent {
+  id: string;
+  grantTermId: string;
+  outcome: GrantTermOutcomeAction;
+  effectiveDate: string;
+  note?: string | null;
+  evidenceUrl?: string | null;
+  recordedByUserId: string;
+  createdAt: string;
+}
+
+export interface RecordGrantTermOutcomeBody {
+  outcome: GrantTermOutcomeAction;
+  effectiveDate: string;
+  /** @maxLength 10000 */
+  note?: string | null;
+  /** @maxLength 2000 */
+  evidenceUrl?: string | null;
+}
+
+export interface GrantSpendSnapshot {
+  id: string;
+  pledgeAllocationId: string;
+  asOfDate: string;
+  amountSpentToDate: string;
+  note?: string | null;
+  recordedByUserId: string;
+  createdAt: string;
+}
+
+export interface RecordGrantSpendSnapshotBody {
+  asOfDate: string;
+  /** @pattern ^\\d+(\\.\\d{1,2})?$ */
+  amountSpentToDate: string;
+  /** @maxLength 10000 */
+  note?: string | null;
+}
+
+export interface GrantAllocationSpending {
+  pledgeAllocationId: string;
+  allocationAmount?: string | null;
+  amountSpentToDate: string;
+  amountRemaining?: string | null;
+  latestAsOfDate?: string | null;
+  latestNote?: string | null;
+  snapshots: GrantSpendSnapshot[];
+}
+
+export interface GrantTermsWorkspace {
+  opportunityId: string;
+  /** Derived from the active reviewed term set, allocation donor-restriction axes, and active force-restricted entity policy. Null only while restriction status is not yet determinable. */
+  readonly restricted: boolean | null;
+  readonly restrictionBasis: readonly string[];
+  termSets: GrantTermSet[];
+  allocationSpending: GrantAllocationSpending[];
 }
 
 export interface PledgeAllocationList {

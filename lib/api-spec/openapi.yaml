@@ -30,6 +30,7 @@ tags:
   - { name: addresses }
   - { name: opportunities-and-pledges }
   - { name: pledge-allocations }
+  - { name: grant-terms }
   - { name: gifts-and-payments }
   - { name: gift-allocations }
   - { name: revenue-coding }
@@ -3669,6 +3670,141 @@ paths:
                   },
               },
           }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /opportunities-and-pledges/{id}/grant-terms:
+    get:
+      operationId: getGrantTermsWorkspace
+      tags: [grant-terms]
+      summary: Read the versioned grant terms, condition outcomes, and manual spending progress for an opportunity.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Grant-terms workspace
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermsWorkspace" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /opportunities-and-pledges/{id}/grant-terms/manual:
+    post:
+      operationId: createManualGrantTermSet
+      tags: [grant-terms]
+      summary: Save a new active provisional manual interpretation of grant terms.
+      description: >-
+        Creates a new version, supersedes the currently active version, and
+        applies the accepted restriction/condition classifications to the
+        opportunity's allocation rows in one transaction.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveGrantTermSetBody" }
+      responses:
+        "201":
+          description: Provisional manual terms activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermSet" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /opportunities-and-pledges/{id}/grant-agreement-analysis:
+    post:
+      operationId: analyzeGrantAgreement
+      tags: [grant-terms]
+      summary: Analyze the uploaded grant agreement and create a pending human-review proposal.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnalyzeGrantAgreementBody" }
+      responses:
+        "201":
+          description: Analysis proposal created; allocations remain unchanged until activation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermSet" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { description: The document could not be analyzed }
+
+  /grant-term-sets/{id}:
+    patch:
+      operationId: replaceGrantTermSet
+      tags: [grant-terms]
+      summary: Replace the editable terms in a pending review set.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveGrantTermSetBody" }
+      responses:
+        "200":
+          description: Pending proposal revised
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermSet" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Only pending-review sets may be revised }
+
+  /grant-term-sets/{id}/activate:
+    post:
+      operationId: activateGrantTermSet
+      tags: [grant-terms]
+      summary: Accept a reviewed term set and apply it to canonical allocations.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Reviewed term set activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermSet" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The set is not pending review }
+
+  /grant-terms/{id}/outcomes:
+    post:
+      operationId: recordGrantTermOutcome
+      tags: [grant-terms]
+      summary: Append a satisfied, missed, waived, or reopened outcome for a condition or restriction.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordGrantTermOutcomeBody" }
+      responses:
+        "201":
+          description: Outcome recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantTermOutcomeEvent" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /pledge-allocations/{id}/spend-snapshots:
+    post:
+      operationId: recordGrantSpendSnapshot
+      tags: [grant-terms]
+      summary: Record a manual cumulative amount spent as of a date for one grant allocation.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordGrantSpendSnapshotBody" }
+      responses:
+        "201":
+          description: Spending checkpoint recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GrantSpendSnapshot" }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -15974,7 +16110,21 @@ components:
           {
             allOf: [{ $ref: "#/components/schemas/OpportunityConditionsMet" }],
             readOnly: true,
-            description: "Derived from the opportunity's pledge allocations: 'yes' only when every conditional allocation's conditions are met; otherwise 'no'.",
+            description: "Derived from the opportunity's pledge allocations: yes when every conditional allocation is met, partial when at least one is met or partly met, otherwise no.",
+          }
+        restricted:
+          {
+            type: boolean,
+            nullable: true,
+            readOnly: true,
+            description: "Derived from the active reviewed term set, allocation donor-restriction axes, and active force-restricted entity policy. Null only while restriction status is not yet determinable.",
+          }
+        restrictionBasis:
+          {
+            type: array,
+            readOnly: true,
+            items: { type: string },
+            description: "Human-readable reasons supporting the derived restricted result.",
           }
         reimbursable:
           {
@@ -16397,6 +16547,243 @@ components:
             enum: [0],
             description: "Always zero: posted payment facts are never edited by this action.",
           }
+
+    # ─── Grant terms, outcomes, and manual spending ────────────────────────────
+    GrantTermSetSource:
+      type: string
+      enum: [manual, grant_agreement, amendment]
+    GrantTermSetStatus:
+      type: string
+      enum: [pending_review, active, superseded, rejected]
+    GrantTermKind:
+      type: string
+      enum:
+        [
+          donor_restriction,
+          condition,
+          reporting_requirement,
+          payment_requirement,
+          spending_rule,
+          other_requirement,
+        ]
+    GrantRestrictionDimension:
+      type: string
+      enum: [entity, geography, purpose, time, project, school]
+    GrantSpendingRuleType:
+      type: string
+      enum: [allowable_cost, prohibited_cost, cap, prior_approval]
+    GrantTermOutcome:
+      type: string
+      enum: [pending, satisfied, missed, waived]
+    GrantTermOutcomeAction:
+      type: string
+      enum: [satisfied, missed, waived, reopened]
+    GrantTermInput:
+      type: object
+      required: [kind, title, summary]
+      properties:
+        pledgeAllocationId:
+          {
+            type: string,
+            nullable: true,
+            description: "Allocation this term governs; null means every allocation on the opportunity.",
+          }
+        expectedPaymentId: { type: string, nullable: true }
+        kind: { $ref: "#/components/schemas/GrantTermKind" }
+        restrictionDimension:
+          {
+            allOf:
+              [{ $ref: "#/components/schemas/GrantRestrictionDimension" }],
+            nullable: true,
+          }
+        spendingRuleType:
+          {
+            allOf: [{ $ref: "#/components/schemas/GrantSpendingRuleType" }],
+            nullable: true,
+          }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        summary: { type: string, minLength: 1, maxLength: 10000 }
+        exactQuote:
+          {
+            type: string,
+            nullable: true,
+            maxLength: 20000,
+            description: "Verbatim supporting text from the governing document; never a paraphrase.",
+          }
+        sourcePage: { type: string, nullable: true, maxLength: 100 }
+        amount: { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        startDate: { type: string, format: date, nullable: true }
+        endDate: { type: string, format: date, nullable: true }
+        dueDate: { type: string, format: date, nullable: true }
+        barrier: { type: string, nullable: true, maxLength: 10000 }
+        returnOrReleaseRight: { type: string, nullable: true, maxLength: 10000 }
+        consequence: { type: string, nullable: true, maxLength: 10000 }
+        categories:
+          {
+            type: array,
+            items: { type: string, maxLength: 500 },
+            maxItems: 100,
+            nullable: true,
+          }
+        capAmount: { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        capPercent:
+          {
+            type: string,
+            nullable: true,
+            pattern: '^(0(\\.\\d{1,4})?|1(\\.0{1,4})?)$',
+          }
+    SaveGrantTermSetBody:
+      type: object
+      required: [terms]
+      properties:
+        analysisSummary: { type: string, nullable: true, maxLength: 20000 }
+        terms:
+          type: array
+          minItems: 0
+          maxItems: 200
+          items: { $ref: "#/components/schemas/GrantTermInput" }
+    AnalyzeGrantAgreementBody:
+      type: object
+      required: [documentUrl, documentFilename]
+      properties:
+        documentUrl: { type: string, minLength: 1, maxLength: 2000 }
+        documentFilename: { type: string, minLength: 1, maxLength: 500 }
+        source:
+          {
+            type: string,
+            enum: [grant_agreement, amendment],
+            default: grant_agreement,
+          }
+    GrantTerm:
+      allOf:
+        - { $ref: "#/components/schemas/GrantTermInput" }
+        - type: object
+          required:
+            [
+              id,
+              termSetId,
+              currentOutcome,
+              overdue,
+              createdAt,
+              updatedAt,
+            ]
+          properties:
+            id: { type: string }
+            termSetId: { type: string }
+            currentOutcome: { $ref: "#/components/schemas/GrantTermOutcome" }
+            overdue:
+              {
+                type: boolean,
+                readOnly: true,
+                description: "Derived when a pending term's due date has passed; overdue never automatically records a missed outcome.",
+              }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    GrantTermSet:
+      type: object
+      required:
+        [id, opportunityId, source, status, createdByUserId, createdAt, updatedAt, terms]
+      properties:
+        id: { type: string }
+        opportunityId: { type: string }
+        source: { $ref: "#/components/schemas/GrantTermSetSource" }
+        status: { $ref: "#/components/schemas/GrantTermSetStatus" }
+        sourceDocumentUrl: { type: string, nullable: true }
+        sourceDocumentFilename: { type: string, nullable: true }
+        analysisSummary: { type: string, nullable: true }
+        aiModel: { type: string, nullable: true }
+        promptVersion: { type: string, nullable: true }
+        createdByUserId: { type: string }
+        reviewedByUserId: { type: string, nullable: true }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        terms:
+          type: array
+          items: { $ref: "#/components/schemas/GrantTerm" }
+    GrantTermOutcomeEvent:
+      type: object
+      required:
+        [id, grantTermId, outcome, effectiveDate, recordedByUserId, createdAt]
+      properties:
+        id: { type: string }
+        grantTermId: { type: string }
+        outcome: { $ref: "#/components/schemas/GrantTermOutcomeAction" }
+        effectiveDate: { type: string, format: date }
+        note: { type: string, nullable: true }
+        evidenceUrl: { type: string, nullable: true }
+        recordedByUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RecordGrantTermOutcomeBody:
+      type: object
+      required: [outcome, effectiveDate]
+      properties:
+        outcome: { $ref: "#/components/schemas/GrantTermOutcomeAction" }
+        effectiveDate: { type: string, format: date }
+        note: { type: string, nullable: true, maxLength: 10000 }
+        evidenceUrl: { type: string, nullable: true, maxLength: 2000 }
+    GrantSpendSnapshot:
+      type: object
+      required:
+        [
+          id,
+          pledgeAllocationId,
+          asOfDate,
+          amountSpentToDate,
+          recordedByUserId,
+          createdAt,
+        ]
+      properties:
+        id: { type: string }
+        pledgeAllocationId: { type: string }
+        asOfDate: { type: string, format: date }
+        amountSpentToDate: { type: string }
+        note: { type: string, nullable: true }
+        recordedByUserId: { type: string }
+        createdAt: { type: string, format: date-time }
+    RecordGrantSpendSnapshotBody:
+      type: object
+      required: [asOfDate, amountSpentToDate]
+      properties:
+        asOfDate: { type: string, format: date }
+        amountSpentToDate:
+          { type: string, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        note: { type: string, nullable: true, maxLength: 10000 }
+    GrantAllocationSpending:
+      type: object
+      required: [pledgeAllocationId, amountSpentToDate, snapshots]
+      properties:
+        pledgeAllocationId: { type: string }
+        allocationAmount: { type: string, nullable: true }
+        amountSpentToDate: { type: string }
+        amountRemaining: { type: string, nullable: true }
+        latestAsOfDate: { type: string, format: date, nullable: true }
+        latestNote: { type: string, nullable: true }
+        snapshots:
+          type: array
+          items: { $ref: "#/components/schemas/GrantSpendSnapshot" }
+    GrantTermsWorkspace:
+      type: object
+      required: [opportunityId, restricted, restrictionBasis, termSets, allocationSpending]
+      properties:
+        opportunityId: { type: string }
+        restricted:
+          {
+            type: boolean,
+            nullable: true,
+            readOnly: true,
+            description: "Derived from the active reviewed term set, allocation donor-restriction axes, and active force-restricted entity policy. Null only while restriction status is not yet determinable.",
+          }
+        restrictionBasis:
+          type: array
+          readOnly: true
+          items: { type: string }
+        termSets:
+          type: array
+          items: { $ref: "#/components/schemas/GrantTermSet" }
+        allocationSpending:
+          type: array
+          items: { $ref: "#/components/schemas/GrantAllocationSpending" }
 
     # ─── Pledge allocations ────────────────────────────────────────────────────
     PledgeAllocation:

@@ -29,6 +29,7 @@ export * from "./gifts-and-payments/gifts-and-payments";
 export * from "./google-oauth/google-oauth";
 export * from "./google-sync/google-sync";
 export * from "./grant-leads/grant-leads";
+export * from "./grant-terms/grant-terms";
 export * from "./health/health";
 export * from "./households/households";
 export * from "./integrations/integrations";

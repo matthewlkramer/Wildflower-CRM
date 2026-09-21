@@ -3,6 +3,7 @@ import {
   canonicalWinProbability,
   deriveOppFields,
   isConditionalPledge,
+  rollupConditional,
 } from "../lib/pledgeStage";
 
 const base = {
@@ -21,6 +22,34 @@ const base = {
   disbursementModel: "fixed_commitment" as string | null,
   awardClosedAt: null as string | Date | null,
 };
+
+describe("grant condition rollup", () => {
+  it("reports partial when some formal conditions are satisfied", () => {
+    expect(
+      rollupConditional([
+        {
+          conditional: "conditional_unspecified",
+          conditionsMet: "yes",
+        },
+        {
+          conditional: "conditional_unspecified",
+          conditionsMet: "no",
+        },
+      ]),
+    ).toEqual({
+      conditional: "conditional_unspecified",
+      conditionsMet: "partial",
+    });
+  });
+
+  it("does not turn unconditional allocations into conditions", () => {
+    expect(
+      rollupConditional([
+        { conditional: "unconditional", conditionsMet: "no" },
+      ]),
+    ).toEqual({ conditional: "unconditional", conditionsMet: "yes" });
+  });
+});
 
 describe("deriveOppFields commitment lifecycle", () => {
   it("keeps an ordinary cultivation record open", () => {

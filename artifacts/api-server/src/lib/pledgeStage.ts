@@ -62,8 +62,9 @@ export interface ConditionalRollup {
   // 'unconditional'. Null when the opportunity has no allocations at all.
   conditional: string | null;
   // 'yes' only when every conditional allocation has its conditions met;
-  // vacuously 'yes' when there are no conditional allocations.
-  conditionsMet: "yes" | "no";
+  // 'partial' when at least one is met/partly met; otherwise 'no'. Vacuously
+  // 'yes' when there are no conditional allocations.
+  conditionsMet: "yes" | "partial" | "no";
 }
 
 /**
@@ -85,11 +86,18 @@ export function rollupConditional(
   const conditional = [...conditionalAllocs]
     .map((a) => a.conditional!)
     .sort()[0]!;
-  const conditionsMet = conditionalAllocs.every(
+  const metCount = conditionalAllocs.filter(
     (a) => a.conditionsMet === "yes",
-  )
-    ? "yes"
-    : "no";
+  ).length;
+  const hasPartial = conditionalAllocs.some(
+    (a) => a.conditionsMet === "partial",
+  );
+  const conditionsMet =
+    metCount === conditionalAllocs.length
+      ? "yes"
+      : metCount > 0 || hasPartial
+        ? "partial"
+        : "no";
   return { conditional, conditionsMet };
 }
 

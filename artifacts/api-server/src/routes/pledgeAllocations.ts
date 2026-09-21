@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { fiscalYears, pledgeAllocations, pledgeExpectedPayments } from "@workspace/db/schema";
+import {
+  fiscalYears,
+  pledgeAllocations,
+  pledgeExpectedPayments,
+} from "@workspace/db/schema";
 import { and, asc, count, desc, eq, inArray, type SQL } from "drizzle-orm";
 import {
   ListPledgeAllocationsQueryParams,
@@ -9,11 +13,22 @@ import {
   UpdatePledgeAllocationBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
-import { resolvePledgeAllocationFreeze, respondFrozen } from "../lib/freezeGuard";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+} from "../lib/helpers";
+import {
+  resolvePledgeAllocationFreeze,
+  respondFrozen,
+} from "../lib/freezeGuard";
 import { pledgeAllocationCodingPreview } from "../lib/revenueCoding";
 import { applyDerivedOppFields } from "../lib/pledgeStage";
 import { fiscalYearSlugForDate } from "../lib/giftAllocationSeed";
+import { applyActiveGrantTermsToAllocations } from "../lib/grantTerms";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -21,14 +36,27 @@ router.use(requireAuth);
 router.get(
   "/pledge-allocations",
   asyncHandler(async (req, res) => {
-    const q = parseOrBadRequest(ListPledgeAllocationsQueryParams, req.query, res);
+    const q = parseOrBadRequest(
+      ListPledgeAllocationsQueryParams,
+      req.query,
+      res,
+    );
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
-    if (q.pledgeOrOpportunityId) filters.push(eq(pledgeAllocations.pledgeOrOpportunityId, q.pledgeOrOpportunityId));
+    if (q.pledgeOrOpportunityId)
+      filters.push(
+        eq(pledgeAllocations.pledgeOrOpportunityId, q.pledgeOrOpportunityId),
+      );
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(pledgeAllocations).where(where).orderBy(desc(pledgeAllocations.createdAt)).limit(limit).offset(offset),
+      db
+        .select()
+        .from(pledgeAllocations)
+        .where(where)
+        .orderBy(desc(pledgeAllocations.createdAt))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(pledgeAllocations).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -41,18 +69,33 @@ router.post(
     const body = parseOrBadRequest(CreatePledgeAllocationBody, req.body, res);
     if (!body) return;
     // Freeze guard: gated by the parent pledge's governing FY.
-    const freeze = await resolvePledgeAllocationFreeze(body.pledgeOrOpportunityId);
+    const freeze = await resolvePledgeAllocationFreeze(
+      body.pledgeOrOpportunityId,
+    );
     if (freeze.frozen) return respondFrozen(res, freeze);
     // A concrete school recipient implies the funds flow directly to a school.
     const directToSchool = body.schoolRecipientId ? true : body.directToSchool;
-    const [row] = await db
-      .insert(pledgeAllocations)
-      .values({
-        id: newId(),
-        ...body,
-        directToSchool,
-      })
-      .returning();
+    const row = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(pledgeAllocations)
+        .values({
+          id: newId(),
+          ...body,
+          directToSchool,
+        })
+        .returning();
+      if (!created) return created;
+      const parentId =
+        created.pledgeOrOpportunityId ?? body.pledgeOrOpportunityId;
+      if (parentId) {
+        await applyActiveGrantTermsToAllocations(tx, parentId, [created.id]);
+      }
+      return tx
+        .select()
+        .from(pledgeAllocations)
+        .where(eq(pledgeAllocations.id, created.id))
+        .then((rows) => rows[0]);
+    });
     // Conditions now live on the allocation; recompute the header conditional
     // rollup + win-probability for the parent opportunity/pledge.
     await applyDerivedOppFields(row?.pledgeOrOpportunityId);
@@ -68,7 +111,11 @@ router.post(
 router.post(
   "/pledge-allocations/apply-to-schedule",
   asyncHandler(async (req, res) => {
-    const body = parseOrBadRequest(ApplyPledgeAllocationToScheduleBody, req.body, res);
+    const body = parseOrBadRequest(
+      ApplyPledgeAllocationToScheduleBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     const { pledgeOrOpportunityId, ...template } = body;
     // Freeze guard: gated by the parent pledge's governing FY.
@@ -77,25 +124,37 @@ router.post(
     const schedule = await db
       .select()
       .from(pledgeExpectedPayments)
-      .where(eq(pledgeExpectedPayments.pledgeOrOpportunityId, pledgeOrOpportunityId))
+      .where(
+        eq(pledgeExpectedPayments.pledgeOrOpportunityId, pledgeOrOpportunityId),
+      )
       .orderBy(asc(pledgeExpectedPayments.expectedDate));
     if (schedule.length === 0) {
       return res.status(400).json({
-        error: "This pledge has no scheduled payments to apply the allocation to.",
+        error:
+          "This pledge has no scheduled payments to apply the allocation to.",
       });
     }
     // grant_year is a RESTRICT FK to fiscal_years — only stamp slugs whose row
     // actually exists (mirrors giftAllocationSeed); missing FYs stay null for
     // the fundraiser to fill in later rather than aborting the whole insert.
     const wantedSlugs = [
-      ...new Set(schedule.map((p) => fiscalYearSlugForDate(p.expectedDate)).filter((s): s is string => !!s)),
+      ...new Set(
+        schedule
+          .map((p) => fiscalYearSlugForDate(p.expectedDate))
+          .filter((s): s is string => !!s),
+      ),
     ];
     const existingFyRows = wantedSlugs.length
-      ? await db.select({ id: fiscalYears.id }).from(fiscalYears).where(inArray(fiscalYears.id, wantedSlugs))
+      ? await db
+          .select({ id: fiscalYears.id })
+          .from(fiscalYears)
+          .where(inArray(fiscalYears.id, wantedSlugs))
       : [];
     const knownFy = new Set(existingFyRows.map((r) => r.id));
     // A concrete school recipient implies the funds flow directly to a school.
-    const directToSchool = template.schoolRecipientId ? true : template.directToSchool;
+    const directToSchool = template.schoolRecipientId
+      ? true
+      : template.directToSchool;
     const rows = schedule.map((payment) => {
       const slug = fiscalYearSlugForDate(payment.expectedDate);
       return {
@@ -107,7 +166,26 @@ router.post(
       };
     });
     const created = await db.transaction(async (tx) => {
-      return tx.insert(pledgeAllocations).values(rows).returning();
+      const inserted = await tx
+        .insert(pledgeAllocations)
+        .values(rows)
+        .returning();
+      await applyActiveGrantTermsToAllocations(
+        tx,
+        pledgeOrOpportunityId,
+        inserted.map((row) => row.id),
+      );
+      const refreshed = await tx
+        .select()
+        .from(pledgeAllocations)
+        .where(
+          inArray(
+            pledgeAllocations.id,
+            inserted.map((row) => row.id),
+          ),
+        );
+      const refreshedById = new Map(refreshed.map((row) => [row.id, row]));
+      return inserted.map((row) => refreshedById.get(row.id) ?? row);
     });
     // Conditions live on the allocations; recompute the header conditional
     // rollup + win-probability for the parent opportunity/pledge.
@@ -122,13 +200,19 @@ router.patch(
     const body = parseOrBadRequest(UpdatePledgeAllocationBody, req.body, res);
     if (!body) return;
     const id = paramId(req);
-    const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    const [existing] = await db
+      .select()
+      .from(pledgeAllocations)
+      .where(eq(pledgeAllocations.id, id));
     if (!existing) return notFound(res, "allocation");
     // Freeze guard: block if the current OR (when re-pointed) the target pledge's
     // governing FY is audit-closed.
-    const freeze = await resolvePledgeAllocationFreeze(existing.pledgeOrOpportunityId);
+    const freeze = await resolvePledgeAllocationFreeze(
+      existing.pledgeOrOpportunityId,
+    );
     if (freeze.frozen) return respondFrozen(res, freeze);
-    const targetParent = (body as { pledgeOrOpportunityId?: string }).pledgeOrOpportunityId;
+    const targetParent = (body as { pledgeOrOpportunityId?: string })
+      .pledgeOrOpportunityId;
     if (targetParent && targetParent !== existing.pledgeOrOpportunityId) {
       const targetFreeze = await resolvePledgeAllocationFreeze(targetParent);
       if (targetFreeze.frozen) return respondFrozen(res, targetFreeze);
@@ -179,10 +263,15 @@ router.delete(
   "/pledge-allocations/:id",
   asyncHandler(async (req, res) => {
     const id = paramId(req);
-    const [existing] = await db.select().from(pledgeAllocations).where(eq(pledgeAllocations.id, id));
+    const [existing] = await db
+      .select()
+      .from(pledgeAllocations)
+      .where(eq(pledgeAllocations.id, id));
     if (existing) {
       // Freeze guard: gated by the parent pledge's governing FY.
-      const freeze = await resolvePledgeAllocationFreeze(existing.pledgeOrOpportunityId);
+      const freeze = await resolvePledgeAllocationFreeze(
+        existing.pledgeOrOpportunityId,
+      );
       if (freeze.frozen) return respondFrozen(res, freeze);
     }
     await db.delete(pledgeAllocations).where(eq(pledgeAllocations.id, id));
