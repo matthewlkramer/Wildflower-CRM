@@ -108,6 +108,15 @@ with a blank date. The browser only formats server-provided values; it does not
 rederive weighting, payment coverage, writeoffs, bucket membership, totals, or
 dates.
 
+Each row has an Actions menu that uses the existing opportunity PATCH boundary
+to switch an eligible early-stage opportunity to a six-month or custom rolling
+close, replace rolling timing with a specific close date, or mark the record
+dormant/lost. Rolling close dates are calculated by the server and shown in
+italics. A warning at the start of a row is also server-owned and appears when
+the displayed Total differs by at least half a cent from Ask amount multiplied
+by Current weighting; missing ask or weighting values are not treated as a
+mismatch.
+
 For compatibility and detailed scheduling logic, the response continues to
 include the underlying `items` and monthly aggregates. They are not a second
 Cash flow UI or a separate amount authority.
