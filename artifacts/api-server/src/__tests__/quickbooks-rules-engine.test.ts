@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  bankDepositClassifierInput,
   evaluateRules,
   type EngineRule,
 } from "../lib/quickbooksRules";
@@ -155,6 +156,29 @@ describe("evaluateRules", () => {
       targetOrganizationId: "recAmazon",
       targetIntendedUsage: "gen_ops",
       targetFundableProjectId: null,
+    });
+  });
+
+  it("matches bank-deposit memo and reference text with any_text rules", () => {
+    const rule = excludeRule({
+      id: "broadstreet",
+      exclusionReason: "lease_guaranty",
+      conditions: [
+        { field: "any_text", mode: "contains", value: "broadstreet" },
+      ],
+    });
+    const input = bankDepositClassifierInput({
+      amount: "2500.00",
+      account: "Checking",
+      location: "National",
+      reference: "ACH CREDIT",
+      memo: "Broadstreet lease guaranty payment",
+    });
+
+    expect(evaluateRules([rule], input)).toEqual({
+      action: "exclude",
+      reason: "lease_guaranty",
+      ruleId: "broadstreet",
     });
   });
 });

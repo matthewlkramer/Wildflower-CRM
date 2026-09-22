@@ -8609,6 +8609,11 @@ export interface MediaRelevanceBackfillStatus {
   minScore: number | null;
   /** @nullable */
   maxScore: number | null;
+  lastIngestStartedAt: string | null;
+  lastIngestFinishedAt: string | null;
+  /** Status of the most recent scheduled media ingest (running, ok, or error). */
+  lastIngestStatus: string | null;
+  lastIngestError: string | null;
 }
 
 export interface MediaRelevanceBackfillStartResult {
@@ -9483,6 +9488,7 @@ export type MeetingArtifactKind = typeof MeetingArtifactKind[keyof typeof Meetin
 export const MeetingArtifactKind = {
   handwritten_notes: 'handwritten_notes',
   audio_recording: 'audio_recording',
+  voice_dictation: 'voice_dictation',
 } as const;
 
 export interface MeetingArtifact {
@@ -12292,6 +12298,10 @@ householdId?: string;
  * Exclude physical meetings a CRM user marked as not needing notes.
  */
 excludeNotesNotNeeded?: boolean;
+/**
+ * Exclude calendar events that have no matched CRM person, organization, or household. Used by the Meetings work queue; unmatched trip-calendar evidence remains stored and available elsewhere.
+ */
+crmMatchedOnly?: boolean;
 /**
  * Only events with startAt >= this timestamp.
  */

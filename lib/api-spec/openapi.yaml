@@ -5576,7 +5576,7 @@ paths:
     post:
       operationId: processMeetingMedia
       tags: [meeting-notes]
-      summary: OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+      summary: OCR a handwritten-note image or transcribe a meeting recording or dictated voice note already uploaded to private object storage.
       requestBody:
         required: true
         content:
@@ -6271,6 +6271,12 @@ paths:
             in: query,
             schema: { type: boolean },
             description: "Exclude physical meetings a CRM user marked as not needing notes.",
+          }
+        - {
+            name: crmMatchedOnly,
+            in: query,
+            schema: { type: boolean },
+            description: "Exclude calendar events that have no matched CRM person, organization, or household. Used by the Meetings work queue; unmatched trip-calendar evidence remains stored and available elsewhere.",
           }
         - {
             name: startAfter,
@@ -7510,7 +7516,7 @@ paths:
     post:
       operationId: adminApplyQuickbooksRuleToPending
       tags: [admin]
-      summary: Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+      summary: Preview or apply a single rule to currently-pending QuickBooks payments and wholly unresolved bank deposits (admin only). Set dryRun=true to get a match count before committing.
       parameters: [{ $ref: "#/components/parameters/IdPath" }]
       requestBody:
         {
@@ -24834,6 +24840,10 @@ components:
           pinnedFiltered,
           minScore,
           maxScore,
+          lastIngestStartedAt,
+          lastIngestFinishedAt,
+          lastIngestStatus,
+          lastIngestError,
         ]
       properties:
         canRun:
@@ -24855,6 +24865,15 @@ components:
         pinnedFiltered: { type: integer }
         minScore: { type: [number, "null"] }
         maxScore: { type: [number, "null"] }
+        lastIngestStartedAt: { type: string, format: date-time, nullable: true }
+        lastIngestFinishedAt: { type: string, format: date-time, nullable: true }
+        lastIngestStatus:
+          {
+            type: string,
+            nullable: true,
+            description: "Status of the most recent scheduled media ingest (running, ok, or error).",
+          }
+        lastIngestError: { type: string, nullable: true }
     MediaRelevanceBackfillStartResult:
       type: object
       required: [started, message]
@@ -25986,7 +26005,7 @@ components:
           }
     MeetingArtifactKind:
       type: string
-      enum: [handwritten_notes, audio_recording]
+      enum: [handwritten_notes, audio_recording, voice_dictation]
     MeetingArtifact:
       type: object
       required:

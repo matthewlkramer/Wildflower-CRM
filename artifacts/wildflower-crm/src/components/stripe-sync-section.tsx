@@ -1,11 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useRunStripeSync,
+  useGetStripeSyncStatus,
   useResyncStripeFull,
   useGetStripeResyncStatus,
   useGetUntiedStripePayoutDiagnostic,
   getGetStripeResyncStatusQueryKey,
+  getGetStripeSyncStatusQueryKey,
   getGetUntiedStripePayoutDiagnosticQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +47,7 @@ export default function StripeSyncSection() {
   const syncNow = useRunStripeSync({
     mutation: {
       onSuccess: (data) => {
+        void qc.invalidateQueries({ queryKey: getGetStripeSyncStatusQueryKey() });
         toast({
           title: "Stripe sync complete",
           description: data.ran
@@ -60,6 +63,10 @@ export default function StripeSyncSection() {
         });
       },
     },
+  });
+
+  const syncStatusQ = useGetStripeSyncStatus({
+    query: { queryKey: getGetStripeSyncStatusQueryKey() },
   });
 
   const resyncStatusQ = useGetStripeResyncStatus({
@@ -102,6 +109,11 @@ export default function StripeSyncSection() {
 
   const resync = resyncStatusQ.data;
   const resyncRunning = resync?.status === "running" || resyncFull.isPending;
+  useEffect(() => {
+    if (resync?.status === "done" || resync?.status === "error") {
+      void qc.invalidateQueries({ queryKey: getGetStripeSyncStatusQueryKey() });
+    }
+  }, [qc, resync?.finishedAt, resync?.status]);
 
   return (
     <Card data-testid="stripe-sync-section">
@@ -115,6 +127,20 @@ export default function StripeSyncSection() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm" data-testid="stripe-last-sync">
+          <span className="font-medium">Last Stripe sync: </span>
+          {syncStatusQ.isLoading ? (
+            <span className="text-muted-foreground">Loading…</span>
+          ) : syncStatusQ.data?.lastRunAt ? (
+            <span className={syncStatusQ.data.lastRunStatus === "error" ? "text-destructive" : "text-muted-foreground"}>
+              {new Date(syncStatusQ.data.lastRunAt).toLocaleString()}
+              {syncStatusQ.data.lastRunStatus ? ` · ${syncStatusQ.data.lastRunStatus}` : ""}
+              {syncStatusQ.data.lastError ? ` · ${syncStatusQ.data.lastError}` : ""}
+            </span>
+          ) : (
+            <span className="text-muted-foreground">Never</span>
+          )}
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => syncNow.mutate()}

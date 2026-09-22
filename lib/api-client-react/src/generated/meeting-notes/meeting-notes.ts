@@ -586,7 +586,7 @@ export const useDraftMeetingFollowUp = <TError = ErrorType<NotFoundResponse | vo
       return useMutation(getDraftMeetingFollowUpMutationOptions(options));
     }
     /**
- * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ * @summary OCR a handwritten-note image or transcribe a meeting recording or dictated voice note already uploaded to private object storage.
  */
 export const getProcessMeetingMediaUrl = () => {
 
@@ -643,7 +643,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type ProcessMeetingMediaMutationError = ErrorType<BadRequestResponse | void>
 
     /**
- * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ * @summary OCR a handwritten-note image or transcribe a meeting recording or dictated voice note already uploaded to private object storage.
  */
 export const useProcessMeetingMedia = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof processMeetingMedia>>, TError,{data: BodyType<ProcessMeetingMediaBody>}, TContext>, request?: SecondParameter<typeof customFetch>}

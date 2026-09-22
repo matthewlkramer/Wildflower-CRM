@@ -6,7 +6,11 @@ import {
   tasks,
   users,
 } from "@workspace/db/schema";
-import type { MeetingActionItem, MeetingArtifact } from "@workspace/db/schema";
+import type {
+  MeetingActionItem,
+  MeetingArtifact,
+  MeetingArtifactKind,
+} from "@workspace/db/schema";
 import { and, desc, count, eq, or, sql, type SQL } from "drizzle-orm";
 import {
   ListMeetingNotesQueryParams,
@@ -51,6 +55,12 @@ async function validateMeetingArtifacts(artifacts: MeetingArtifact[]) {
     }
     await objectStorage.getObjectEntityFile(artifact.objectPath);
   }
+}
+
+function meetingArtifactSourceLabel(kind: MeetingArtifactKind): string {
+  if (kind === "handwritten_notes") return "Handwritten notes";
+  if (kind === "voice_dictation") return "Dictated voice notes";
+  return "Recorded meeting";
 }
 
 router.get(
@@ -195,7 +205,7 @@ router.post(
       body.transcript?.trim() || "",
       ...artifacts.map((artifact) =>
         artifact.transcript.trim()
-          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recorded meeting"} (${artifact.fileName}):\n${artifact.transcript.trim()}`
+          ? `${meetingArtifactSourceLabel(artifact.kind)} (${artifact.fileName}):\n${artifact.transcript.trim()}`
           : "",
       ),
     ].filter(Boolean);
@@ -289,8 +299,9 @@ router.patch(
     if (body.aiSummary !== undefined) patch.aiSummary = body.aiSummary;
     if (body.actionItems !== undefined) patch.actionItems = body.actionItems;
     if (body.artifacts !== undefined) {
+      const incomingArtifacts = body.artifacts as MeetingArtifact[];
       try {
-        await validateMeetingArtifacts(body.artifacts as MeetingArtifact[]);
+        await validateMeetingArtifacts(incomingArtifacts);
       } catch (error) {
         res.status(400).json({
           error: "validation_error",
@@ -301,7 +312,57 @@ router.patch(
         });
         return;
       }
-      patch.artifacts = body.artifacts;
+      const existingArtifactIds = new Set(
+        ((existing.artifacts ?? []) as MeetingArtifact[]).map(
+          (artifact) => artifact.id,
+        ),
+      );
+      const newDictations = incomingArtifacts.filter(
+        (artifact) =>
+          artifact.kind === "voice_dictation" &&
+          !existingArtifactIds.has(artifact.id) &&
+          artifact.transcript.trim(),
+      );
+      if (
+        newDictations.length > 0 &&
+        body.aiSummary === undefined &&
+        body.actionItems === undefined
+      ) {
+        const notes =
+          body.manualNotes !== undefined
+            ? (body.manualNotes?.trim() ?? "")
+            : (existing.manualNotes?.trim() ?? "");
+        const summaryInput = [
+          notes ? `Staff notes:\n${notes}` : "",
+          existing.aiSummary
+            ? `Existing meeting summary:\n${existing.aiSummary}`
+            : "",
+          ...incomingArtifacts.map((artifact) =>
+            artifact.transcript.trim()
+              ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript.trim()}`
+              : "",
+          ),
+        ]
+          .filter(Boolean)
+          .join("\n\n");
+        const ai = await summarizeMeeting(summaryInput);
+        patch.aiSummary = ai.summary;
+        patch.actionItems = ai.actionItems;
+        if (!existing.summaryOnly) {
+          patch.rawTranscript = [
+            existing.rawTranscript?.trim() ?? "",
+            ...newDictations.map(
+              (artifact) =>
+                `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript.trim()}`,
+            ),
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+        }
+      }
+      patch.artifacts = existing.summaryOnly
+        ? incomingArtifacts.map((artifact) => ({ ...artifact, transcript: "" }))
+        : incomingArtifacts;
     }
     if (body.personId !== undefined) patch.personId = body.personId;
     if (body.organizationId !== undefined)
@@ -434,7 +495,7 @@ router.post(
       note.rawTranscript ? `Transcript:\n${note.rawTranscript}` : "",
       ...sourceArtifacts.map((artifact) =>
         artifact.transcript
-          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recording transcript"}:\n${artifact.transcript}`
+          ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript}`
           : "",
       ),
       (note.actionItems as MeetingActionItem[] | null)?.length
@@ -474,7 +535,7 @@ router.post(
       note.rawTranscript ? `Transcript:\n${note.rawTranscript}` : "",
       ...artifacts.map((artifact) =>
         artifact.transcript
-          ? `${artifact.kind === "handwritten_notes" ? "Handwritten notes" : "Recording transcript"}:\n${artifact.transcript}`
+          ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript}`
           : "",
       ),
       actionItems.length

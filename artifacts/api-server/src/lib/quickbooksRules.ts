@@ -82,6 +82,29 @@ export type RuleEvalResult =
       targetFundableProjectId: string | null;
     };
 
+/**
+ * Present an unresolved bank deposit to the same text-rule engine used for
+ * staged QuickBooks payments. Bank evidence has no payer/item fields, but its
+ * reference, memo, account, and location are authoritative searchable text.
+ */
+export function bankDepositClassifierInput(deposit: {
+  amount: string;
+  account: string | null;
+  location: string | null;
+  reference: string | null;
+  memo: string | null;
+}): ClassifierInput {
+  return {
+    amount: deposit.amount,
+    payerName: null,
+    lineItemNames: [],
+    lineAccountNames: deposit.account ? [deposit.account] : [],
+    rawReference: [deposit.reference, deposit.memo].filter(Boolean).join(" "),
+    lineDescription: deposit.memo,
+    lineClasses: deposit.location ? [deposit.location] : [],
+  };
+}
+
 function normalize(value: string): string {
   return value.trim().toLowerCase();
 }

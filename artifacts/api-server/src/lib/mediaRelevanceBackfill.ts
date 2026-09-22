@@ -1,5 +1,9 @@
 import { db, pool } from "@workspace/db";
-import { mediaMentions } from "@workspace/db/schema";
+import {
+  MEDIA_INGEST_STATE_ID,
+  mediaIngestState,
+  mediaMentions,
+} from "@workspace/db/schema";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import { logger } from "./logger";
 import {
@@ -32,6 +36,10 @@ export interface MediaRelevanceBackfillStatus {
   pinnedFiltered: number;
   minScore: number | null;
   maxScore: number | null;
+  lastIngestStartedAt: string | null;
+  lastIngestFinishedAt: string | null;
+  lastIngestStatus: string | null;
+  lastIngestError: string | null;
 }
 
 /**
@@ -174,19 +182,31 @@ export function startMediaRelevanceBackfill(): boolean {
 }
 
 export async function getMediaRelevanceBackfillStatus(): Promise<MediaRelevanceBackfillStatus> {
-  const [row] = await db
-    .select({
-      total: sql<number>`count(*)::int`,
-      canonicalized: sql<number>`count(*) filter (where ${mediaMentions.canonicalUrl} is not null)::int`,
-      scored: sql<number>`count(*) filter (where ${mediaMentions.relevanceScore} is not null)::int`,
-      unscored: sql<number>`count(*) filter (where ${mediaMentions.relevanceScore} is null)::int`,
-      filtered: sql<number>`count(*) filter (where ${mediaMentions.isFiltered} = true)::int`,
-      pinned: sql<number>`count(*) filter (where ${mediaMentions.pinned} = true)::int`,
-      pinnedFiltered: sql<number>`count(*) filter (where ${mediaMentions.pinned} = true and ${mediaMentions.isFiltered} = true)::int`,
-      minScore: sql<number | null>`min(${mediaMentions.relevanceScore})`,
-      maxScore: sql<number | null>`max(${mediaMentions.relevanceScore})`,
-    })
-    .from(mediaMentions);
+  const [[row], [ingest]] = await Promise.all([
+    db
+      .select({
+        total: sql<number>`count(*)::int`,
+        canonicalized: sql<number>`count(*) filter (where ${mediaMentions.canonicalUrl} is not null)::int`,
+        scored: sql<number>`count(*) filter (where ${mediaMentions.relevanceScore} is not null)::int`,
+        unscored: sql<number>`count(*) filter (where ${mediaMentions.relevanceScore} is null)::int`,
+        filtered: sql<number>`count(*) filter (where ${mediaMentions.isFiltered} = true)::int`,
+        pinned: sql<number>`count(*) filter (where ${mediaMentions.pinned} = true)::int`,
+        pinnedFiltered: sql<number>`count(*) filter (where ${mediaMentions.pinned} = true and ${mediaMentions.isFiltered} = true)::int`,
+        minScore: sql<number | null>`min(${mediaMentions.relevanceScore})`,
+        maxScore: sql<number | null>`max(${mediaMentions.relevanceScore})`,
+      })
+      .from(mediaMentions),
+    db
+      .select({
+        startedAt: mediaIngestState.lastRunStartedAt,
+        finishedAt: mediaIngestState.lastRunFinishedAt,
+        status: mediaIngestState.lastStatus,
+        error: mediaIngestState.lastError,
+      })
+      .from(mediaIngestState)
+      .where(eq(mediaIngestState.id, MEDIA_INGEST_STATE_ID))
+      .limit(1),
+  ]);
 
   return {
     running: inFlight !== null,
@@ -199,5 +219,9 @@ export async function getMediaRelevanceBackfillStatus(): Promise<MediaRelevanceB
     pinnedFiltered: Number(row?.pinnedFiltered ?? 0),
     minScore: row?.minScore == null ? null : Number(row.minScore),
     maxScore: row?.maxScore == null ? null : Number(row.maxScore),
+    lastIngestStartedAt: ingest?.startedAt?.toISOString() ?? null,
+    lastIngestFinishedAt: ingest?.finishedAt?.toISOString() ?? null,
+    lastIngestStatus: ingest?.status ?? null,
+    lastIngestError: ingest?.error ?? null,
   };
 }

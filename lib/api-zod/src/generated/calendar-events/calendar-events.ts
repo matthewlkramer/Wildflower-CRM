@@ -24,6 +24,7 @@ export const ListCalendarEventsQueryParams = zod.object({
   "includeLinkedPeople": zod.coerce.boolean().optional().describe('With organizationId, also include calendar events matched to people who hold a current role at that organization.'),
   "householdId": zod.coerce.string().optional(),
   "excludeNotesNotNeeded": zod.coerce.boolean().optional().describe('Exclude physical meetings a CRM user marked as not needing notes.'),
+  "crmMatchedOnly": zod.coerce.boolean().optional().describe('Exclude calendar events that have no matched CRM person, organization, or household. Used by the Meetings work queue; unmatched trip-calendar evidence remains stored and available elsewhere.'),
   "startAfter": zod.coerce.string().datetime({}).optional().describe('Only events with startAt >= this timestamp.'),
   "startBefore": zod.coerce.string().datetime({}).optional().describe('Only events with startAt < this timestamp.'),
   "order": zod.enum(['asc', 'desc']).default(listCalendarEventsQueryOrderDefault).describe('Sort by startAt. Default desc (most recent first).'),

@@ -140,7 +140,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const NavLinks = ({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) => (
-    <nav className="space-y-1">
+    <nav className="space-y-0.5" data-testid="primary-navigation">
       {navItems
         .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
         .map((item) => {
@@ -149,12 +149,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div
               key={`section-${item.section}`}
               role="separator"
-              className="mx-auto my-3 h-px w-6 bg-sidebar-border"
+              className="mx-auto my-2 h-px w-6 bg-sidebar-border"
             />
           ) : (
             <div
               key={`section-${item.section}`}
-              className={`pb-1 pt-5 text-[11px] font-bold uppercase tracking-widest text-sidebar-foreground/50 ${item.indent ? "pl-6 pr-3" : "px-3"}`}
+              className={`pb-0.5 pt-3 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/50 ${item.indent ? "pl-6 pr-3" : "px-3"}`}
             >
               {item.section}
             </div>
@@ -169,7 +169,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             href={item.href}
             title={collapsed ? item.label : undefined}
             onClick={onNavigate}
-            className={`group flex items-center gap-3 rounded-lg py-2 text-sm font-medium transition-all duration-150 ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
+            className={`group flex items-center gap-3 rounded-lg py-1.5 text-sm font-medium transition-all duration-150 ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
           >
             <Icon className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
             {collapsed ? null : item.label}
@@ -210,10 +210,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             )}
           </Button>
         </div>
-        <div className={`flex-1 overflow-y-auto ${collapsed ? "p-2" : "p-4"}`}>
+        <div className={`flex-1 overflow-y-auto ${collapsed ? "p-2" : "p-3"}`}>
           <NavLinks collapsed={collapsed} />
         </div>
-        <div className={`border-t border-sidebar-border ${collapsed ? "p-2" : "p-4"}`}>
+        <div className={`border-t border-sidebar-border ${collapsed ? "p-2" : "p-3"}`}>
           {collapsed ? (
             <div className="flex flex-col items-center gap-2">
               <Avatar className="h-8 w-8 border border-sidebar-border">
@@ -277,7 +277,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 <div className="flex h-16 shrink-0 items-center border-b border-sidebar-border px-4">
                   <BrandLockup />
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto p-4">
+                <div className="min-h-0 flex-1 overflow-y-auto p-3">
                   <NavLinks onNavigate={() => setMobileOpen(false)} />
                 </div>
                 <div className="shrink-0 border-t border-sidebar-border p-4">
