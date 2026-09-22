@@ -76,6 +76,7 @@ export type CandidateSource =
 export type StagedPaymentExclusionReason =
   | "zero_amount"
   | "membership"
+  | "lease_guaranty"
   | "interest"
   | "tax_refund"
   | "other_revenue"

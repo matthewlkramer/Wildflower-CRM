@@ -142,6 +142,7 @@ router.get(
       note_payable: 0,
       miscoded_withdrawal: 0,
       membership: 0,
+      lease_guaranty: 0,
       interest: 0,
       // `government_reimbursement` no longer excludes (rows flow into the queue);
       // kept here so any legacy excluded rows still surface in the summary.

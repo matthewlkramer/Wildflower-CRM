@@ -206,7 +206,7 @@ export function FeedbackDialog() {
       >
         <DialogContent
           ref={dialogRef}
-          className="max-w-2xl"
+          className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto"
           overlayClassName="bg-black/20 backdrop-blur-none"
           style={{
             transform: `translate(calc(-50% + ${dialogOffset.x}px), calc(-50% + ${dialogOffset.y}px))`,

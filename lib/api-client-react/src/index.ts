@@ -66,3 +66,5 @@ export * from './generated/donor-routing/donor-routing';
 export * from './generated/newsletter/newsletter';
 export * from './generated/trip-plans/trip-plans';
 export * from './generated/feedback/feedback';
+export * from './generated/integrations/integrations';
+export * from './generated/grant-terms/grant-terms';

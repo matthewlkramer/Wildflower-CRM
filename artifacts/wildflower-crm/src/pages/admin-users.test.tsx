@@ -97,10 +97,10 @@ describe("admin Users page", () => {
     expect(host.textContent).toContain("Only admins");
     expect(host.querySelector("button")).toBeNull();
   });
-  it("lists all users, disables self-deactivation, and dispatches access changes", async () => {
+  it("defaults to active users, disables self-deactivation, and dispatches access changes", async () => {
     await render();
     expect(api.enabled).toBe(true);
-    expect(host.textContent).toContain("Retired Colleague");
+    expect(host.textContent).not.toContain("Retired Colleague");
     expect(
       host.querySelector<HTMLButtonElement>(
         '[aria-label="Deactivate admin@wildflowerschools.org"]',
@@ -108,6 +108,17 @@ describe("admin Users page", () => {
     ).toBe(true);
     await click('[aria-label="Deactivate colleague@wildflowerschools.org"]');
     expect(api.archive).toHaveBeenCalledWith({ id: "colleague" });
+    await act(async () => {
+      const select = host.querySelector<HTMLSelectElement>(
+        '[aria-label="Filter by access"]',
+      )!;
+      Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        "value",
+      )!.set!.call(select, "inactive");
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(host.textContent).toContain("Retired Colleague");
     await click('[aria-label="Restore retired@wildflowerschools.org"]');
     expect(api.restore).toHaveBeenCalledWith({ id: "retired" });
     await fill('[aria-label="Search users"]', "retired");

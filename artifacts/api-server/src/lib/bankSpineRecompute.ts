@@ -67,6 +67,12 @@ async function refreshQboDerivedDirectPaymentFacts(): Promise<void> {
           WHERE tie.qb_staged_payment_id = sp.id
             AND tie.link_type IN ('charge_qb_tie', 'charge_fee_row')
         )
+        AND NOT EXISTS (
+          SELECT 1
+          FROM bank_deposit_components invoice_component
+          WHERE invoice_component.payment_unit_id = pu.id
+            AND invoice_component.source_invoice_id IS NOT NULL
+        )
         AND (
           pu.kind IS DISTINCT FROM CASE
             WHEN sp.funding_source = 'check' THEN 'check'
@@ -90,6 +96,7 @@ async function refreshQboDerivedDirectPaymentFacts(): Promise<void> {
           updated_at = now()
       FROM staged_payments sp
       WHERE component.source = 'qbo_inferred'
+        AND component.source_invoice_id IS NULL
         AND component.source_staged_payment_id = sp.id
         AND sp.exclusion_reason IS NULL
         AND (sp.funding_source IS NULL OR sp.funding_source <> 'stripe')
@@ -870,6 +877,159 @@ async function runBankSpineRecompute(): Promise<void> {
   //     payment. Consolidate only the unique same-deposit/same-amount shape;
   //     ambiguous equal-amount rows remain untouched for human review.
   await mergeUnambiguousQboDepositLines();
+
+  // 4b-ii. Payments applied to invoices and deposited through a receivable-
+  // labelled line are decomposed at invoice grain. Each invoice-sized piece is
+  // retained in the deposit composition and filed as non-fundraising; any
+  // unmatched balance remains unexplained for a human to review.
+  await db.execute(sql`
+    WITH invoice_rows AS (
+      SELECT
+        sp.id AS staged_payment_id,
+        sl.bank_deposit_id,
+        sp.date_received,
+        sp.qb_currency,
+        sp.funding_source,
+        sp.qb_payment_method,
+        sp.qb_check_number,
+        application.value AS application,
+        application.ordinality,
+        (application.value->>'appliedAmount')::numeric AS applied_amount,
+        (application.value->>'invoiceId') AS invoice_id
+      FROM staged_payments sp
+      JOIN source_links sl
+        ON sl.qb_staged_payment_id = sp.id
+       AND sl.link_type = 'qbo_line_deposit'
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
+          THEN sp.qb_invoice_applications ELSE '[]'::jsonb END
+      )
+        WITH ORDINALITY AS application(value, ordinality)
+      WHERE sp.qb_entity_type = 'payment'
+        AND sp.exclusion_reason IS NULL
+        AND jsonb_typeof(sp.qb_invoice_applications) = 'array'
+        AND concat_ws(' ', sp.raw_reference, sp.line_description,
+          sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
+          ~* 'receiv(able|albe)'
+        AND application.value->>'invoiceId' IS NOT NULL
+        AND application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
+        AND (application.value->>'appliedAmount')::numeric > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components existing
+          WHERE existing.source_staged_payment_id = sp.id
+            AND existing.source_invoice_id = application.value->>'invoiceId'
+        )
+    ),
+    candidates AS (
+      SELECT invoice_rows.*,
+        sum(applied_amount) OVER (
+          PARTITION BY bank_deposit_id
+          ORDER BY staged_payment_id, ordinality
+        ) AS running_total,
+        (SELECT d.amount FROM bank_deposits d
+          WHERE d.id = invoice_rows.bank_deposit_id) AS deposit_amount,
+        (SELECT COALESCE(sum(c.amount), 0) FROM bank_deposit_components c
+          WHERE c.bank_deposit_id = invoice_rows.bank_deposit_id) AS existing_total
+      FROM invoice_rows
+    )
+    INSERT INTO payment_units (
+      id, kind, source_staged_payment_id, gross_amount, net_amount,
+      currency, received_date
+    )
+    SELECT
+      'pu_inv_' || md5(staged_payment_id || ':' || invoice_id),
+      CASE
+        WHEN funding_source = 'check' THEN 'check'
+        WHEN funding_source = 'wire_ach' AND qb_payment_method ILIKE '%wire%' THEN 'wire'
+        WHEN funding_source = 'wire_ach' THEN 'direct_ach'
+        WHEN qb_check_number IS NOT NULL OR qb_payment_method ILIKE '%check%' THEN 'check'
+        ELSE 'other'
+      END::payment_unit_kind,
+      staged_payment_id,
+      applied_amount,
+      applied_amount,
+      upper(COALESCE(qb_currency, 'USD')),
+      date_received
+    FROM candidates
+    WHERE existing_total + running_total <= deposit_amount + 0.005
+    ON CONFLICT (id) DO NOTHING
+  `);
+
+  await db.execute(sql`
+    WITH invoice_rows AS (
+      SELECT
+        sp.id AS staged_payment_id,
+        sl.bank_deposit_id,
+        application.value AS application,
+        application.ordinality,
+        (application.value->>'appliedAmount')::numeric AS applied_amount,
+        (application.value->>'invoiceId') AS invoice_id
+      FROM staged_payments sp
+      JOIN source_links sl
+        ON sl.qb_staged_payment_id = sp.id
+       AND sl.link_type = 'qbo_line_deposit'
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
+          THEN sp.qb_invoice_applications ELSE '[]'::jsonb END
+      )
+        WITH ORDINALITY AS application(value, ordinality)
+      WHERE sp.qb_entity_type = 'payment'
+        AND sp.exclusion_reason IS NULL
+        AND jsonb_typeof(sp.qb_invoice_applications) = 'array'
+        AND concat_ws(' ', sp.raw_reference, sp.line_description,
+          sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
+          ~* 'receiv(able|albe)'
+        AND application.value->>'invoiceId' IS NOT NULL
+        AND application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
+        AND (application.value->>'appliedAmount')::numeric > 0
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components existing
+          WHERE existing.source_staged_payment_id = sp.id
+            AND existing.source_invoice_id = application.value->>'invoiceId'
+        )
+    ),
+    candidates AS (
+      SELECT invoice_rows.*,
+        sum(applied_amount) OVER (
+          PARTITION BY bank_deposit_id
+          ORDER BY staged_payment_id, ordinality
+        ) AS running_total,
+        (SELECT d.amount FROM bank_deposits d
+          WHERE d.id = invoice_rows.bank_deposit_id) AS deposit_amount,
+        (SELECT COALESCE(sum(c.amount), 0) FROM bank_deposit_components c
+          WHERE c.bank_deposit_id = invoice_rows.bank_deposit_id) AS existing_total
+      FROM invoice_rows
+    )
+    INSERT INTO bank_deposit_components (
+      id, bank_deposit_id, payment_unit_id, amount, source,
+      source_staged_payment_id, source_invoice_id, needs_review,
+      exclusion_reason, classification_source
+    )
+    SELECT
+      'bdc_inv_' || md5(staged_payment_id || ':' || invoice_id),
+      bank_deposit_id,
+      'pu_inv_' || md5(staged_payment_id || ':' || invoice_id),
+      applied_amount,
+      'qbo_inferred',
+      staged_payment_id,
+      invoice_id,
+      false,
+      CASE WHEN EXISTS (
+        SELECT 1
+        FROM jsonb_array_elements_text(
+          COALESCE(application->'lineItemNames', '[]'::jsonb)
+        ) item(name)
+        WHERE lower(trim(item.name)) = 'school contributions'
+      ) THEN 'membership' ELSE 'earned_income' END::staged_payment_exclusion_reason,
+      'auto'
+    FROM candidates
+    WHERE existing_total + running_total <= deposit_amount + 0.005
+      AND EXISTS (
+        SELECT 1 FROM payment_units unit
+        WHERE unit.id = 'pu_inv_' || md5(staged_payment_id || ':' || invoice_id)
+      )
+    ON CONFLICT DO NOTHING
+  `);
 
   // 4c. Provisional check/direct-payment units from QBO deposit-composing rows
   //     (0162 unit scope: not excluded, not a Stripe lump, not a split parent,

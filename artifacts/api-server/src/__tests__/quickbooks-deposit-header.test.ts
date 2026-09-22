@@ -7,7 +7,11 @@ import { deriveStagedPaymentStatus } from "../lib/derivedStatus";
 process.env.DATABASE_URL ??= "postgres://test:test@localhost:5432/test";
 
 const { pullIncomingPayments } = await import("../lib/quickbooksClient");
-const { buildSuperfluousHeaderDelete, buildSuperfluousLineDelete } =
+const {
+  buildSuperfluousHeaderDelete,
+  buildSuperfluousLineDelete,
+  isReceivableInvoicePayment,
+} =
   await import("../lib/quickbooksSync");
 
 /**
@@ -209,6 +213,41 @@ describe("deriveStagedPaymentStatus — deposit_header arm", () => {
         qbEntityType: "deposit_header",
       }),
     ).toBe("excluded");
+  });
+});
+
+describe("isReceivableInvoicePayment", () => {
+  const payment = {
+    qbInvoiceApplications: [{ invoiceId: "I1" }],
+    rawReference: null,
+    lineDescription: null,
+    qbTransactionMemo: null,
+    lineAccountNames: [] as string[],
+  };
+
+  it("recognizes both receivable and the production receivalbe spelling", () => {
+    expect(
+      isReceivableInvoicePayment({
+        ...payment,
+        lineDescription: "Accounts Receivable",
+      }),
+    ).toBe(true);
+    expect(
+      isReceivableInvoicePayment({
+        ...payment,
+        lineDescription: "Receivalbe payment batch",
+      }),
+    ).toBe(true);
+  });
+
+  it("requires an invoice application", () => {
+    expect(
+      isReceivableInvoicePayment({
+        ...payment,
+        qbInvoiceApplications: null,
+        lineDescription: "Accounts Receivable",
+      }),
+    ).toBe(false);
   });
 });
 

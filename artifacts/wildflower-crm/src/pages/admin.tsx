@@ -2699,6 +2699,7 @@ const QB_EXCLUSION_REASONS: StagedPaymentExclusionReason[] = [
   "other_revenue",
   "interest",
   "membership",
+  "lease_guaranty",
   "tax_refund",
   "insurance",
   "expense_refund",
@@ -2778,7 +2779,7 @@ function conditionSummary(r: QuickbooksHandlingRule): string {
     .join(joiner);
 }
 
-function QuickbooksRulesSection() {
+export function QuickbooksRulesSection() {
   const isAdmin = useIsAdmin();
   const { toast } = useToast();
   const qc = useQueryClient();

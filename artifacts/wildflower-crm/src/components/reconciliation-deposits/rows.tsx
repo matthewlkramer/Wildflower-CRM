@@ -91,6 +91,7 @@ const BANK_EXCLUSION_MENU: Array<{
   { label: "Mark as expense refund", reason: "expense_refund" },
   { label: "Mark as COBRA / insurance", reason: "insurance" },
   { label: "Mark as membership fee", reason: "membership" },
+  { label: "Mark as lease guaranty payment", reason: "lease_guaranty" },
   { label: "Mark as service agreement revenue", reason: "earned_income" },
   { label: "Mark as payroll / tax refund", reason: "tax_refund" },
   { label: "Mark as loan repayment", reason: "loan_repayment" },
@@ -727,6 +728,14 @@ function Composition({
               .filter(Boolean)
               .join(" · ")}
           </div>
+          {component.sourceInvoiceId ? (
+            <div className="mt-0.5 text-[10px] text-muted-foreground">
+              Invoice {component.invoiceDocNumber ?? component.sourceInvoiceId}
+              {component.invoicePurpose
+                ? ` · ${component.invoicePurpose}`
+                : ""}
+            </div>
+          ) : null}
         </div>
       ))}
       {!composition.components.length ? (

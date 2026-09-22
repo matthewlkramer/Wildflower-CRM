@@ -878,6 +878,7 @@ export const stagedPaymentExclusionReasonEnum = pgEnum(
     "zero_amount",
     "loan",
     "membership",
+    "lease_guaranty",
     "interest",
     "government_reimbursement",
     "tax_refund",

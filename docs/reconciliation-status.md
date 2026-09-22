@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-09-04
+last_verified: 2026-09-22
 verification_basis: >
   Bank-spine landing and relationship-authority claims verified against code
   on 2026-07-23; unit→gift pointer cutover status re-verified against code on
@@ -42,6 +42,13 @@ reassignment; “Browse unlinked CRM gifts” filters on the canonical
 `payment_units.gift_id` pointer rather than the downstream QBO tie. Composition
 can code either the entire unresolved remainder or a partial payment component,
 leaving any balance unresolved.
+
+Admins can reach the shared QuickBooks handling-rule editor from
+`/reconciliation/rules`. New Broadstreet rows are filed as lease-guaranty
+payments. New invoice-applied payments whose deposit coding contains
+“receivable” (including the observed “receivalbe” spelling) retain structured
+invoice applications; the bank-spine recompute emits excluded invoice-sized
+components and keeps any uncovered deposit balance unresolved.
 
 ## Bank-spine cutover — landed
 

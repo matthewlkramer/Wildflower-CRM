@@ -1,7 +1,7 @@
 /**
- * Central, code-owned rules for auto-excluding "noise" QuickBooks payments from
- * the review queue. There is intentionally NO user-editable rules admin UI:
- * refining these values is a deliberate code change, reviewed like any other.
+ * Canonical classifier mirrored by the admin-editable QuickBooks handling-rule
+ * engine. The fidelity test keeps this maintenance path and the seeded ingest
+ * rules in lockstep.
  *
  * Several kinds of incoming-money records a fundraiser never wants to turn into a
  * gift are filtered out (marked `excluded`, never deleted, always auditable):
@@ -83,7 +83,8 @@
  * categorically not a gift regardless of how the line is coded.
  *
  * Rules are applied in a deterministic order (see `classifyStagedPayment`):
- * zero_amount → guaranty (payer→earned_income) → loan_repayment (payer) →
+ * zero_amount → Broadstreet (payer→lease_guaranty) → guaranty
+ * (payer→earned_income) → loan_repayment (payer) →
  * fiscally-sponsored entity (→non_wf) → insurance → expensify → returned_wire →
  * note_payable → loan_proceeds → loan_repayment (line) → guaranty
  * (line→earned_income) → interest → tax_refund → other_revenue → earned_income →
@@ -95,6 +96,7 @@
 export type ExclusionReason =
   | "zero_amount"
   | "membership"
+  | "lease_guaranty"
   | "interest"
   | "tax_refund"
   | "other_revenue"
@@ -174,6 +176,9 @@ export const LOAN_REPAYMENT_PAYER_PATTERNS: readonly RegExp[] = [
  * fold into the `earned_income` reason. Payer-identity rule (never a gift).
  */
 export const GUARANTY_PAYER_PATTERNS: readonly RegExp[] = [/\bguaranty\s+fee\b/i];
+
+/** Broadstreet deposits are lease-guaranty payments, never gifts. */
+export const LEASE_GUARANTY_PATTERNS: readonly RegExp[] = [/broadstreet/i];
 
 /**
  * LOAN REPAYMENT markers on the LINE detail (item, posting account, line
@@ -770,6 +775,13 @@ export function classifyStagedPayment(
   //    gift). Payer-identity rule — definitive, no donation guard. Checked before
   //    the loan-repayment payer rule (disjoint markers, but keeps intent clear).
   const payer = input.payerName ?? "";
+  if (
+    allTextFields(input).some((value) =>
+      LEASE_GUARANTY_PATTERNS.some((re) => re.test(value)),
+    )
+  ) {
+    return { excluded: true, reason: "lease_guaranty" };
+  }
   if (payer && GUARANTY_PAYER_PATTERNS.some((re) => re.test(payer))) {
     return { excluded: true, reason: "earned_income" };
   }

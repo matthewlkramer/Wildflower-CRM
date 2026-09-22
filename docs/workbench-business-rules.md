@@ -41,6 +41,15 @@ A single physical record may satisfy more than one semantic role. For example, a
 
 ## 1.1 Component-grain deposit workbench rules
 
+Incoming QuickBooks payments applied to invoices and deposited through an
+Accounts Receivable line are decomposed at invoice grain. Each applied invoice
+amount becomes an excluded deposit component, with the invoice number and
+purpose retained as read-only evidence. A `School Contributions` invoice is
+classified as membership; other invoice-backed receivables are classified as
+earned income. If invoice applications do not cover the whole bank deposit,
+the difference remains an unresolved remainder for human review. Broadstreet
+payments are classified separately as lease-guaranty payments.
+
 The deposit-first surface is anchored by one `bank_deposits` row, but its
 actionable and row-aligned children are components/payment units:
 

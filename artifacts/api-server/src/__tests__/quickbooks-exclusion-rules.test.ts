@@ -68,6 +68,15 @@ describe("classifyStagedPayment", () => {
     ).toBe("earned_income");
   });
 
+  it("classifies Broadstreet as a lease guaranty payment", () => {
+    expect(
+      classifyStagedPayment({
+        ...base,
+        payerName: "BROADSTREET Impact Services",
+      }).reason,
+    ).toBe("lease_guaranty");
+  });
+
   it("does not treat loan-like substrings as loans", () => {
     expect(
       classifyStagedPayment({ ...base, payerName: "Reloaning Partners" })
