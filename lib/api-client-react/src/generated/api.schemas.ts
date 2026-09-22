@@ -44,9 +44,13 @@ export interface Pagination {
 }
 
 export interface EnrichmentSuggestedValue {
-  /** Canonical regions.id value proposed for the field. */
-  regionId: string;
-  label: string;
+  regionId?: string;
+  label?: string;
+  valueString?: string | null;
+  valueNumber?: number | null;
+  valueBoolean?: boolean | null;
+  expectedCurrentValue?: string | null;
+  evidence?: string | null;
 }
 
 export type EnrichmentSuggestionEntityType = typeof EnrichmentSuggestionEntityType[keyof typeof EnrichmentSuggestionEntityType];
@@ -63,6 +67,20 @@ export type EnrichmentSuggestionFieldName = typeof EnrichmentSuggestionFieldName
 export const EnrichmentSuggestionFieldName = {
   currentHomeRegionId: 'currentHomeRegionId',
   regionIds: 'regionIds',
+  website: 'website',
+  emailDomain: 'emailDomain',
+  totalAssets: 'totalAssets',
+  makesPris: 'makesPris',
+  ein: 'ein',
+} as const;
+
+export type EnrichmentSuggestionConfidence = typeof EnrichmentSuggestionConfidence[keyof typeof EnrichmentSuggestionConfidence] | null;
+
+
+export const EnrichmentSuggestionConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
 } as const;
 
 export type EnrichmentSuggestionStatus = typeof EnrichmentSuggestionStatus[keyof typeof EnrichmentSuggestionStatus];
@@ -82,6 +100,7 @@ export interface EnrichmentSuggestion {
   suggestedValue: EnrichmentSuggestedValue;
   sourceLabel: string;
   sourceDetail?: string | null;
+  confidence?: EnrichmentSuggestionConfidence;
   status: EnrichmentSuggestionStatus;
   viewerCanResolve: boolean;
   resolvedAt?: string | null;
@@ -104,6 +123,84 @@ export const ResolveEnrichmentSuggestionBodyStatus = {
 
 export interface ResolveEnrichmentSuggestionBody {
   status: ResolveEnrichmentSuggestionBodyStatus;
+}
+
+export type EnrichmentSuggestionQueueRow = EnrichmentSuggestion & ({
+  recordName: string;
+  currentValue: string | null;
+  suggestedValueDisplay: string;
+  ownerUserId: string | null;
+  viewerCanResolve: boolean;
+  viewerCannotResolveReason: string | null;
+});
+
+export type EnrichmentSuggestionQueueCountsByField = {[key: string]: number};
+
+export interface EnrichmentSuggestionQueue {
+  data: EnrichmentSuggestionQueueRow[];
+  pagination: Pagination;
+  countsByField: EnrichmentSuggestionQueueCountsByField;
+}
+
+export type EnrichmentBulkResolveInputStatus = typeof EnrichmentBulkResolveInputStatus[keyof typeof EnrichmentBulkResolveInputStatus];
+
+
+export const EnrichmentBulkResolveInputStatus = {
+  accepted: 'accepted',
+  dismissed: 'dismissed',
+} as const;
+
+export interface EnrichmentBulkResolveInput {
+  /** @minItems 1 */
+  ids: string[];
+  status: EnrichmentBulkResolveInputStatus;
+}
+
+export interface EnrichmentBulkResolveOutcome {
+  id: string;
+  success: boolean;
+  suggestion?: EnrichmentSuggestion;
+  error?: string | null;
+  message?: string | null;
+}
+
+export interface EnrichmentBulkResolveResult {
+  outcomes: EnrichmentBulkResolveOutcome[];
+  succeeded: number;
+  failed: number;
+}
+
+export interface EnrichmentGenerationResult {
+  examined: number;
+  created: number;
+  skipped: number;
+}
+
+export interface EnrichmentCsvImportInput {
+  /** @minLength 1 */
+  csvText: string;
+}
+
+export type EnrichmentCsvImportRowResultStatus = typeof EnrichmentCsvImportRowResultStatus[keyof typeof EnrichmentCsvImportRowResultStatus];
+
+
+export const EnrichmentCsvImportRowResultStatus = {
+  created: 'created',
+  skipped: 'skipped',
+  invalid: 'invalid',
+} as const;
+
+export interface EnrichmentCsvImportRowResult {
+  row: number;
+  status: EnrichmentCsvImportRowResultStatus;
+  reason: string;
+}
+
+export interface EnrichmentCsvImportResult {
+  created: number;
+  skipped: number;
+  invalid: number;
+  rows: EnrichmentCsvImportRowResult[];
 }
 
 export type RegionType = typeof RegionType[keyof typeof RegionType];
@@ -11323,6 +11420,40 @@ export type GetOrganizationRelationshipSummaryParams = {
  */
 meetingPreparation?: boolean;
 };
+
+export type ListEnrichmentSuggestionsParams = {
+fieldName?: string;
+sourceLabel?: string;
+entityType?: ListEnrichmentSuggestionsEntityType;
+ownerUserId?: string;
+confidence?: ListEnrichmentSuggestionsConfidence;
+/**
+ * @minimum 1
+ * @maximum 10000
+ */
+limit?: LimitParameter;
+/**
+ * @minimum 1
+ */
+page?: PageParameter;
+};
+
+export type ListEnrichmentSuggestionsEntityType = typeof ListEnrichmentSuggestionsEntityType[keyof typeof ListEnrichmentSuggestionsEntityType];
+
+
+export const ListEnrichmentSuggestionsEntityType = {
+  person: 'person',
+  organization: 'organization',
+} as const;
+
+export type ListEnrichmentSuggestionsConfidence = typeof ListEnrichmentSuggestionsConfidence[keyof typeof ListEnrichmentSuggestionsConfidence];
+
+
+export const ListEnrichmentSuggestionsConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
 
 export type ListPaymentIntermediariesParams = {
 search?: string;

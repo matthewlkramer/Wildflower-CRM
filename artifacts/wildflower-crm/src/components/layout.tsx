@@ -33,6 +33,7 @@ import {
   Newspaper,
   CalendarCheck2,
   Plane,
+  WandSparkles,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -112,6 +113,7 @@ const navItems: NavEntry[] = [
   { href: "/cash-flow", label: "Cash flow", icon: HandCoins },
   { href: "/reconciliation/deposits", label: "Reconciliation", icon: Scale },
   { href: "/revenue-extractor", label: "Accounting Data", icon: FileBarChart },
+  { href: "/enrichment-queue", label: "Enrichment Queue", icon: WandSparkles },
   { href: "/data-cleanup", label: "Data Cleanup", icon: ListChecks },
 
   { section: "Admin" },

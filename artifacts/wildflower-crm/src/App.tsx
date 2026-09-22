@@ -29,6 +29,7 @@ import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
 import { AppImprovementsHub, DataCleanupHub } from "@/pages/admin-hubs";
 import RevenueExtractor from "@/pages/revenue-extractor";
+import EnrichmentQueue from "@/pages/enrichment-queue";
 import FundableProjects from "@/pages/fundable-projects";
 import Campaigns from "@/pages/campaigns";
 import Settings from "@/pages/settings";
@@ -263,6 +264,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>
           <Route path="/revenue-extractor"><ProtectedRoute component={RevenueExtractor} /></Route>
           <Route path="/financial-corrections"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/enrichment-queue"><ProtectedRoute component={EnrichmentQueue} /></Route>
           <Route path="/data-cleanup"><ProtectedRoute component={DataCleanupHub} /></Route>
           <Route path="/cleanup-queue"><Redirect to="/data-cleanup?tab=cleanup-queue" /></Route>
           <Route path="/potential-duplicates"><Redirect to="/data-cleanup?tab=potential-duplicates" /></Route>
