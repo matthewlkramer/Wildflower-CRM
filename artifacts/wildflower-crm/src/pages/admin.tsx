@@ -239,7 +239,6 @@ export default function Admin() {
     </div>
   );
 }
-
 // ── Admin: per-user sync health ──────────────────────────────────────────────
 // Admin-only table showing every connected user's Gmail + Calendar sync
 // state. The "Resync now" button calls the same workers the in-process
@@ -793,28 +792,37 @@ function DerivationHealthSection() {
                 className="max-h-80 overflow-y-auto rounded-md border"
                 data-testid="derivation-health-rows"
               >
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-muted/80 backdrop-blur">
-                    <tr className="text-left">
-                      <th className="px-3 py-2 font-medium">Record</th>
-                      <th className="px-3 py-2 font-medium">Field</th>
-                      <th className="px-3 py-2 font-medium">Stored</th>
-                      <th className="px-3 py-2 font-medium">Should be</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table containerClassName="overflow-visible">
+                  <TableHeader className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+                    <TableRow className="text-left hover:bg-transparent">
+                      <TableHead className="px-3 py-2">Record</TableHead>
+                      <TableHead className="px-3 py-2">Field</TableHead>
+                      <TableHead className="px-3 py-2">Stored</TableHead>
+                      <TableHead className="px-3 py-2">Should be</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {r.drift.map((d, i) => (
-                      <tr key={`${d.table}-${d.id}-${d.field}-${i}`} className="border-t">
-                        <td className="max-w-64 truncate px-3 py-1.5" title={`${d.table} ${d.id}`}>
+                      <TableRow key={`${d.table}-${d.id}-${d.field}-${i}`}>
+                        <TableCell
+                          className="max-w-64 truncate px-3 py-1.5"
+                          title={`${d.table} ${d.id}`}
+                        >
                           {d.name || d.id}
-                        </td>
-                        <td className="px-3 py-1.5">{DRIFT_FIELD_LABELS[d.field] ?? d.field}</td>
-                        <td className="px-3 py-1.5 font-mono text-xs">{d.stored ?? "—"}</td>
-                        <td className="px-3 py-1.5 font-mono text-xs">{d.derived ?? "—"}</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="px-3 py-1.5">
+                          {DRIFT_FIELD_LABELS[d.field] ?? d.field}
+                        </TableCell>
+                        <TableCell className="px-3 py-1.5 font-mono text-xs">
+                          {d.stored ?? "—"}
+                        </TableCell>
+                        <TableCell className="px-3 py-1.5 font-mono text-xs">
+                          {d.derived ?? "—"}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
             {r.truncated && (
