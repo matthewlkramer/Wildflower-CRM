@@ -219,7 +219,9 @@ export default function MeetingWorkspacePage() {
   const [manualContact, setManualContact] = useState<PickedContact | null>(
     null,
   );
-  const [recording, setRecording] = useState(false);
+  const [recordingMode, setRecordingMode] = useState<
+    "meeting" | "dictation" | null
+  >(null);
   const [processingLabel, setProcessingLabel] = useState("");
   const [proposals, setProposals] = useState<MeetingNextStepProposal[]>([]);
   const [proposalOpen, setProposalOpen] = useState(false);
@@ -348,11 +350,13 @@ export default function MeetingWorkspacePage() {
 
   async function processFile(
     file: File,
-    kind: "handwritten_notes" | "audio_recording",
+    kind: "handwritten_notes" | "audio_recording" | "voice_dictation",
   ) {
     setProcessingLabel(
       kind === "handwritten_notes"
         ? "Reading handwritten notes…"
+        : kind === "voice_dictation"
+          ? "Transcribing voice notes…"
         : "Transcribing recording…",
     );
     try {
@@ -371,6 +375,8 @@ export default function MeetingWorkspacePage() {
         title:
           kind === "handwritten_notes"
             ? "Handwritten notes transcribed"
+            : kind === "voice_dictation"
+              ? "Voice notes transcribed"
             : "Recording transcribed",
       });
     } catch (error) {
@@ -392,9 +398,10 @@ export default function MeetingWorkspacePage() {
     );
   }
 
-  async function startRecording() {
+  async function startRecording(mode: "meeting" | "dictation") {
     if (
-      !navigator.mediaDevices?.getDisplayMedia ||
+      !navigator.mediaDevices?.getUserMedia ||
+      (mode === "meeting" && !navigator.mediaDevices.getDisplayMedia) ||
       typeof MediaRecorder === "undefined"
     ) {
       toast({
@@ -405,6 +412,7 @@ export default function MeetingWorkspacePage() {
       return;
     }
     if (
+      mode === "meeting" &&
       !window.confirm(
         "Start recording after everyone in the meeting has agreed. The CRM will capture the shared system audio and your microphone.",
       )
@@ -412,29 +420,37 @@ export default function MeetingWorkspacePage() {
       return;
     }
     try {
-      const display = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
-        audio: true,
-      });
+      const display =
+        mode === "meeting"
+          ? await navigator.mediaDevices.getDisplayMedia({
+              video: true,
+              audio: true,
+            })
+          : null;
+      streamsRef.current = display ? [display] : [];
       const microphone = await navigator.mediaDevices.getUserMedia({
         audio: true,
       });
-      const context = new AudioContext();
-      const destination = context.createMediaStreamDestination();
-      if (display.getAudioTracks().length > 0) {
-        context.createMediaStreamSource(display).connect(destination);
+      streamsRef.current.push(microphone);
+      const context = display ? new AudioContext() : null;
+      audioContextRef.current = context;
+      const destination = context?.createMediaStreamDestination() ?? null;
+      if (display && context && destination) {
+        if (display.getAudioTracks().length > 0) {
+          context.createMediaStreamSource(display).connect(destination);
+        }
+        context.createMediaStreamSource(microphone).connect(destination);
       }
-      context.createMediaStreamSource(microphone).connect(destination);
+      const recordingStream = destination?.stream ?? microphone;
       const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : "audio/webm";
-      const recorder = new MediaRecorder(destination.stream, {
+      const recorder = new MediaRecorder(recordingStream, {
         mimeType,
         audioBitsPerSecond: 24_000,
       });
       chunksRef.current = [];
-      streamsRef.current = [display, microphone, destination.stream];
-      audioContextRef.current = context;
+      if (destination) streamsRef.current.push(destination.stream);
       recorderRef.current = recorder;
       recorder.ondataavailable = (item) => {
         if (item.data.size > 0) chunksRef.current.push(item.data);
@@ -448,25 +464,33 @@ export default function MeetingWorkspacePage() {
         void audioContextRef.current?.close();
         audioContextRef.current = null;
         recorderRef.current = null;
-        setRecording(false);
+        setRecordingMode(null);
         if (blob.size > 0) {
           const stamp = new Date().toISOString().replace(/[:.]/g, "-");
           void processFile(
-            new File([blob], `meeting-${stamp}.webm`, { type: "audio/webm" }),
-            "audio_recording",
+            new File(
+              [blob],
+              `${mode === "dictation" ? "voice-notes" : "meeting"}-${stamp}.webm`,
+              { type: "audio/webm" },
+            ),
+            mode === "dictation" ? "voice_dictation" : "audio_recording",
           );
         }
       };
-      display.getVideoTracks()[0]?.addEventListener("ended", () => {
+      display?.getVideoTracks()[0]?.addEventListener("ended", () => {
         if (recorder.state === "recording") recorder.stop();
       });
       recorder.start(1_000);
-      setRecording(true);
+      setRecordingMode(mode);
     } catch (error) {
       streamsRef.current.forEach((stream) =>
         stream.getTracks().forEach((track) => track.stop()),
       );
-      setRecording(false);
+      streamsRef.current = [];
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
+      recorderRef.current = null;
+      setRecordingMode(null);
       toast({
         title: "Recording did not start",
         description:
@@ -805,29 +829,45 @@ export default function MeetingWorkspacePage() {
                     item.target.value = "";
                   }}
                 />
-                {recording ? (
+                {recordingMode ? (
                   <Button
                     type="button"
                     variant="destructive"
                     onClick={stopRecording}
                   >
-                    <CircleStop className="mr-1 h-4 w-4" /> Stop recording
+                    <CircleStop className="mr-1 h-4 w-4" />
+                    {recordingMode === "dictation"
+                      ? "Stop voice notes"
+                      : "Stop recording"}
                   </Button>
                 ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => void startRecording()}
-                    disabled={Boolean(processingLabel)}
-                  >
-                    <Mic className="mr-1 h-4 w-4" /> Record meeting
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void startRecording("meeting")}
+                      disabled={Boolean(processingLabel)}
+                    >
+                      <Mic className="mr-1 h-4 w-4" /> Record meeting
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void startRecording("dictation")}
+                      disabled={Boolean(processingLabel)}
+                      data-testid="button-dictate-voice-notes"
+                    >
+                      <AudioLines className="mr-1 h-4 w-4" /> Dictate voice
+                      notes
+                    </Button>
+                  </>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">
                 Recording asks you to choose the meeting window with system
                 audio and then enables your microphone. The CRM does not join
-                the video call.
+                the video call. Dictate voice notes uses only your microphone
+                and folds the transcription into the saved meeting summary.
               </p>
               {processingLabel ? (
                 <p className="text-sm text-primary">{processingLabel}</p>
@@ -856,6 +896,8 @@ export default function MeetingWorkspacePage() {
                       <Badge variant="secondary">
                         {artifact.kind === "handwritten_notes"
                           ? "Photo"
+                          : artifact.kind === "voice_dictation"
+                            ? "Voice notes"
                           : "Recording"}
                       </Badge>
                     </div>

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MEETING_HISTORY_DAYS,
   meetingHistoryStart,
+  meetingStaffNames,
   shouldShowNoNotesAction,
 } from "./meetings";
 import { newMeetingWorkspaceHref } from "@/components/meeting-launcher-dialog";
@@ -22,6 +23,30 @@ describe("meetings list actions", () => {
 
   it("does not show No notes after meeting notes exist", () => {
     expect(shouldShowNoNotesAction({ hasMeetingNotes: true })).toBe(false);
+  });
+
+  it("lists every team attendee, including the calendar owner", () => {
+    expect(
+      meetingStaffNames(
+        {
+          calendarUserId: "matthew",
+          attendeeEmails: ["erica@wildflowerschools.org", "donor@example.org"],
+          organizerEmail: "matthew@wildflowerschools.org",
+        },
+        [
+          {
+            id: "matthew",
+            email: "matthew@wildflowerschools.org",
+            displayName: "Matthew Kramer",
+          },
+          {
+            id: "erica",
+            email: "erica@wildflowerschools.org",
+            displayName: "Erica Kluet",
+          },
+        ],
+      ),
+    ).toBe("Matthew Kramer, Erica Kluet");
   });
 });
 

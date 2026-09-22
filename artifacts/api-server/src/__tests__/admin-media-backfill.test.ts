@@ -58,6 +58,10 @@ beforeEach(() => {
     pinnedFiltered: 0,
     minScore: null,
     maxScore: null,
+    lastIngestStartedAt: "2026-09-22T10:00:00.000Z",
+    lastIngestFinishedAt: "2026-09-22T10:01:00.000Z",
+    lastIngestStatus: "ok",
+    lastIngestError: null,
   });
   startBackfill.mockReset();
 });

@@ -1413,7 +1413,7 @@ export const useAdminDeleteQuickbooksRule = <TError = ErrorType<void | NotFoundR
       return useMutation(getAdminDeleteQuickbooksRuleMutationOptions(options));
     }
     /**
- * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ * @summary Preview or apply a single rule to currently-pending QuickBooks payments and wholly unresolved bank deposits (admin only). Set dryRun=true to get a match count before committing.
  */
 export const getAdminApplyQuickbooksRuleToPendingUrl = (id: string,) => {
 
@@ -1471,7 +1471,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type AdminApplyQuickbooksRuleToPendingMutationError = ErrorType<BadRequestResponse | void | NotFoundResponse>
 
     /**
- * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ * @summary Preview or apply a single rule to currently-pending QuickBooks payments and wholly unresolved bank deposits (admin only). Set dryRun=true to get a match count before committing.
  */
 export const useAdminApplyQuickbooksRuleToPending = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof adminApplyQuickbooksRuleToPending>>, TError,{id: string;data: BodyType<ApplyRuleToPendingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}

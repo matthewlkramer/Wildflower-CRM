@@ -45,6 +45,43 @@ export function shouldShowNoNotesAction(
   return !event.hasMeetingNotes;
 }
 
+export function meetingStaffNames(
+  event: Pick<
+    CalendarEvent,
+    "attendeeEmails" | "organizerEmail" | "calendarUserId"
+  >,
+  team: Array<{
+    id: string;
+    email: string;
+    firstName?: string | null;
+    lastName?: string | null;
+    displayName?: string | null;
+  }>,
+): string {
+  const participantEmails = new Set(
+    [...(event.attendeeEmails ?? []), event.organizerEmail]
+      .filter((email): email is string => Boolean(email?.trim()))
+      .map((email) => email.trim().toLowerCase()),
+  );
+  const names = team
+    .filter(
+      (member) =>
+        member.id === event.calendarUserId ||
+        participantEmails.has(member.email.trim().toLowerCase()),
+    )
+    .map((member) => {
+      const display = member.displayName?.trim();
+      if (display) return display;
+      const full = [member.firstName, member.lastName]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      return full || member.email;
+    })
+    .filter((name, index, all) => Boolean(name) && all.indexOf(name) === index);
+  return names.join(", ");
+}
+
 function meetingDate(event: CalendarEvent): string {
   const start = new Date(event.startAt);
   const end = event.endAt ? new Date(event.endAt) : null;
@@ -100,13 +137,13 @@ function StatusBadge({
 function MeetingRow({
   event,
   future,
-  ownerName,
+  staffNames,
   dismissing,
   onNoNotes,
 }: {
   event: CalendarEvent;
   future: boolean;
-  ownerName: string;
+  staffNames: string;
   dismissing: boolean;
   onNoNotes: () => void;
 }) {
@@ -120,7 +157,7 @@ function MeetingRow({
           <StatusBadge event={event} future={future} />
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          {meetingDate(event)} · {ownerName}
+          {meetingDate(event)} · {staffNames || "Unknown team member"}
         </p>
         {event.location ? (
           <p className="mt-1 truncate text-xs text-muted-foreground">
@@ -176,15 +213,11 @@ export default function MeetingsPage() {
   const nowIso = now.toISOString();
   const historyStart = meetingHistoryStart(now);
   const { data: users } = useListUsers();
-  const userNames = useMemo(
-    () =>
-      new Map((users ?? []).map((user) => [user.id, userDisplayName(user)])),
-    [users],
-  );
   const shared = {
     search: search.trim() || undefined,
     calendarUserId: ownerId === "all" ? undefined : ownerId,
     excludeNotesNotNeeded: true,
+    crmMatchedOnly: true,
     limit: 500,
   };
   const future = useListCalendarEvents(
@@ -347,10 +380,7 @@ export default function MeetingsPage() {
                       key={event.id}
                       event={event}
                       future={tab === "future"}
-                      ownerName={
-                        userNames.get(event.calendarUserId) ??
-                        "Unknown team member"
-                      }
+                      staffNames={meetingStaffNames(event, users ?? [])}
                       dismissing={
                         dismissNotes.isPending &&
                         dismissNotes.variables?.id === event.id

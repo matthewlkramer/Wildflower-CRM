@@ -44,7 +44,7 @@ export const ListMeetingNotesResponse = zod.object({
 })).nullish(),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -73,7 +73,7 @@ export const CreateMeetingNoteBody = zod.object({
   "manualNotes": zod.string().optional().describe('Verbatim notes typed during or after the meeting.'),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -111,7 +111,7 @@ export const GetMeetingNoteResponse = zod.object({
 })).nullish(),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -146,7 +146,7 @@ export const UpdateMeetingNoteBody = zod.object({
 })).nullish(),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -176,7 +176,7 @@ export const UpdateMeetingNoteResponse = zod.object({
 })).nullish(),
   "artifacts": zod.array(zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -239,10 +239,10 @@ export const DraftMeetingFollowUpResponse = zod.object({
 })
 
 /**
- * @summary OCR a handwritten-note image or transcribe a meeting recording already uploaded to private object storage.
+ * @summary OCR a handwritten-note image or transcribe a meeting recording or dictated voice note already uploaded to private object storage.
  */
 export const ProcessMeetingMediaBody = zod.object({
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string().describe('Normalized \/objects\/... path in private object storage.'),
   "fileName": zod.string(),
   "mimeType": zod.string(),
@@ -251,7 +251,7 @@ export const ProcessMeetingMediaBody = zod.object({
 
 export const ProcessMeetingMediaResponse = zod.object({
   "id": zod.string(),
-  "kind": zod.enum(['handwritten_notes', 'audio_recording']),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
   "objectPath": zod.string(),
   "fileName": zod.string(),
   "mimeType": zod.string(),

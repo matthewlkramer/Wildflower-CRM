@@ -84,6 +84,7 @@ beforeAll(async () => {
       startAt,
       summary: `Dismiss me ${RUN}`,
       attendeeEmails: ["Tom@example.org", "turahn@example.org"],
+      matchedPersonIds: [`${RUN}_matched_person`],
       isPrivate: false,
     },
     {
@@ -264,6 +265,16 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
     const sourceEvent = await request(`/api/calendar-events/${BIRTHDAY_EVENT_ID}`);
     expect(sourceEvent.status).toBe(200);
     expect(sourceEvent.json.id).toBe(BIRTHDAY_EVENT_ID);
+  });
+
+  it("can restrict the Meetings queue to CRM-matched events", async () => {
+    const events = await request(
+      `/api/calendar-events?search=${encodeURIComponent(RUN)}&crmMatchedOnly=true&limit=20`,
+    );
+    expect(events.status).toBe(200);
+    expect(events.json.data.map((event: { id: string }) => event.id)).toEqual([
+      EVENT_ID,
+    ]);
   });
 
   it("durably hides every synced copy from the notes queue", async () => {

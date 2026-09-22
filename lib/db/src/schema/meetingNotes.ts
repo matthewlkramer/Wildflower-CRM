@@ -119,7 +119,10 @@ export interface MeetingActionItem {
   promotedTaskId?: string | null;
 }
 
-export type MeetingArtifactKind = "handwritten_notes" | "audio_recording";
+export type MeetingArtifactKind =
+  | "handwritten_notes"
+  | "audio_recording"
+  | "voice_dictation";
 
 export interface MeetingArtifact {
   id: string;

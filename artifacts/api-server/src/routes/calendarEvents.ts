@@ -188,6 +188,13 @@ router.get(
         ),
       );
     }
+    if (parseBoolQuery(req, "crmMatchedOnly") === true) {
+      filters.push(sql`(
+        COALESCE(cardinality(${calendarEvents.matchedPersonIds}), 0) > 0
+        OR COALESCE(cardinality(${calendarEvents.matchedOrganizationIds}), 0) > 0
+        OR COALESCE(cardinality(${calendarEvents.matchedHouseholdIds}), 0) > 0
+      )`);
+    }
     if (q.startAfter) {
       filters.push(gte(calendarEvents.startAt, new Date(q.startAfter)));
     }

@@ -249,7 +249,11 @@ export const AdminGetMediaRelevanceBackfillStatusResponse = zod.object({
   "pinned": zod.number(),
   "pinnedFiltered": zod.number(),
   "minScore": zod.number().nullable(),
-  "maxScore": zod.number().nullable()
+  "maxScore": zod.number().nullable(),
+  "lastIngestStartedAt": zod.string().datetime({}).nullable(),
+  "lastIngestFinishedAt": zod.string().datetime({}).nullable(),
+  "lastIngestStatus": zod.string().nullable().describe('Status of the most recent scheduled media ingest (running, ok, or error).'),
+  "lastIngestError": zod.string().nullable()
 })
 
 /**
@@ -439,7 +443,7 @@ export const AdminDeleteQuickbooksRuleResponse = zod.object({
 })
 
 /**
- * @summary Preview or apply a single rule to currently-pending staged payments (admin only). Set dryRun=true to get a match count before committing.
+ * @summary Preview or apply a single rule to currently-pending QuickBooks payments and wholly unresolved bank deposits (admin only). Set dryRun=true to get a match count before committing.
  */
 export const AdminApplyQuickbooksRuleToPendingParams = zod.object({
   "id": zod.coerce.string()

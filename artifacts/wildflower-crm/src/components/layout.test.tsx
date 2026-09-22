@@ -100,4 +100,12 @@ describe("application layout", () => {
       text.indexOf("Finance & Operations"),
     );
   });
+
+  it("uses compact vertical navigation spacing", async () => {
+    await act(async () => root.render(<Layout>Page content</Layout>));
+
+    const navigation = host.querySelector('[data-testid="primary-navigation"]');
+    expect(navigation?.className).toContain("space-y-0.5");
+    expect(navigation?.querySelector("a")?.className).toContain("py-1.5");
+  });
 });

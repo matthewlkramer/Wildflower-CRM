@@ -353,6 +353,15 @@ function MediaRelevanceBackfillSection() {
                 classifications that remain visible because they are pinned.
               </p>
             ) : null}
+            <p className="text-xs text-muted-foreground" data-testid="media-last-sync">
+              <span className="font-medium text-foreground">Most recent media sync: </span>
+              {status.lastIngestFinishedAt || status.lastIngestStartedAt
+                ? `${fmtTime(status.lastIngestFinishedAt ?? status.lastIngestStartedAt)}${
+                    status.lastIngestStatus ? ` · ${status.lastIngestStatus}` : ""
+                  }`
+                : "never"}
+              {status.lastIngestError ? ` · ${status.lastIngestError}` : ""}
+            </p>
           </>
         )}
 
@@ -3166,19 +3175,18 @@ export function QuickbooksRulesSection() {
       >
         <DialogContent data-testid="qb-rule-apply-dialog">
           <DialogHeader>
-            <DialogTitle>Apply rule to pending payments</DialogTitle>
+            <DialogTitle>Apply rule to pending items</DialogTitle>
             <DialogDescription>
               This will run{" "}
               <strong>{applyTargetRule?.name ?? "this rule"}</strong> against
-              all payments currently in the review queue. Only{" "}
-              <strong>pending</strong> rows (not yet approved, rejected, or
-              excluded) will be affected.
+              pending QuickBooks payments and wholly unresolved bank deposits.
+              Composed or settled deposits are left for component-level review.
             </DialogDescription>
           </DialogHeader>
           {applyPreview && (
             <div className="rounded-md border border-border p-4 space-y-1 text-sm">
               <p>
-                <strong>{applyPreview.matched}</strong> pending payment
+                <strong>{applyPreview.matched}</strong> pending item
                 {applyPreview.matched !== 1 ? "s" : ""} match this rule.
               </p>
               {applyTargetRule?.action === "exclude" && (

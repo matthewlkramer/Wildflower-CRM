@@ -9,8 +9,20 @@ import {
   fundableProjects,
   sourceLinks,
   paymentUnits,
+  bankDeposits,
+  bankDepositComponents,
+  bankDepositExclusions,
+  stripePayouts,
 } from "@workspace/db/schema";
-import { and, eq, getTableColumns, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import { newId } from "./helpers";
 import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
@@ -25,6 +37,7 @@ import {
 import { detectFundingSource } from "./quickbooksFundingSource";
 import {
   evaluateRules,
+  bankDepositClassifierInput,
   type EngineRule,
   type RuleCondition,
   type RuleMatchLogic,
@@ -595,6 +608,106 @@ export async function applyRuleToPendingPayments(
       const did = await applyAutoCreateRuleToRow(row.id, row, result);
       if (did) autoCreated += 1;
       else skipped += 1;
+    }
+  }
+
+  // The reconciliation workbench is bank-deposit-first. An exclude rule must
+  // therefore also see wholly unresolved bank rows, not only QBO staging rows.
+  // Deposits already composed into donor payments or settled by Stripe are
+  // deliberately omitted: those require component/charge-grain decisions.
+  if (rule.action === "exclude") {
+    const openDeposits = await db
+      .select({
+        id: bankDeposits.id,
+        amount: bankDeposits.amount,
+        account: bankDeposits.account,
+        location: bankDeposits.location,
+        reference: bankDeposits.reference,
+        memo: bankDeposits.memo,
+        depositDate: bankDeposits.depositDate,
+        currency: bankDeposits.currency,
+      })
+      .from(bankDeposits)
+      .where(
+        and(
+          notExists(
+            db
+              .select({ id: bankDepositExclusions.id })
+              .from(bankDepositExclusions)
+              .where(eq(bankDepositExclusions.bankDepositId, bankDeposits.id)),
+          ),
+          notExists(
+            db
+              .select({ id: bankDepositComponents.id })
+              .from(bankDepositComponents)
+              .where(eq(bankDepositComponents.bankDepositId, bankDeposits.id)),
+          ),
+          notExists(
+            db
+              .select({ id: stripePayouts.id })
+              .from(stripePayouts)
+              .where(eq(stripePayouts.bankDepositId, bankDeposits.id)),
+          ),
+        ),
+      );
+
+    for (const deposit of openDeposits) {
+      const result = evaluateRules([rule], bankDepositClassifierInput(deposit));
+      if (!result || result.action !== "exclude") continue;
+      matched += 1;
+      if (dryRun) continue;
+      const didExclude = await db.transaction(async (tx) => {
+        const locked = await tx
+          .select({ id: bankDeposits.id })
+          .from(bankDeposits)
+          .where(eq(bankDeposits.id, deposit.id))
+          .for("update")
+          .then((items) => items[0]);
+        if (!locked) return false;
+        const eligibility = await tx.execute(sql`
+          SELECT
+            NOT EXISTS (
+              SELECT 1 FROM bank_deposit_exclusions legacy
+              WHERE legacy.bank_deposit_id = ${deposit.id}
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM bank_deposit_components component
+              WHERE component.bank_deposit_id = ${deposit.id}
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM stripe_payouts payout
+              WHERE payout.bank_deposit_id = ${deposit.id}
+            ) AS eligible
+        `);
+        if (
+          !(eligibility.rows[0] as { eligible: boolean } | undefined)?.eligible
+        )
+          return false;
+
+        const paymentUnitId = `pu_rule_${newId()}`;
+        await tx.insert(paymentUnits).values({
+          id: paymentUnitId,
+          kind: "other",
+          grossAmount: deposit.amount,
+          feeAmount: "0.00",
+          netAmount: deposit.amount,
+          currency: deposit.currency,
+          receivedDate: deposit.depositDate,
+          lifecycle: "received",
+        });
+        await tx.insert(bankDepositComponents).values({
+          id: `bdc_rule_${newId()}`,
+          bankDepositId: deposit.id,
+          paymentUnitId,
+          amount: deposit.amount,
+          source: "manual",
+          needsReview: false,
+          exclusionReason: result.reason,
+          classificationSource: "manual",
+        });
+        return true;
+      });
+      if (didExclude) excluded += 1;
     }
   }
 
