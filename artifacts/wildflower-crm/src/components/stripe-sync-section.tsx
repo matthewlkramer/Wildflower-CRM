@@ -16,6 +16,14 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 
 // Org-wide Stripe payment sync controls (admin-only). Stripe is a pull-only
@@ -195,36 +203,51 @@ export default function StripeSyncSection() {
                     no match.
                   </p>
                   <div className="max-h-96 overflow-auto rounded border">
-                    <table className="w-full text-left text-xs">
-                      <thead className="sticky top-0 bg-muted">
-                        <tr>
-                          <th className="p-2">Payout</th>
-                          <th className="p-2">Amount</th>
-                          <th className="p-2">Arrival</th>
-                          <th className="p-2">Charges</th>
-                          <th className="p-2">QB row</th>
-                          <th className="p-2">Gap (d)</th>
-                          <th className="p-2">Suggested</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                    <Table
+                      className="text-left text-xs"
+                      containerClassName="overflow-visible"
+                    >
+                      <TableHeader className="sticky top-0 z-10 bg-muted">
+                        <TableRow className="hover:bg-transparent">
+                          <TableHead className="p-2">Payout</TableHead>
+                          <TableHead className="p-2">Amount</TableHead>
+                          <TableHead className="p-2">Arrival</TableHead>
+                          <TableHead className="p-2">Charges</TableHead>
+                          <TableHead className="p-2">QB row</TableHead>
+                          <TableHead className="p-2">Gap (d)</TableHead>
+                          <TableHead className="p-2">Suggested</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
                         {diagnostic.rows.map((r) => (
-                          <tr key={r.payoutId} className="border-t">
-                            <td className="p-2 font-mono">{r.payoutId}</td>
-                            <td className="p-2">{r.amount ?? "—"}</td>
-                            <td className="p-2">{r.arrivalDate ?? "—"}</td>
-                            <td className="p-2">{r.chargeCount ?? "—"}</td>
-                            <td className="p-2">
+                          <TableRow key={r.payoutId}>
+                            <TableCell className="p-2 font-mono">
+                              {r.payoutId}
+                            </TableCell>
+                            <TableCell className="p-2">
+                              {r.amount ?? "—"}
+                            </TableCell>
+                            <TableCell className="p-2">
+                              {r.arrivalDate ?? "—"}
+                            </TableCell>
+                            <TableCell className="p-2">
+                              {r.chargeCount ?? "—"}
+                            </TableCell>
+                            <TableCell className="p-2">
                               {r.hasExactQbRow
                                 ? `${r.qbEntityType ?? "?"} (${r.qbDateReceived ?? "?"})`
                                 : "none"}
-                            </td>
-                            <td className="p-2">{r.dateGapDays ?? "—"}</td>
-                            <td className="p-2">{r.suggestedGrain}</td>
-                          </tr>
+                            </TableCell>
+                            <TableCell className="p-2">
+                              {r.dateGapDays ?? "—"}
+                            </TableCell>
+                            <TableCell className="p-2">
+                              {r.suggestedGrain}
+                            </TableCell>
+                          </TableRow>
                         ))}
-                      </tbody>
-                    </table>
+                      </TableBody>
+                    </Table>
                   </div>
                 </>
               ) : (

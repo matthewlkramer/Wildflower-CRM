@@ -194,6 +194,7 @@ export function SortableTH({
   return (
     <TableHead
       ref={thRef}
+      resizable={false}
       className={cn("relative select-none", textAlign, className)}
       style={width ? { width, minWidth: width, maxWidth: width } : undefined}
     >
