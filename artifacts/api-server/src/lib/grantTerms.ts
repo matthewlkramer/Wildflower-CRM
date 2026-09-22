@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import {
+  grantTermSets,
   grantTermOutcomeEvents,
   grantTerms,
   pledgeAllocations,
@@ -110,11 +111,16 @@ export async function applyActiveGrantTermsToAllocations(
   allocationIds: string[],
 ): Promise<void> {
   if (allocationIds.length === 0) return;
-  const [active] = await tx.query.grantTermSets.findMany({
-    where: (sets, { and, eq }) =>
-      and(eq(sets.opportunityId, opportunityId), eq(sets.status, "active")),
-    limit: 1,
-  });
+  const [active] = await tx
+    .select()
+    .from(grantTermSets)
+    .where(
+      and(
+        eq(grantTermSets.opportunityId, opportunityId),
+        eq(grantTermSets.status, "active"),
+      ),
+    )
+    .limit(1);
   if (!active) return;
   await applyGrantTermSetToAllocations(
     tx,
