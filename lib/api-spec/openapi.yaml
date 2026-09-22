@@ -17775,6 +17775,7 @@ components:
           [
             zero_amount,
             membership,
+            lease_guaranty,
             interest,
             tax_refund,
             other_revenue,
@@ -18750,6 +18751,7 @@ components:
               zero_amount,
               loan,
               membership,
+              lease_guaranty,
               interest,
               government_reimbursement,
               tax_refund,
@@ -18771,6 +18773,7 @@ components:
             zero_amount: { type: integer }
             loan: { type: integer }
             membership: { type: integer }
+            lease_guaranty: { type: integer }
             interest: { type: integer }
             government_reimbursement: { type: integer }
             tax_refund: { type: integer }
@@ -22332,6 +22335,14 @@ components:
                 }
               label: { type: string, nullable: true }
               exclusionReason: { type: string, nullable: true }
+              sourceInvoiceId: { type: string, nullable: true }
+              invoiceDocNumber: { type: string, nullable: true }
+              invoicePurpose:
+                {
+                  type: string,
+                  nullable: true,
+                  description: "Purpose copied read-only from the linked QuickBooks invoice.",
+                }
               matchBasis:
                 {
                   type: string,
@@ -22532,6 +22543,7 @@ components:
       enum:
         [
           membership,
+          lease_guaranty,
           loan_repayment,
           loan_proceeds,
           note_payable,

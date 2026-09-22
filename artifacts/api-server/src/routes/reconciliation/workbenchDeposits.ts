@@ -164,6 +164,9 @@ type DepositRow = {
     stagedPaymentId?: string | null;
     label?: string | null;
     exclusionReason?: string | null;
+    sourceInvoiceId?: string | null;
+    invoiceDocNumber?: string | null;
+    invoicePurpose?: string | null;
     matchBasis?: "deposit_header_exact" | "deposit_header_ambiguous" | null;
     qboRecords?: NodeQbRecord[];
   }>;
@@ -1031,6 +1034,29 @@ router.get(
               AND c.source_staged_payment_id IS DISTINCT FROM u.source_staged_payment_id
             ),
             'exclusionReason', c.exclusion_reason,
+            'sourceInvoiceId', c.source_invoice_id,
+            'invoiceDocNumber', (
+              SELECT application.value->>'invoiceDocNumber'
+              FROM staged_payments isp
+              CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(isp.qb_invoice_applications) = 'array'
+                  THEN isp.qb_invoice_applications ELSE '[]'::jsonb END
+              ) application(value)
+              WHERE isp.id = c.source_staged_payment_id
+                AND application.value->>'invoiceId' = c.source_invoice_id
+              LIMIT 1
+            ),
+            'invoicePurpose', (
+              SELECT application.value->>'purpose'
+              FROM staged_payments isp
+              CROSS JOIN LATERAL jsonb_array_elements(
+                CASE WHEN jsonb_typeof(isp.qb_invoice_applications) = 'array'
+                  THEN isp.qb_invoice_applications ELSE '[]'::jsonb END
+              ) application(value)
+              WHERE isp.id = c.source_staged_payment_id
+                AND application.value->>'invoiceId' = c.source_invoice_id
+              LIMIT 1
+            ),
             'countedGiftIds', CASE WHEN u.gift_id IS NULL THEN '[]'::jsonb
               ELSE jsonb_build_array(u.gift_id) END
           ) ORDER BY c.id)

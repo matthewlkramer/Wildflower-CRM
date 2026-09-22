@@ -244,6 +244,21 @@ export const SEED_RULES: EngineRule[] = [
     targetFundableProjectId: null,
   },
   {
+    id: "seed_broadstreet_lease_guaranty",
+    enabled: true,
+    priority: 25,
+    action: "exclude",
+    exclusionReason: "lease_guaranty",
+    donationGuard: N,
+    matchLogic: "any",
+    conditions: [
+      { field: "any_text", mode: "contains", value: "broadstreet" },
+    ],
+    targetOrganizationId: null,
+    targetIntendedUsage: null,
+    targetFundableProjectId: null,
+  },
+  {
     // Guaranty fee by payer → EARNED INCOME (fee-for-service, never a gift).
     // Checked before the loan-repayment payer rule (markers are disjoint).
     id: "seed_guaranty_payer",

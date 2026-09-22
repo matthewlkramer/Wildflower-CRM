@@ -55,6 +55,33 @@ function isUniqueViolation(e: unknown): boolean {
   );
 }
 
+const RECEIVABLE_MARKER = /receiv(?:able|albe)/i;
+
+/**
+ * A payment applied to an invoice and deposited through an A/R-labelled line
+ * is classified at invoice-component grain. This prevents a membership invoice
+ * inside a larger bundled deposit from hiding the unmatched remainder.
+ */
+export function isReceivableInvoicePayment(input: {
+  qbInvoiceApplications: unknown[] | null;
+  rawReference: string | null;
+  lineDescription: string | null;
+  qbTransactionMemo: string | null;
+  lineAccountNames: string[];
+}): boolean {
+  if (!input.qbInvoiceApplications?.length) return false;
+  return RECEIVABLE_MARKER.test(
+    [
+      input.rawReference,
+      input.lineDescription,
+      input.qbTransactionMemo,
+      ...input.lineAccountNames,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 /**
  * Idempotent upsert of one staged incoming-money UNIT (SalesReceipt / Payment /
  * single Deposit line), keyed on (realmId, qbEntityType, qbEntityId, qbLineId).
@@ -119,6 +146,10 @@ export function buildStagedLineUpsert(
     qbExchangeRate: sql`coalesce(excluded.qb_exchange_rate, ${stagedPayments.qbExchangeRate})`,
     qbCreateTime: sql`coalesce(excluded.qb_create_time, ${stagedPayments.qbCreateTime})`,
     qbLinkedTxn: sql`coalesce(excluded.qb_linked_txn, ${stagedPayments.qbLinkedTxn})`,
+    // Unlike deposit coding, linked invoice applications are fetched whenever
+    // the Payment is fetched. A null therefore means the applications were
+    // removed in QuickBooks and must clear the stored snapshot.
+    qbInvoiceApplications: sql`excluded.qb_invoice_applications`,
     qbRaw: sql`coalesce(excluded.qb_raw, ${stagedPayments.qbRaw})`,
     qbRawLine: sql`coalesce(excluded.qb_raw_line, ${stagedPayments.qbRawLine})`,
     // Entity attribution is normally a read-only derived QB fact (like the qb_*
@@ -777,7 +808,7 @@ export async function syncQuickbooks(
 
       // Classify first via the admin-editable rules. `exclude` → noise (skips the
       // costlier scorer); `auto_create_approve` → mint+approve after staging.
-      const ruleHit = isDepositHeader
+      const evaluatedRuleHit = isDepositHeader
         ? null
         : evaluateRules(handlingRules, {
             amount: p.amount,
@@ -788,6 +819,17 @@ export async function syncQuickbooks(
             lineDescription: p.lineDescription,
             lineClasses: p.lineClasses,
           });
+      const receivableInvoicePayment = isReceivableInvoicePayment(p);
+      const ruleHit =
+        receivableInvoicePayment &&
+        evaluatedRuleHit &&
+        !(
+          evaluatedRuleHit.action === "exclude" &&
+          (evaluatedRuleHit.reason === "zero_amount" ||
+            evaluatedRuleHit.reason === "lease_guaranty")
+        )
+          ? null
+          : evaluatedRuleHit;
       const excluded = ruleHit?.action === "exclude";
       const exclusionReason = excluded ? ruleHit.reason : null;
 
@@ -887,6 +929,7 @@ export async function syncQuickbooks(
           qbExchangeRate: p.qbExchangeRate,
           qbCreateTime: p.qbCreateTime ? new Date(p.qbCreateTime) : null,
           qbLinkedTxn: p.qbLinkedTxn,
+          qbInvoiceApplications: p.qbInvoiceApplications,
           qbRaw: p.qbRaw,
           qbRawLine: p.qbRawLine,
         },

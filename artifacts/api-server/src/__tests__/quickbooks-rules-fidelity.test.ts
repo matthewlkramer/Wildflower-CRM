@@ -38,6 +38,10 @@ const fixtures: { name: string; input: ClassifierInput }[] = [
     input: { ...base, payerName: "Guaranty Fee - Tulip" },
   },
   {
+    name: "Broadstreet lease guaranty payer",
+    input: { ...base, payerName: "Broadstreet Impact Services" },
+  },
+  {
     name: "reloaning payer (must NOT match loan)",
     input: { ...base, payerName: "Reloaning Partners LLC" },
   },

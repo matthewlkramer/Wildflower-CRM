@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Search, Upload } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, Search, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -2207,9 +2207,19 @@ export default function ReconciliationDepositsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">
-          Reconciliation
-        </h1>
+        <div className="flex items-center justify-between gap-3">
+          <h1 className="text-3xl font-serif font-bold text-foreground">
+            Reconciliation
+          </h1>
+          {me?.role === "admin" ? (
+            <Button asChild type="button" variant="outline" size="sm">
+              <a href="/reconciliation/rules" data-testid="link-reconciliation-rules">
+                <BookOpen className="mr-1.5 h-3.5 w-3.5" />
+                Rules
+              </a>
+            </Button>
+          ) : null}
+        </div>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
           One row per bank deposit, with the known composition, CRM gifts, and
           accounting evidence kept together.

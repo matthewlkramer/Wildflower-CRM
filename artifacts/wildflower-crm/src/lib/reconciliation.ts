@@ -755,6 +755,7 @@ export const EXCLUSION_REASON_LABELS: Record<
   other_revenue: "Other revenue (non-gift)",
   interest: "Interest / investment income",
   membership: "Membership contributions",
+  lease_guaranty: "Lease guaranty payment",
   tax_refund: "Tax refund",
   insurance: "Insurance / COBRA reimbursement",
   expense_refund: "Expense refund (non-gift)",
@@ -788,7 +789,13 @@ export const MANUAL_EXCLUSION_FAMILIES: {
   },
   {
     family: "Non-gift income",
-    reasons: ["earned_income", "other_revenue", "interest", "membership"],
+    reasons: [
+      "earned_income",
+      "lease_guaranty",
+      "other_revenue",
+      "interest",
+      "membership",
+    ],
   },
   {
     family: "Refunds & reimbursements",

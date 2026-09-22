@@ -34,6 +34,17 @@ export type QuickbooksEntityType =
   | "deposit"
   | "deposit_header";
 
+export interface QuickbooksInvoiceApplication {
+  invoiceId: string;
+  invoiceDocNumber: string | null;
+  invoiceTotal: string | null;
+  appliedAmount: string | null;
+  purpose: string | null;
+  lineItemNames: string[];
+  lineAccountNames: string[];
+  lineDescriptions: string[];
+}
+
 export interface NormalizedQuickbooksPayment {
   qbEntityType: QuickbooksEntityType;
   qbEntityId: string;
@@ -83,6 +94,7 @@ export interface NormalizedQuickbooksPayment {
   qbExchangeRate: string | null;
   qbCreateTime: string | null;
   qbLinkedTxn: { txnId: string; txnType: string }[] | null;
+  qbInvoiceApplications: QuickbooksInvoiceApplication[] | null;
   // The complete raw QB entity payload, verbatim (for future-proofing).
   qbRaw: unknown;
   // For deposit-line rows only: the specific deposit Line object, verbatim.
@@ -206,7 +218,7 @@ interface QbPayment {
   DepartmentRef?: QbRef;
   CurrencyRef?: QbRef;
   ExchangeRate?: number;
-  Line?: { LinkedTxn?: QbLinkedTxn[] }[];
+  Line?: { Amount?: number; LinkedTxn?: QbLinkedTxn[] }[];
   MetaData?: QbMeta;
 }
 
@@ -226,6 +238,10 @@ interface QbDeposit {
 
 interface QbInvoice {
   Id: string;
+  TotalAmt?: number;
+  DocNumber?: string;
+  CustomerMemo?: { value?: string };
+  PrivateNote?: string;
   Line?: QbLine[];
 }
 
@@ -445,17 +461,19 @@ interface DepositCoding {
 }
 
 /**
- * Batch-fetch invoices by id (chunked) and return a map of id → its lines.
+ * Batch-fetch invoices by id (chunked) and preserve both invoice identity and
+ * lines. Payment-level invoice applications need the invoice amount and purpose
+ * as well as its accounting coding.
  * Used to resolve the income-account / item coding for invoice-applied
  * Payments, which carry no lines of their own — the item lives on the linked
  * Invoice. Read-only.
  */
-async function fetchInvoiceLines(
+async function fetchInvoices(
   accessToken: string,
   realmId: string,
   invoiceIds: string[],
-): Promise<Map<string, QbLine[]>> {
-  const map = new Map<string, QbLine[]>();
+): Promise<Map<string, QbInvoice>> {
+  const map = new Map<string, QbInvoice>();
   const ids = uniq(invoiceIds);
   for (let i = 0; i < ids.length; i += IN_CHUNK) {
     const chunk = ids.slice(i, i + IN_CHUNK);
@@ -464,7 +482,7 @@ async function fetchInvoiceLines(
     const resp = await runQuery(accessToken, realmId, q);
     const rows = (resp.QueryResponse?.["Invoice"] ?? []) as QbInvoice[];
     for (const inv of rows) {
-      map.set(inv.Id, inv.Line ?? []);
+      map.set(inv.Id, inv);
     }
   }
   return map;
@@ -655,9 +673,9 @@ export async function pullIncomingPayments(
 
   // Linked-invoice lines for invoice-applied Payments.
   const allInvoiceIds = uniq(payments.flatMap((p) => p.invoiceIds));
-  const invoiceLines = allInvoiceIds.length
-    ? await fetchInvoiceLines(accessToken, realmId, allInvoiceIds)
-    : new Map<string, QbLine[]>();
+  const invoices = allInvoiceIds.length
+    ? await fetchInvoices(accessToken, realmId, allInvoiceIds)
+    : new Map<string, QbInvoice>();
 
   // Linked-journal-entry lines for Payments coded via a JournalEntry. These
   // carry the revenue account/class on their credit-side lines.
@@ -670,7 +688,9 @@ export async function pullIncomingPayments(
   // invoice line (the revenue coding the classifier reads).
   const itemIds = uniq([
     ...salesReceipts.flatMap((r) => itemIdsFromLines(r.Line)),
-    ...[...invoiceLines.values()].flatMap((lines) => itemIdsFromLines(lines)),
+    ...[...invoices.values()].flatMap((invoice) =>
+      itemIdsFromLines(invoice.Line),
+    ),
   ]);
   const itemAccounts = itemIds.length
     ? await fetchItemIncomeAccounts(accessToken, realmId, itemIds)
@@ -768,6 +788,7 @@ export async function pullIncomingPayments(
       qbLinkedTxn: mapLinkedTxn(
         (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
       ),
+      qbInvoiceApplications: null,
       qbRaw: row,
       qbRawLine: null,
     });
@@ -778,7 +799,9 @@ export async function pullIncomingPayments(
   // Deposit line that re-recorded it.
   for (const { row, invoiceIds, journalEntryIds } of payments) {
     const invDetail = mergeLineDetail(
-      invoiceIds.map((id) => extractLineDetail(invoiceLines.get(id), itemAccounts)),
+      invoiceIds.map((id) =>
+        extractLineDetail(invoices.get(id)?.Line, itemAccounts),
+      ),
     );
     // Revenue coding from any linked JournalEntry (credit-side lines only).
     const jeDetail = mergeLineDetail(
@@ -793,6 +816,52 @@ export async function pullIncomingPayments(
       null,
       coding,
     );
+    const invoiceApplications: QuickbooksInvoiceApplication[] = invoiceIds
+      .map((invoiceId) => {
+        const invoice = invoices.get(invoiceId);
+        if (!invoice) return null;
+        const invoiceDetail = extractLineDetail(invoice.Line, itemAccounts);
+        const lineDescriptions = uniq(
+          (invoice.Line ?? []).map((line) => line.Description),
+        );
+        const appliedFromPayment = (row.Line ?? [])
+          .filter((line) =>
+            (line.LinkedTxn ?? []).some(
+              (linked) =>
+                linked.TxnType === "Invoice" && linked.TxnId === invoiceId,
+            ),
+          )
+          .reduce((sum, line) => sum + (line.Amount ?? 0), 0);
+        const fallbackApplied =
+          invoiceIds.length === 1 && typeof row.TotalAmt === "number"
+            ? Math.min(row.TotalAmt, invoice.TotalAmt ?? row.TotalAmt)
+            : null;
+        const purpose: string | null =
+          invoice.CustomerMemo?.value ??
+          invoice.PrivateNote ??
+          lineDescriptions[0] ??
+          invoiceDetail.itemNames[0] ??
+          null;
+        const application: QuickbooksInvoiceApplication = {
+          invoiceId,
+          invoiceDocNumber: invoice.DocNumber ?? null,
+          invoiceTotal: num(invoice.TotalAmt),
+          appliedAmount:
+            appliedFromPayment > 0
+              ? appliedFromPayment.toFixed(2)
+              : fallbackApplied == null
+                ? null
+                : fallbackApplied.toFixed(2),
+          purpose,
+          lineItemNames: invoiceDetail.itemNames,
+          lineAccountNames: invoiceDetail.accountNames,
+          lineDescriptions,
+        };
+        return application;
+      })
+      .filter((application): application is QuickbooksInvoiceApplication =>
+        Boolean(application),
+      );
     out.push({
       qbEntityType: "payment",
       qbEntityId: row.Id,
@@ -825,6 +894,8 @@ export async function pullIncomingPayments(
       qbLinkedTxn: mapLinkedTxn(
         (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
       ),
+      qbInvoiceApplications:
+        invoiceApplications.length > 0 ? invoiceApplications : null,
       qbRaw: row,
       qbRawLine: null,
     });
@@ -900,6 +971,7 @@ export async function pullIncomingPayments(
         qbExchangeRate: rate(row.ExchangeRate),
         qbCreateTime: row.MetaData?.CreateTime ?? null,
         qbLinkedTxn: mapLinkedTxn(line.LinkedTxn),
+        qbInvoiceApplications: null,
         // Store the whole deposit as the raw entity AND the specific line.
         qbRaw: row,
         qbRawLine: line,
@@ -952,6 +1024,7 @@ export async function pullIncomingPayments(
         qbLinkedTxn: mapLinkedTxn(
           (row.Line ?? []).flatMap((l) => l.LinkedTxn ?? []),
         ),
+        qbInvoiceApplications: null,
         qbRaw: row,
         qbRawLine: null,
       });

@@ -3554,6 +3554,7 @@ export type StagedPaymentExclusionReason = typeof StagedPaymentExclusionReason[k
 export const StagedPaymentExclusionReason = {
   zero_amount: 'zero_amount',
   membership: 'membership',
+  lease_guaranty: 'lease_guaranty',
   interest: 'interest',
   tax_refund: 'tax_refund',
   other_revenue: 'other_revenue',
@@ -4241,6 +4242,7 @@ export type StagedPaymentSummaryExcludedByReason = {
   zero_amount: number;
   loan: number;
   membership: number;
+  lease_guaranty: number;
   interest: number;
   government_reimbursement: number;
   tax_refund: number;
@@ -6840,6 +6842,10 @@ export type WorkbenchDepositCompositionComponentsItem = {
   sourceStagedPaymentManual?: boolean;
   label?: string | null;
   exclusionReason?: string | null;
+  sourceInvoiceId?: string | null;
+  invoiceDocNumber?: string | null;
+  /** Purpose copied read-only from the linked QuickBooks invoice. */
+  invoicePurpose?: string | null;
   matchBasis?: WorkbenchDepositCompositionComponentsItemMatchBasis;
   /** Derived QBO evidence aligned to this deposit component. */
   qboRecords?: WorkbenchDepositNodeQbRecord[];
@@ -7040,6 +7046,7 @@ export type DepositExclusionReason = typeof DepositExclusionReason[keyof typeof 
 
 export const DepositExclusionReason = {
   membership: 'membership',
+  lease_guaranty: 'lease_guaranty',
   loan_repayment: 'loan_repayment',
   loan_proceeds: 'loan_proceeds',
   note_payable: 'note_payable',

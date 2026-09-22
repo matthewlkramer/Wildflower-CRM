@@ -33,6 +33,7 @@ import FundableProjects from "@/pages/fundable-projects";
 import Campaigns from "@/pages/campaigns";
 import Settings from "@/pages/settings";
 import ReconciliationDeposits from "@/pages/reconciliation-deposits";
+import ReconciliationRules from "@/pages/reconciliation-rules";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
@@ -231,6 +232,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/donorbox-review"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/reconciliation"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/reconciliation-workbench"><Redirect to="/reconciliation/deposits" /></Route>
+          <Route path="/reconciliation/rules"><ProtectedRoute component={ReconciliationRules} /></Route>
           <Route path="/reconciliation/deposits"><ProtectedRoute component={ReconciliationDeposits} /></Route>
           <Route path="/reconciliation/clusters"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>

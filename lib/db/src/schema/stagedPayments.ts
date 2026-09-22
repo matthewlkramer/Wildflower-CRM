@@ -187,6 +187,18 @@ export const stagedPayments = pgTable(
     // Invoice it pays. Kept for provenance and dedupe auditing.
     qbLinkedTxn:
       jsonb("qb_linked_txn").$type<{ txnId: string; txnType: string }[]>(),
+    qbInvoiceApplications: jsonb("qb_invoice_applications").$type<
+      {
+        invoiceId: string;
+        invoiceDocNumber: string | null;
+        invoiceTotal: string | null;
+        appliedAmount: string | null;
+        purpose: string | null;
+        lineItemNames: string[];
+        lineAccountNames: string[];
+        lineDescriptions: string[];
+      }[]
+    >(),
     // The complete raw QuickBooks entity payload, stored verbatim so any future
     // field can be derived WITHOUT re-pulling from QuickBooks. Excluded from
     // list API responses (heavy) — storage only.

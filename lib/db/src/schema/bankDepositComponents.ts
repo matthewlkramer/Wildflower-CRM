@@ -73,6 +73,9 @@ export const bankDepositComponents = pgTable(
       () => stagedPayments.id,
       { onDelete: "set null" },
     ),
+    // Invoice identity for receivable-derived component splits. This preserves
+    // why the component was excluded and makes recomputation idempotent.
+    sourceInvoiceId: text("source_invoice_id"),
     // True when the inference is uncertain and a human should confirm the
     // composition (QBO errors are the reason this table exists as an interim).
     needsReview: boolean("needs_review").notNull().default(false),
@@ -102,6 +105,11 @@ export const bankDepositComponents = pgTable(
     index("bank_deposit_components_source_staged_payment_id_idx").on(
       t.sourceStagedPaymentId,
     ),
+    uniqueIndex("bank_deposit_components_source_invoice_uq")
+      .on(t.sourceStagedPaymentId, t.sourceInvoiceId)
+      .where(
+        sql`${t.sourceStagedPaymentId} IS NOT NULL AND ${t.sourceInvoiceId} IS NOT NULL`,
+      ),
     check("bank_deposit_components_amount_positive_chk", sql`${t.amount} > 0`),
   ],
 );
