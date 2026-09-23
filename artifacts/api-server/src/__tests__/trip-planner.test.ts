@@ -194,7 +194,7 @@ describe("trip travel booking derivations", () => {
       detectTripTravelKind({
         title: "RE: Wildflower Schools/Bridgespan Kickoff meeting",
         description:
-          "I will share my arrival time once the flight is settled for our Philadelphia meeting.",
+          "I will share my arrival time once the flight is settled, then stay at the hotel for our Philadelphia meeting.",
         location: null,
         fromEmail: "colleague@example.org",
       }),
@@ -203,7 +203,7 @@ describe("trip travel booking derivations", () => {
       detectTripTravelKind({
         title: "Wildflower Schools/Bridgespan bi-weekly check-in",
         description:
-          "Let's discuss the trip, airport arrival, and meeting schedule.",
+          "Let's discuss the trip, airport arrival, hotel, and meeting schedule.",
         location: "Philadelphia, PA",
         fromEmail: "colleague@example.org",
       }),

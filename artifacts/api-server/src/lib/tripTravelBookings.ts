@@ -44,7 +44,10 @@ const FLIGHT_NUMBER_CONTEXT =
   /\b(?:airline|airport|departure|departing|arrival|arriving)\b/i;
 const HOTEL_LANGUAGE =
   /\b(?:accommodation|hotel|lodging|room reservation|stay at)\b/i;
+const HOTEL_CONFIRMATION_TITLE =
+  /\b(?:booking|reservation)\s+confirm(?:ation|ed)\b/i;
 const HOTEL_CHECK_DATES = /\bcheck[ -]?(?:in|out)\b/i;
+const HOTEL_GUEST_CONTEXT = /\b(?:guest|reservation|room|stay)\b/i;
 const FLIGHT_NUMBER =
   /\b(?!(?:Q[1-4]|FY)\b)(?:[A-Z]{2}|[A-Z]\d|\d[A-Z])\s?\d{1,4}\b/;
 const CONFIRMATION_PATTERNS = [
@@ -114,9 +117,11 @@ export function detectTripTravelKind(
     return "flight";
   }
   if (
-    HOTEL_LANGUAGE.test(text) ||
-    (HOTEL_CHECK_DATES.test(text) &&
-      /\b(?:booking|guest|reservation|room|stay)\b/i.test(text))
+    HOTEL_LANGUAGE.test(title) ||
+    (HOTEL_LANGUAGE.test(text) &&
+      ((HOTEL_CHECK_DATES.test(text) && HOTEL_GUEST_CONTEXT.test(text)) ||
+        HOTEL_CONFIRMATION_TITLE.test(title) ||
+        extractTravelConfirmation(text) !== null))
   ) {
     return "hotel";
   }
