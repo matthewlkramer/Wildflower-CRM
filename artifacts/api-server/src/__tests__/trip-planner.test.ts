@@ -190,6 +190,33 @@ describe("trip travel booking derivations", () => {
         fromEmail: null,
       }),
     ).toBeNull();
+    expect(
+      detectTripTravelKind({
+        title: "RE: Wildflower Schools/Bridgespan Kickoff meeting",
+        description:
+          "I will share my arrival time once the flight is settled for our Philadelphia meeting.",
+        location: null,
+        fromEmail: "colleague@example.org",
+      }),
+    ).toBeNull();
+    expect(
+      detectTripTravelKind({
+        title: "Wildflower Schools/Bridgespan bi-weekly check-in",
+        description:
+          "Let's discuss the trip, airport arrival, and meeting schedule.",
+        location: "Philadelphia, PA",
+        fromEmail: "colleague@example.org",
+      }),
+    ).toBeNull();
+    expect(
+      detectTripTravelKind({
+        title: "Your itinerary",
+        description:
+          "United UA 1452. Confirmation ABC123. Departure October 11 at 3:00 PM.",
+        location: null,
+        fromEmail: "receipts@united.com",
+      }),
+    ).toBe("flight");
   });
 
   it("extracts common confirmation and record-locator formats", () => {

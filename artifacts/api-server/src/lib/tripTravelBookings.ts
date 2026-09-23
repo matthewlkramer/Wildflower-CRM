@@ -36,8 +36,12 @@ export type DerivedTripTravelBooking = {
   sourceUrl: string | null;
 };
 
-const FLIGHT_LANGUAGE =
-  /\b(?:airline|airport|boarding pass|departure|departing|arrival|arriving|flight|record locator|e-?ticket)\b/i;
+const FLIGHT_IN_TITLE = /\bflight\b/i;
+const FLIGHT_DOCUMENT = /\b(?:boarding pass|record locator|e-?ticket)\b/i;
+const FLIGHT_BOOKING_CONTEXT =
+  /\b(?:booking|confirm(?:ation|ed)?|gate|itinerary|passenger|reservation|seat|terminal|ticket)\b/i;
+const FLIGHT_NUMBER_CONTEXT =
+  /\b(?:airline|airport|departure|departing|arrival|arriving)\b/i;
 const HOTEL_LANGUAGE =
   /\b(?:accommodation|hotel|lodging|room reservation|stay at)\b/i;
 const HOTEL_CHECK_DATES = /\bcheck[ -]?(?:in|out)\b/i;
@@ -92,7 +96,21 @@ export function detectTripTravelKind(
   >,
 ): TripTravelBookingKind | null {
   const text = evidenceText({ id: "", source: "calendar", ...evidence });
-  if (FLIGHT_LANGUAGE.test(text) || FLIGHT_NUMBER.test(text.toUpperCase())) {
+  const title = evidence.title?.trim() ?? "";
+  const hasFlightNumber = FLIGHT_NUMBER.test(text.toUpperCase());
+  // Ordinary correspondence often mentions somebody's arrival, departure,
+  // airport, or flight while coordinating a meeting. Treat those as travel
+  // bookings only when the subject explicitly identifies a flight, the
+  // message contains a booking document marker, or a flight number appears
+  // alongside itinerary/booking context.
+  if (
+    FLIGHT_IN_TITLE.test(title) ||
+    FLIGHT_DOCUMENT.test(text) ||
+    (hasFlightNumber &&
+      (FLIGHT_BOOKING_CONTEXT.test(text) ||
+        FLIGHT_NUMBER_CONTEXT.test(text))) ||
+    (/\bflight\b/i.test(text) && FLIGHT_BOOKING_CONTEXT.test(text))
+  ) {
     return "flight";
   }
   if (
