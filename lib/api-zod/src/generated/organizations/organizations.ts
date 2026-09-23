@@ -39,6 +39,9 @@ export const ListOrganizationsQueryParams = zod.object({
   "page": zod.coerce.number().min(1).default(listOrganizationsQueryPageDefault)
 })
 
+export const listOrganizationsResponseDataItemEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const ListOrganizationsResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
@@ -55,6 +58,7 @@ export const ListOrganizationsResponse = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(listOrganizationsResponseDataItemEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "primaryEmail": zod.string().nullish().describe('Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
@@ -69,6 +73,7 @@ export const ListOrganizationsResponse = zod.object({
   "parentOrganizationId": zod.string().nullish(),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
+  "interactionCount": zod.number().nullish().describe('Imported count of recorded interactions for this organization.'),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),
@@ -93,6 +98,9 @@ export const ListOrganizationsResponse = zod.object({
 })
 })
 
+export const createOrganizationBodyEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const CreateOrganizationBody = zod.object({
   "name": zod.string(),
   "issuesGrants": zod.boolean().optional(),
@@ -107,6 +115,7 @@ export const CreateOrganizationBody = zod.object({
   "historicalNames": zod.array(zod.string()).optional(),
   "details": zod.string().optional(),
   "emailDomain": zod.string().optional(),
+  "ein": zod.string().regex(createOrganizationBodyEinRegExp).optional().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "ownerUserId": zod.string().optional(),
   "tags": zod.string().optional(),
   "website": zod.string().optional(),
@@ -133,6 +142,9 @@ export const GetOrganizationParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const getOrganizationResponseOneEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const GetOrganizationResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -148,6 +160,7 @@ export const GetOrganizationResponse = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(getOrganizationResponseOneEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "primaryEmail": zod.string().nullish().describe('Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
@@ -162,6 +175,7 @@ export const GetOrganizationResponse = zod.object({
   "parentOrganizationId": zod.string().nullish(),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
+  "interactionCount": zod.number().nullish().describe('Imported count of recorded interactions for this organization.'),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),
@@ -245,6 +259,9 @@ export const UpdateOrganizationParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const updateOrganizationBodyEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const UpdateOrganizationBody = zod.object({
   "name": zod.string().optional(),
   "issuesGrants": zod.boolean().optional(),
@@ -259,6 +276,7 @@ export const UpdateOrganizationBody = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(updateOrganizationBodyEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
   "website": zod.string().nullish(),
@@ -281,6 +299,9 @@ export const UpdateOrganizationBody = zod.object({
   "anonymous": zod.boolean().optional()
 })
 
+export const updateOrganizationResponseEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const UpdateOrganizationResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -296,6 +317,7 @@ export const UpdateOrganizationResponse = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(updateOrganizationResponseEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "primaryEmail": zod.string().nullish().describe('Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
@@ -310,6 +332,7 @@ export const UpdateOrganizationResponse = zod.object({
   "parentOrganizationId": zod.string().nullish(),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
+  "interactionCount": zod.number().nullish().describe('Imported count of recorded interactions for this organization.'),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),
@@ -503,6 +526,9 @@ export const ArchiveOrganizationParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const archiveOrganizationResponseEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const ArchiveOrganizationResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -518,6 +544,7 @@ export const ArchiveOrganizationResponse = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(archiveOrganizationResponseEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "primaryEmail": zod.string().nullish().describe('Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
@@ -532,6 +559,7 @@ export const ArchiveOrganizationResponse = zod.object({
   "parentOrganizationId": zod.string().nullish(),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
+  "interactionCount": zod.number().nullish().describe('Imported count of recorded interactions for this organization.'),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),
@@ -554,6 +582,9 @@ export const UnarchiveOrganizationParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const unarchiveOrganizationResponseEinRegExp = new RegExp('^\\d{2}-\\d{7}$');
+
+
 export const UnarchiveOrganizationResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -569,6 +600,7 @@ export const UnarchiveOrganizationResponse = zod.object({
   "historicalNames": zod.array(zod.string()).nullish(),
   "details": zod.string().nullish(),
   "emailDomain": zod.string().nullish(),
+  "ein": zod.string().regex(unarchiveOrganizationResponseEinRegExp).nullish().describe('Federal Employer Identification Number in NN-NNNNNNN format.'),
   "primaryEmail": zod.string().nullish().describe('Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints.'),
   "ownerUserId": zod.string().nullish(),
   "tags": zod.string().nullish(),
@@ -583,6 +615,7 @@ export const UnarchiveOrganizationResponse = zod.object({
   "parentOrganizationId": zod.string().nullish(),
   "anonymous": zod.boolean().describe('When true, hide the organization\'s real name in the UI (shown as \'Anonymous\') from everyone except the record owner and admins. UI-only; the name is still stored and returned.'),
   "lastContacted": zod.string().date().nullish(),
+  "interactionCount": zod.number().nullish().describe('Imported count of recorded interactions for this organization.'),
   "x": zod.string().nullish(),
   "linkedin": zod.string().nullish(),
   "facebook": zod.string().nullish(),

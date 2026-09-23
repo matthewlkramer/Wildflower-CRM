@@ -41,6 +41,7 @@ import {
   Twitter,
   Video,
   X,
+  Youtube,
 } from "lucide-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
@@ -93,6 +94,8 @@ import {
   useOrganizationName,
   useHouseholdName,
   useIntermediaryName,
+  usePersonName,
+  InlineEditPersonPicker,
 } from "@/components/entity-picker";
 import type { PeopleEntityRole } from "@workspace/api-client-react";
 import {
@@ -240,6 +243,17 @@ function PersonView({ person }: { person: PersonDetail }) {
   const ownerDisplay = person.ownerUserId
     ? (userNames.get(person.ownerUserId) ?? person.ownerUserId)
     : "—";
+  const assistantName = usePersonName(person.assistantPersonId ?? null);
+  const assistantDisplay = person.assistantPersonId ? (
+    <Link
+      href={`/individuals/${person.assistantPersonId}`}
+      className="text-primary hover:underline"
+    >
+      {assistantName ?? person.assistantPersonId}
+    </Link>
+  ) : (
+    "—"
+  );
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(() => nameDraftFrom(person));
   const [flagResearchOpen, setFlagResearchOpen] = useState(false);
@@ -533,7 +547,13 @@ function PersonView({ person }: { person: PersonDetail }) {
       left={
         <>
           <FieldCard title="Basics">
-            <p className="mb-3 text-xs text-muted-foreground">Priority is an overall judgment of future giving potential, informed by annual capacity, connection, enthusiasm, and fit. Capacity means potential annual giving to Wildflower; blank means not assessed. Relationship owner coordinates this donor relationship.</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Priority is an overall judgment of future giving potential,
+              informed by annual capacity, connection, enthusiasm, and fit.
+              Capacity means potential annual giving to Wildflower; blank means
+              not assessed. Relationship owner coordinates this donor
+              relationship.
+            </p>
             <div className="space-y-4">
               <AttributeBadges>
                 <AttributeBadgeSelect
@@ -559,6 +579,15 @@ function PersonView({ person }: { person: PersonDetail }) {
                     value={person.ownerUserId ?? null}
                     display={ownerDisplay}
                     onSave={(next) => patch({ ownerUserId: next })}
+                  />
+                </Row>
+                <Row label="Assistant">
+                  <InlineEditPersonPicker
+                    label="Assistant"
+                    testIdBase="person-assistant"
+                    value={person.assistantPersonId ?? null}
+                    display={assistantDisplay}
+                    onSave={(next) => patch({ assistantPersonId: next })}
                   />
                 </Row>
                 <Row label="Pronouns">
@@ -673,6 +702,12 @@ function PersonView({ person }: { person: PersonDetail }) {
                     value: formatInstagramHandle(person.instagram),
                     href: person.instagram,
                   },
+                  person.youtube && {
+                    icon: Youtube,
+                    label: "YouTube",
+                    value: person.youtube,
+                    href: person.youtube,
+                  },
                   person.meetingLink && {
                     icon: Video,
                     label: "Meeting link",
@@ -759,6 +794,7 @@ function PersonView({ person }: { person: PersonDetail }) {
               !person.x &&
               !person.facebook &&
               !person.instagram &&
+              !person.youtube &&
               !person.meetingLink
             }
           >
@@ -872,6 +908,29 @@ function PersonView({ person }: { person: PersonDetail }) {
                     )
                   }
                   onSave={(next) => patch({ instagram: next })}
+                />
+              </Row>
+              <Row label="YouTube">
+                <InlineEditText
+                  label="YouTube"
+                  testIdBase="person-youtube"
+                  value={person.youtube ?? null}
+                  placeholder="https://youtube.com/…"
+                  display={
+                    person.youtube ? (
+                      <a
+                        href={person.youtube}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {person.youtube}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ youtube: next })}
                 />
               </Row>
               <Row label="Meeting link">
@@ -1036,12 +1095,16 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
         )}
       </span>
       <span className="flex items-center gap-1 whitespace-nowrap">
-        <span className="text-muted-foreground text-xs">
+        <span
+          className="max-w-72 truncate text-xs text-muted-foreground"
+          title={r.notes ?? undefined}
+        >
           {r.externalTitleOrRole ?? formatEnum(r.connection)}
           {r.current && r.current !== "current"
             ? ` (${formatEnum(r.current)})`
             : ""}
           {r.primaryContact ? " • primary" : ""}
+          {r.notes ? ` • ${r.notes}` : ""}
         </span>
         <EditPeopleEntityRoleDialog
           role={r}
