@@ -90,3 +90,4 @@ export * from "./tripPlans";
 
 export * from "./newsletterPreferences";
 export * from "./calendarEventAttendance";
+export * from "./conferences";

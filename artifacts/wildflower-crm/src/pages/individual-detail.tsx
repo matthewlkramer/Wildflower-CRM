@@ -12,6 +12,7 @@ import {
   useGetPaymentIntermediary,
   useGetCurrentUser,
   useListPersonSuppressionWindows,
+  useListPersonConferenceAttendance,
   useCreatePersonSuppressionWindow,
   useUpdatePersonSuppressionWindow,
   useDeletePersonSuppressionWindow,
@@ -932,6 +933,7 @@ function PersonView({ person }: { person: PersonDetail }) {
             <div className="space-y-1">
               <NewsletterPreferencesCard personId={person.id} />
               <NewsletterEngagementCard personId={person.id} />
+              <ConferenceAttendanceCard personId={person.id} />
             </div>
           </FieldCard>
 
@@ -995,6 +997,34 @@ function PersonView({ person }: { person: PersonDetail }) {
         </>
       }
     />
+  );
+}
+
+function ConferenceAttendanceCard({ personId }: { personId: string }) {
+  const attendanceQ = useListPersonConferenceAttendance(personId);
+  if (attendanceQ.isLoading) return null;
+  const rows = attendanceQ.data ?? [];
+  return (
+    <div className="rounded-md border bg-card p-3" data-testid="person-conference-attendance">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-sm font-medium">Conference attendance</div>
+        <Link href="/conferences" className="text-xs text-primary hover:underline">
+          Manage conferences
+        </Link>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No conference attendance recorded.</p>
+      ) : (
+        <ul className="space-y-1">
+          {rows.map((row) => (
+            <li key={row.id} className="flex items-center justify-between gap-2 text-sm">
+              <span className="truncate">{row.sourceReference ?? "Conference event"}</span>
+              <span className="shrink-0 text-xs capitalize text-muted-foreground">{row.status}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

@@ -2155,6 +2155,155 @@ paths:
               },
           }
 
+  # ─── Conferences ───────────────────────────────────────────────────────────
+  /conference-types:
+    get:
+      operationId: listConferenceTypes
+      tags: [conferences]
+      parameters:
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceType" } } } } }
+    post:
+      operationId: createConferenceType
+      tags: [conferences]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceType" } } } }
+  /conference-types/{id}:
+    patch:
+      operationId: updateConferenceType
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeUpdate" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceType" } } } }
+  /conference-events:
+    get:
+      operationId: listConferenceEvents
+      tags: [conferences]
+      parameters:
+        - { name: conferenceTypeId, in: query, schema: { type: string } }
+        - { name: year, in: query, schema: { type: integer } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceEventSummary" } } } } }
+    post:
+      operationId: createConferenceEvent
+      tags: [conferences]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEventInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+  /conference-events/{id}:
+    get:
+      operationId: getConferenceEvent
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+    patch:
+      operationId: updateConferenceEvent
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEventUpdate" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+  /conference-events/{id}/attendance:
+    get:
+      operationId: listConferenceAttendance
+      tags: [conferences]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceList" } } } }
+    post:
+      operationId: createConferenceAttendance
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceRow" } } } }
+  /conference-events/{id}/imports:
+    post:
+      operationId: stageConferenceImport
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportInput" } } }
+      responses:
+        "200": { description: Staged, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+  /conference-imports/{id}:
+    get:
+      operationId: getConferenceImport
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+  /conference-imports/{id}/confirm:
+    post:
+      operationId: confirmConferenceImport
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportConfirmInput" } } }
+      responses:
+        "200": { description: Confirmed, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+  /conference-events/{id}/research-requests:
+    post:
+      operationId: createConferenceResearchRequest
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchRequestInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchRequest" } } } }
+  /conference-events/{id}/email-suggestions:
+    get:
+      operationId: listConferenceEmailSuggestions
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } } }
+    post:
+      operationId: generateConferenceEmailSuggestions
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Generated, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } } }
+  /conference-attendance-suggestions/{id}:
+    patch:
+      operationId: reviewConferenceAttendanceSuggestion
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceSuggestionReview" } } }
+      responses:
+        "200": { description: Reviewed, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } }
+  /people/{id}/conference-attendance:
+    get:
+      operationId: listPersonConferenceAttendance
+      tags: [conferences]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceRow" } } } } }
+
   # ─── Fiscal years ──────────────────────────────────────────────────────────
   /fiscal-years:
     get:
@@ -2205,6 +2354,8 @@ paths:
             description: "Filter to direct child organizations of the given parent.",
             schema: { type: string },
           }
+        - { name: conferenceTypeId, in: query, description: "Organizations related (currently or historically) to an attendee of this conference type.", schema: { type: string } }
+        - { name: conferenceEventId, in: query, description: "Organizations related (currently or historically) to an attendee of this event.", schema: { type: string } }
         - {
             name: lifetimeGivingPresence,
             in: query,
@@ -2797,6 +2948,8 @@ paths:
             schema: { type: boolean },
           }
         - { name: regionId, in: query, schema: { type: string } }
+        - { name: conferenceTypeId, in: query, description: "People who attended any event of this conference type.", schema: { type: string } }
+        - { name: conferenceEventId, in: query, description: "People who attended this specific conference event.", schema: { type: string } }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.
         - {
@@ -12769,6 +12922,172 @@ components:
         error: { type: string }
         message: { type: string }
         details: { type: object, additionalProperties: true }
+
+    ConferenceType:
+      type: object
+      required: [id, displayName, aliases, active, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        displayName: { type: string }
+        aliases: { type: array, items: { type: string } }
+        organizer: { type: [string, "null"] }
+        websiteUrl: { type: [string, "null"] }
+        active: { type: boolean }
+        notes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ConferenceTypeInput:
+      type: object
+      required: [displayName]
+      properties:
+        displayName: { type: string, minLength: 1 }
+        aliases: { type: array, items: { type: string } }
+        organizer: { type: [string, "null"] }
+        websiteUrl: { type: [string, "null"] }
+        active: { type: boolean }
+        notes: { type: [string, "null"] }
+    ConferenceTypeUpdate:
+      allOf: [{ $ref: "#/components/schemas/ConferenceTypeInput" }]
+    ConferenceEvent:
+      type: object
+      required: [id, conferenceTypeId, year, status, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        conferenceTypeId: { type: string }
+        year: { type: integer }
+        nameOverride: { type: [string, "null"] }
+        startDate: { type: [string, "null"], format: date }
+        endDate: { type: [string, "null"], format: date }
+        location: { type: [string, "null"] }
+        attendeeSiteUrl: { type: [string, "null"] }
+        source: { type: [string, "null"] }
+        status: { type: string, enum: [planned, completed, cancelled] }
+        notes: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ConferenceEventSummary:
+      allOf:
+        - { $ref: "#/components/schemas/ConferenceEvent" }
+        - type: object
+          required: [conferenceTypeName, attendanceCount]
+          properties:
+            conferenceTypeName: { type: string }
+            attendanceCount: { type: integer }
+    ConferenceEventInput:
+      type: object
+      required: [conferenceTypeId, year]
+      properties:
+        conferenceTypeId: { type: string }
+        year: { type: integer, minimum: 2000, maximum: 2200 }
+        nameOverride: { type: [string, "null"] }
+        startDate: { type: [string, "null"], format: date }
+        endDate: { type: [string, "null"], format: date }
+        location: { type: [string, "null"] }
+        attendeeSiteUrl: { type: [string, "null"] }
+        source: { type: [string, "null"] }
+        status: { type: string, enum: [planned, completed, cancelled] }
+        notes: { type: [string, "null"] }
+    ConferenceEventUpdate:
+      allOf: [{ $ref: "#/components/schemas/ConferenceEventInput" }]
+    ConferenceAttendanceRow:
+      type: object
+      required: [id, conferenceEventId, personId, personName, status, sourceType, createdAt]
+      properties:
+        id: { type: string }
+        conferenceEventId: { type: string }
+        personId: { type: string }
+        personName: { type: string }
+        organizationId: { type: [string, "null"] }
+        organizationName: { type: [string, "null"] }
+        status: { type: string, enum: [confirmed, likely, possible] }
+        sourceType: { type: string, enum: [uploaded_list, conference_website, wildflower_email, manual] }
+        sourceReference: { type: [string, "null"] }
+        evidenceNote: { type: [string, "null"] }
+        createdAt: { type: string, format: date-time }
+    ConferenceAttendanceList:
+      type: object
+      required: [data, pagination]
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceRow" } }
+        pagination: { $ref: "#/components/schemas/Pagination" }
+    ConferenceAttendanceInput:
+      type: object
+      required: [personId]
+      properties:
+        personId: { type: string }
+        status: { type: string, enum: [confirmed, likely, possible] }
+        sourceType: { type: string, enum: [uploaded_list, conference_website, wildflower_email, manual] }
+        sourceReference: { type: [string, "null"] }
+        evidenceNote: { type: [string, "null"] }
+    ConferenceImportInput:
+      type: object
+      required: [csvText]
+      properties:
+        csvText: { type: string, minLength: 1 }
+        filename: { type: [string, "null"] }
+    ConferenceImportRow:
+      type: object
+      required: [id, rowNumber, matchStatus, disposition]
+      properties:
+        id: { type: string }
+        rowNumber: { type: integer }
+        rawName: { type: [string, "null"] }
+        rawEmail: { type: [string, "null"] }
+        rawOrganization: { type: [string, "null"] }
+        matchStatus: { type: string, enum: [exact, ambiguous, unmatched] }
+        matchedPersonId: { type: [string, "null"] }
+        matchedPersonName: { type: [string, "null"] }
+        matchEvidence: { type: [string, "null"] }
+        disposition: { type: string, enum: [pending, accept, skip] }
+    ConferenceImportBatch:
+      type: object
+      required: [id, conferenceEventId, status, rows, createdAt]
+      properties:
+        id: { type: string }
+        conferenceEventId: { type: string }
+        status: { type: string, enum: [staged, confirmed] }
+        sourceFilename: { type: [string, "null"] }
+        rows: { type: array, items: { $ref: "#/components/schemas/ConferenceImportRow" } }
+        createdAt: { type: string, format: date-time }
+    ConferenceImportConfirmInput:
+      type: object
+      properties:
+        acceptedRowIds: { type: array, items: { type: string } }
+        personOverrides: { type: object, additionalProperties: { type: string } }
+    ConferenceResearchRequestInput:
+      type: object
+      properties:
+        attendeeSiteUrl: { type: [string, "null"] }
+        instructions: { type: [string, "null"] }
+    ConferenceResearchRequest:
+      type: object
+      required: [id, conferenceEventId, prompt, status, createdAt]
+      properties:
+        id: { type: string }
+        conferenceEventId: { type: string }
+        attendeeSiteUrl: { type: [string, "null"] }
+        instructions: { type: [string, "null"] }
+        prompt: { type: string }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+    ConferenceAttendanceSuggestion:
+      type: object
+      required: [id, conferenceEventId, personId, personName, confidence, evidenceNote, status, createdAt]
+      properties:
+        id: { type: string }
+        conferenceEventId: { type: string }
+        personId: { type: string }
+        personName: { type: string }
+        emailMessageId: { type: [string, "null"] }
+        confidence: { type: string, enum: [high, medium, low] }
+        evidenceNote: { type: string }
+        status: { type: string, enum: [pending, accepted, dismissed] }
+        createdAt: { type: string, format: date-time }
+    ConferenceAttendanceSuggestionReview:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [accepted, dismissed] }
 
     Pagination:
       type: object

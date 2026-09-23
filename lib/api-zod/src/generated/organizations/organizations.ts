@@ -21,6 +21,8 @@ export const ListOrganizationsQueryParams = zod.object({
   "issuesGrants": zod.coerce.boolean().optional().describe('Filter to grant-making organizations only (true) or non-grant entities only (false). Omit for all.'),
   "makesPris": zod.coerce.boolean().optional().describe('Filter to organizations that make PRIs (true) or do not (false). Omit for all.'),
   "parentOrganizationId": zod.coerce.string().optional().describe('Filter to direct child organizations of the given parent.'),
+  "conferenceTypeId": zod.coerce.string().optional().describe('Organizations related (currently or historically) to an attendee of this conference type.'),
+  "conferenceEventId": zod.coerce.string().optional().describe('Organizations related (currently or historically) to an attendee of this event.'),
   "lifetimeGivingPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.'),
   "openAsksPresence": zod.enum(['has', 'blank']).optional().describe('Rollup presence filter on open opportunity count (`has` = >0, `blank` = none).'),
   "primaryContactPresence": zod.enum(['has', 'blank']).optional().describe('Presence filter on primary contact (`has` = set, `blank` = none).'),

@@ -14,6 +14,8 @@ import {
   getGetPersonQueryOptions,
   getGetPersonQueryKey,
   useUpdatePerson,
+   useListConferenceTypes,
+   useListConferenceEvents,
   type ListPeopleParams,
   type CapacityRating,
   type ConnectionStatus,
@@ -530,6 +532,8 @@ export default function Individuals() {
   const [prioritySel, setPrioritySel] = usePersistedState<string[]>("wf.list.people.priorities", []);
   const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.people.regionIds", []);
   const [newsletterSel, setNewsletterSel] = usePersistedState<string[]>("wf.list.people.newsletter", []);
+  const [conferenceTypeId, setConferenceTypeId] = usePersistedState<string>("wf.list.people.conferenceType", "");
+  const [conferenceEventId, setConferenceEventId] = usePersistedState<string>("wf.list.people.conferenceEvent", "");
   // Which optional filters are shown in the toolbar. null = registry defaults.
   const [filtersState, setFiltersState] = usePersistedState<FiltersState | null>("wf.list.people.filters", null);
   const [page, setPage] = usePersistedState<number>("wf.list.people.page", 1);
@@ -605,7 +609,10 @@ export default function Individuals() {
     ...(newsletterSel.length > 0
       ? { newsletterStatus: [...newsletterSel].sort() as NewsletterStatus[] }
       : {}),
+    ...(conferenceEventId ? { conferenceEventId } : conferenceTypeId ? { conferenceTypeId } : {}),
   };
+  const conferenceTypesQ = useListConferenceTypes({ active: true });
+  const conferenceEventsQ = useListConferenceEvents();
 
   const { data, isLoading, isError, error } = useListPeople(params, {
     query: { queryKey: getListPeopleQueryKey(params) },
@@ -982,6 +989,32 @@ export default function Individuals() {
           />
         ),
       },
+      {
+        key: "conference",
+        label: "Conference",
+        defaultVisible: false,
+        active: !!conferenceTypeId || !!conferenceEventId,
+        clear: () => { setConferenceTypeId(""); setConferenceEventId(""); setPage(1); selection.clear(); },
+        render: () => (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Conference attendance</label>
+            <select className="h-8 rounded border bg-background px-2 text-sm" value={conferenceEventId || `type:${conferenceTypeId}`} onChange={(e) => {
+              const value = e.target.value;
+              setConferenceEventId(value.startsWith("event:") ? value.slice(6) : "");
+              setConferenceTypeId(value.startsWith("type:") ? value.slice(5) : "");
+              setPage(1); selection.clear();
+            }} data-testid="select-person-conference">
+              <option value="">Any attendance</option>
+              <optgroup label="Ever attended">
+                {conferenceTypesQ.data?.map((type) => <option key={type.id} value={`type:${type.id}`}>{type.displayName}</option>)}
+              </optgroup>
+              <optgroup label="Specific event">
+                {conferenceEventsQ.data?.map((event) => <option key={event.id} value={`event:${event.id}`}>{event.conferenceTypeName} {event.year}</option>)}
+              </optgroup>
+            </select>
+          </div>
+        ),
+      },
       ];
       // Kanban view groups columns by connection status + enthusiasm, so those
       // filters are redundant there — hide them from both the chooser and the
@@ -991,7 +1024,7 @@ export default function Individuals() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, lastContactedPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, viewMode],
+    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, lastContactedPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, conferenceTypeId, conferenceEventId, conferenceTypesQ.data, conferenceEventsQ.data, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1058,7 +1091,9 @@ export default function Individuals() {
     enthusiasmSel.length > 0 ||
     prioritySel.length > 0 ||
     regionIdsSel.length > 0 ||
-    newsletterSel.length > 0;
+    newsletterSel.length > 0 ||
+    !!conferenceTypeId ||
+    !!conferenceEventId;
 
   // ─── Saved views ─────────────────────────────────────────────────
   // The persisted view captures filters + sort + the user's column
@@ -1079,6 +1114,8 @@ export default function Individuals() {
     prioritySel: string[];
     regionIdsSel: string[];
     newsletterSel: string[];
+    conferenceTypeId: string;
+    conferenceEventId: string;
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -1097,6 +1134,8 @@ export default function Individuals() {
     prioritySel,
     regionIdsSel,
     newsletterSel,
+    conferenceTypeId,
+    conferenceEventId,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -1115,6 +1154,8 @@ export default function Individuals() {
     setPrioritySel([]);
     setRegionIdsSel([]);
     setNewsletterSel([]);
+    setConferenceTypeId("");
+    setConferenceEventId("");
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -1139,6 +1180,8 @@ export default function Individuals() {
       setPrioritySel(s.prioritySel ?? []);
       setRegionIdsSel(s.regionIdsSel ?? []);
       setNewsletterSel(s.newsletterSel ?? []);
+      setConferenceTypeId(s.conferenceTypeId ?? "");
+      setConferenceEventId(s.conferenceEventId ?? "");
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       // Backwards-compat: views saved before this feature have no
       // `columns` / `filters` field. Treat them as "defaults" so applying

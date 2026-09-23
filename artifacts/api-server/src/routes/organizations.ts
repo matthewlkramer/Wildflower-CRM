@@ -369,6 +369,27 @@ async function buildOrganizationsListWhere(
         );
       }
     }
+    // Organizations inherit conference scope through person↔organization
+    // roles. Deliberately do not restrict role.current: a historical
+    // affiliation is still useful when researching a past attendee list.
+    if (q.conferenceEventId) {
+      filters.push(sql`EXISTS (
+        SELECT 1
+        FROM people_entity_roles per
+        JOIN conference_attendance ca ON ca.person_id = per.person_id
+        WHERE per.organization_id = ${organizations.id}
+          AND ca.conference_event_id = ${q.conferenceEventId}
+      )`);
+    } else if (q.conferenceTypeId) {
+      filters.push(sql`EXISTS (
+        SELECT 1
+        FROM people_entity_roles per
+        JOIN conference_attendance ca ON ca.person_id = per.person_id
+        JOIN conference_events ce ON ce.id = ca.conference_event_id
+        WHERE per.organization_id = ${organizations.id}
+          AND ce.conference_type_id = ${q.conferenceTypeId}
+      )`);
+    }
     {
       // OR-semantics filter: organizations whose interestsThematic array
       // overlaps any of the selected interests.

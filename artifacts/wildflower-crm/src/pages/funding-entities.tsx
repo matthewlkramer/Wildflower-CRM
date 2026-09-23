@@ -14,6 +14,8 @@ import {
   getGetOrganizationQueryOptions,
   getGetOrganizationQueryKey,
   useUpdateOrganization,
+   useListConferenceTypes,
+   useListConferenceEvents,
   EntityType,
   type ListOrganizationsParams,
   type Organization,
@@ -538,6 +540,8 @@ export default function Organizations() {
   const [strategicAlignments, setStrategicAlignments] = usePersistedState<string[]>("wf.list.funders.strategicAlignments", []);
   const [interestsThematicSel, setInterestsThematicSel] = usePersistedState<string[]>("wf.list.funders.interestsThematic", []);
   const [regionIdsSel, setRegionIdsSel] = usePersistedState<string[]>("wf.list.funders.regionIds", []);
+  const [conferenceTypeId, setConferenceTypeId] = usePersistedState<string>("wf.list.funders.conferenceType", "");
+  const [conferenceEventId, setConferenceEventId] = usePersistedState<string>("wf.list.funders.conferenceEvent", "");
   const [showDefunct, setShowDefunct] = usePersistedState<boolean>("wf.list.funders.showDefunct", false);
   const [page, setPage] = usePersistedState<number>("wf.list.funders.page", 1);
   const [columnsState, setColumnsState] = usePersistedState<ColumnsState | null>(
@@ -608,7 +612,10 @@ export default function Organizations() {
     ...(strategicAlignments.length > 0 ? { strategicAlignment: [...strategicAlignments].sort() } : {}),
     ...(interestsThematicSel.length > 0 ? { interestsThematic: [...interestsThematicSel].sort() } : {}),
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
+    ...(conferenceEventId ? { conferenceEventId } : conferenceTypeId ? { conferenceTypeId } : {}),
   };
+  const conferenceTypesQ = useListConferenceTypes({ active: true });
+  const conferenceEventsQ = useListConferenceEvents();
 
   const { data, isLoading, isError, error } = useListOrganizations(params, {
     query: { queryKey: getListOrganizationsQueryKey(params) },
@@ -1078,6 +1085,32 @@ export default function Organizations() {
           />
         ),
       },
+      {
+        key: "conference",
+        label: "Conference",
+        defaultVisible: false,
+        active: !!conferenceTypeId || !!conferenceEventId,
+        clear: () => { setConferenceTypeId(""); setConferenceEventId(""); setPage(1); selection.clear(); },
+        render: () => (
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-muted-foreground">Conference attendance</label>
+            <select className="h-8 rounded border bg-background px-2 text-sm" value={conferenceEventId || `type:${conferenceTypeId}`} onChange={(e) => {
+              const value = e.target.value;
+              setConferenceEventId(value.startsWith("event:") ? value.slice(6) : "");
+              setConferenceTypeId(value.startsWith("type:") ? value.slice(5) : "");
+              setPage(1); selection.clear();
+            }} data-testid="select-funder-conference">
+              <option value="">Any attendance</option>
+              <optgroup label="Ever attended">
+                {conferenceTypesQ.data?.map((type) => <option key={type.id} value={`type:${type.id}`}>{type.displayName}</option>)}
+              </optgroup>
+              <optgroup label="Specific event">
+                {conferenceEventsQ.data?.map((event) => <option key={event.id} value={`event:${event.id}`}>{event.conferenceTypeName} {event.year}</option>)}
+              </optgroup>
+            </select>
+          </div>
+        ),
+      },
       ];
       // Kanban view groups columns by connection status + enthusiasm, so those
       // filters are redundant there — hide them from both the chooser and the
@@ -1087,7 +1120,7 @@ export default function Organizations() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [organizationType, issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, viewMode],
+    [organizationType, issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, conferenceTypeId, conferenceEventId, conferenceTypesQ.data, conferenceEventsQ.data, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1154,7 +1187,9 @@ export default function Organizations() {
     enthusiasms.length > 0 ||
     strategicAlignments.length > 0 ||
     interestsThematicSel.length > 0 ||
-    regionIdsSel.length > 0;
+    regionIdsSel.length > 0 ||
+    !!conferenceTypeId ||
+    !!conferenceEventId;
 
   // ─── Saved views ─────────────────────────────────────────────────
   type FundersView = {
@@ -1175,6 +1210,8 @@ export default function Organizations() {
     strategicAlignments: string[];
     interestsThematicSel: string[];
     regionIdsSel: string[];
+    conferenceTypeId: string;
+    conferenceEventId: string;
     sort: SortState;
     columns: ColumnsState | null;
     filters: FiltersState | null;
@@ -1197,6 +1234,8 @@ export default function Organizations() {
     strategicAlignments,
     interestsThematicSel,
     regionIdsSel,
+    conferenceTypeId,
+    conferenceEventId,
     sort: ts.sort,
     columns: columnsState,
     filters: filtersState,
@@ -1219,6 +1258,8 @@ export default function Organizations() {
     setStrategicAlignments([]);
     setInterestsThematicSel([]);
     setRegionIdsSel([]);
+    setConferenceTypeId("");
+    setConferenceEventId("");
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
     selection.clear();
@@ -1244,6 +1285,8 @@ export default function Organizations() {
       setStrategicAlignments(s.strategicAlignments ?? []);
       setInterestsThematicSel(s.interestsThematicSel ?? []);
       setRegionIdsSel(s.regionIdsSel ?? []);
+      setConferenceTypeId(s.conferenceTypeId ?? "");
+      setConferenceEventId(s.conferenceEventId ?? "");
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
       setFiltersState(s.filters ?? null);
@@ -1270,6 +1313,8 @@ export default function Organizations() {
         (s.strategicAlignments?.length ?? 0) === 0 &&
         (s.interestsThematicSel?.length ?? 0) === 0 &&
         (s.regionIdsSel?.length ?? 0) === 0 &&
+        !s.conferenceTypeId &&
+        !s.conferenceEventId &&
         (s.sort?.key ?? null) === null &&
         (s.columns ?? null) === null &&
         (s.filters ?? null) === null

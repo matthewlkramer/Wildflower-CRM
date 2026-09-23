@@ -74,6 +74,7 @@ import newsletterRouter from "./newsletter";
 import newsletterPreferencesRouter from "./newsletterPreferences";
 import tripPlansRouter from "./tripPlans";
 import enrichmentRouter from "./enrichment";
+import conferencesRouter from "./conferences";
 
 const router: IRouter = Router();
 
@@ -165,5 +166,6 @@ router.use(newsletterRouter);
 router.use(newsletterPreferencesRouter);
 router.use(tripPlansRouter);
 router.use(enrichmentRouter);
+router.use(conferencesRouter);
 
 export default router;

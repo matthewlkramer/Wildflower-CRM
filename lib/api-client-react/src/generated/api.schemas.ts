@@ -37,10 +37,314 @@ export interface ErrorResponse {
   details?: ErrorResponseDetails;
 }
 
+export interface ConferenceType {
+  id: string;
+  displayName: string;
+  aliases: string[];
+  /** @nullable */
+  organizer?: string | null;
+  /** @nullable */
+  websiteUrl?: string | null;
+  active: boolean;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConferenceTypeInput {
+  /** @minLength 1 */
+  displayName: string;
+  aliases?: string[];
+  /** @nullable */
+  organizer?: string | null;
+  /** @nullable */
+  websiteUrl?: string | null;
+  active?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type ConferenceTypeUpdate = ConferenceTypeInput;
+
+export type ConferenceEventStatus = typeof ConferenceEventStatus[keyof typeof ConferenceEventStatus];
+
+
+export const ConferenceEventStatus = {
+  planned: 'planned',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface ConferenceEvent {
+  id: string;
+  conferenceTypeId: string;
+  year: number;
+  /** @nullable */
+  nameOverride?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  attendeeSiteUrl?: string | null;
+  /** @nullable */
+  source?: string | null;
+  status: ConferenceEventStatus;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ConferenceEventSummary = ConferenceEvent & {
+  conferenceTypeName: string;
+  attendanceCount: number;
+};
+
+export type ConferenceEventInputStatus = typeof ConferenceEventInputStatus[keyof typeof ConferenceEventInputStatus];
+
+
+export const ConferenceEventInputStatus = {
+  planned: 'planned',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface ConferenceEventInput {
+  conferenceTypeId: string;
+  /**
+   * @minimum 2000
+   * @maximum 2200
+   */
+  year: number;
+  /** @nullable */
+  nameOverride?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  attendeeSiteUrl?: string | null;
+  /** @nullable */
+  source?: string | null;
+  status?: ConferenceEventInputStatus;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type ConferenceEventUpdate = ConferenceEventInput;
+
+export type ConferenceAttendanceRowStatus = typeof ConferenceAttendanceRowStatus[keyof typeof ConferenceAttendanceRowStatus];
+
+
+export const ConferenceAttendanceRowStatus = {
+  confirmed: 'confirmed',
+  likely: 'likely',
+  possible: 'possible',
+} as const;
+
+export type ConferenceAttendanceRowSourceType = typeof ConferenceAttendanceRowSourceType[keyof typeof ConferenceAttendanceRowSourceType];
+
+
+export const ConferenceAttendanceRowSourceType = {
+  uploaded_list: 'uploaded_list',
+  conference_website: 'conference_website',
+  wildflower_email: 'wildflower_email',
+  manual: 'manual',
+} as const;
+
+export interface ConferenceAttendanceRow {
+  id: string;
+  conferenceEventId: string;
+  personId: string;
+  personName: string;
+  /** @nullable */
+  organizationId?: string | null;
+  /** @nullable */
+  organizationName?: string | null;
+  status: ConferenceAttendanceRowStatus;
+  sourceType: ConferenceAttendanceRowSourceType;
+  /** @nullable */
+  sourceReference?: string | null;
+  /** @nullable */
+  evidenceNote?: string | null;
+  createdAt: string;
+}
+
 export interface Pagination {
   page: number;
   limit: number;
   total: number;
+}
+
+export interface ConferenceAttendanceList {
+  data: ConferenceAttendanceRow[];
+  pagination: Pagination;
+}
+
+export type ConferenceAttendanceInputStatus = typeof ConferenceAttendanceInputStatus[keyof typeof ConferenceAttendanceInputStatus];
+
+
+export const ConferenceAttendanceInputStatus = {
+  confirmed: 'confirmed',
+  likely: 'likely',
+  possible: 'possible',
+} as const;
+
+export type ConferenceAttendanceInputSourceType = typeof ConferenceAttendanceInputSourceType[keyof typeof ConferenceAttendanceInputSourceType];
+
+
+export const ConferenceAttendanceInputSourceType = {
+  uploaded_list: 'uploaded_list',
+  conference_website: 'conference_website',
+  wildflower_email: 'wildflower_email',
+  manual: 'manual',
+} as const;
+
+export interface ConferenceAttendanceInput {
+  personId: string;
+  status?: ConferenceAttendanceInputStatus;
+  sourceType?: ConferenceAttendanceInputSourceType;
+  /** @nullable */
+  sourceReference?: string | null;
+  /** @nullable */
+  evidenceNote?: string | null;
+}
+
+export interface ConferenceImportInput {
+  /** @minLength 1 */
+  csvText: string;
+  /** @nullable */
+  filename?: string | null;
+}
+
+export type ConferenceImportRowMatchStatus = typeof ConferenceImportRowMatchStatus[keyof typeof ConferenceImportRowMatchStatus];
+
+
+export const ConferenceImportRowMatchStatus = {
+  exact: 'exact',
+  ambiguous: 'ambiguous',
+  unmatched: 'unmatched',
+} as const;
+
+export type ConferenceImportRowDisposition = typeof ConferenceImportRowDisposition[keyof typeof ConferenceImportRowDisposition];
+
+
+export const ConferenceImportRowDisposition = {
+  pending: 'pending',
+  accept: 'accept',
+  skip: 'skip',
+} as const;
+
+export interface ConferenceImportRow {
+  id: string;
+  rowNumber: number;
+  /** @nullable */
+  rawName?: string | null;
+  /** @nullable */
+  rawEmail?: string | null;
+  /** @nullable */
+  rawOrganization?: string | null;
+  matchStatus: ConferenceImportRowMatchStatus;
+  /** @nullable */
+  matchedPersonId?: string | null;
+  /** @nullable */
+  matchedPersonName?: string | null;
+  /** @nullable */
+  matchEvidence?: string | null;
+  disposition: ConferenceImportRowDisposition;
+}
+
+export type ConferenceImportBatchStatus = typeof ConferenceImportBatchStatus[keyof typeof ConferenceImportBatchStatus];
+
+
+export const ConferenceImportBatchStatus = {
+  staged: 'staged',
+  confirmed: 'confirmed',
+} as const;
+
+export interface ConferenceImportBatch {
+  id: string;
+  conferenceEventId: string;
+  status: ConferenceImportBatchStatus;
+  /** @nullable */
+  sourceFilename?: string | null;
+  rows: ConferenceImportRow[];
+  createdAt: string;
+}
+
+export type ConferenceImportConfirmInputPersonOverrides = {[key: string]: string};
+
+export interface ConferenceImportConfirmInput {
+  acceptedRowIds?: string[];
+  personOverrides?: ConferenceImportConfirmInputPersonOverrides;
+}
+
+export interface ConferenceResearchRequestInput {
+  /** @nullable */
+  attendeeSiteUrl?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+}
+
+export interface ConferenceResearchRequest {
+  id: string;
+  conferenceEventId: string;
+  /** @nullable */
+  attendeeSiteUrl?: string | null;
+  /** @nullable */
+  instructions?: string | null;
+  prompt: string;
+  status: string;
+  createdAt: string;
+}
+
+export type ConferenceAttendanceSuggestionConfidence = typeof ConferenceAttendanceSuggestionConfidence[keyof typeof ConferenceAttendanceSuggestionConfidence];
+
+
+export const ConferenceAttendanceSuggestionConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export type ConferenceAttendanceSuggestionStatus = typeof ConferenceAttendanceSuggestionStatus[keyof typeof ConferenceAttendanceSuggestionStatus];
+
+
+export const ConferenceAttendanceSuggestionStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ConferenceAttendanceSuggestion {
+  id: string;
+  conferenceEventId: string;
+  personId: string;
+  personName: string;
+  /** @nullable */
+  emailMessageId?: string | null;
+  confidence: ConferenceAttendanceSuggestionConfidence;
+  evidenceNote: string;
+  status: ConferenceAttendanceSuggestionStatus;
+  createdAt: string;
+}
+
+export type ConferenceAttendanceSuggestionReviewStatus = typeof ConferenceAttendanceSuggestionReviewStatus[keyof typeof ConferenceAttendanceSuggestionReviewStatus];
+
+
+export const ConferenceAttendanceSuggestionReviewStatus = {
+  accepted: 'accepted',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ConferenceAttendanceSuggestionReview {
+  status: ConferenceAttendanceSuggestionReviewStatus;
 }
 
 export interface EnrichmentSuggestedValue {
@@ -11347,6 +11651,29 @@ export type ListFundableProjectsParams = {
 includeArchived?: IncludeArchivedQueryParameter;
 };
 
+export type ListConferenceTypesParams = {
+active?: boolean;
+};
+
+export type ListConferenceEventsParams = {
+conferenceTypeId?: string;
+year?: number;
+search?: string;
+};
+
+export type ListConferenceAttendanceParams = {
+/**
+ * @minimum 1
+ */
+page?: number;
+/**
+ * @minimum 1
+ * @maximum 200
+ */
+limit?: number;
+search?: string;
+};
+
 export type ListFiscalYearsParams = {
 /**
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
@@ -11372,6 +11699,14 @@ makesPris?: boolean;
  * Filter to direct child organizations of the given parent.
  */
 parentOrganizationId?: string;
+/**
+ * Organizations related (currently or historically) to an attendee of this conference type.
+ */
+conferenceTypeId?: string;
+/**
+ * Organizations related (currently or historically) to an attendee of this event.
+ */
+conferenceEventId?: string;
 /**
  * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none). Only meaningful for issuesGrants=true.
  */
@@ -11551,6 +11886,14 @@ deceased?: boolean;
  */
 showFoundationPartners?: boolean;
 regionId?: string;
+/**
+ * People who attended any event of this conference type.
+ */
+conferenceTypeId?: string;
+/**
+ * People who attended this specific conference event.
+ */
+conferenceEventId?: string;
 /**
  * Rollup presence filter on lifetime giving (`has` = >0, `blank` = none).
  */

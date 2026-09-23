@@ -345,6 +345,22 @@ async function buildPeopleListWhere(
     if (showFoundationPartners === false)
       filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
     if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
+    // Conference attendance is person-owned. A type filter means "ever
+    // attended"; an event filter narrows to one year/occurrence.
+    if (q.conferenceEventId) {
+      filters.push(sql`EXISTS (
+        SELECT 1 FROM conference_attendance ca
+        WHERE ca.person_id = ${people.id}
+          AND ca.conference_event_id = ${q.conferenceEventId}
+      )`);
+    } else if (q.conferenceTypeId) {
+      filters.push(sql`EXISTS (
+        SELECT 1 FROM conference_attendance ca
+        JOIN conference_events ce ON ce.id = ca.conference_event_id
+        WHERE ca.person_id = ${people.id}
+          AND ce.conference_type_id = ${q.conferenceTypeId}
+      )`);
+    }
     const capacityFilter = splitBlank(q.capacityRating);
     if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {
       filters.push(

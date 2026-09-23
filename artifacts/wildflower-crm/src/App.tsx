@@ -48,6 +48,7 @@ import TripPlanner from "@/pages/trip-planner";
 import Newsletter from "@/pages/newsletter";
 import WildflowerUpdates from "@/pages/wildflower-updates";
 import WildflowerUpdateDetail from "@/pages/wildflower-update-detail";
+import Conferences from "@/pages/conferences";
 import Layout from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { EntityFilterProvider } from "@/lib/entity-filter-context";
@@ -241,6 +242,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/meetings/notes/:noteId"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/meetings/:id"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/trips"><ProtectedRoute component={TripPlanner} /></Route>
+          <Route path="/conferences"><ProtectedRoute component={Conferences} /></Route>
           <Route path="/wildflower-updates"><ProtectedRoute component={WildflowerUpdates} /></Route>
           <Route path="/wildflower-updates/:id"><ProtectedRoute component={WildflowerUpdateDetail} /></Route>
           <Route path="/newsletter"><ProtectedRoute component={Newsletter} /></Route>

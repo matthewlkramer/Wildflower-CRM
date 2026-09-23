@@ -30,7 +30,8 @@ export type AuditAction =
   | "bulk_archive"
   | "newsletter_preference_recorded"
   | "field_enriched"
-  | "field_enrichment_dismissed";
+  | "field_enrichment_dismissed"
+  | "conference_attendance_reviewed";
 
 export interface AuditEvent {
   action: AuditAction;

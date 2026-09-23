@@ -33,6 +33,7 @@ import {
   Newspaper,
   CalendarCheck2,
   Plane,
+  GalleryVerticalEnd,
   WandSparkles,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
@@ -99,6 +100,7 @@ const navItems: NavEntry[] = [
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/meetings", label: "Meetings", icon: CalendarCheck2 },
   { href: "/trips", label: "Trip Planner", icon: Plane },
+  { href: "/conferences", label: "Conferences", icon: GalleryVerticalEnd },
   { href: "/wildflower-updates", label: "Wildflower Updates", icon: Newspaper },
   { href: "/newsletter", label: "Newsletter", icon: Newspaper },
   { href: "/email-tracking", label: "Email Tracking", icon: Eye },
