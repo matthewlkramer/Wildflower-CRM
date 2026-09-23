@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-09-12
+last_verified: 2026-09-23
 ---
 
 # Individual and organization enrichment field audit
@@ -35,7 +35,7 @@ history. Person home-region suggestions are unchanged.
 | Person interests (`interests_thematic`, `interests_ages`, `interests_gov_models`) | Giving and affiliation categories are contextual evidence, not reliable statements of personal interest. A future proposal should expose supporting records and confidence.                       |
 | Person `children_at_wf`                                                           | No canonical child-to-parent/school-enrollment relationship exists in the current schema. Free-text guessing would be unsafe.                                                                     |
 | Person employer region                                                            | No canonical employer-region field exists. The current home-region enricher may use a current organization address only as lowest-priority evidence when personal/household addresses are absent. |
-| Organization `entity_type` / sector                                               | External charity-registry matching needs a stable EIN or registry identifier, which is not currently a canonical organization field.                                                              |
+| Organization `entity_type` / sector                                               | EIN is now a canonical organization field, but external charity-registry matching still needs a selected provider plus identity-match and overwrite rules.                                        |
 | Addresses and social links                                                        | External lookup sources, overwrite policy, and identity-match thresholds must be selected before implementation.                                                                                  |
 
 ## External and bulk processing

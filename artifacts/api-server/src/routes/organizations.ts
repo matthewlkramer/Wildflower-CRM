@@ -90,6 +90,26 @@ const ORGANIZATIONS_ARRAY_PARAMS = [
 const router: IRouter = Router();
 router.use(requireAuth);
 
+function isEinConflict(error: unknown): boolean {
+  const candidate = error as {
+    code?: string;
+    constraint?: string;
+    message?: string;
+  };
+  return (
+    (candidate?.code === "23505" &&
+      candidate.constraint === "organizations_ein_uq") ||
+    /organizations_ein_uq/i.test(candidate?.message ?? "")
+  );
+}
+
+function respondEinConflict(res: Response) {
+  res.status(409).json({
+    error: "ein_conflict",
+    message: "Another organization already uses this EIN.",
+  });
+}
+
 // Mask the denormalized primary-contact display name on an orgsListSelect row
 // and strip the anonymous/owner helper aliases so the JSON response shape is
 // unchanged. The org's own name carries anonymous + owner on the row, so the
@@ -661,14 +681,23 @@ router.post(
     }
     const body = parseOrBadRequest(CreateOrganizationBody, req.body, res);
     if (!body) return;
-    const [row] = await db
+    const insertedRows = await db
       .insert(organizations)
       .values({
         id: newId(),
         ...body,
         entityType: (body.entityType ?? null) as never,
       })
-      .returning(orgColumns);
+      .returning(orgColumns)
+      .catch((error: unknown) => {
+        if (body.ein && isEinConflict(error)) {
+          respondEinConflict(res);
+          return null;
+        }
+        throw error;
+      });
+    if (!insertedRows) return;
+    const [row] = insertedRows;
     if (row)
       await auditCreate(
         req,
@@ -707,11 +736,20 @@ router.patch(
     const needsTracking = trackingFields.some((f) => f in body);
     const before = needsTracking ? auditBefore : undefined;
 
-    const [row] = await db
+    const updatedRows = await db
       .update(organizations)
       .set({ ...body, updatedAt: new Date() } as never)
       .where(eq(organizations.id, id))
-      .returning(orgColumns);
+      .returning(orgColumns)
+      .catch((error: unknown) => {
+        if (body.ein && isEinConflict(error)) {
+          respondEinConflict(res);
+          return null;
+        }
+        throw error;
+      });
+    if (!updatedRows) return;
+    const [row] = updatedRows;
     if (!row) return notFound(res, "organization");
 
     // Write history entries for any tracked fields that actually changed.

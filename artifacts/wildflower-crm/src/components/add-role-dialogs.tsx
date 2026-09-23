@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Plus, Pencil, Trash2 } from "lucide-react";
@@ -90,6 +91,8 @@ function RoleAttributeFields({
   setConnection,
   title,
   setTitle,
+  notes,
+  setNotes,
   current,
   setCurrent,
   primary,
@@ -100,6 +103,8 @@ function RoleAttributeFields({
   setConnection: (v: string) => void;
   title: string;
   setTitle: (v: string) => void;
+  notes: string;
+  setNotes: (v: string) => void;
   current: PeopleRoleCurrent;
   setCurrent: (v: PeopleRoleCurrent) => void;
   primary: boolean;
@@ -154,6 +159,17 @@ function RoleAttributeFields({
           data-testid={`input-${idPrefix}-title`}
         />
       </div>
+      <div className="space-y-1.5">
+        <Label htmlFor={`${idPrefix}-notes`}>Relationship notes</Label>
+        <Textarea
+          id={`${idPrefix}-notes`}
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Context specific to this relationship"
+          rows={3}
+          data-testid={`textarea-${idPrefix}-notes`}
+        />
+      </div>
       <div className="flex items-center gap-2">
         <Checkbox
           id={`${idPrefix}-primary`}
@@ -172,17 +188,19 @@ function RoleAttributeFields({
 function buildRoleAttrs(
   connection: string,
   title: string,
+  notes: string,
   current: PeopleRoleCurrent,
   primary: boolean,
 ): Pick<
   CreatePeopleEntityRoleBody,
-  "connection" | "externalTitleOrRole" | "current" | "primaryContact"
+  "connection" | "externalTitleOrRole" | "notes" | "current" | "primaryContact"
 > {
   return {
     connection: connection
       ? (connection as PeopleEntityRoleConnection)
       : undefined,
     externalTitleOrRole: title.trim() || undefined,
+    notes: notes.trim() || undefined,
     current,
     primaryContact: primary || undefined,
   };
@@ -191,7 +209,10 @@ function buildRoleAttrs(
 // Split a single typed name into first/last for inline person creation. The
 // last whitespace-separated token becomes the last name; everything before it
 // the first name. A single token is treated as a first name only.
-function splitPersonName(name: string): { firstName?: string; lastName?: string } {
+function splitPersonName(name: string): {
+  firstName?: string;
+  lastName?: string;
+} {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return {};
   if (parts.length === 1) return { firstName: parts[0] };
@@ -219,6 +240,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
   const [entityId, setEntityId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(
     PeopleRoleCurrent.current,
   );
@@ -231,6 +253,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
     setEntityId(null);
     setConnection("");
     setTitle("");
+    setNotes("");
     setCurrent(PeopleRoleCurrent.current);
     setPrimary(false);
   };
@@ -282,7 +305,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
 
   const submit = () => {
     if (!entityId || create.isPending) return;
-    const attrs = buildRoleAttrs(connection, title, current, primary);
+    const attrs = buildRoleAttrs(connection, title, notes, current, primary);
     create.mutate({
       data: {
         personId,
@@ -377,6 +400,8 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
             setConnection={setConnection}
             title={title}
             setTitle={setTitle}
+            notes={notes}
+            setNotes={setNotes}
             current={current}
             setCurrent={setCurrent}
             primary={primary}
@@ -414,11 +439,16 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
 /* Links a person to this funder.                                            */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-export function AddOrganizationPersonRoleDialog({ organizationId }: { organizationId: string }) {
+export function AddOrganizationPersonRoleDialog({
+  organizationId,
+}: {
+  organizationId: string;
+}) {
   const [open, setOpen] = useState(false);
   const [personId, setPersonId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(
     PeopleRoleCurrent.current,
   );
@@ -430,6 +460,7 @@ export function AddOrganizationPersonRoleDialog({ organizationId }: { organizati
     setPersonId(null);
     setConnection("");
     setTitle("");
+    setNotes("");
     setCurrent(PeopleRoleCurrent.current);
     setPrimary(false);
   };
@@ -446,7 +477,9 @@ export function AddOrganizationPersonRoleDialog({ organizationId }: { organizati
         data: { ...splitPersonName(fullName), fullName },
       });
       queryClient.setQueryData(getGetPersonQueryKey(p.id), p);
-      await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+      await queryClient.invalidateQueries({
+        queryKey: getListPeopleQueryKey(),
+      });
       toast({ title: "Person created" });
       return p.id;
     } catch (err: unknown) {
@@ -481,7 +514,7 @@ export function AddOrganizationPersonRoleDialog({ organizationId }: { organizati
 
   const submit = () => {
     if (!personId || create.isPending) return;
-    const attrs = buildRoleAttrs(connection, title, current, primary);
+    const attrs = buildRoleAttrs(connection, title, notes, current, primary);
     create.mutate({
       data: {
         personId,
@@ -536,6 +569,8 @@ export function AddOrganizationPersonRoleDialog({ organizationId }: { organizati
             setConnection={setConnection}
             title={title}
             setTitle={setTitle}
+            notes={notes}
+            setNotes={setNotes}
             current={current}
             setCurrent={setCurrent}
             primary={primary}
@@ -579,6 +614,7 @@ export function AddHouseholdMemberDialog({
   const [personId, setPersonId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(
     PeopleRoleCurrent.current,
   );
@@ -590,6 +626,7 @@ export function AddHouseholdMemberDialog({
     setPersonId(null);
     setConnection("");
     setTitle("");
+    setNotes("");
     setCurrent(PeopleRoleCurrent.current);
     setPrimary(false);
   };
@@ -606,7 +643,9 @@ export function AddHouseholdMemberDialog({
         data: { ...splitPersonName(fullName), fullName },
       });
       queryClient.setQueryData(getGetPersonQueryKey(p.id), p);
-      await queryClient.invalidateQueries({ queryKey: getListPeopleQueryKey() });
+      await queryClient.invalidateQueries({
+        queryKey: getListPeopleQueryKey(),
+      });
       toast({ title: "Person created" });
       return p.id;
     } catch (err: unknown) {
@@ -641,7 +680,7 @@ export function AddHouseholdMemberDialog({
 
   const submit = () => {
     if (!personId || create.isPending) return;
-    const attrs = buildRoleAttrs(connection, title, current, primary);
+    const attrs = buildRoleAttrs(connection, title, notes, current, primary);
     create.mutate({
       data: {
         personId,
@@ -698,6 +737,8 @@ export function AddHouseholdMemberDialog({
             setConnection={setConnection}
             title={title}
             setTitle={setTitle}
+            notes={notes}
+            setNotes={setNotes}
             current={current}
             setCurrent={setCurrent}
             primary={primary}
@@ -744,7 +785,11 @@ const RELATION_LABEL: Record<FunderRelation, string> = {
   child: "Child funder",
 };
 
-export function AddOrganizationRelationDialog({ organizationId }: { organizationId: string }) {
+export function AddOrganizationRelationDialog({
+  organizationId,
+}: {
+  organizationId: string;
+}) {
   const [open, setOpen] = useState(false);
   const [relation, setRelation] = useState<FunderRelation>("parent");
   const [entityId, setEntityId] = useState<string | null>(null);
@@ -761,7 +806,9 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
       queryClient.invalidateQueries({
         queryKey: getGetOrganizationQueryKey(organizationId),
       }),
-      queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() }),
+      queryClient.invalidateQueries({
+        queryKey: getListOrganizationsQueryKey(),
+      }),
       ...(otherFunderId
         ? [
             queryClient.invalidateQueries({
@@ -775,7 +822,9 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
   const update = useUpdateOrganization({
     mutation: {
       onSuccess: async (_data, vars) => {
-        await invalidateOrganizations(vars.id === organizationId ? undefined : vars.id);
+        await invalidateOrganizations(
+          vars.id === organizationId ? undefined : vars.id,
+        );
         toast({ title: "Relationship added" });
         setOpen(false);
         reset();
@@ -793,10 +842,16 @@ export function AddOrganizationRelationDialog({ organizationId }: { organization
   const submit = () => {
     if (!entityId || update.isPending) return;
     if (relation === "parent") {
-      update.mutate({ id: organizationId, data: { parentOrganizationId: entityId } });
+      update.mutate({
+        id: organizationId,
+        data: { parentOrganizationId: entityId },
+      });
     } else {
       // The child funder gets this funder as its parent.
-      update.mutate({ id: entityId, data: { parentOrganizationId: organizationId } });
+      update.mutate({
+        id: entityId,
+        data: { parentOrganizationId: organizationId },
+      });
     }
   };
 
@@ -919,6 +974,7 @@ export function EditPeopleEntityRoleDialog({
   const [open, setOpen] = useState(false);
   const [connection, setConnection] = useState(role.connection ?? "");
   const [title, setTitle] = useState(role.externalTitleOrRole ?? "");
+  const [notes, setNotes] = useState(role.notes ?? "");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(role.current);
   const [primary, setPrimary] = useState(role.primaryContact);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -930,6 +986,7 @@ export function EditPeopleEntityRoleDialog({
   const syncFromRole = () => {
     setConnection(role.connection ?? "");
     setTitle(role.externalTitleOrRole ?? "");
+    setNotes(role.notes ?? "");
     setCurrent(role.current);
     setPrimary(role.primaryContact);
     setConfirmDelete(false);
@@ -942,7 +999,8 @@ export function EditPeopleEntityRoleDialog({
       getGetPersonQueryKey(role.personId),
       getListPeopleEntityRolesQueryKey(),
     ];
-    if (role.organizationId) keys.push(getGetOrganizationQueryKey(role.organizationId));
+    if (role.organizationId)
+      keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.organizationId)
       keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.householdId) keys.push(getGetHouseholdQueryKey(role.householdId));
@@ -1000,6 +1058,7 @@ export function EditPeopleEntityRoleDialog({
           ? (connection as PeopleEntityRoleConnection)
           : null,
         externalTitleOrRole: title.trim() ? title.trim() : null,
+        notes: notes.trim() ? notes.trim() : null,
         current,
         primaryContact: primary,
       },
@@ -1039,6 +1098,8 @@ export function EditPeopleEntityRoleDialog({
             setConnection={setConnection}
             title={title}
             setTitle={setTitle}
+            notes={notes}
+            setNotes={setNotes}
             current={current}
             setCurrent={setCurrent}
             primary={primary}
@@ -1096,15 +1157,12 @@ export function EditPeopleEntityRoleDialog({
 /* Links this person to an existing household, or creates a new one first.    */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-export function AddPersonToHouseholdDialog({
-  personId,
-}: {
-  personId: string;
-}) {
+export function AddPersonToHouseholdDialog({ personId }: { personId: string }) {
   const [open, setOpen] = useState(false);
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
+  const [notes, setNotes] = useState("");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(
     PeopleRoleCurrent.current,
   );
@@ -1116,13 +1174,16 @@ export function AddPersonToHouseholdDialog({
     setHouseholdId(null);
     setConnection("");
     setTitle("");
+    setNotes("");
     setCurrent(PeopleRoleCurrent.current);
     setPrimary(false);
   };
 
   const createHousehold = useCreateHousehold();
 
-  const handleCreateHousehold = async (name: string): Promise<string | null> => {
+  const handleCreateHousehold = async (
+    name: string,
+  ): Promise<string | null> => {
     const trimmed = name.trim();
     if (!trimmed) return null;
     try {
@@ -1171,7 +1232,7 @@ export function AddPersonToHouseholdDialog({
 
   const submit = () => {
     if (!householdId || create.isPending) return;
-    const attrs = buildRoleAttrs(connection, title, current, primary);
+    const attrs = buildRoleAttrs(connection, title, notes, current, primary);
     create.mutate({
       data: {
         personId,
@@ -1228,6 +1289,8 @@ export function AddPersonToHouseholdDialog({
             setConnection={setConnection}
             title={title}
             setTitle={setTitle}
+            notes={notes}
+            setNotes={setNotes}
             current={current}
             setCurrent={setCurrent}
             primary={primary}

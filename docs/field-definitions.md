@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-21
+last_verified: 2026-09-23
 ---
 
 # Donor fields and shared cleanup work
@@ -13,9 +13,14 @@ These definitions reflect the owner's field/schema decisions of September 12,
 | Priority | Staff's overall assessment of the best prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. It remains manual; supporting ratings are useful context, not duplicate versions of priority. |
 | Potential annual giving to Wildflower | Estimated annual giving potential to Wildflower, using the existing capacity bands. Blank means not assessed. It is not net worth, lifetime giving, or an expected pledge. |
 | Relationship owner | Staff member responsible for cultivating and coordinating the relationship. |
+| Organization type | The organization's canonical structural/type classification. It is optional, can be set during organization creation, and remains editable on the organization record. |
+| Organization EIN | Federal Employer Identification Number, stored in `NN-NNNNNNN` format and unique across organizations. It may be entered manually or accepted through the enrichment review queue. |
 | Organization funding regions | Places the organization is interested in funding. Office location comes from Contact info addresses and must not populate this field. Blank means interests are unknown. |
 | Person funding regions | Geographic funding interests, separate from current home region. |
 | Display as Anonymous in CRM | Existing CRM name masking. This does not record a public recognition instruction or imply complete anonymity from authorized staff. |
+| Assistant | Optional person-to-person link identifying the administrative assistant supporting an individual. |
+| Relationship notes | Context specific to one person's affiliation with an organization or payment intermediary. This belongs on the affiliation, not in either record's general notes. |
+| Organization interaction count | Read-only imported count of recorded interactions. It is displayed for context and is not manually editable. |
 | Organization email | Canonical rows in Contact info → Emails. The detail shortcut derives the preferred usable address, then the oldest usable address. There is no independently editable organization email. |
 | Expected commitment date | Anticipated donor decision/commitment date, separate from payment timing and fiscal-year credit. |
 | Committed amount / award ceiling | Relevant to a pledge or verbally confirmed commitment. Initial prospect forms do not ask for it. |

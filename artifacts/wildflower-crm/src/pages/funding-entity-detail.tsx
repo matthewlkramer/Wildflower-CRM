@@ -21,6 +21,7 @@ import {
   type NumberOfEmployees,
   type CapacityRating,
   type Priority,
+  EntityType,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
@@ -48,6 +49,8 @@ import {
   Link2,
   Linkedin,
   Mail,
+  Twitter,
+  Youtube,
 } from "lucide-react";
 import {
   AddOrganizationPersonRoleDialog,
@@ -91,7 +94,9 @@ import {
   formatFacebookHandle,
   formatInstagramHandle,
   formatLinkedinHandle,
+  formatXHandle,
 } from "@/lib/format";
+import { isValidEin, normalizeEin } from "@/lib/ein";
 
 const ACTIVE_STATUS_OPTIONS = [
   { value: "active", label: "Active" },
@@ -121,26 +126,10 @@ const ALIGNMENT_OPTIONS = [
   { value: "low", label: "Low" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<StrategicAlignment>>;
 
-const SUBTYPE_OPTIONS = [
-  { value: "family_foundation", label: "Family foundation" },
-  { value: "institutional_foundation", label: "Institutional foundation" },
-  { value: "corporate_foundation", label: "Corporate foundation" },
-  { value: "community_foundation", label: "Community foundation" },
-  { value: "bank_foundation", label: "Bank foundation" },
-  { value: "family_office_trust", label: "Family office / trust" },
-  { value: "intermediary", label: "Intermediary" },
-  { value: "government", label: "Government" },
-  { value: "nonprofit", label: "Nonprofit" },
-  { value: "corporation", label: "Corporation" },
-  { value: "capital_provider", label: "Capital provider" },
-  { value: "philanthropic_advisor", label: "Philanthropic advisor" },
-  { value: "cdfi", label: "CDFI" },
-  { value: "education_forprofit", label: "Education for-profit" },
-  { value: "competition", label: "Competition" },
-  { value: "public_private", label: "Public–private" },
-  { value: "daf_platform", label: "DAF platform" },
-  { value: "platform", label: "Platform" },
-] as const satisfies ReadonlyArray<InlineSelectOption<string>>;
+const ORGANIZATION_TYPE_OPTIONS = Object.values(EntityType).map((value) => ({
+  value,
+  label: formatEnum(value),
+})) satisfies ReadonlyArray<InlineSelectOption<EntityType>>;
 
 const EMPLOYEES_OPTIONS = [
   { value: "e_1", label: "1" },
@@ -366,6 +355,19 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
     return update.mutateAsync({ id: org.id, data: body });
   }
 
+  function saveEin(next: string | null) {
+    const normalized = normalizeEin(next);
+    if (!isValidEin(normalized)) {
+      toast({
+        title: "Invalid EIN",
+        description: "Enter nine digits in NN-NNNNNNN format.",
+        variant: "destructive",
+      });
+      return Promise.reject(new Error("Invalid EIN"));
+    }
+    return patch({ ein: normalized });
+  }
+
   async function saveName() {
     const trimmed = nameValue.trim();
     if (!trimmed || trimmed === org.name) {
@@ -502,6 +504,11 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       label: "Last contacted",
       value: formatDate(org.lastContacted),
     },
+    {
+      label: "Interactions",
+      value:
+        org.interactionCount == null ? "—" : String(org.interactionCount),
+    },
   ];
 
   const people = org.people ?? [];
@@ -529,10 +536,10 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       subtitle={
         <div className="w-full space-y-2">
           <InlineEditSelect
-            label="Subtype"
-            testIdBase="organization-subtype"
+            label="Organization type"
+            testIdBase="organization-type"
             value={org.entityType ?? null}
-            options={SUBTYPE_OPTIONS}
+            options={ORGANIZATION_TYPE_OPTIONS}
             display={formatEnum(org.entityType)}
             onSave={(next) => patch({ entityType: next })}
             align="left"
@@ -560,7 +567,13 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       left={
         <>
           <FieldCard title="Identity & engagement">
-            <p className="mb-3 text-xs text-muted-foreground">Priority is an overall judgment of future giving potential, informed by annual capacity, connection, enthusiasm, and fit. Capacity means potential annual giving to Wildflower; blank means not assessed. Relationship owner coordinates this donor relationship.</p>
+            <p className="mb-3 text-xs text-muted-foreground">
+              Priority is an overall judgment of future giving potential,
+              informed by annual capacity, connection, enthusiasm, and fit.
+              Capacity means potential annual giving to Wildflower; blank means
+              not assessed. Relationship owner coordinates this donor
+              relationship.
+            </p>
             <div className="space-y-4">
               <AttributeBadges>
                 <AttributeBadgeSelect
@@ -670,6 +683,18 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     value: formatInstagramHandle(org.instagram),
                     href: org.instagram,
                   },
+                  org.x && {
+                    icon: Twitter,
+                    label: "X",
+                    value: formatXHandle(org.x),
+                    href: org.x,
+                  },
+                  org.youtube && {
+                    icon: Youtube,
+                    label: "YouTube",
+                    value: org.youtube,
+                    href: org.youtube,
+                  },
                 ]}
               />
             </div>
@@ -690,6 +715,16 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                       )?.label ?? "—"
                     }
                     onSave={(next) => patch({ numberOfEmployees: next })}
+                  />
+                </Row>
+                <Row label="EIN">
+                  <InlineEditText
+                    label="EIN"
+                    testIdBase="organization-ein"
+                    value={org.ein ?? null}
+                    placeholder="12-3456789"
+                    display={org.ein ?? "—"}
+                    onSave={saveEin}
                   />
                 </Row>
                 <Row label="Total assets">
@@ -789,7 +824,10 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ interestsGovModels: next })}
                 />
               </TagEditRow>
-              <p className="text-xs text-muted-foreground">Places this organization is interested in funding. Office location belongs in Contact info; leave blank if unknown.</p>
+              <p className="text-xs text-muted-foreground">
+                Places this organization is interested in funding. Office
+                location belongs in Contact info; leave blank if unknown.
+              </p>
               <TagEditRow label="Funding regions">
                 <InlineEditMultiRegionPicker
                   testIdBase="organization-regions"
@@ -945,6 +983,28 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                   onSave={(next) => patch({ linkedin: next })}
                 />
               </Row>
+              <Row label="X">
+                <InlineEditText
+                  label="X"
+                  testIdBase="organization-x"
+                  value={org.x ?? null}
+                  display={
+                    org.x ? (
+                      <a
+                        href={org.x}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline truncate"
+                      >
+                        {formatXHandle(org.x)}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ x: next })}
+                />
+              </Row>
               <Row label="Crunchbase">
                 <InlineEditText
                   label="Crunchbase"
@@ -1009,6 +1069,29 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     )
                   }
                   onSave={(next) => patch({ instagram: next })}
+                />
+              </Row>
+              <Row label="YouTube">
+                <InlineEditText
+                  label="YouTube"
+                  testIdBase="organization-youtube"
+                  value={org.youtube ?? null}
+                  placeholder="https://youtube.com/…"
+                  display={
+                    org.youtube ? (
+                      <a
+                        href={org.youtube}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary hover:underline break-all"
+                      >
+                        {org.youtube}
+                      </a>
+                    ) : (
+                      "—"
+                    )
+                  }
+                  onSave={(next) => patch({ youtube: next })}
                 />
               </Row>
             </div>
@@ -1078,8 +1161,9 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
                     p.externalTitleOrRole ??
                     (p.connection ? formatEnum(p.connection) : null);
                   const role =
-                    [title, p.personEmail].filter(Boolean).join(" · ") ||
-                    undefined;
+                    [title, p.personEmail, p.notes]
+                      .filter(Boolean)
+                      .join(" · ") || undefined;
                   return (
                     <div
                       key={p.id}

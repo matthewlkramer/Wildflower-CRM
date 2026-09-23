@@ -316,6 +316,28 @@ export interface AutoResponderMove {
   quotedSnippet: string;
 }
 
+function cleanMoveCompany(raw: string): string | null {
+  const company = cleanCompany(
+    raw.replace(
+      /\s+(?:as\s+(?:a|an|the|senior|chief|executive|director|vice|vp|president|officer|manager|lead|head|partner|principal)\b|effective\b|starting\b|beginning\b|today\b|on\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|january|february|march|april|may|june|july|august|september|october|november|december|\d{1,2}[/-]\d{1,2})\b|where\b|which\b|at\s+the\s+end\b|and\s+(?:I|we|am|will|have|can)\b|please\b|feel\s+free\b|you\s+can\b)[\s\S]*$/i,
+      "",
+    ),
+  );
+  if (!company) return null;
+  // References back to a company named earlier are not useful company names.
+  if (/^(?:the\s+)?(?:organization|company|team|office|firm|agency|institution|business|community|board|meeting|call|conversation|role|position)$/i.test(company)) {
+    return null;
+  }
+  return company;
+}
+
+/**
+ * Detect a contact's job move in either a permanent auto-reply or a direct
+ * personal announcement. Despite the historical function name, callers may
+ * safely run this on every inbound matched email: every positive pattern is
+ * anchored to first-person employment language (or a named third-person
+ * permanent-departure statement), and the input scan is tightly capped.
+ */
 export function parseAutoResponderMove(
   bodyText: string | null,
   bodyHtml: string | null,
@@ -324,7 +346,12 @@ export function parseAutoResponderMove(
     ? bodyText
     : stripHtml(bodyHtml ?? "")) ?? "";
   if (!text) return null;
-  const head = text.slice(0, 1200);
+  // Only inspect what the current sender wrote. A reply may quote somebody
+  // else's job announcement, which must not be attributed to the replier.
+  const currentMessage = text.split(
+    /\r?\n(?:On\s+[^\r\n]{0,240}\s+wrote:|From:\s+|[-—]{2,}\s*Original Message\s*[-—]{2,})/i,
+  )[0] ?? text;
+  const head = currentMessage.slice(0, 1600).replace(/\s+/g, " ").trim();
 
   // Plain out-of-office / vacation auto-replies are noise: the person
   // is still at the org, just temporarily away. Bail when the message
@@ -334,30 +361,60 @@ export function parseAutoResponderMove(
   const oooRe =
     /\b(out\s+of\s+(?:the\s+)?office|on\s+(?:vacation|holiday|leave|pto|annual\s+leave|parental\s+leave|maternity\s+leave|paternity\s+leave|sabbatical)|away\s+from\s+(?:my\s+)?(?:desk|email|the\s+office)|currently\s+(?:traveling|travelling|away)|will\s+be\s+(?:out|away)|limited\s+access\s+to\s+(?:my\s+)?email|return(?:ing)?\s+(?:on|to\s+the\s+office))\b/i;
   const departureRe =
-    /\b(no\s+longer\s+(?:work|employed|with|at)|has\s+left|have\s+left|I\s+have\s+left|moved\s+on|new\s+(?:role|position|job|opportunity|chapter)|joined|accepted\s+a\s+(?:new\s+)?(?:role|position)|departed|resigned|last\s+day)\b/i;
+    /\b(no\s+longer\s+(?:work|employed|with|at)|has\s+left|have\s+left|moved\s+on|transitioning\s+(?:away|out)|new\s+(?:role|position|job|opportunity|chapter)|joined|accepted\s+a\s+(?:new\s+)?(?:role|position)|departed|resigned|retir(?:e|ing)|last\s+day)\b/i;
   if (oooRe.test(head) && !departureRe.test(head)) return null;
 
   let leftCompany: string | null = null;
   let newCompany: string | null = null;
   let newEmail: string | null = null;
 
-  // "I no longer work at Acme" / "I am no longer with Acme Corp"
-  const leftMatch = head.match(
-    /\b(?:I(?:'m| am)?|no longer)\s*(?:am\s+)?no\s+longer\s+(?:work(?:ing)?\s+(?:at|for|with)|with|at|employed\s+(?:at|by))\s+([A-Z][\w &.,'’()/-]{2,80})/i,
-  ) ?? head.match(
-    /\bhas\s+left\s+([A-Z][\w &.,'’()/-]{2,80})/i,
-  );
-  if (leftMatch) leftCompany = cleanCompany(leftMatch[1]);
+  // Prefer an explicit company named in a tenure preamble. This handles
+  // "After eight years with Acme, I am no longer with the organization."
+  const leftPatterns = [
+    /\bafter\s+[^.!;]{0,60}\b(?:years?|months?)\s+(?:working\s+)?(?:at|with|for)\s+(?:the\s+)?([A-Z][^.!;,]{1,100})[,;]/i,
+    /\bI(?:'m| am)?\s*(?:am\s+)?no\s+longer\s+(?:work(?:ing)?\s+(?:at|for|with)|with|at|employed\s+(?:at|by))\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\bI(?:'ve| have)\s+left(?:\s+my)?(?:\s+(?:position|role|job))?\s+(?:at|with|from)\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\bI(?:'m| am| will be|'ll be)\s+transitioning\s+(?:away|out)\s+from\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\b(?:today\s+is|was|will\s+be|is)?\s*my\s+last\s+day\s+(?:at|with)\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\bI(?:'m| am| will be|'ll be)\s+retiring\s+from\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\b[A-Z][A-Za-z'’.-]+(?:\s+[A-Z][A-Za-z'’.-]+){1,3}\s+(?:is|has\s+been)\s+no\s+longer\s+(?:working\s+(?:at|for|with)|with|at|employed\s+(?:at|by))\s+(?:the\s+)?([A-Z][^.!;]{1,100}?)(?=[.!;](?:\s+(?:Please\b|For\b|This\b)|$))/,
+  ];
+  for (const pattern of leftPatterns) {
+    const match = head.match(pattern);
+    if (!match) continue;
+    const candidate = cleanMoveCompany(match[1]);
+    if (candidate) {
+      leftCompany = candidate;
+      break;
+    }
+  }
 
-  // "I'm now at Acme" / "I have joined Acme" / "I've moved to Acme"
-  const newMatch = head.match(
-    /\b(?:I(?:'m| am| have| 've)?\s+(?:now\s+(?:at|with)|joined|moved\s+to|started\s+(?:a\s+new\s+)?(?:role|position)\s+(?:at|with))|currently\s+(?:at|with))\s+([A-Z][\w &.,'’()/-]{2,80})/i,
-  );
-  if (newMatch) newCompany = cleanCompany(newMatch[1]);
+  // Strong first-person new-job statements. A bare "currently at X" is too
+  // location-like to trust when scanning ordinary messages.
+  const newPatterns = [
+    /\bI(?:'ve| have| am|'m| will be|'ll be)?\s*(?:joined|joining)\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+    /\bI(?:'m| am| have|'ve| will be|'ll be)?\s*(?:taking\s+on|starting|started|accepted)\s+(?:a\s+)?(?:new\s+)?(?:role|position|job)\s+(?:at|with)\s+([A-Z][^.!;]{1,100})/i,
+    /\bI(?:'ll| will)\s+(?:be\s+)?(?:transitioning\s+[^.!;]{0,60}\s+)?to\s+join\s+(?:the\s+)?([A-Z][^.!;]{1,100})/i,
+  ];
+  for (const pattern of newPatterns) {
+    const match = head.match(pattern);
+    if (!match) continue;
+    const candidate = cleanMoveCompany(match[1]);
+    if (candidate) {
+      newCompany = candidate;
+      break;
+    }
+  }
+  if (leftCompany && !newCompany) {
+    const contextualNew = head.match(
+      /\bI(?:'m| am| have|'ve)?\s*(?:now\s+(?:at|with)|moved\s+to)\s+([A-Z][^.!;]{1,100})/i,
+    );
+    if (contextualNew) newCompany = cleanMoveCompany(contextualNew[1]);
+  }
 
   // "Please reach me at jane@newco.com" / "new email: jane@newco.com"
   const emailMatch = head.match(
-    /\b(?:reach(?:ed)?(?:\s+me)?(?:\s+at)?|contact\s+me(?:\s+at)?|new\s+email(?:\s+address)?(?:\s+is)?|email\s+me(?:\s+at)?|please\s+email)\s*[:\s]+([^\s<>"]+@[^\s<>"]+)/i,
+    /\b(?:reach(?:ed)?(?:\s+me)?(?:\s+at)?|contact\s+me(?:\s+at)?|new\s+email(?:\s+address)?(?:\s+is)?|email\s+me(?:\s+at)?|please\s+email|can\s+now\s+be\s+reached\s+at)\s*[:\s]+([^\s<>"]+@[^\s<>"]+)/i,
   );
   if (emailMatch) newEmail = emailMatch[1].toLowerCase().replace(/[.,;:>]+$/g, "");
 
@@ -365,7 +422,9 @@ export function parseAutoResponderMove(
   // org or joined/started somewhere new. A bare forwarding address
   // ("for urgent matters email my colleague at x@co.com") on its own is
   // NOT a move — those frequently appear in OOO replies.
-  if (!leftCompany && !newCompany) return null;
+  const permanentlyInactiveMailbox =
+    /\b(?:this\s+)?(?:mailbox|email\s+(?:address|account)|address)\s+is\s+no\s+longer\s+(?:actively\s+)?(?:monitored|active|in\s+use)\b/i.test(head);
+  if (!leftCompany && !newCompany && !(newEmail && permanentlyInactiveMailbox)) return null;
   const snippet = head.replace(/\s+/g, " ").trim().slice(0, 280);
   return { leftCompany, newCompany, newEmail, quotedSnippet: snippet };
 }

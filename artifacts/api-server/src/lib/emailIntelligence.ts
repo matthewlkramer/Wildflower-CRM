@@ -42,6 +42,7 @@ import {
   parseAutoResponderMove,
   parseBounce,
   parseEmailSignature,
+  type AutoResponderMove,
 } from "./intelDetectors";
 import {
   buildGrantLeadDedupeKey,
@@ -171,8 +172,15 @@ export async function processIntelForMatched(args: {
       // might have an auto-responder or signature payload worth
       // capturing.
     }
+    // Direct personal updates carry the same job-change signal as permanent
+    // auto-replies. Keep `isAutoResponder` narrow because Email Tracking also
+    // uses it to suppress automatic messages from its action queue.
+    const move = parseAutoResponderMove(args.bodyText, args.bodyHtml);
+    if (move) {
+      await handleAutoResponder(args, move);
+      return;
+    }
     if (isAutoResponder(args.subject, args.bodyText)) {
-      await handleAutoResponder(args);
       return;
     }
     // Signature parsing must be attributed to the SENDER, not just
@@ -475,18 +483,19 @@ async function handleGrants(args: {
   }
 }
 
-async function handleAutoResponder(args: {
-  mailboxUserId: string;
-  messageRowId: string;
-  fromEmail: string | null;
-  subject: string | null;
-  bodyText: string | null;
-  bodyHtml: string | null;
-  emailSentAt: Date | null;
-}): Promise<void> {
+async function handleAutoResponder(
+  args: {
+    mailboxUserId: string;
+    messageRowId: string;
+    fromEmail: string | null;
+    subject: string | null;
+    bodyText: string | null;
+    bodyHtml: string | null;
+    emailSentAt: Date | null;
+  },
+  move: AutoResponderMove,
+): Promise<void> {
   if (!args.fromEmail) return;
-  const move = parseAutoResponderMove(args.bodyText, args.bodyHtml);
-  if (!move) return;
 
   // Resolve which person this sender is — gmailSync already matched
   // them, but we need the id; cheap lookup via the emails table.

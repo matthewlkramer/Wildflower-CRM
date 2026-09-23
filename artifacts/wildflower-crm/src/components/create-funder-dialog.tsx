@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import {
   useCreateOrganization,
   getListOrganizationsQueryKey,
+  EntityType,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
@@ -19,20 +20,32 @@ import { Button } from "@/components/ui/button";
 import { AddIconButton } from "@/components/add-icon-button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { formatEnum } from "@/lib/format";
 
 export function CreateOrganizationDialog() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [entityType, setEntityType] = useState<EntityType | undefined>();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const create = useCreateOrganization({
     mutation: {
       onSuccess: async (created) => {
-        await queryClient.invalidateQueries({ queryKey: getListOrganizationsQueryKey() });
+        await queryClient.invalidateQueries({
+          queryKey: getListOrganizationsQueryKey(),
+        });
         toast({ title: "Funding entity created" });
         setOpen(false);
         setName("");
+        setEntityType(undefined);
         if (created?.id) navigate(`/organizations/${created.id}`);
       },
       onError: (err: unknown) => {
@@ -48,22 +61,36 @@ export function CreateOrganizationDialog() {
   const trimmed = name.trim();
 
   return (
-    <Dialog open={open} onOpenChange={(v) => { if (!create.isPending) setOpen(v); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        if (!create.isPending) setOpen(v);
+      }}
+    >
       <DialogTrigger asChild>
-        <AddIconButton label="New organization" data-testid="button-new-funder" />
+        <AddIconButton
+          label="New organization"
+          data-testid="button-new-funder"
+        />
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New organization</DialogTitle>
           <DialogDescription>
-            You can fill in the rest of the details after creating it.
+            Set the organization type now. You can fill in the rest of the
+            details after creating it.
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
             if (!trimmed) return;
-            create.mutate({ data: { name: trimmed } });
+            create.mutate({
+              data: {
+                name: trimmed,
+                ...(entityType ? { entityType } : {}),
+              },
+            });
           }}
           className="space-y-3"
         >
@@ -77,6 +104,27 @@ export function CreateOrganizationDialog() {
               required
               data-testid="input-new-funder-name"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="new-funder-type">Organization type</Label>
+            <Select
+              value={entityType}
+              onValueChange={(value) => setEntityType(value as EntityType)}
+            >
+              <SelectTrigger
+                id="new-funder-type"
+                data-testid="select-new-funder-type"
+              >
+                <SelectValue placeholder="Select a type (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.values(EntityType).map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {formatEnum(value)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <DialogFooter>
             <Button

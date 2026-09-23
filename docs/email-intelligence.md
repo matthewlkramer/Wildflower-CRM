@@ -119,9 +119,12 @@ a matching "kind":
 3. **Grant opportunities** (`grant_opportunity`) — grant/RFP newsletters
    and digests are mined for individual funding opportunities (title,
    funder, deadline, amount, link).
-4. **Auto-responder moves** (`auto_responder_move`) — "I no longer work at
-   X / I've moved to Y" auto-replies that indicate a genuine job move
-   (plain out-of-office vacation replies are filtered out).
+4. **Contact moves** (`auto_responder_move`) — direct personal announcements
+   and permanent auto-replies that indicate a genuine job change (for example,
+   "I'm transitioning from X to Y," "Jane is no longer with X," "my last day
+   at X," or "I'm retiring from X"). Plain vacation replies and generic
+   transition language are filtered out. The historical proposal-kind name is
+   retained for API and database compatibility.
 5. **Signature drift** (`signature_update`) — the signature block at the
    bottom of an inbound reply is parsed for a title/company/phone that
    differs from what the CRM currently has.
@@ -214,9 +217,9 @@ This is the heart of the feature, and it differs by path.
 - We only mine **inbound** replies (a signature only means something when
   it's *from* the contact, not *to* them).
 - We skip internal teammate-to-teammate mail entirely.
-- We then run the relevant detectors: grant digests, auto-responder
-  moves, and signature drift. Signature parsing is carefully attributed to
-  the *actual sender* (not just anyone on the thread) and has several
+- We then run the relevant detectors: grant digests, direct-announcement and
+  auto-responder moves, and signature drift. Signature parsing is carefully
+  attributed to the *actual sender* (not just anyone on the thread) and has several
   guards to avoid grabbing a quoted reply's signature or the mailbox
   owner's own.
 
@@ -378,6 +381,11 @@ When new detectors or matching rules ship *after* a mailbox was already
 synced, a one-time **backfill** re-runs the pipeline over stored mail so
 users get the benefit retroactively. It runs in four phases under the
 same lock as the normal sync:
+
+Detector releases carry a backfill watermark. On the next scheduled sync,
+each connected mailbox whose last completed backfill predates that watermark
+automatically runs the historical pass once; no reconnect or manual admin
+action is required.
 
 - **Phase A** — re-check previously skipped messages; if someone is now in
   the CRM, promote the message to a stored, matched message (and run

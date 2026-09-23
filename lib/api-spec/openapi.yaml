@@ -15327,6 +15327,13 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
+        ein:
+          {
+            type: string,
+            nullable: true,
+            pattern: '^\d{2}-\d{7}$',
+            description: "Federal Employer Identification Number in NN-NNNNNNN format.",
+          }
         primaryEmail:
           type: string
           nullable: true
@@ -15369,6 +15376,13 @@ components:
             description: "When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned.",
           }
         lastContacted: { type: string, format: date, nullable: true }
+        interactionCount:
+          {
+            type: integer,
+            nullable: true,
+            readOnly: true,
+            description: "Imported count of recorded interactions for this organization.",
+          }
         x: { type: string, nullable: true }
         linkedin: { type: string, nullable: true }
         facebook: { type: string, nullable: true }
@@ -15494,6 +15508,12 @@ components:
         historicalNames: { type: array, items: { type: string } }
         details: { type: string }
         emailDomain: { type: string }
+        ein:
+          {
+            type: string,
+            pattern: '^\d{2}-\d{7}$',
+            description: "Federal Employer Identification Number in NN-NNNNNNN format.",
+          }
         ownerUserId: { type: string }
         tags: { type: string }
         website: { type: string }
@@ -15552,6 +15572,13 @@ components:
           { type: array, items: { type: string }, nullable: true }
         details: { type: string, nullable: true }
         emailDomain: { type: string, nullable: true }
+        ein:
+          {
+            type: string,
+            nullable: true,
+            pattern: '^\d{2}-\d{7}$',
+            description: "Federal Employer Identification Number in NN-NNNNNNN format.",
+          }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
         website: { type: string, nullable: true }
