@@ -1784,6 +1784,11 @@ export interface Organization {
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
+  /**
+   * Federal Employer Identification Number in NN-NNNNNNN format.
+   * @pattern ^\d{2}-\d{7}$
+   */
+  ein?: string | null;
   /** Organization contact email, derived from its emails collection (preferred usable address first). Edit contact emails through the emails endpoints. */
   readonly primaryEmail?: string | null;
   ownerUserId?: string | null;
@@ -1801,6 +1806,8 @@ export interface Organization {
   /** When true, hide the organization's real name in the UI (shown as 'Anonymous') from everyone except the record owner and admins. UI-only; the name is still stored and returned. */
   anonymous: boolean;
   lastContacted?: string | null;
+  /** Imported count of recorded interactions for this organization. */
+  readonly interactionCount?: number | null;
   x?: string | null;
   linkedin?: string | null;
   facebook?: string | null;
@@ -1932,6 +1939,11 @@ export interface CreateOrganizationBody {
   historicalNames?: string[];
   details?: string;
   emailDomain?: string;
+  /**
+   * Federal Employer Identification Number in NN-NNNNNNN format.
+   * @pattern ^\d{2}-\d{7}$
+   */
+  ein?: string;
   ownerUserId?: string;
   tags?: string;
   website?: string;
@@ -1969,6 +1981,11 @@ export interface UpdateOrganizationBody {
   historicalNames?: string[] | null;
   details?: string | null;
   emailDomain?: string | null;
+  /**
+   * Federal Employer Identification Number in NN-NNNNNNN format.
+   * @pattern ^\d{2}-\d{7}$
+   */
+  ein?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
   website?: string | null;
