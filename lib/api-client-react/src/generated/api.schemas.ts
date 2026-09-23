@@ -8358,6 +8358,36 @@ export const TripVisitSource = {
   manual: 'manual',
 } as const;
 
+export type TripTravelBookingKind = typeof TripTravelBookingKind[keyof typeof TripTravelBookingKind];
+
+
+export const TripTravelBookingKind = {
+  flight: 'flight',
+  hotel: 'hotel',
+} as const;
+
+export type TripTravelBookingSource = typeof TripTravelBookingSource[keyof typeof TripTravelBookingSource];
+
+
+export const TripTravelBookingSource = {
+  calendar: 'calendar',
+  gmail: 'gmail',
+} as const;
+
+export interface TripTravelBooking {
+  kind: TripTravelBookingKind;
+  source: TripTravelBookingSource;
+  sourceId: string;
+  title: string;
+  provider?: string | null;
+  confirmationNumber?: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  location?: string | null;
+  details?: string | null;
+  sourceUrl?: string | null;
+}
+
 export interface TripVisit {
   id: string;
   tripId: string;
@@ -8434,6 +8464,8 @@ export type TripPlanDetail = TripPlanSummary & {
   visits: TripVisit[];
   comments: TripComment[];
   calendarEvents: CalendarEvent[];
+  /** Visible flight and hotel evidence derived from the traveler's synced Google Calendar and, for the traveler, synced Gmail messages. */
+  readonly travelBookings: readonly TripTravelBooking[];
 };
 
 export interface CreateTripPlanBody {

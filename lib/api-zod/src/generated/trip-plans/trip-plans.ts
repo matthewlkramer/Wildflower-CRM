@@ -238,6 +238,25 @@ export const GetTripPlanResponse = zod
             ),
         }),
       ),
+      travelBookings: zod
+        .array(
+          zod.object({
+            kind: zod.enum(["flight", "hotel"]),
+            source: zod.enum(["calendar", "gmail"]),
+            sourceId: zod.string(),
+            title: zod.string(),
+            provider: zod.string().nullish(),
+            confirmationNumber: zod.string().nullish(),
+            startAt: zod.string().datetime({}).nullish(),
+            endAt: zod.string().datetime({}).nullish(),
+            location: zod.string().nullish(),
+            details: zod.string().nullish(),
+            sourceUrl: zod.string().url().nullish(),
+          }),
+        )
+        .describe(
+          "Visible flight and hotel evidence derived from the traveler's synced Google Calendar and, for the traveler, synced Gmail messages.",
+        ),
     }),
   );
 
@@ -507,6 +526,25 @@ export const DraftTripVisitsResponse = zod
             ),
         }),
       ),
+      travelBookings: zod
+        .array(
+          zod.object({
+            kind: zod.enum(["flight", "hotel"]),
+            source: zod.enum(["calendar", "gmail"]),
+            sourceId: zod.string(),
+            title: zod.string(),
+            provider: zod.string().nullish(),
+            confirmationNumber: zod.string().nullish(),
+            startAt: zod.string().datetime({}).nullish(),
+            endAt: zod.string().datetime({}).nullish(),
+            location: zod.string().nullish(),
+            details: zod.string().nullish(),
+            sourceUrl: zod.string().url().nullish(),
+          }),
+        )
+        .describe(
+          "Visible flight and hotel evidence derived from the traveler's synced Google Calendar and, for the traveler, synced Gmail messages.",
+        ),
     }),
   );
 

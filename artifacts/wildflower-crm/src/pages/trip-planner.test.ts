@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { TripPlanSummary } from "@workspace/api-client-react";
+import type {
+  TripPlanDetail,
+  TripPlanSummary,
+} from "@workspace/api-client-react";
 import {
   buildTripData,
   filterTripsByTraveler,
   getTripCalendarDisplay,
+  groupTripTravelBookings,
   isBirthdayCalendarEvent,
   type TripFormState,
 } from "./trip-planner";
@@ -109,5 +113,30 @@ describe("trip planner list", () => {
     expect(
       filterTripsByTraveler(trips, "user_1").map((trip) => trip.id),
     ).toEqual(["trip_1", "trip_3"]);
+  });
+});
+
+describe("trip travel booking summary", () => {
+  it("separates flight and hotel evidence for the summary states", () => {
+    const bookings = [
+      {
+        kind: "flight",
+        source: "calendar",
+        sourceId: "flight_1",
+        title: "UA 1452 to New York",
+      },
+      {
+        kind: "hotel",
+        source: "gmail",
+        sourceId: "hotel_1",
+        title: "New York Marriott Marquis",
+      },
+    ] as TripPlanDetail["travelBookings"];
+
+    expect(groupTripTravelBookings(bookings)).toEqual({
+      flights: [bookings[0]],
+      hotels: [bookings[1]],
+    });
+    expect(groupTripTravelBookings([])).toEqual({ flights: [], hotels: [] });
   });
 });

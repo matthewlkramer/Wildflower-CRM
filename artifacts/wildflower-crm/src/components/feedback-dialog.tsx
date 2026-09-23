@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   Camera,
   GripHorizontal,
@@ -209,7 +214,7 @@ export function FeedbackDialog() {
           className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto"
           overlayClassName="bg-black/20 backdrop-blur-none"
           style={{
-            transform: `translate(calc(-50% + ${dialogOffset.x}px), calc(-50% + ${dialogOffset.y}px))`,
+            translate: `calc(-50% + ${dialogOffset.x}px) calc(-50% + ${dialogOffset.y}px)`,
           }}
           data-feedback-ignore
         >

@@ -5,6 +5,11 @@ import {
   tripAvailability,
 } from "../lib/tripPlanner";
 import {
+  deriveTripTravelBookings,
+  detectTripTravelKind,
+  extractTravelConfirmation,
+} from "../lib/tripTravelBookings";
+import {
   eventOverlapsTripWindows,
   mergeTripWindows,
   shouldAutoPrivateCalendarEvent,
@@ -142,5 +147,125 @@ describe("trip planner derivations", () => {
         "Boston",
       ),
     ).toBe(true);
+  });
+});
+
+describe("trip travel booking derivations", () => {
+  const trip = {
+    travelStartsAt: new Date("2026-10-11T12:00:00.000Z"),
+    travelEndsAt: new Date("2026-10-16T02:00:00.000Z"),
+    destinationCity: "New York",
+  };
+
+  it("recognizes flights and hotels without treating ordinary meetings as travel", () => {
+    expect(
+      detectTripTravelKind({
+        title: "UA 1452 · Flight to New York",
+        description: null,
+        location: "ORD",
+        fromEmail: null,
+      }),
+    ).toBe("flight");
+    expect(
+      detectTripTravelKind({
+        title: "Stay at New York Marriott Marquis",
+        description: "Check-in details",
+        location: "1535 Broadway",
+        fromEmail: null,
+      }),
+    ).toBe("hotel");
+    expect(
+      detectTripTravelKind({
+        title: "Donor meeting",
+        description: "Quarterly check-in",
+        location: "New York",
+        fromEmail: null,
+      }),
+    ).toBeNull();
+    expect(
+      detectTripTravelKind({
+        title: "Q4 2026 planning",
+        description: null,
+        location: "New York",
+        fromEmail: null,
+      }),
+    ).toBeNull();
+  });
+
+  it("extracts common confirmation and record-locator formats", () => {
+    expect(extractTravelConfirmation("Confirmation number: N2VDPI22")).toBe(
+      "N2VDPI22",
+    );
+    expect(extractTravelConfirmation("Record locator ABC123")).toBe("ABC123");
+    expect(extractTravelConfirmation("Reservation confirmed")).toBeNull();
+  });
+
+  it("derives calendar and Gmail bookings for the trip and ignores unrelated travel", () => {
+    const result = deriveTripTravelBookings(trip, [
+      {
+        id: "cal-flight",
+        source: "calendar",
+        title: "Flight to New York · UA 1452",
+        description: "Confirmation: ABC123",
+        location: "ORD",
+        startAt: "2026-10-11T15:00:00.000Z",
+        endAt: "2026-10-11T17:10:00.000Z",
+        htmlLink: "https://calendar.google.com/event?eid=flight",
+      },
+      {
+        id: "gmail-hotel",
+        source: "gmail",
+        title: "Your New York hotel reservation",
+        description:
+          "Check-in October 11, 2026. Check-out October 15, 2026. Confirmation number: N2VDPI22.",
+        fromEmail: "reservations@marriott.com",
+        gmailMessageId: "gmail-hotel-id",
+      },
+      {
+        id: "gmail-other",
+        source: "gmail",
+        title: "Your flight to Seattle",
+        description: "Departure November 20, 2026. Confirmation: SEA123",
+        fromEmail: "receipts@example-air.com",
+      },
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result.find((booking) => booking.kind === "flight")).toMatchObject({
+      kind: "flight",
+      source: "calendar",
+      confirmationNumber: "ABC123",
+      startAt: "2026-10-11T15:00:00.000Z",
+    });
+    const hotel = result.find((booking) => booking.kind === "hotel");
+    expect(hotel).toMatchObject({
+      kind: "hotel",
+      source: "gmail",
+      provider: "Marriott",
+      confirmationNumber: "N2VDPI22",
+    });
+    expect(hotel?.sourceUrl).toContain("gmail-hotel-id");
+  });
+
+  it("deduplicates repeated booking evidence by confirmation number", () => {
+    const result = deriveTripTravelBookings(trip, [
+      {
+        id: "gmail-flight",
+        source: "gmail",
+        title: "Flight confirmation to New York",
+        description: "October 11, 2026. Record locator ABC123",
+        fromEmail: "receipts@united.com",
+      },
+      {
+        id: "calendar-flight",
+        source: "calendar",
+        title: "Flight to New York",
+        description: "Record locator ABC123",
+        startAt: "2026-10-11T15:00:00.000Z",
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].source).toBe("calendar");
   });
 });

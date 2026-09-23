@@ -5,6 +5,7 @@ import {
   calendarEvents,
   calendarSyncState,
   emailMessages,
+  emailSyncSkip,
   emails,
   organizations,
   people,
@@ -30,6 +31,7 @@ import {
   eq,
   gt,
   gte,
+  ilike,
   isNull,
   inArray,
   lt,
@@ -55,6 +57,15 @@ import {
 } from "../lib/calendarEventSelect";
 import { getViewer, maskName } from "../lib/identityVisibility";
 import { looksLikeTripInvitation, tripAvailability } from "../lib/tripPlanner";
+import { deriveTripTravelBookings } from "../lib/tripTravelBookings";
+import {
+  extractMessageParts,
+  getHeader,
+  getMessage,
+  parseAddressHeader,
+} from "../lib/gmail";
+import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -233,6 +244,128 @@ async function tripSummary(trip: TripPlan, callerId: string) {
   return { ...trip, ...tripAvailability(trip, events) };
 }
 
+async function loadTripTravelMessages(trip: TripPlan, callerId: string) {
+  // Unmatched booking confirmations are inherently personal. Gmail-derived
+  // travel facts are therefore visible only to the mailbox owner; teammates
+  // can still see booking facts from calendar events allowed by the existing
+  // calendar privacy rule.
+  if (callerId !== trip.travelerUserId) return [];
+  const searchStart = new Date(
+    trip.travelStartsAt.getTime() - 400 * 86_400_000,
+  );
+  const searchEnd = new Date(trip.travelEndsAt.getTime() + 2 * 86_400_000);
+  const travelText = [
+    "%flight%",
+    "%airline%",
+    "%boarding%",
+    "%itinerary%",
+    "%hotel%",
+    "%lodging%",
+    "%reservation%",
+    "%booking%",
+    "%check-in%",
+    "%check in%",
+    "%trip%",
+  ];
+  const candidateText = travelText.flatMap((pattern) => [
+    ilike(emailMessages.subject, pattern),
+    ilike(emailMessages.snippet, pattern),
+    ilike(emailMessages.aiSummary, pattern),
+  ]);
+  const retainedMessages = await db
+    .select({
+      id: emailMessages.id,
+      gmailMessageId: emailMessages.gmailMessageId,
+      sentAt: emailMessages.sentAt,
+      subject: emailMessages.subject,
+      snippet: emailMessages.snippet,
+      bodyText: emailMessages.bodyText,
+      aiSummary: emailMessages.aiSummary,
+      fromEmail: emailMessages.fromEmail,
+    })
+    .from(emailMessages)
+    .where(
+      and(
+        eq(emailMessages.mailboxUserId, trip.travelerUserId),
+        gte(emailMessages.sentAt, searchStart),
+        lte(emailMessages.sentAt, searchEnd),
+        or(...candidateText),
+      ),
+    )
+    .orderBy(desc(emailMessages.sentAt))
+    .limit(500);
+
+  // The normal Gmail sync intentionally stores unmatched messages in a
+  // metadata-only skip ledger. Booking confirmations usually come from an
+  // airline or hotel rather than a CRM contact, so retrieve only the bounded,
+  // travel-shaped candidates from Gmail for the mailbox owner. Their bodies
+  // are used transiently and are not persisted.
+  const skippedCandidates = await db
+    .select({
+      gmailMessageId: emailSyncSkip.gmailMessageId,
+      subject: emailSyncSkip.subject,
+      sentAt: emailSyncSkip.sentAt,
+    })
+    .from(emailSyncSkip)
+    .where(
+      and(
+        eq(emailSyncSkip.mailboxUserId, trip.travelerUserId),
+        gte(emailSyncSkip.sentAt, searchStart),
+        lte(emailSyncSkip.sentAt, searchEnd),
+        or(
+          ...travelText.map((pattern) => ilike(emailSyncSkip.subject, pattern)),
+        ),
+      ),
+    )
+    .orderBy(desc(emailSyncSkip.sentAt))
+    .limit(50);
+
+  if (!skippedCandidates.length) return retainedMessages;
+
+  try {
+    const grant = await getValidGoogleAccessTokenForUser(trip.travelerUserId);
+    if (!grant) return retainedMessages;
+    const retainedIds = new Set(
+      retainedMessages.map((message) => message.gmailMessageId),
+    );
+    const fetched = await Promise.allSettled(
+      skippedCandidates
+        .filter((candidate) => !retainedIds.has(candidate.gmailMessageId))
+        .map(async (candidate) => {
+          const message = await getMessage(
+            grant.accessToken,
+            candidate.gmailMessageId,
+            "full",
+          );
+          const parts = extractMessageParts(message.payload);
+          return {
+            id: `gmail:${candidate.gmailMessageId}`,
+            gmailMessageId: candidate.gmailMessageId,
+            sentAt: candidate.sentAt,
+            subject: getHeader(message.payload, "Subject") ?? candidate.subject,
+            snippet: message.snippet ?? null,
+            bodyText: parts.bodyText,
+            aiSummary: null,
+            fromEmail:
+              parseAddressHeader(getHeader(message.payload, "From"))[0] ?? null,
+          };
+        }),
+    );
+    return [
+      ...retainedMessages,
+      ...fetched.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : [],
+      ),
+    ];
+  } catch (error) {
+    logger.warn(
+      { err: error, userId: trip.travelerUserId, tripId: trip.id },
+      "Trip travel Gmail evidence lookup failed",
+    );
+    return retainedMessages;
+  }
+}
+
 async function loadTripDetail(
   req: Parameters<typeof getAppUser>[0],
   trip: TripPlan,
@@ -240,6 +373,31 @@ async function loadTripDetail(
   const caller = getAppUser(req)!;
   const viewer = getViewer(req);
   const events = await loadTripEvents(trip, caller.id);
+  const travelMessages = await loadTripTravelMessages(trip, caller.id);
+  const travelBookings = deriveTripTravelBookings(trip, [
+    ...events.map((event) => ({
+      id: event.id,
+      source: "calendar" as const,
+      title: event.summary,
+      description: event.description,
+      location: event.location,
+      startAt: event.startAt,
+      endAt: event.endAt,
+      htmlLink: event.htmlLink,
+      status: event.status,
+    })),
+    ...travelMessages.map((message) => ({
+      id: message.id,
+      source: "gmail" as const,
+      title: message.subject,
+      description: [message.snippet, message.aiSummary, message.bodyText]
+        .filter(Boolean)
+        .join("\n"),
+      sentAt: message.sentAt,
+      fromEmail: message.fromEmail,
+      gmailMessageId: message.gmailMessageId,
+    })),
+  ]);
   const rows = await db
     .select({
       id: tripVisitCandidates.id,
@@ -406,6 +564,7 @@ async function loadTripDetail(
     visits,
     comments,
     calendarEvents: events,
+    travelBookings,
   };
 }
 
@@ -697,14 +856,12 @@ router.patch(
         ...(body.nextStep === undefined
           ? {}
           : { nextStep: nullableText(body.nextStep) }),
-        ...(
-          body.notes === undefined && body.nextStep === undefined
-            ? {}
-            : {
-                planningUpdatedByUserId: user.id,
-                planningUpdatedAt: new Date(),
-              }
-        ),
+        ...(body.notes === undefined && body.nextStep === undefined
+          ? {}
+          : {
+              planningUpdatedByUserId: user.id,
+              planningUpdatedAt: new Date(),
+            }),
         updatedAt: new Date(),
       })
       .where(

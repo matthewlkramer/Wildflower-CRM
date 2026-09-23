@@ -1363,7 +1363,8 @@ paths:
           description: OK
           content:
             application/json:
-              schema: { type: array, items: { $ref: "#/components/schemas/User" } }
+              schema:
+                { type: array, items: { $ref: "#/components/schemas/User" } }
     post:
       operationId: adminCreateUser
       tags: [users]
@@ -3798,7 +3799,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/RecordGrantSpendSnapshotBody" }
+            schema:
+              { $ref: "#/components/schemas/RecordGrantSpendSnapshotBody" }
       responses:
         "201":
           description: Spending checkpoint recorded
@@ -10440,11 +10442,48 @@ paths:
         - { name: search, in: query, schema: { type: string } }
         - { name: dateFrom, in: query, schema: { type: string, format: date } }
         - { name: dateTo, in: query, schema: { type: string, format: date } }
-        - { name: status, in: query, style: form, explode: false, schema: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateStatus" } } }
-        - { name: interest, in: query, style: form, explode: false, schema: { type: array, items: { type: string } } }
-        - { name: geography, in: query, style: form, explode: false, schema: { type: array, items: { type: string } } }
-        - { name: sourceType, in: query, style: form, explode: false, schema: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateSourceType" } } }
-        - { name: includeArchived, in: query, schema: { type: boolean, default: false } }
+        - {
+            name: status,
+            in: query,
+            style: form,
+            explode: false,
+            schema:
+              {
+                type: array,
+                items: { $ref: "#/components/schemas/WildflowerUpdateStatus" },
+              },
+          }
+        - {
+            name: interest,
+            in: query,
+            style: form,
+            explode: false,
+            schema: { type: array, items: { type: string } },
+          }
+        - {
+            name: geography,
+            in: query,
+            style: form,
+            explode: false,
+            schema: { type: array, items: { type: string } },
+          }
+        - {
+            name: sourceType,
+            in: query,
+            style: form,
+            explode: false,
+            schema:
+              {
+                type: array,
+                items:
+                  { $ref: "#/components/schemas/WildflowerUpdateSourceType" },
+              },
+          }
+        - {
+            name: includeArchived,
+            in: query,
+            schema: { type: boolean, default: false },
+          }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -10461,7 +10500,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/CreateWildflowerUpdateItemBody" }
+            schema:
+              { $ref: "#/components/schemas/CreateWildflowerUpdateItemBody" }
       responses:
         "201":
           description: Created
@@ -10493,7 +10533,8 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/UpdateWildflowerUpdateItemBody" }
+            schema:
+              { $ref: "#/components/schemas/UpdateWildflowerUpdateItemBody" }
       responses:
         "200":
           description: Updated
@@ -10513,13 +10554,20 @@ paths:
       parameters:
         - { name: personId, in: query, schema: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 100, default: 20 },
+          }
       responses:
         "200":
           description: Eligible relevant updates with match explanations and citations
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/WildflowerRelevantUpdateItemList" }
+              schema:
+                {
+                  $ref: "#/components/schemas/WildflowerRelevantUpdateItemList",
+                }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
 
@@ -16598,8 +16646,7 @@ components:
         kind: { $ref: "#/components/schemas/GrantTermKind" }
         restrictionDimension:
           {
-            allOf:
-              [{ $ref: "#/components/schemas/GrantRestrictionDimension" }],
+            allOf: [{ $ref: "#/components/schemas/GrantRestrictionDimension" }],
             nullable: true,
           }
         spendingRuleType:
@@ -16617,7 +16664,8 @@ components:
             description: "Verbatim supporting text from the governing document; never a paraphrase.",
           }
         sourcePage: { type: string, nullable: true, maxLength: 100 }
-        amount: { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        amount:
+          { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
         startDate: { type: string, format: date, nullable: true }
         endDate: { type: string, format: date, nullable: true }
         dueDate: { type: string, format: date, nullable: true }
@@ -16631,7 +16679,8 @@ components:
             maxItems: 100,
             nullable: true,
           }
-        capAmount: { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        capAmount:
+          { type: string, nullable: true, pattern: '^\\d+(\\.\\d{1,2})?$' }
         capPercent:
           {
             type: string,
@@ -16665,14 +16714,7 @@ components:
         - { $ref: "#/components/schemas/GrantTermInput" }
         - type: object
           required:
-            [
-              id,
-              termSetId,
-              currentOutcome,
-              overdue,
-              createdAt,
-              updatedAt,
-            ]
+            [id, termSetId, currentOutcome, overdue, createdAt, updatedAt]
           properties:
             id: { type: string }
             termSetId: { type: string }
@@ -16688,7 +16730,16 @@ components:
     GrantTermSet:
       type: object
       required:
-        [id, opportunityId, source, status, createdByUserId, createdAt, updatedAt, terms]
+        [
+          id,
+          opportunityId,
+          source,
+          status,
+          createdByUserId,
+          createdAt,
+          updatedAt,
+          terms,
+        ]
       properties:
         id: { type: string }
         opportunityId: { type: string }
@@ -16752,8 +16803,7 @@ components:
       required: [asOfDate, amountSpentToDate]
       properties:
         asOfDate: { type: string, format: date }
-        amountSpentToDate:
-          { type: string, pattern: '^\\d+(\\.\\d{1,2})?$' }
+        amountSpentToDate: { type: string, pattern: '^\\d+(\\.\\d{1,2})?$' }
         note: { type: string, nullable: true, maxLength: 10000 }
     GrantAllocationSpending:
       type: object
@@ -16770,7 +16820,14 @@ components:
           items: { $ref: "#/components/schemas/GrantSpendSnapshot" }
     GrantTermsWorkspace:
       type: object
-      required: [opportunityId, restricted, restrictionBasis, termSets, allocationSpending]
+      required:
+        [
+          opportunityId,
+          restricted,
+          restrictionBasis,
+          termSets,
+          allocationSpending,
+        ]
       properties:
         opportunityId: { type: string }
         restricted:
@@ -24473,6 +24530,27 @@ components:
     TripVisitSource:
       type: string
       enum: [system_draft, manual]
+    TripTravelBookingKind:
+      type: string
+      enum: [flight, hotel]
+    TripTravelBookingSource:
+      type: string
+      enum: [calendar, gmail]
+    TripTravelBooking:
+      type: object
+      required: [kind, source, sourceId, title]
+      properties:
+        kind: { $ref: "#/components/schemas/TripTravelBookingKind" }
+        source: { $ref: "#/components/schemas/TripTravelBookingSource" }
+        sourceId: { type: string }
+        title: { type: string }
+        provider: { type: string, nullable: true }
+        confirmationNumber: { type: string, nullable: true }
+        startAt: { type: string, format: date-time, nullable: true }
+        endAt: { type: string, format: date-time, nullable: true }
+        location: { type: string, nullable: true }
+        details: { type: string, nullable: true }
+        sourceUrl: { type: string, format: uri, nullable: true }
     TripVisit:
       type: object
       required:
@@ -24518,7 +24596,7 @@ components:
       allOf:
         - { $ref: "#/components/schemas/TripPlanSummary" }
         - type: object
-          required: [visits, comments, calendarEvents]
+          required: [visits, comments, calendarEvents, travelBookings]
           properties:
             visits:
               { type: array, items: { $ref: "#/components/schemas/TripVisit" } }
@@ -24531,6 +24609,13 @@ components:
               {
                 type: array,
                 items: { $ref: "#/components/schemas/CalendarEvent" },
+              }
+            travelBookings:
+              {
+                type: array,
+                readOnly: true,
+                description: "Visible flight and hotel evidence derived from the traveler's synced Google Calendar and, for the traveler, synced Gmail messages.",
+                items: { $ref: "#/components/schemas/TripTravelBooking" },
               }
     CreateTripPlanBody:
       type: object
@@ -24866,7 +24951,8 @@ components:
         minScore: { type: [number, "null"] }
         maxScore: { type: [number, "null"] }
         lastIngestStartedAt: { type: string, format: date-time, nullable: true }
-        lastIngestFinishedAt: { type: string, format: date-time, nullable: true }
+        lastIngestFinishedAt:
+          { type: string, format: date-time, nullable: true }
         lastIngestStatus:
           {
             type: string,
@@ -27057,10 +27143,27 @@ components:
 
     WildflowerUpdateDatePrecision:
       type: string
-      enum: [exact, month, year, season, date_range, school_year, month_range, unknown]
+      enum:
+        [
+          exact,
+          month,
+          year,
+          season,
+          date_range,
+          school_year,
+          month_range,
+          unknown,
+        ]
     WildflowerUpdateStatus:
       type: string
-      enum: [completed, reported_progress, work_in_progress, proposed_work, announcement]
+      enum:
+        [
+          completed,
+          reported_progress,
+          work_in_progress,
+          proposed_work,
+          announcement,
+        ]
     WildflowerUpdatePreparationStatus:
       type: string
       enum: [eligible, hold_for_confirmation]
@@ -27071,7 +27174,8 @@ components:
       type: object
       required: [precision]
       properties:
-        precision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        precision:
+          { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
         startDate: { type: string, format: date, nullable: true }
         endDate: { type: string, format: date, nullable: true }
         year: { type: integer, minimum: 1, nullable: true }
@@ -27089,15 +27193,19 @@ components:
         sourceType: { $ref: "#/components/schemas/WildflowerUpdateSourceType" }
         title: { type: string }
         url: { type: string, format: uri }
-        publicationDatePrecision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        publicationDatePrecision:
+          { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
         publicationDate: { type: string, format: date, nullable: true }
         publicationEndDate: { type: string, format: date, nullable: true }
         publicationYear: { type: integer, minimum: 1, nullable: true }
-        publicationMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationStartYear: { type: integer, minimum: 1, nullable: true }
-        publicationStartMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationStartMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationEndYear: { type: integer, minimum: 1, nullable: true }
-        publicationEndMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationEndMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationSeason: { type: string, nullable: true }
     WildflowerUpdateRelatedLink:
       type: object
@@ -27108,7 +27216,26 @@ components:
         url: { type: string, format: uri }
     WildflowerUpdateItem:
       type: object
-      required: [id, title, details, qualification, importKey, eventDate, status, preparationStatus, thematicTags, ageTags, governanceTags, fundingRegionIds, sources, relatedLinks, archivedAt, createdAt, updatedAt]
+      required:
+        [
+          id,
+          title,
+          details,
+          qualification,
+          importKey,
+          eventDate,
+          status,
+          preparationStatus,
+          thematicTags,
+          ageTags,
+          governanceTags,
+          fundingRegionIds,
+          sources,
+          relatedLinks,
+          archivedAt,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string }
         title: { type: string }
@@ -27117,13 +27244,22 @@ components:
         importKey: { type: string, nullable: true }
         eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
         status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
-        preparationStatus: { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
+        preparationStatus:
+          { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
         thematicTags: { type: array, items: { type: string } }
         ageTags: { type: array, items: { type: string } }
         governanceTags: { type: array, items: { type: string } }
         fundingRegionIds: { type: array, items: { type: string } }
-        sources: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateSource" } }
-        relatedLinks: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateRelatedLink" } }
+        sources:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/WildflowerUpdateSource" },
+          }
+        relatedLinks:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/WildflowerUpdateRelatedLink" },
+          }
         archivedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -27134,15 +27270,19 @@ components:
         sourceType: { $ref: "#/components/schemas/WildflowerUpdateSourceType" }
         title: { type: string }
         url: { type: string, format: uri }
-        publicationDatePrecision: { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
+        publicationDatePrecision:
+          { $ref: "#/components/schemas/WildflowerUpdateDatePrecision" }
         publicationDate: { type: string, format: date, nullable: true }
         publicationEndDate: { type: string, format: date, nullable: true }
         publicationYear: { type: integer, minimum: 1, nullable: true }
-        publicationMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationStartYear: { type: integer, minimum: 1, nullable: true }
-        publicationStartMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationStartMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationEndYear: { type: integer, minimum: 1, nullable: true }
-        publicationEndMonth: { type: integer, minimum: 1, maximum: 12, nullable: true }
+        publicationEndMonth:
+          { type: integer, minimum: 1, maximum: 12, nullable: true }
         publicationSeason: { type: string, nullable: true }
     CreateWildflowerUpdateRelatedLinkBody:
       type: object
@@ -27155,12 +27295,19 @@ components:
       required: [title, details, eventDate, status, sources]
       properties:
         title: { type: string }
-        details: { type: string, description: One paragraph of details without line breaks. }
+        details:
+          {
+            type: string,
+            description: One paragraph of details without line breaks.,
+          }
         qualification: { type: string, nullable: true }
         eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
         status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
         preparationStatus:
-          { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus", default: eligible }
+          {
+            $ref: "#/components/schemas/WildflowerUpdatePreparationStatus",
+            default: eligible,
+          }
         thematicTags: { type: array, items: { type: string }, default: [] }
         ageTags: { type: array, items: { type: string }, default: [] }
         governanceTags: { type: array, items: { type: string }, default: [] }
@@ -27168,18 +27315,32 @@ components:
         sources:
           type: array
           minItems: 1
-          items: { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
-        relatedLinks: { type: array, items: { $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody" }, default: [] }
+          items:
+            { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
+        relatedLinks:
+          {
+            type: array,
+            items:
+              {
+                $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody",
+              },
+            default: [],
+          }
     UpdateWildflowerUpdateItemBody:
       description: All fields are optional. When sources or relatedLinks are supplied, they replace the complete collection.
       type: object
       properties:
         title: { type: string }
-        details: { type: string, description: One paragraph of details without line breaks. }
+        details:
+          {
+            type: string,
+            description: One paragraph of details without line breaks.,
+          }
         qualification: { type: string, nullable: true }
         eventDate: { $ref: "#/components/schemas/WildflowerUpdateEventDate" }
         status: { $ref: "#/components/schemas/WildflowerUpdateStatus" }
-        preparationStatus: { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
+        preparationStatus:
+          { $ref: "#/components/schemas/WildflowerUpdatePreparationStatus" }
         thematicTags: { type: array, items: { type: string } }
         ageTags: { type: array, items: { type: string } }
         governanceTags: { type: array, items: { type: string } }
@@ -27187,17 +27348,41 @@ components:
         sources:
           type: array
           minItems: 1
-          items: { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
-        relatedLinks: { type: array, items: { $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody" } }
+          items:
+            { $ref: "#/components/schemas/CreateWildflowerUpdateSourceBody" }
+        relatedLinks:
+          {
+            type: array,
+            items:
+              {
+                $ref: "#/components/schemas/CreateWildflowerUpdateRelatedLinkBody",
+              },
+          }
     WildflowerUpdateItemList:
       type: object
       required: [data, pagination]
       properties:
-        data: { type: array, items: { $ref: "#/components/schemas/WildflowerUpdateItem" } }
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/WildflowerUpdateItem" },
+          }
         pagination: { $ref: "#/components/schemas/Pagination" }
     WildflowerRelevantUpdateItem:
       type: object
-      required: [id, title, details, qualification, importKey, status, eventDate, topicMatches, geographyMatches, sources]
+      required:
+        [
+          id,
+          title,
+          details,
+          qualification,
+          importKey,
+          status,
+          eventDate,
+          topicMatches,
+          geographyMatches,
+          sources,
+        ]
       properties:
         id: { type: string }
         title: { type: string }
@@ -27215,7 +27400,12 @@ components:
       type: object
       required: [data]
       properties:
-        data: { type: array, items: { $ref: "#/components/schemas/WildflowerRelevantUpdateItem" } }
+        data:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/WildflowerRelevantUpdateItem" },
+          }
 
     # ─── Audit log ────────────────────────────────────────────────────────────
     AuditChange:

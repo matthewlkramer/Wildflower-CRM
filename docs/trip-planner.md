@@ -30,6 +30,10 @@ last_verified: 2026-09-10
   its traveler, travel dates, and destination city when one has been entered.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
   fields are derived at read time. They are never stored as a second status.
+- The trip summary separates detected flights and hotels. It shows each
+  booking's dates, location, and confirmation number when available; otherwise
+  it displays `No flights` or `No hotel booked`. Dated Gmail bookings and
+  Calendar bookings also appear in the schedule.
 
 ## Evidence and privacy boundaries
 
@@ -37,6 +41,14 @@ last_verified: 2026-09-10
   message from the traveler's synced mailbox contains meeting/visit language.
   `responded` requires a later visible received message in the same Gmail
   thread. Private messages are visible and count only for their mailbox owner.
+- Flight and hotel evidence is derived at read time from the trip window's
+  visible Calendar events and the traveler's synced Gmail message index. A
+  bounded set of travel-shaped messages that did not match a CRM contact is
+  fetched from Gmail for the traveler without persisting the message body.
+  Gmail booking details are available only to the mailbox owner; teammates see
+  only Calendar evidence allowed by the existing event privacy rule. Cancelled
+  Calendar events are excluded, and Gmail evidence must match the trip's dates
+  or destination.
 - Google Calendar owns event facts. Every regular calendar sync also performs a
   bounded-date sweep for each of the user's active CRM trip windows, which
   captures complete schedule details even when no attendee matches a CRM
@@ -74,6 +86,8 @@ last_verified: 2026-09-10
 - No trip table points to Gmail messages or Calendar events. Evidence links are
   derived from the existing matched-person arrays, mailbox/calendar owner, and
   provider thread/event facts.
+- Travel bookings are likewise derived response data rather than stored trip
+  state, so Gmail and Google Calendar remain authoritative.
 - `trip_plans.notes` is the shared, editable trip scratchpad.
 - `trip_plan_comments` is an append-only team discussion with an author and
   timestamp on every comment; it never overwrites the scratchpad.
