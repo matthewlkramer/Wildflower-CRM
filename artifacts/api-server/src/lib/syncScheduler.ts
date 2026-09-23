@@ -18,6 +18,12 @@ import { backfillIntelForUser } from "./gmailBackfill";
 // the real correctness guard; this just keeps the logs quiet.
 const backfillInFlight = new Set<string>();
 
+// Bump this watermark whenever a detector change needs to be applied to
+// already-stored mail. A completed backfill stamps the current time, so each
+// connected mailbox automatically re-runs the historical pass once per bump
+// without a schema migration or a manual production action.
+const EMAIL_INTEL_BACKFILL_WATERMARK = new Date("2026-09-23T18:40:00.000Z");
+
 /**
  * Per-user Gmail + Calendar sync scheduler. Runs in-process inside the
  * API server (no external cron). Every TICK_MS we sweep all users with
@@ -98,7 +104,7 @@ interface DueRow {
   lastCalendarSyncedAt: Date | null;
   emailBootstrapDone: boolean;
   calendarBootstrapDone: boolean;
-  emailBackfillDone: boolean;
+  emailBackfillCompletedAt: Date | null;
 }
 
 export async function tick(now: number = Date.now()): Promise<void> {
@@ -121,7 +127,7 @@ export async function tick(now: number = Date.now()): Promise<void> {
         // bootstrapping → eligible for fast cycling below.
         emailBootstrapDone: sql<boolean>`${emailSyncState.bootstrapCompletedAt} IS NOT NULL`,
         calendarBootstrapDone: sql<boolean>`${calendarSyncState.bootstrapCompletedAt} IS NOT NULL`,
-        emailBackfillDone: sql<boolean>`${emailSyncState.backfillCompletedAt} IS NOT NULL`,
+        emailBackfillCompletedAt: emailSyncState.backfillCompletedAt,
       })
       .from(googleOauthTokens)
       .leftJoin(
@@ -205,13 +211,14 @@ export async function tick(now: number = Date.now()): Promise<void> {
       // just ran. Fire-and-forget — errors are logged inside.
       if (
         r.emailBootstrapDone &&
-        !r.emailBackfillDone &&
+        (!r.emailBackfillCompletedAt ||
+          r.emailBackfillCompletedAt < EMAIL_INTEL_BACKFILL_WATERMARK) &&
         !backfillInFlight.has(r.userId)
       ) {
         backfillInFlight.add(r.userId);
         logger.info(
           { userId: r.userId },
-          "Auto-triggering email-intelligence backfill (bootstrap done, backfill pending)",
+          "Auto-triggering email-intelligence backfill (bootstrap done, detector backfill pending)",
         );
         void backfillIntelForUser(r.userId)
           .catch((err) => {

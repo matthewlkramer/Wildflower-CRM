@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   extractGrantOpportunities,
   extractLinkedInJobChanges,
+  isAutoResponder,
   parseAutoResponderMove,
   parseEmailSignature,
 } from "../lib/intelDetectors";
@@ -260,6 +261,101 @@ describe("parseAutoResponderMove — OOO vs. genuine move", () => {
       null,
     );
     expect(move).toBeNull();
+  });
+
+  it("parses a direct transition announcement without classifying it as an auto-reply", () => {
+    const body =
+      "Dear friends and colleagues, after eight and a half years with the Walton Family Foundation, I'll be transitioning at the end of this month to join the PIE Network as Senior Director of Policy & Program.";
+    const move = parseAutoResponderMove(body, null);
+    expect(isAutoResponder("Personal update", body)).toBe(false);
+    expect(move).toMatchObject({
+      leftCompany: "Walton Family Foundation",
+      newCompany: "PIE Network",
+    });
+  });
+
+  it("parses a named third-person permanent departure auto-reply", () => {
+    const move = parseAutoResponderMove(
+      "Melissa Reynolds is no longer with the Walton Family Foundation. Please contact Claire Vorhees for assistance.",
+      null,
+    );
+    expect(move).toMatchObject({ leftCompany: "Walton Family Foundation", newCompany: null });
+  });
+
+  it("parses 'left my position' and a personal forwarding address", () => {
+    const move = parseAutoResponderMove(
+      "I have left my position at Overdeck Family Foundation and am no longer monitoring this email account. You can feel free to reach me at elizabeth@example.com.",
+      null,
+    );
+    expect(move).toMatchObject({
+      leftCompany: "Overdeck Family Foundation",
+      newEmail: "elizabeth@example.com",
+    });
+  });
+
+  it("uses the tenure preamble instead of a generic company reference", () => {
+    const move = parseAutoResponderMove(
+      "After over 8 amazing years with PCSNM, I am no longer with the organization.",
+      null,
+    );
+    expect(move).toMatchObject({ leftCompany: "PCSNM" });
+  });
+
+  it("parses last-day and retirement announcements", () => {
+    expect(parseAutoResponderMove("It's my last day at Airtable today.", null)).toMatchObject({
+      leftCompany: "Airtable",
+    });
+    expect(
+      parseAutoResponderMove(
+        "After a wonderful career, I will be retiring from McKinsey on May 22.",
+        null,
+      ),
+    ).toMatchObject({ leftCompany: "McKinsey" });
+  });
+
+  it("accepts a new address only when the old mailbox is permanently inactive", () => {
+    const move = parseAutoResponderMove(
+      "As of May 26, this mailbox is no longer actively monitored. Nick Howley can now be reached at nick@example.com.",
+      null,
+    );
+    expect(move).toMatchObject({ leftCompany: null, newCompany: null, newEmail: "nick@example.com" });
+  });
+
+  it("does not confuse ordinary 'no longer' or transition prose for a job move", () => {
+    expect(
+      parseAutoResponderMove(
+        "I no longer have much insight into that program, but I can ask around.",
+        null,
+      ),
+    ).toBeNull();
+    expect(
+      parseAutoResponderMove(
+        "We are no longer investing in that strategy and are transitioning the project to a new system.",
+        null,
+      ),
+    ).toBeNull();
+    expect(
+      parseAutoResponderMove(
+        "I heard that Jessica Alfonsi is no longer with Allen & Company. We should check in with her next week.",
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("does not attribute a quoted sender's job announcement to the replier", () => {
+    expect(
+      parseAutoResponderMove(
+        "Thanks for the update — congratulations!\n\nOn Fri, Jul 24, 2026 at 9:39 AM Melissa Reynolds wrote:\nAfter eight years with Walton Family Foundation, I'll be transitioning to join PIE Network.",
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it("terminates quickly on long almost-matching transition prose", () => {
+    const body = `${"I will be transitioning sometime soon ".repeat(20_000)}to join`;
+    const started = performance.now();
+    expect(parseAutoResponderMove(body, null)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(100);
   });
 });
 
