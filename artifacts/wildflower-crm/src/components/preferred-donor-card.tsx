@@ -9,13 +9,6 @@ import {
 } from "@workspace/api-client-react";
 import { RelatedCard, CardAction } from "@/components/record-layout";
 import { DonorFieldPicker, type DonorType } from "@/components/entity-picker";
-import {
-  EntityCombobox,
-  useHouseholdName,
-  useHouseholdSearch,
-  useIntermediaryName,
-  useIntermediarySearch,
-} from "@/components/entity-picker";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -61,12 +54,6 @@ export function PreferredDonorCard({
   const [mode, setMode] = useState<DonorRoutingMode>("automatic");
   const [targetType, setTargetType] = useState<DonorType>("organization");
   const [targetId, setTargetId] = useState<string | null>(null);
-  const [primaryHouseholdId, setPrimaryHouseholdId] = useState<string | null>(
-    null,
-  );
-  const [defaultIntermediaryId, setDefaultIntermediaryId] = useState<
-    string | null
-  >(null);
 
   useEffect(() => {
     if (!editing || !settings) return;
@@ -81,8 +68,6 @@ export function PreferredDonorCard({
             : "organization",
     );
     setTargetId(settings.target?.id ?? null);
-    setPrimaryHouseholdId(settings.primaryHousehold?.id ?? null);
-    setDefaultIntermediaryId(settings.defaultPaymentIntermediary?.id ?? null);
   }, [editing, settings, sourceKind]);
 
   const cancel = () => setEditing(false);
@@ -104,17 +89,14 @@ export function PreferredDonorCard({
           mode,
           targetKind: mode === "target" ? donorKindFromType(targetType) : null,
           targetId: mode === "target" ? targetId : null,
-          primaryHouseholdId:
-            sourceKind === "individual" ? primaryHouseholdId : null,
-          defaultPaymentIntermediaryId: defaultIntermediaryId,
         },
       });
       await queryClient.invalidateQueries({ queryKey });
       setEditing(false);
-      toast({ title: "Preferred donor settings saved" });
+      toast({ title: "Default donor of record saved" });
     } catch (error) {
       toast({
-        title: "Could not save preferred donor settings",
+        title: "Could not save the default donor of record",
         description:
           error instanceof Error ? error.message : "Something went wrong.",
         variant: "destructive",
@@ -123,7 +105,7 @@ export function PreferredDonorCard({
   };
 
   const pathwayText = !settings
-    ? "Loading preferred donor settings…"
+    ? "Loading default donor of record…"
     : settings.mode === "ask"
       ? "Ask each time"
       : settings.mode === "automatic" && settings.resolved
@@ -137,7 +119,7 @@ export function PreferredDonorCard({
 
   return (
     <RelatedCard
-      title="Preferred donor pathway"
+      title="Default donor of record"
       action={
         settings && !editing ? (
           <CardAction label="Edit" onClick={() => setEditing(true)} />
@@ -148,7 +130,7 @@ export function PreferredDonorCard({
         <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
       ) : query.isError || !settings ? (
         <p className="px-2 py-2 text-sm text-destructive">
-          Preferred donor settings could not be loaded.
+          Default donor of record could not be loaded.
         </p>
       ) : editing ? (
         <div className="space-y-4 px-2 py-2">
@@ -190,41 +172,6 @@ export function PreferredDonorCard({
             </div>
           ) : null}
 
-          {sourceKind === "individual" ? (
-            <div className="space-y-1.5">
-              <Label>Primary household</Label>
-              <EntityCombobox
-                useSearch={useHouseholdSearch}
-                useResolve={useHouseholdName}
-                value={primaryHouseholdId}
-                onChange={setPrimaryHouseholdId}
-                placeholder="No primary household"
-                testId="select-primary-household"
-                disabled={update.isPending}
-              />
-              <p className="text-[11px] text-muted-foreground">
-                This is the one current household used for related-giving rules.
-              </p>
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <Label>Default payment intermediary</Label>
-            <EntityCombobox
-              useSearch={useIntermediarySearch}
-              useResolve={useIntermediaryName}
-              value={defaultIntermediaryId}
-              onChange={setDefaultIntermediaryId}
-              placeholder="No default intermediary"
-              testId="select-default-payment-intermediary"
-              disabled={update.isPending}
-            />
-            <p className="text-[11px] text-muted-foreground">
-              For example, Vanguard Charitable or another DAF sponsor. The
-              intermediary is not the donor of record.
-            </p>
-          </div>
-
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -262,20 +209,6 @@ export function PreferredDonorCard({
               </div>
             </div>
           ) : null}
-          {sourceKind === "individual" ? (
-            <div>
-              <div className="text-xs font-medium text-muted-foreground">
-                Primary household
-              </div>
-              <div>{settings.primaryHousehold?.name ?? "None"}</div>
-            </div>
-          ) : null}
-          <div>
-            <div className="text-xs font-medium text-muted-foreground">
-              Default intermediary
-            </div>
-            <div>{settings.defaultPaymentIntermediary?.name ?? "None"}</div>
-          </div>
         </div>
       )}
     </RelatedCard>

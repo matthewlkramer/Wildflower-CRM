@@ -3,17 +3,19 @@ name: Gives-through donor→payment-intermediary links
 description: How donors (org/individual/household) link the payment intermediaries they give through, replacing the old single org PI picker.
 ---
 
-# "Gives through" donor → payment-intermediary links
+# Donor → payment-intermediary links
 
 A many-to-one-per-pair join table links a **donor** to the payment
 intermediaries (fiscal sponsors / DAFs) it gives through. A shared
-`GivesThroughCard` renders on all three donor detail pages
+`GivesThroughCard` renders as **Payment intermediaries** on all three donor detail pages
 (organization, individual, household).
 
 ## Donor XOR — same invariant family as opportunities/gifts
+
 Each link row carries exactly one donor FK: `organization_id`,
 `individual_giver_person_id`, or `household_id`. Enforced at **all three**
 layers, matching the existing donor-XOR pattern:
+
 - DB CHECK (`num_nonnulls(...) = 1`).
 - API: GET and POST normalize donor fields and reject non-XOR via the same
   `validateGiftInvariants` / `DONOR_XOR_MESSAGE` helpers used by gifts.
@@ -22,25 +24,34 @@ layers, matching the existing donor-XOR pattern:
 **Why:** keeps "who is the donor" unambiguous and consistent with
 opportunities/gifts so reporting can union donor scopes safely.
 
-## Idempotent create
+## Durable pair identity and archive/restore
+
 Partial unique indexes (one per donor type) guarantee one
-`(donor, intermediary)` row. POST uses `onConflictDoNothing()` and, on
-conflict, re-resolves and returns the existing row (no 500 on re-add).
+`(donor, intermediary)` row across its lifetime. Removing a link sets
+`archived_at` and clears `is_default`; POST restores the same row on re-add.
+Hard delete is not an application operation.
+
+Each donor can have at most one active `is_default` relationship. Archived
+links and links to archived payment intermediaries are excluded. For a new
+gift, the source record's explicit default wins and the resolved donor of
+record's default is the fallback. The database function
+`resolve_default_payment_intermediary` is shared by the read API and gift
+trigger.
 
 ## giftDerived suggestions
-List endpoint returns `{ data, giftDerived }`. `giftDerived` = intermediaries
-seen on the donor's own gifts but **not yet logged** (excluded via
-`notInArray(..., loggedPiIds)`). The card surfaces these as "Seen on gifts —
-add?" quick-adds, and also excludes `loggedIds` from the add-combobox so you
-can't double-add.
 
-## Deprecated column, not dropped
-`organizations.payment_intermediary_id` (the old single-PI picker) is
-**retained/deprecated**, not dropped — the old picker UI was removed but the
-column stays for back-compat / future backfill audit. The 0008 migration is
-additive + idempotent and backfills deterministic IDs from that column with
-`ON CONFLICT DO NOTHING`.
+List endpoint returns active `data`, `giftDerived`, and the effective default
+plus its source. `giftDerived` = intermediaries
+seen on the donor's own gifts but **not yet logged** (excluded via
+`notInArray(..., loggedPiIds)`). Archived relationship rows count as logged so
+dismissed suggestions do not immediately reappear. The card surfaces new
+suggestions as "Seen on gifts — add?" quick-adds.
+
+## Retired legacy column
+
+`organizations.payment_intermediary_id` was dropped in migration 0146 after
+the many-to-many relationship became authoritative. Do not reintroduce it.
 
 **How to apply:** when adding donor-scoped link features, reuse the donor-XOR
-helpers and the partial-unique-index + onConflictDoNothing idempotency pattern;
+helpers and the durable pair + archive/restore pattern;
 invalidate with the donor-scoped generated query key after mutations.

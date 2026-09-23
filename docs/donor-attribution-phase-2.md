@@ -16,8 +16,9 @@ cannot drift.
 ## Payment intermediaries
 
 The intermediary remains separate from the donor of record. An explicitly supplied
-gift intermediary wins. Otherwise the trigger uses the resolved donor's default,
-falling back to the originally selected donor's default.
+gift intermediary wins. Otherwise the trigger uses the originally selected donor's
+explicit default, falling back to the resolved donor of record's default. Archived
+relationships and archived intermediaries are ignored.
 
 ## Related giving
 

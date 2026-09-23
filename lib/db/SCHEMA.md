@@ -33,17 +33,17 @@ Sync ownership and operational resync commands:
 
 ## Domain index
 
-| Domain | Primary tables | Purpose |
-|---|---|---|
-| Donors & contacts | `organizations`, `people`, `households`, `people_entity_roles`, `payment_intermediaries`, `emails`/`phone_numbers`/`addresses` | External parties and contact info |
-| Fundraising pipeline | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments` | Planned asks, commitments, restrictions, collection plans |
-| Received money | `gifts_and_payments`, `gift_allocations` | Actual donor credit and received-money scope |
-| Payment evidence | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions` | Imported evidence that money moved |
-| Reconciliation relationships | `payment_units.gift_id`, `stripe_payouts.bank_deposit_id`, `source_links` | Authoritative links among evidence and CRM records |
-| Internal dimensions | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns` | Allocation and reporting dimensions |
-| Communications | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, `newsletter_contacts`, `newsletter_campaigns`, `newsletter_engagement`, tracking/sync-state tables | Synced and manual touches plus imported source evidence |
-| AI / workflow | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue` | Proposals, tasks, review queues |
-| App plumbing | `users`, `saved_views`, `bulk_operations`, `audit_log`, OAuth/sync-state tables | Auth, UI persistence, operations |
+| Domain                       | Primary tables                                                                                                                                                                    | Purpose                                                   |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Donors & contacts            | `organizations`, `people`, `households`, `people_entity_roles`, `payment_intermediaries`, `emails`/`phone_numbers`/`addresses`                                                    | External parties and contact info                         |
+| Fundraising pipeline         | `opportunities_and_pledges`, `pledge_allocations`, `pledge_expected_payments`                                                                                                     | Planned asks, commitments, restrictions, collection plans |
+| Received money               | `gifts_and_payments`, `gift_allocations`                                                                                                                                          | Actual donor credit and received-money scope              |
+| Payment evidence             | `staged_payments`, `stripe_payouts`, `stripe_staged_charges`, `donorbox_donations`, `bank_transactions`                                                                           | Imported evidence that money moved                        |
+| Reconciliation relationships | `payment_units.gift_id`, `stripe_payouts.bank_deposit_id`, `source_links`                                                                                                         | Authoritative links among evidence and CRM records        |
+| Internal dimensions          | `entities`, `fiscal_years`, `fiscal_year_entity_goals`, `fundable_projects`, `schools`, `charters`, `regions`, `fundraising_campaigns`                                            | Allocation and reporting dimensions                       |
+| Communications               | `email_messages`, `calendar_events`, `interactions`, `notes`, `meeting_notes`, `newsletter_contacts`, `newsletter_campaigns`, `newsletter_engagement`, tracking/sync-state tables | Synced and manual touches plus imported source evidence   |
+| AI / workflow                | `email_proposals`, `email_intel_prompts`, `grant_leads`, `tasks`, `task_proposals`, `cleanup_queue`                                                                               | Proposals, tasks, review queues                           |
+| App plumbing                 | `users`, `saved_views`, `bulk_operations`, `audit_log`, OAuth/sync-state tables                                                                                                   | Auth, UI persistence, operations                          |
 
 ## Cross-table invariants
 
@@ -144,6 +144,9 @@ analytics and pledge paid-amount derivation.
 - `people` — individuals (donors, advisors, staff contacts); `anonymous`
   flag; `newsletter` / `unsubscribed_to_newsletter` are read-only projections
   from `newsletter_preference_events`, maintained by migration 0247's trigger.
+- `people.primary_household_id` — the individual's optional current primary
+  household. It is the sole primary-household authority and is also the
+  implicit target for automatic donor-of-record routing.
 - `newsletter_preference_events` — append-only through the API; source-keyed
   consent, audience selection/removal, and opt-out evidence. Actual event dates
   may be unknown; recorded dates are separate. Only dated consent later than
@@ -156,7 +159,15 @@ analytics and pledge paid-amount derivation.
   boolean (not DB-enforced).
 - `payment_intermediaries` — DAFs, giving platforms, private wealth managers.
   `donor_payment_intermediaries` joins a donor (donor-XOR at the join level)
-  to an intermediary it gives *through*.
+  to an intermediary it gives _through_. Join rows are soft-archived, retain a
+  unique donor/intermediary identity across archive/restore, and allow at most
+  one active `is_default` row per donor. Archived relationships and archived
+  intermediaries are excluded from default resolution. On new gifts, an
+  explicit source-record default wins; the resolved donor-of-record default is
+  the fallback.
+- `donor_routing_preferences` — optional explicit donor-of-record decisions.
+  No row means automatic routing. This table does not own primary household or
+  payment-intermediary settings.
 - `emails`, `phone_numbers`, `addresses` — each row owned by exactly one of
   person / organization / payment_intermediary / household (CHECK
   `num_nonnulls(...) = 1`, CASCADE on owner delete). `emails` is globally
@@ -237,18 +248,18 @@ analytics and pledge paid-amount derivation.
   stored `type` column**: gift type is fully derived at read time
   (`deriveGiftTypeExpr`: loan_fund_investment > matching_gift > directed_gift
   > reimbursement > pledge_payment > standard_gift). `loan_or_grant` is
-  stored directly and is the sole loan authority. The human-entered `amount`
-  is the authoritative donor credit; settled amounts, QB-tie status, and
-  off-books-ness are all **derived at read time** (`giftPaymentSummary.ts` /
-  `derivedStatus.ts`) from counted `payment_units.gift_id` ties and the
-  allocation entities — a gift is off-books when every allocation sits on a
-  no-payment entity. **Never reintroduce gift-pointer or stored-status
-  columns here.** Other facts: `date_received` (canonical "money arrived"
-  date), `payment_method`, donor XOR FKs, `payment_intermediary_id`,
-  matching-gift self-link (`gift_being_matched_id`), audit-close overpay
-  self-link (`overpay_of_gift_id`, at most one active per original),
-  `awaiting_settlement` (suppresses premature missing-QB flags), thank-you
-  and grant-letter/acknowledgement file fields.
+  > stored directly and is the sole loan authority. The human-entered `amount`
+  > is the authoritative donor credit; settled amounts, QB-tie status, and
+  > off-books-ness are all **derived at read time** (`giftPaymentSummary.ts` /
+  > `derivedStatus.ts`) from counted `payment_units.gift_id` ties and the
+  > allocation entities — a gift is off-books when every allocation sits on a
+  > no-payment entity. **Never reintroduce gift-pointer or stored-status
+  > columns here.** Other facts: `date_received` (canonical "money arrived"
+  > date), `payment_method`, donor XOR FKs, `payment_intermediary_id`,
+  > matching-gift self-link (`gift_being_matched_id`), audit-close overpay
+  > self-link (`overpay_of_gift_id`, at most one active per original),
+  > `awaiting_settlement` (suppresses premature missing-QB flags), thank-you
+  > and grant-letter/acknowledgement file fields.
 - `gift_allocations` — actual received-money line items: entity,
   `sub_amount`, `grant_year`, regions, intended usage, school/charter recipient FKs, the
   three restriction axes, `counts_toward_goal` (the sole home of the
@@ -268,7 +279,7 @@ Both allocation tables carry three independent axes —
 `regional_restriction_type`, `other_restriction_type` (restrictions beyond
 region/time/school/project), `time_restriction_type` — each a
 `restriction_axis` enum (`donor_restricted` / `wf_restricted` /
-`unrestricted`), NOT NULL default `unrestricted`. A line codes as *restricted*
+`unrestricted`), NOT NULL default `unrestricted`. A line codes as _restricted_
 (4100.x) when **any** axis is `donor_restricted`; `wf_restricted` and
 `unrestricted` both code unrestricted (4000.x). Two free-text companions:
 `restriction_description` (plain-language summary) and `purpose_verbatim`
@@ -293,7 +304,7 @@ Revenue coding is **derived on demand** from allocation scope
 in `entity_coding_rules`), never persisted on allocation rows. The reviewer
 captures the resolved snapshot onto the matching `staged_payments` row
 (object code / revenue location / revenue class + overrides, `coding_flags`,
-`deferred_revenue` + reason — describing the QuickBooks *payment*, not donor
+`deferred_revenue` + reason — describing the QuickBooks _payment_, not donor
 intent). `revenue_accounts` holds the GL account list.
 
 ### Many-to-many via slug arrays
@@ -360,7 +371,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   `payment_units` via `bank_deposit_components`. Composition state
   (unresolved/partial/complete/overallocated) is DERIVED, never stored.
 - `payment_units` — the canonical **donor-level payment unit** (one row = one
-  real payment event; `kind` = stripe_charge | check | direct_ach | wire |
+  real payment event; `kind` = stripe*charge | check | direct_ach | wire |
   other). Carries NO donor identity/coding
   (those stay on the gift) and NO parent pointer (a charge's parent is its
   payout; a check's is a `bank_deposit_components` row). Pointers, each at most
@@ -370,7 +381,7 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   docs/adr-unit-gift-pointer.md), `source_staged_payment_id`
   (provisional QBO provenance for check
   units, Phase 3; never an authority). Seeded 1:1 from non-excluded
-  `stripe_staged_charges` (`pu_<charge id>`); check units come in Phase 3.
+  `stripe_staged_charges` (`pu*<charge id>`); check units come in Phase 3.
 - `bank_deposit_components` — the **components (checks / direct payments) that
   compose a bank deposit** (docs/adr-bank-spine-money-model.md). One row ties a
   check `payment_units` row to a `bank_deposits` row for an `amount`. ONLY for

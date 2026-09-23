@@ -10,8 +10,10 @@ const PERSON_ID = `${RUN}_person`;
 const ORG_ID = `${RUN}_org`;
 const HOUSEHOLD_ID = `${RUN}_household`;
 const PI_ID = `${RUN}_pi`;
+const SOURCE_PI_ID = `${RUN}_source_pi`;
 const PREF_ID = `${RUN}_preference`;
 const LINK_ID = `${RUN}_link`;
+const SOURCE_LINK_ID = `${RUN}_source_link`;
 const giftIds: string[] = [];
 
 let db: (typeof import("@workspace/db"))["db"];
@@ -77,6 +79,11 @@ beforeAll(async () => {
     name: "Trigger DAF",
     type: "daf",
   });
+  await db.insert(schema.paymentIntermediaries).values({
+    id: SOURCE_PI_ID,
+    name: "Source Trigger DAF",
+    type: "daf",
+  });
   await db.insert(schema.donorPaymentIntermediaries).values({
     id: LINK_ID,
     organizationId: ORG_ID,
@@ -97,7 +104,9 @@ afterAll(async () => {
     .where(eq(schema.donorRoutingPreferences.sourcePersonId, PERSON_ID));
   await db
     .delete(schema.donorPaymentIntermediaries)
-    .where(eq(schema.donorPaymentIntermediaries.id, LINK_ID));
+    .where(
+      inArray(schema.donorPaymentIntermediaries.id, [LINK_ID, SOURCE_LINK_ID]),
+    );
   await db.delete(schema.people).where(eq(schema.people.id, PERSON_ID));
   await db
     .delete(schema.households)
@@ -107,7 +116,7 @@ afterAll(async () => {
     .where(eq(schema.organizations.id, ORG_ID));
   await db
     .delete(schema.paymentIntermediaries)
-    .where(eq(schema.paymentIntermediaries.id, PI_ID));
+    .where(inArray(schema.paymentIntermediaries.id, [PI_ID, SOURCE_PI_ID]));
 });
 
 describe.skipIf(!HAS_DB)("gift donor-routing trigger", () => {
@@ -136,6 +145,40 @@ describe.skipIf(!HAS_DB)("gift donor-routing trigger", () => {
     expect(gift).toMatchObject({
       individualGiverPersonId: null,
       householdId: null,
+      organizationId: ORG_ID,
+      paymentIntermediaryId: PI_ID,
+    });
+  });
+
+  it("prefers the selected source record's explicit default", async () => {
+    await db.insert(schema.donorPaymentIntermediaries).values({
+      id: SOURCE_LINK_ID,
+      individualGiverPersonId: PERSON_ID,
+      paymentIntermediaryId: SOURCE_PI_ID,
+      isDefault: true,
+    });
+    await setPreference("target", ORG_ID);
+    const gift = await insertGift("source-default");
+    expect(gift).toMatchObject({
+      organizationId: ORG_ID,
+      paymentIntermediaryId: SOURCE_PI_ID,
+    });
+  });
+
+  it("clears an archived intermediary default and falls back to the resolved donor", async () => {
+    await db
+      .update(schema.paymentIntermediaries)
+      .set({ archivedAt: new Date() })
+      .where(eq(schema.paymentIntermediaries.id, SOURCE_PI_ID));
+    const [sourceLink] = await db
+      .select({ isDefault: schema.donorPaymentIntermediaries.isDefault })
+      .from(schema.donorPaymentIntermediaries)
+      .where(eq(schema.donorPaymentIntermediaries.id, SOURCE_LINK_ID));
+    expect(sourceLink.isDefault).toBe(false);
+
+    await setPreference("target", ORG_ID);
+    const gift = await insertGift("archived-source-default");
+    expect(gift).toMatchObject({
       organizationId: ORG_ID,
       paymentIntermediaryId: PI_ID,
     });

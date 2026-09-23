@@ -233,7 +233,7 @@ export const createPerson = async (createPersonBody: CreatePersonBody, options?:
 
 
 
-export const getCreatePersonMutationOptions = <TError = ErrorType<BadRequestResponse>,
+export const getCreatePersonMutationOptions = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPerson>>, TError,{data: BodyType<CreatePersonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createPerson>>, TError,{data: BodyType<CreatePersonBody>}, TContext> => {
 
@@ -262,9 +262,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreatePersonMutationResult = NonNullable<Awaited<ReturnType<typeof createPerson>>>
     export type CreatePersonMutationBody = BodyType<CreatePersonBody>
-    export type CreatePersonMutationError = ErrorType<BadRequestResponse>
+    export type CreatePersonMutationError = ErrorType<BadRequestResponse | void>
 
-    export const useCreatePerson = <TError = ErrorType<BadRequestResponse>,
+    export const useCreatePerson = <TError = ErrorType<BadRequestResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPerson>>, TError,{data: BodyType<CreatePersonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createPerson>>,
@@ -366,7 +366,7 @@ export const updatePerson = async (id: string,
 
 
 
-export const getUpdatePersonMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+export const getUpdatePersonMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePerson>>, TError,{id: string;data: BodyType<UpdatePersonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updatePerson>>, TError,{id: string;data: BodyType<UpdatePersonBody>}, TContext> => {
 
@@ -395,9 +395,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdatePersonMutationResult = NonNullable<Awaited<ReturnType<typeof updatePerson>>>
     export type UpdatePersonMutationBody = BodyType<UpdatePersonBody>
-    export type UpdatePersonMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+    export type UpdatePersonMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
-    export const useUpdatePerson = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    export const useUpdatePerson = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePerson>>, TError,{id: string;data: BodyType<UpdatePersonBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updatePerson>>,

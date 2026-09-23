@@ -24,7 +24,9 @@ import type {
   CreateDonorPaymentIntermediaryBody,
   DonorPaymentIntermediary,
   DonorPaymentIntermediaryList,
-  ListDonorPaymentIntermediariesParams
+  ListDonorPaymentIntermediariesParams,
+  NotFoundResponse,
+  UpdateDonorPaymentIntermediaryBody
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -43,7 +45,7 @@ export const getListDonorPaymentIntermediariesUrl = (params?: ListDonorPaymentIn
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -55,16 +57,16 @@ export const getListDonorPaymentIntermediariesUrl = (params?: ListDonorPaymentIn
 }
 
 export const listDonorPaymentIntermediaries = async (params?: ListDonorPaymentIntermediariesParams, options?: RequestInit): Promise<DonorPaymentIntermediaryList> => {
-  
+
   return customFetch<DonorPaymentIntermediaryList>(getListDonorPaymentIntermediariesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -75,7 +77,7 @@ export const getListDonorPaymentIntermediariesQueryKey = (params?: ListDonorPaym
     ] as const;
     }
 
-    
+
 export const getListDonorPaymentIntermediariesQueryOptions = <TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError = ErrorType<BadRequestResponse>>(params?: ListDonorPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -83,13 +85,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListDonorPaymentIntermediariesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>> = ({ signal }) => listDonorPaymentIntermediaries(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -101,7 +103,7 @@ export type ListDonorPaymentIntermediariesQueryError = ErrorType<BadRequestRespo
 
 export function useListDonorPaymentIntermediaries<TData = Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError = ErrorType<BadRequestResponse>>(
  params?: ListDonorPaymentIntermediariesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listDonorPaymentIntermediaries>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListDonorPaymentIntermediariesQueryOptions(params,options)
@@ -117,15 +119,15 @@ export function useListDonorPaymentIntermediaries<TData = Awaited<ReturnType<typ
 export const getCreateDonorPaymentIntermediaryUrl = () => {
 
 
-  
+
 
   return `/api/donor-payment-intermediaries`
 }
 
 export const createDonorPaymentIntermediary = async (createDonorPaymentIntermediaryBody: CreateDonorPaymentIntermediaryBody, options?: RequestInit): Promise<DonorPaymentIntermediary> => {
-  
+
   return customFetch<DonorPaymentIntermediary>(getCreateDonorPaymentIntermediaryUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -133,7 +135,7 @@ export const createDonorPaymentIntermediary = async (createDonorPaymentIntermedi
       createDonorPaymentIntermediaryBody,)
   }
 );}
-  
+
 
 
 
@@ -148,7 +150,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createDonorPaymentIntermediary>>, {data: BodyType<CreateDonorPaymentIntermediaryBody>}> = (props) => {
@@ -159,7 +161,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -178,67 +180,194 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getCreateDonorPaymentIntermediaryMutationOptions(options));
     }
-    export const getDeleteDonorPaymentIntermediaryUrl = (id: string,) => {
+    export const getUpdateDonorPaymentIntermediaryUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/donor-payment-intermediaries/${id}`
 }
 
-export const deleteDonorPaymentIntermediary = async (id: string, options?: RequestInit): Promise<void> => {
-  
-  return customFetch<void>(getDeleteDonorPaymentIntermediaryUrl(id),
-  {      
+export const updateDonorPaymentIntermediary = async (id: string,
+    updateDonorPaymentIntermediaryBody: UpdateDonorPaymentIntermediaryBody, options?: RequestInit): Promise<DonorPaymentIntermediary> => {
+
+  return customFetch<DonorPaymentIntermediary>(getUpdateDonorPaymentIntermediaryUrl(id),
+  {
     ...options,
-    method: 'DELETE'
-    
-    
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateDonorPaymentIntermediaryBody,)
   }
 );}
-  
 
 
 
-export const getDeleteDonorPaymentIntermediaryMutationOptions = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>, TError,{id: string}, TContext> => {
 
-const mutationKey = ['deleteDonorPaymentIntermediary'];
+export const getUpdateDonorPaymentIntermediaryMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>, TError,{id: string;data: BodyType<UpdateDonorPaymentIntermediaryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>, TError,{id: string;data: BodyType<UpdateDonorPaymentIntermediaryBody>}, TContext> => {
+
+const mutationKey = ['updateDonorPaymentIntermediary'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>, {id: string}> = (props) => {
-          const {id} = props ?? {};
 
-          return  deleteDonorPaymentIntermediary(id,requestOptions)
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>, {id: string;data: BodyType<UpdateDonorPaymentIntermediaryBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateDonorPaymentIntermediary(id,data,requestOptions)
         }
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type DeleteDonorPaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>>
-    
-    export type DeleteDonorPaymentIntermediaryMutationError = ErrorType<unknown>
+    export type UpdateDonorPaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>>
+    export type UpdateDonorPaymentIntermediaryMutationBody = BodyType<UpdateDonorPaymentIntermediaryBody>
+    export type UpdateDonorPaymentIntermediaryMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
-    export const useDeleteDonorPaymentIntermediary = <TError = ErrorType<unknown>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+    export const useUpdateDonorPaymentIntermediary = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>, TError,{id: string;data: BodyType<UpdateDonorPaymentIntermediaryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
-        Awaited<ReturnType<typeof deleteDonorPaymentIntermediary>>,
+        Awaited<ReturnType<typeof updateDonorPaymentIntermediary>>,
+        TError,
+        {id: string;data: BodyType<UpdateDonorPaymentIntermediaryBody>},
+        TContext
+      > => {
+      return useMutation(getUpdateDonorPaymentIntermediaryMutationOptions(options));
+    }
+    export const getArchiveDonorPaymentIntermediaryUrl = (id: string,) => {
+
+
+
+
+  return `/api/donor-payment-intermediaries/${id}/archive`
+}
+
+export const archiveDonorPaymentIntermediary = async (id: string, options?: RequestInit): Promise<DonorPaymentIntermediary> => {
+
+  return customFetch<DonorPaymentIntermediary>(getArchiveDonorPaymentIntermediaryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getArchiveDonorPaymentIntermediaryMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['archiveDonorPaymentIntermediary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  archiveDonorPaymentIntermediary(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveDonorPaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>>
+
+    export type ArchiveDonorPaymentIntermediaryMutationError = ErrorType<NotFoundResponse>
+
+    export const useArchiveDonorPaymentIntermediary = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveDonorPaymentIntermediary>>,
         TError,
         {id: string},
         TContext
       > => {
-      return useMutation(getDeleteDonorPaymentIntermediaryMutationOptions(options));
+      return useMutation(getArchiveDonorPaymentIntermediaryMutationOptions(options));
     }
-    
+    export const getUnarchiveDonorPaymentIntermediaryUrl = (id: string,) => {
+
+
+
+
+  return `/api/donor-payment-intermediaries/${id}/unarchive`
+}
+
+export const unarchiveDonorPaymentIntermediary = async (id: string, options?: RequestInit): Promise<DonorPaymentIntermediary> => {
+
+  return customFetch<DonorPaymentIntermediary>(getUnarchiveDonorPaymentIntermediaryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getUnarchiveDonorPaymentIntermediaryMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['unarchiveDonorPaymentIntermediary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  unarchiveDonorPaymentIntermediary(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnarchiveDonorPaymentIntermediaryMutationResult = NonNullable<Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>>
+
+    export type UnarchiveDonorPaymentIntermediaryMutationError = ErrorType<NotFoundResponse | void>
+
+    export const useUnarchiveDonorPaymentIntermediary = <TError = ErrorType<NotFoundResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unarchiveDonorPaymentIntermediary>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getUnarchiveDonorPaymentIntermediaryMutationOptions(options));
+    }

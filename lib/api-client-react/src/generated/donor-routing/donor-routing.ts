@@ -121,7 +121,7 @@ export function useGetGivingRelationship<TData = Awaited<ReturnType<typeof getGi
 
 
 /**
- * @summary Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
+ * @summary Get the effective default donor-of-record pathway for a donor record.
  */
 export const getGetDonorRoutingUrl = (sourceKind: DonorRecordKind,
     sourceId: string,) => {
@@ -180,7 +180,7 @@ export type GetDonorRoutingQueryError = ErrorType<BadRequestResponse | NotFoundR
 
 
 /**
- * @summary Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
+ * @summary Get the effective default donor-of-record pathway for a donor record.
  */
 
 export function useGetDonorRouting<TData = Awaited<ReturnType<typeof getDonorRouting>>, TError = ErrorType<BadRequestResponse | NotFoundResponse>>(
@@ -200,7 +200,7 @@ export function useGetDonorRouting<TData = Awaited<ReturnType<typeof getDonorRou
 
 
 /**
- * @summary Replace a donor record's preferred pathway and related donor defaults.
+ * @summary Replace a donor record's default donor-of-record pathway.
  */
 export const getUpdateDonorRoutingUrl = (sourceKind: DonorRecordKind,
     sourceId: string,) => {
@@ -260,7 +260,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateDonorRoutingMutationError = ErrorType<BadRequestResponse | NotFoundResponse | void>
 
     /**
- * @summary Replace a donor record's preferred pathway and related donor defaults.
+ * @summary Replace a donor record's default donor-of-record pathway.
  */
 export const useUpdateDonorRouting = <TError = ErrorType<BadRequestResponse | NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateDonorRouting>>, TError,{sourceKind: DonorRecordKind;sourceId: string;data: BodyType<UpdateDonorRoutingBody>}, TContext>, request?: SecondParameter<typeof customFetch>}

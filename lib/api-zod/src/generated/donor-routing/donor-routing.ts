@@ -68,7 +68,7 @@ export const GetGivingRelationshipResponse = zod.object({
 })
 
 /**
- * @summary Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
+ * @summary Get the effective default donor-of-record pathway for a donor record.
  */
 export const GetDonorRoutingParams = zod.object({
   "sourceKind": zod.enum(['individual', 'household', 'organization']),
@@ -97,20 +97,11 @@ export const GetDonorRoutingResponse = zod.object({
   "id": zod.string(),
   "name": zod.string()
 })),
-  "requiresDecision": zod.boolean(),
-  "primaryHousehold": zod.union([zod.object({
-  "id": zod.string(),
-  "name": zod.string()
-}),zod.null()]),
-  "defaultPaymentIntermediary": zod.union([zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "type": zod.string().nullish()
-}),zod.null()])
+  "requiresDecision": zod.boolean()
 })
 
 /**
- * @summary Replace a donor record's preferred pathway and related donor defaults.
+ * @summary Replace a donor record's default donor-of-record pathway.
  */
 export const UpdateDonorRoutingParams = zod.object({
   "sourceKind": zod.enum(['individual', 'household', 'organization']),
@@ -120,9 +111,7 @@ export const UpdateDonorRoutingParams = zod.object({
 export const UpdateDonorRoutingBody = zod.object({
   "mode": zod.enum(['automatic', 'self', 'target', 'ask']),
   "targetKind": zod.union([zod.enum(['individual', 'household', 'organization']),zod.null()]),
-  "targetId": zod.string().nullable(),
-  "primaryHouseholdId": zod.string().nullable(),
-  "defaultPaymentIntermediaryId": zod.string().nullable()
+  "targetId": zod.string().nullable()
 })
 
 export const UpdateDonorRoutingResponse = zod.object({
@@ -147,15 +136,6 @@ export const UpdateDonorRoutingResponse = zod.object({
   "id": zod.string(),
   "name": zod.string()
 })),
-  "requiresDecision": zod.boolean(),
-  "primaryHousehold": zod.union([zod.object({
-  "id": zod.string(),
-  "name": zod.string()
-}),zod.null()]),
-  "defaultPaymentIntermediary": zod.union([zod.object({
-  "id": zod.string(),
-  "name": zod.string(),
-  "type": zod.string().nullish()
-}),zod.null()])
+  "requiresDecision": zod.boolean()
 })
 

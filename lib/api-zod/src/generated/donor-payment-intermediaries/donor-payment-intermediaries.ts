@@ -22,6 +22,8 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
   "individualGiverPersonId": zod.string().nullish(),
   "householdId": zod.string().nullish(),
   "notes": zod.string().nullish(),
+  "isDefault": zod.boolean().describe('Whether this active relationship is the donor\'s explicit preferred payment intermediary.'),
+  "archivedAt": zod.string().datetime({}).nullable().describe('When present, this relationship is inactive and cannot be used as a default.'),
   "paymentIntermediary": zod.object({
   "id": zod.string(),
   "name": zod.string(),
@@ -42,7 +44,17 @@ export const ListDonorPaymentIntermediariesResponse = zod.object({
   "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
-}))
+})),
+  "effectiveDefaultPaymentIntermediary": zod.union([zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['daf', 'giving_platform', 'private_wealth_manager']).nullish(),
+  "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this payment intermediary maps to.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),zod.null()]),
+  "effectiveDefaultSource": zod.union([zod.literal('source'),zod.literal('resolved'),zod.literal(null)]).nullable().describe('Whether the effective default is set on this record or inherited from its resolved donor of record.')
 })
 
 export const CreateDonorPaymentIntermediaryBody = zod.object({
@@ -53,7 +65,86 @@ export const CreateDonorPaymentIntermediaryBody = zod.object({
   "notes": zod.string().optional()
 })
 
-export const DeleteDonorPaymentIntermediaryParams = zod.object({
+export const UpdateDonorPaymentIntermediaryParams = zod.object({
   "id": zod.coerce.string()
+})
+
+export const UpdateDonorPaymentIntermediaryBody = zod.object({
+  "notes": zod.string().nullish(),
+  "isDefault": zod.boolean().optional()
+})
+
+export const UpdateDonorPaymentIntermediaryResponse = zod.object({
+  "id": zod.string(),
+  "paymentIntermediaryId": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "isDefault": zod.boolean().describe('Whether this active relationship is the donor\'s explicit preferred payment intermediary.'),
+  "archivedAt": zod.string().datetime({}).nullable().describe('When present, this relationship is inactive and cannot be used as a default.'),
+  "paymentIntermediary": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['daf', 'giving_platform', 'private_wealth_manager']).nullish(),
+  "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this payment intermediary maps to.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+export const ArchiveDonorPaymentIntermediaryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ArchiveDonorPaymentIntermediaryResponse = zod.object({
+  "id": zod.string(),
+  "paymentIntermediaryId": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "isDefault": zod.boolean().describe('Whether this active relationship is the donor\'s explicit preferred payment intermediary.'),
+  "archivedAt": zod.string().datetime({}).nullable().describe('When present, this relationship is inactive and cannot be used as a default.'),
+  "paymentIntermediary": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['daf', 'giving_platform', 'private_wealth_manager']).nullish(),
+  "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this payment intermediary maps to.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+export const UnarchiveDonorPaymentIntermediaryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const UnarchiveDonorPaymentIntermediaryResponse = zod.object({
+  "id": zod.string(),
+  "paymentIntermediaryId": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "individualGiverPersonId": zod.string().nullish(),
+  "householdId": zod.string().nullish(),
+  "notes": zod.string().nullish(),
+  "isDefault": zod.boolean().describe('Whether this active relationship is the donor\'s explicit preferred payment intermediary.'),
+  "archivedAt": zod.string().datetime({}).nullable().describe('When present, this relationship is inactive and cannot be used as a default.'),
+  "paymentIntermediary": zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "type": zod.enum(['daf', 'giving_platform', 'private_wealth_manager']).nullish(),
+  "quickbooksCustomerId": zod.string().nullish().describe('QuickBooks Online Customer Id this payment intermediary maps to.'),
+  "archivedAt": zod.string().datetime({}).nullish().describe('Soft-delete timestamp. Non-null = archived; only admins can view\/restore.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
 })
 

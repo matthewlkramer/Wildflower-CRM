@@ -56,6 +56,7 @@ import { PinnedMediaCard } from "@/components/media-mentions-panel";
 import { GivesThroughCard } from "@/components/gives-through-card";
 import { DonorRecordActions } from "@/components/donor-record-actions";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
+import { PrimaryHouseholdCard } from "@/components/primary-household-card";
 import { TasksPanel } from "@/components/tasks-panel";
 import { GivingPipelineCard } from "@/components/giving-pipeline-card";
 import { NewsletterEngagementCard } from "@/components/newsletter-engagement-card";
@@ -1048,6 +1049,11 @@ function PersonView({ person }: { person: PersonDetail }) {
 
           <OrganizationsCard roles={roles} personId={person.id} />
 
+          <PrimaryHouseholdCard
+            personId={person.id}
+            primaryHouseholdId={person.primaryHouseholdId}
+          />
+
           <PreferredDonorCard sourceKind="individual" sourceId={person.id} />
 
           <GivesThroughCard donor={{ individualGiverPersonId: person.id }} />
@@ -1064,21 +1070,36 @@ function ConferenceAttendanceCard({ personId }: { personId: string }) {
   if (attendanceQ.isLoading) return null;
   const rows = attendanceQ.data ?? [];
   return (
-    <div className="rounded-md border bg-card p-3" data-testid="person-conference-attendance">
+    <div
+      className="rounded-md border bg-card p-3"
+      data-testid="person-conference-attendance"
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-sm font-medium">Conference attendance</div>
-        <Link href="/conferences" className="text-xs text-primary hover:underline">
+        <Link
+          href="/conferences"
+          className="text-xs text-primary hover:underline"
+        >
           Manage conferences
         </Link>
       </div>
       {rows.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No conference attendance recorded.</p>
+        <p className="text-xs text-muted-foreground">
+          No conference attendance recorded.
+        </p>
       ) : (
         <ul className="space-y-1">
           {rows.map((row) => (
-            <li key={row.id} className="flex items-center justify-between gap-2 text-sm">
-              <span className="truncate">{row.sourceReference ?? "Conference event"}</span>
-              <span className="shrink-0 text-xs capitalize text-muted-foreground">{row.status}</span>
+            <li
+              key={row.id}
+              className="flex items-center justify-between gap-2 text-sm"
+            >
+              <span className="truncate">
+                {row.sourceReference ?? "Conference event"}
+              </span>
+              <span className="shrink-0 text-xs capitalize text-muted-foreground">
+                {row.status}
+              </span>
             </li>
           ))}
         </ul>

@@ -52,7 +52,11 @@ const REFERENCE_TABLES = ["entities", "regions", "fiscal_years"];
 // recreated (the donor-routing trigger tests fail exactly that way). Each
 // listed file must be idempotent (CREATE OR REPLACE / DROP ... IF EXISTS,
 // guarded seeds) — they are re-applied on EVERY setup run, warm or cold.
-const PROGRAM_MIGRATIONS = ["0222_donor_attribution_phase_2.sql", "0247_newsletter_preference_history.sql"];
+const PROGRAM_MIGRATIONS = [
+  "0222_donor_attribution_phase_2.sql",
+  "0247_newsletter_preference_history.sql",
+  "0263_donor_payment_intermediary_cleanup.sql",
+];
 
 function schemaHash(): string {
   const hash = createHash("sha256");
@@ -68,7 +72,9 @@ function schemaHash(): string {
   return hash.digest("hex");
 }
 
-export default async function globalSetup(): Promise<(() => Promise<void>) | void> {
+export default async function globalSetup(): Promise<
+  (() => Promise<void>) | void
+> {
   const rawUrl = process.env.DATABASE_URL;
   if (!rawUrl) {
     throw new Error(
@@ -133,7 +139,14 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         }
         execFileSync(
           "pnpm",
-          ["exec", "drizzle-kit", "push", "--force", "--config", "./drizzle.config.ts"],
+          [
+            "exec",
+            "drizzle-kit",
+            "push",
+            "--force",
+            "--config",
+            "./drizzle.config.ts",
+          ],
           {
             cwd: dbPackageDir,
             stdio: "inherit",
@@ -169,7 +182,10 @@ export default async function globalSetup(): Promise<(() => Promise<void>) | voi
         );
         if (tables.rows.length > 0) {
           const list = tables.rows
-            .map((r: { tablename: string }) => `"${r.tablename.replace(/"/g, '""')}"`)
+            .map(
+              (r: { tablename: string }) =>
+                `"${r.tablename.replace(/"/g, '""')}"`,
+            )
             .join(", ");
           await test.query(`TRUNCATE TABLE ${list} CASCADE`);
           console.log(`[test-db] truncated ${tables.rows.length} tables`);
