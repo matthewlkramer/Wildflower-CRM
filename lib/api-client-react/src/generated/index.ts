@@ -17,6 +17,7 @@ export * from "./email-messages/email-messages";
 export * from "./email-proposals/email-proposals";
 export * from "./email-tracking/email-tracking";
 export * from "./emails/emails";
+export * from "./enrichment/enrichment";
 export * from "./entities/entities";
 export * from "./feedback/feedback";
 export * from "./financial-corrections/financial-corrections";

@@ -78,6 +78,8 @@ export const organizations = pgTable("organizations", {
   interestsGovModels: text("interests_gov_models").array(),
   // Expressed funding geographies, never inferred from office addresses.
   regionIds: text("region_ids").array(),
+  // IRS employer identification number, normalized as NN-NNNNNNN.
+  ein: text("ein"),
   // Self-ref. SET NULL: removing a parent org leaves children intact.
   parentOrganizationId: text("parent_organization_id").references(
     (): AnyPgColumn => organizations.id,
