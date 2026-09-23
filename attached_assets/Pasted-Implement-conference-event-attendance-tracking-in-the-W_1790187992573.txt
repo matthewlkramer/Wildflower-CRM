@@ -1,0 +1,33 @@
+Implement conference/event attendance tracking in the Wildflower CRM on current main. Work autonomously through schema, APIs, UI, tests, and codegen using existing project conventions. Do not publish production or apply production DB migrations; do apply an idempotent migration to the development DB if that is the established pattern. Commit the completed work on main and report commit hash, validation, and any residual limitations.
+
+Required data model:
+1. conference_types: canonical conference series/type, display name, aliases/search terms, organizer, default/public website URL, active flag, notes, timestamps.
+2. conference_events: one occurrence/year of a type, conference_type_id, year (integer), optional name override, start/end dates, location, event/attendee-site URL, source/status/notes, timestamps; unique type+year.
+3. conference_attendance: join people to conference_events, unique person+event, with attendance status (confirmed/likely/possible), source type (uploaded list, conference website, Wildflower email, manual), source reference/evidence note, matched/imported-by/reviewed-by metadata and timestamps. If helpful, snapshot the person's organization at attendance time without making organization attendance a separate source of truth.
+4. Import/research tracking tables as needed for staged matching/review, auditability, and idempotency.
+
+Seed these active conference types with useful aliases, while keeping the UI able to add others:
+- Grantmakers for Education Annual Conference
+- ASU+GSV Summit (aliases ASU-GSV, ASU GSV)
+- NewSchools Summit
+- Yass Prize
+- Charter School Growth Fund CEO Conference (alias CSGF CEO Conference)
+- National Alliance for Public Charter Schools Annual Conference (aliases NAPCS, National Charter Schools Conference)
+- SXSW EDU
+- Bellwether eduFish (alias eduFish)
+- Dialog Retreat
+
+UI:
+- Add Conferences under Engagement.
+- Conference hub supports managing conference types and yearly events, viewing attendance counts, and opening an event/year detail.
+- Event/year detail shows attendees with person and organization links, status, and source/evidence.
+- Upload attendance list for a selected event/year. Accept CSV at minimum (XLSX if existing import utilities make it easy). Provide downloadable CSV template. Stage the upload: map common columns (name, email, organization), match people using existing safe matching patterns, show exact/ambiguous/unmatched results, allow review, and only create attendance rows after confirmation. Never silently create new people from weak matches; offer an explicit reviewed path if project conventions support it. Make repeat imports idempotent.
+- Add a “Research attendee list with ChatGPT” workflow: user enters/selects event and attendee-site URL plus optional instructions, then the CRM produces a precise, copyable prompt/request for ChatGPT/Codex to browse the conference site in the user's authenticated browser session and return/import a structured attendee CSV. Do not collect or store conference passwords. Include copy/open affordances where feasible and track research request state/results without claiming autonomous login.
+- Add a “Find Wildflower attendees from email” workflow that searches existing CRM email intelligence/tracking data for conference names/aliases and event-year date windows, producing reviewable candidate attendance suggestions for Wildflower people. Suggestions must include evidence and confidence and require review before becoming confirmed attendance; do not send emails or transmit email bodies externally.
+- Add filters on Individuals and Organizations list pages (in the existing filter/configuration UX and saved views): conference type + scope “ever” versus a specific event/year. Individuals match their own attendance. Organizations match when any linked person has matching attendance; use current/historical org-person relationships in the existing model and avoid duplicate rows.
+- Add conference attendance section to individual detail pages if consistent with existing tabs/components.
+
+API/quality:
+- Add permissions consistent with CRM roles, protected routes, OpenAPI and regenerated clients/types where this repo requires them, audit logging for attendance/import review writes, pagination, search, and indexes.
+- Preserve existing list behavior and saved views. Add focused tests for schema constraints/idempotency, attendance CRUD/import matching, email suggestions, and individuals/organizations filtering (ever and specific year).
+- Run project checks and focused/full tests proportionate to existing workflow. Do not change unrelated failing tests or unrelated work.
