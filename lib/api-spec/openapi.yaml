@@ -16501,6 +16501,14 @@ components:
             readOnly: true,
             description: "Names of organizations the person currently holds a role at (people_entity_roles.current='current').",
           }
+        activeOrganizationIds:
+          {
+            type: array,
+            items: { type: string },
+            nullable: true,
+            readOnly: true,
+            description: "IDs of organizations the person currently holds a role at (people_entity_roles.current='current'). Used to group related priority records without relying on organization-name matching.",
+          }
         pastOrganizationNames:
           {
             type: array,

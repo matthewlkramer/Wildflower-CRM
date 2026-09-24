@@ -5,7 +5,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { Pencil, Check, X } from "lucide-react";
+import { Pencil, Check, ChevronDown, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,6 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export type SaveResult = unknown | Promise<unknown>;
@@ -621,6 +630,10 @@ export function InlineEditBoolean({
 // ---------- SELECT ----------
 
 export type InlineSelectOption<T extends string> = { value: T; label: string };
+export type InlineSelectGroup<T extends string> = {
+  label: string;
+  options: ReadonlyArray<InlineSelectOption<T>>;
+};
 
 export function InlineEditSelect<T extends string>({
   label,
@@ -692,6 +705,131 @@ export function InlineEditSelect<T extends string>({
           ))}
         </SelectContent>
       </Select>
+      <ActionButtons
+        busy={busy}
+        canSave={dirty}
+        onSave={trySave}
+        onCancel={() => setEditing(false)}
+        testIdBase={testIdBase}
+        label={label}
+      />
+    </div>
+  );
+}
+
+/**
+ * Inline editor for a long taxonomy. The first menu level contains compact
+ * category names and each category opens its choices to the right.
+ */
+export function InlineEditGroupedSelect<T extends string>({
+  label,
+  display,
+  value,
+  groups,
+  onSave,
+  testIdBase,
+  nullLabel = "— None —",
+  allowNull = true,
+  align = "right",
+}: BaseProps & {
+  value: T | null;
+  groups: ReadonlyArray<InlineSelectGroup<T>>;
+  onSave: (next: T | null) => SaveResult;
+  nullLabel?: string;
+  allowNull?: boolean;
+  align?: "left" | "right";
+}) {
+  const [editing, setEditing] = useState(false);
+  const { busy, run } = useSaveRunner();
+  const NULL_TOKEN = "__null__";
+  const allOptions = groups.flatMap((group) => group.options);
+  const fallback: string = allowNull
+    ? NULL_TOKEN
+    : (allOptions[0]?.value ?? NULL_TOKEN);
+  const [draft, setDraft] = useState<string>(value ?? fallback);
+
+  useEffect(() => {
+    if (editing) setDraft(value ?? fallback);
+  }, [editing, value, fallback]);
+
+  if (!editing) {
+    return (
+      <EditTriggerRow
+        display={display}
+        onEdit={() => setEditing(true)}
+        testIdBase={testIdBase}
+        ariaLabel={`Edit ${label}`}
+        align={align}
+      />
+    );
+  }
+
+  const next: T | null = draft === NULL_TOKEN ? null : (draft as T);
+  const dirty = next !== (value ?? null);
+  const selectedLabel =
+    draft === NULL_TOKEN
+      ? nullLabel
+      : (allOptions.find((option) => option.value === draft)?.label ?? draft);
+  const trySave = () => {
+    if (!dirty || busy) return;
+    run(
+      () => onSave(next),
+      () => setEditing(false),
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1 min-w-0">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            aria-label={label}
+            data-testid={testIdBase ? `select-${testIdBase}` : undefined}
+            className="h-8 min-w-0 justify-between gap-2 font-normal"
+          >
+            <span className="truncate">{selectedLabel}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align={align === "left" ? "start" : "end"}>
+          {allowNull ? (
+            <DropdownMenuItem
+              onSelect={() => setDraft(NULL_TOKEN)}
+              data-testid={testIdBase ? `option-${testIdBase}-null` : undefined}
+            >
+              {nullLabel}
+            </DropdownMenuItem>
+          ) : null}
+          {groups.map((group) => (
+            <DropdownMenuSub key={group.label}>
+              <DropdownMenuSubTrigger>{group.label}</DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {group.options.map((option) => (
+                  <DropdownMenuItem
+                    key={option.value}
+                    onSelect={() => setDraft(option.value)}
+                    data-testid={
+                      testIdBase
+                        ? `option-${testIdBase}-${option.value}`
+                        : undefined
+                    }
+                  >
+                    {option.value === draft ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <span className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {option.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <ActionButtons
         busy={busy}
         canSave={dirty}

@@ -99,6 +99,12 @@ describe("application layout", () => {
     expect(text.indexOf("Gifts")).toBeGreaterThan(
       text.indexOf("Finance & Operations"),
     );
+    expect(text.indexOf("Payment Intermediaries")).toBeGreaterThan(
+      text.indexOf("Admin"),
+    );
+    expect(text.indexOf("Fundable Projects")).toBeGreaterThan(
+      text.indexOf("Admin"),
+    );
   });
 
   it("uses compact vertical navigation spacing", async () => {

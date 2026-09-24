@@ -21,7 +21,6 @@ import {
   type NumberOfEmployees,
   type CapacityRating,
   type Priority,
-  EntityType,
 } from "@workspace/api-client-react";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
@@ -68,12 +67,14 @@ import {
 import {
   InlineEditBoolean,
   InlineEditCurrency,
+  InlineEditGroupedSelect,
   InlineEditSelect,
   InlineEditText,
   InlineEditTextarea,
   EDIT_PENCIL_REVEAL,
   type InlineSelectOption,
 } from "@/components/inline-edit";
+import { ORGANIZATION_TYPE_GROUPS } from "@/lib/organization-type-groups";
 import { InlineEditUserPicker, useUserNameMap } from "@/components/user-picker";
 import { GivesThroughCard } from "@/components/gives-through-card";
 import { PreferredDonorCard } from "@/components/preferred-donor-card";
@@ -125,11 +126,6 @@ const ALIGNMENT_OPTIONS = [
   { value: "medium", label: "Medium" },
   { value: "low", label: "Low" },
 ] as const satisfies ReadonlyArray<InlineSelectOption<StrategicAlignment>>;
-
-const ORGANIZATION_TYPE_OPTIONS = Object.values(EntityType).map((value) => ({
-  value,
-  label: formatEnum(value),
-})) satisfies ReadonlyArray<InlineSelectOption<EntityType>>;
 
 const EMPLOYEES_OPTIONS = [
   { value: "e_1", label: "1" },
@@ -504,16 +500,11 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       label: "Last contacted",
       value: formatDate(org.lastContacted),
     },
-    {
-      label: "Interactions",
-      value:
-        org.interactionCount == null ? "—" : String(org.interactionCount),
-    },
   ];
 
   const people = org.people ?? [];
 
-  const [hideInactivePeople, setHideInactivePeople] = useState(false);
+  const [hideInactivePeople, setHideInactivePeople] = useState(true);
   const hasInactivePeople = people.some((p) => p.current === "past");
   const visiblePeople = (
     hideInactivePeople ? people.filter((p) => p.current !== "past") : people
@@ -535,11 +526,11 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       headerBadges={<NeedsResearchBadge flagged={org.flaggedForResearch} />}
       subtitle={
         <div className="w-full space-y-2">
-          <InlineEditSelect
+          <InlineEditGroupedSelect
             label="Organization type"
             testIdBase="organization-type"
             value={org.entityType ?? null}
-            options={ORGANIZATION_TYPE_OPTIONS}
+            groups={ORGANIZATION_TYPE_GROUPS}
             display={formatEnum(org.entityType)}
             onSave={(next) => patch({ entityType: next })}
             align="left"
