@@ -27,6 +27,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { displayPersonName } from "@/lib/visibility";
+import {
+  groupPriorityRecords,
+  type OrganizationPriority,
+  type PersonPriority,
+  type PriorityGroup,
+  type PriorityRecord,
+} from "@/lib/priority-groups";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
 import GrantLeadsCard from "@/components/GrantLeadsCard";
 import UpcomingMeetingsCard, {
@@ -474,17 +481,9 @@ function TopPrioritiesRow() {
     },
   });
 
-  type PriorityRecord = {
-    id: string;
-    name: string;
-    href: string;
-    kind: "Organization" | "Individual";
-    lastContacted: string | null;
-  };
-
   const organizations = (
     rows: NonNullable<typeof teamOrgData>["data"],
-  ): PriorityRecord[] =>
+  ): OrganizationPriority[] =>
     rows.map((org) => ({
       id: org.id,
       name: org.name,
@@ -494,54 +493,52 @@ function TopPrioritiesRow() {
     }));
   const people = (
     rows: NonNullable<typeof teamPersonData>["data"],
-  ): PriorityRecord[] =>
+  ): PersonPriority[] =>
     rows.map((person) => ({
       id: person.id,
       name: displayPersonName(person, me ?? null),
       href: `/individuals/${person.id}`,
       kind: "Individual",
       lastContacted: person.lastContacted ?? null,
+      activeOrganizationIds: person.activeOrganizationIds ?? [],
     }));
-  const oldestContactFirst = (a: PriorityRecord, b: PriorityRecord) => {
-    if (a.lastContacted !== b.lastContacted) {
-      if (!a.lastContacted) return -1;
-      if (!b.lastContacted) return 1;
-      return a.lastContacted.localeCompare(b.lastContacted);
-    }
-    return a.name.localeCompare(b.name);
-  };
-  const team = [
-    ...organizations(teamOrgData?.data ?? []),
-    ...people(teamPersonData?.data ?? []),
-  ].sort(oldestContactFirst);
-  const mine = [
-    ...organizations(mineOrgData?.data ?? []),
-    ...people(minePersonData?.data ?? []),
-  ].sort(oldestContactFirst);
-  const renderList = (rows: PriorityRecord[], emptyMsg: string) =>
-    rows.length === 0 ? (
+  const team = groupPriorityRecords(
+    organizations(teamOrgData?.data ?? []),
+    people(teamPersonData?.data ?? []),
+  );
+  const mine = groupPriorityRecords(
+    organizations(mineOrgData?.data ?? []),
+    people(minePersonData?.data ?? []),
+  );
+  const renderRecord = (record: PriorityRecord, separated = false) => (
+    <Link
+      key={`${record.kind}-${record.id}`}
+      href={record.href}
+      className={cn("block", separated && "mt-2 border-t pt-2")}
+      data-testid={`dash-top-priority-${record.id}`}
+    >
+      <span className="block truncate text-sm font-medium">{record.name}</span>
+      <span className="block text-xs text-muted-foreground">
+        {record.lastContacted
+          ? `${record.kind} · Last contacted ${formatDateShort(record.lastContacted)}`
+          : `${record.kind} · No logged contact`}
+      </span>
+    </Link>
+  );
+  const renderList = (groups: PriorityGroup[], emptyMsg: string) =>
+    groups.length === 0 ? (
       <p className="text-sm text-muted-foreground">{emptyMsg}</p>
     ) : (
       <ul className="space-y-2">
-        {rows.map((record) => (
+        {groups.map((group) => (
           <li
-            key={`${record.kind}-${record.id}`}
+            key={group.key}
             className="border rounded-md p-2 hover:bg-muted/50 transition-colors"
           >
-            <Link
-              href={record.href}
-              className="block"
-              data-testid={`dash-top-priority-${record.id}`}
-            >
-              <span className="block truncate text-sm font-medium">
-                {record.name}
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                {record.lastContacted
-                  ? `${record.kind} · Last contacted ${formatDateShort(record.lastContacted)}`
-                  : `${record.kind} · No logged contact`}
-              </span>
-            </Link>
+            {group.organization ? renderRecord(group.organization) : null}
+            {group.people.map((person, index) =>
+              renderRecord(person, Boolean(group.organization) || index > 0),
+            )}
           </li>
         ))}
       </ul>
@@ -552,7 +549,8 @@ function TopPrioritiesRow() {
         <CardHeader>
           <CardTitle className="text-lg">My top priorities</CardTitle>
           <p className="text-xs text-muted-foreground">
-            People and organizations assigned to you, ordered by oldest logged contact.
+            Related people and organizations share one card, ordered by oldest
+            logged contact.
           </p>
         </CardHeader>
         <CardContent>
@@ -567,7 +565,8 @@ function TopPrioritiesRow() {
           <div>
             <CardTitle className="text-lg">Team top priorities</CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
-              All top-priority people and organizations.
+              All top priorities, with related people and organizations grouped
+              together.
             </p>
           </div>
           <Button asChild variant="outline" size="sm">

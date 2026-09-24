@@ -74,6 +74,7 @@ import { generateRelationshipSummary } from "../lib/relationshipSummary";
 // JSON object shape carried by the active/past organization-name aggregates so
 // the consumer can mask anonymous org names server-side (see maskOrgNameList).
 type OrgNameAgg = {
+  id: string;
   name: string | null;
   anonymous: boolean | null;
   ownerUserId: string | null;
@@ -108,6 +109,9 @@ function maskPersonRow<
 >(row: T, viewer: Viewer) {
   return {
     ...row,
+    activeOrganizationIds:
+      row.activeOrganizationNames?.map((organization) => organization.id) ??
+      null,
     activeOrganizationNames: maskOrgNameList(
       row.activeOrganizationNames,
       viewer,
@@ -279,7 +283,7 @@ const peopleListSelect = {
   // the public response is mapped back to string[].
   activeOrganizationNames: sql<OrgNameAgg[] | null>`(
     SELECT JSONB_AGG(
-      JSONB_BUILD_OBJECT('name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
+      JSONB_BUILD_OBJECT('id', o.id, 'name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
       ORDER BY o.name
     )
     FROM (
@@ -294,7 +298,7 @@ const peopleListSelect = {
   // Past organization roles — fallback in the list column.
   pastOrganizationNames: sql<OrgNameAgg[] | null>`(
     SELECT JSONB_AGG(
-      JSONB_BUILD_OBJECT('name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
+      JSONB_BUILD_OBJECT('id', o.id, 'name', o.name, 'anonymous', o.anonymous, 'ownerUserId', o.owner_user_id)
       ORDER BY o.name
     )
     FROM (

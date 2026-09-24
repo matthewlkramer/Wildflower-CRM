@@ -2576,6 +2576,8 @@ export interface Person {
   readonly openOpportunityCount?: number | null;
   /** Names of organizations the person currently holds a role at (people_entity_roles.current='current'). */
   readonly activeOrganizationNames?: readonly string[] | null;
+  /** IDs of organizations the person currently holds a role at (people_entity_roles.current='current'). Used to group related priority records without relying on organization-name matching. */
+  readonly activeOrganizationIds?: readonly string[] | null;
   /** Names of organizations the person previously held a role at (people_entity_roles.current='past'). */
   readonly pastOrganizationNames?: readonly string[] | null;
   /** Soft-delete timestamp. Non-null = archived; only admins can view/restore. */

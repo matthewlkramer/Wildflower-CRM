@@ -87,8 +87,6 @@ const navItems: NavEntry[] = [
   { section: "Records" },
   { href: "/individuals", label: "Individuals", icon: Users },
   { href: "/organizations", label: "Organizations", icon: Building2 },
-  { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
-  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
 
   { section: "Fundraising" },
   { href: "/top-priorities", label: "Top Priorities", icon: Star },
@@ -120,6 +118,8 @@ const navItems: NavEntry[] = [
 
   { section: "Admin" },
   { href: "/admin", label: "Admin", icon: Settings },
+  { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
+  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
   { href: "/admin/app-improvements", label: "App Improvements", icon: MessageSquare, adminOnly: true },
   { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
   { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
