@@ -91,8 +91,20 @@ describe("application layout", () => {
     expect(labels).not.toContain("Potential Duplicates");
     expect(labels).not.toContain("Cleanup Queue");
     expect(labels).not.toContain("Restriction Text Review");
+    expect(labels).not.toContain("Top Priorities");
 
     const text = sidebar.textContent ?? "";
+    const fundraisingSections = Array.from(
+      sidebar.querySelectorAll('[data-testid="primary-navigation"] > div'),
+    ).filter((section) => section.textContent?.trim() === "Fundraising");
+    expect(fundraisingSections).toHaveLength(1);
+    expect(text).not.toContain("Records");
+    expect(text.indexOf("Individuals")).toBeGreaterThan(
+      text.indexOf("Fundraising"),
+    );
+    expect(text.indexOf("Organizations")).toBeGreaterThan(
+      text.indexOf("Fundraising"),
+    );
     expect(text.indexOf("Pledges")).toBeGreaterThan(
       text.indexOf("Finance & Operations"),
     );
