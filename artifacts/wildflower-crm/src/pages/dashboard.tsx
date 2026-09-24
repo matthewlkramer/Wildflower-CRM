@@ -3,44 +3,20 @@ import { Link } from "wouter";
 import {
   useGetDashboardSummary,
   getGetDashboardSummaryQueryKey,
-  useGetCurrentUser,
-  useListTasks,
-  useUpdateTask,
-  useListOrganizations,
-  useListPeople,
-  getListTasksQueryKey,
-  getListOrganizationsQueryKey,
-  getListPeopleQueryKey,
-  type Task,
-  type TaskStatus,
-  type ListOrganizationsParams,
-  type ListPeopleParams,
   type FiscalYearMetrics,
   type DashboardWorklists,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatCurrency, formatDateShort } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { displayPersonName } from "@/lib/visibility";
-import {
-  groupPriorityRecords,
-  type OrganizationPriority,
-  type PersonPriority,
-  type PriorityGroup,
-  type PriorityRecord,
-} from "@/lib/priority-groups";
 import EmailProposalsCard from "@/components/EmailProposalsCard";
 import GrantLeadsCard from "@/components/GrantLeadsCard";
-import UpcomingMeetingsCard, {
-  TeamUpcomingMeetingsCard,
-} from "@/components/upcoming-meetings-card";
+import UpcomingMeetingsCard from "@/components/upcoming-meetings-card";
+import { DashboardPrioritiesCard } from "@/components/dashboard-priorities-card";
+import { DashboardTasksCard } from "@/components/dashboard-tasks-card";
 import { useEntityFilter } from "@/lib/entity-filter-context";
-import { Check } from "lucide-react";
 
 export default function Dashboard() {
   // Entity filter is global now (lives in the header on every page) — read
@@ -353,14 +329,11 @@ export default function Dashboard() {
 
       <WorklistsCard worklists={data?.worklists} isLoading={isLoading} />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <UpcomingMeetingsCard />
-        <TeamUpcomingMeetingsCard />
-      </div>
+      <UpcomingMeetingsCard />
 
-      <TopPrioritiesRow />
+      <DashboardPrioritiesCard />
 
-      <MyTasksRow />
+      <DashboardTasksCard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <EmailProposalsCard />
@@ -435,148 +408,6 @@ function DashboardGoalBarSkeleton() {
           </div>
         </div>
       ))}
-    </div>
-  );
-}
-
-function TopPrioritiesRow() {
-  const { data: me } = useGetCurrentUser();
-  const userId = me?.id;
-  const teamOrgParams: ListOrganizationsParams = {
-    priority: ["top"],
-    limit: 100,
-  };
-  const mineOrgParams: ListOrganizationsParams = userId
-    ? { priority: ["top"], ownerUserId: [userId], limit: 100 }
-    : { priority: ["top"], limit: 0 };
-  const teamPersonParams: ListPeopleParams = {
-    priority: ["top"],
-    deceased: false,
-    limit: 100,
-  };
-  const minePersonParams: ListPeopleParams = userId
-    ? {
-        priority: ["top"],
-        ownerUserId: [userId],
-        deceased: false,
-        limit: 100,
-      }
-    : { priority: ["top"], deceased: false, limit: 1 };
-  const { data: teamOrgData } = useListOrganizations(teamOrgParams, {
-    query: { queryKey: getListOrganizationsQueryKey(teamOrgParams) },
-  });
-  const { data: mineOrgData } = useListOrganizations(mineOrgParams, {
-    query: {
-      enabled: !!userId,
-      queryKey: getListOrganizationsQueryKey(mineOrgParams),
-    },
-  });
-  const { data: teamPersonData } = useListPeople(teamPersonParams, {
-    query: { queryKey: getListPeopleQueryKey(teamPersonParams) },
-  });
-  const { data: minePersonData } = useListPeople(minePersonParams, {
-    query: {
-      enabled: !!userId,
-      queryKey: getListPeopleQueryKey(minePersonParams),
-    },
-  });
-
-  const organizations = (
-    rows: NonNullable<typeof teamOrgData>["data"],
-  ): OrganizationPriority[] =>
-    rows.map((org) => ({
-      id: org.id,
-      name: org.name,
-      href: `/organizations/${org.id}`,
-      kind: "Organization",
-      lastContacted: org.lastContacted ?? null,
-    }));
-  const people = (
-    rows: NonNullable<typeof teamPersonData>["data"],
-  ): PersonPriority[] =>
-    rows.map((person) => ({
-      id: person.id,
-      name: displayPersonName(person, me ?? null),
-      href: `/individuals/${person.id}`,
-      kind: "Individual",
-      lastContacted: person.lastContacted ?? null,
-      activeOrganizationIds: person.activeOrganizationIds ?? [],
-    }));
-  const team = groupPriorityRecords(
-    organizations(teamOrgData?.data ?? []),
-    people(teamPersonData?.data ?? []),
-  );
-  const mine = groupPriorityRecords(
-    organizations(mineOrgData?.data ?? []),
-    people(minePersonData?.data ?? []),
-  );
-  const renderRecord = (record: PriorityRecord, separated = false) => (
-    <Link
-      key={`${record.kind}-${record.id}`}
-      href={record.href}
-      className={cn("block", separated && "mt-2 border-t pt-2")}
-      data-testid={`dash-top-priority-${record.id}`}
-    >
-      <span className="block truncate text-sm font-medium">{record.name}</span>
-      <span className="block text-xs text-muted-foreground">
-        {record.lastContacted
-          ? `${record.kind} · Last contacted ${formatDateShort(record.lastContacted)}`
-          : `${record.kind} · No logged contact`}
-      </span>
-    </Link>
-  );
-  const renderList = (groups: PriorityGroup[], emptyMsg: string) =>
-    groups.length === 0 ? (
-      <p className="text-sm text-muted-foreground">{emptyMsg}</p>
-    ) : (
-      <ul className="space-y-2">
-        {groups.map((group) => (
-          <li
-            key={group.key}
-            className="border rounded-md p-2 hover:bg-muted/50 transition-colors"
-          >
-            {group.organization ? renderRecord(group.organization) : null}
-            {group.people.map((person, index) =>
-              renderRecord(person, Boolean(group.organization) || index > 0),
-            )}
-          </li>
-        ))}
-      </ul>
-    );
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <Card data-testid="card-my-top-priorities">
-        <CardHeader>
-          <CardTitle className="text-lg">My top priorities</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Related people and organizations share one card, ordered by oldest
-            logged contact.
-          </p>
-        </CardHeader>
-        <CardContent>
-          {renderList(
-            mine,
-            "No top-priority people or organizations assigned to you.",
-          )}
-        </CardContent>
-      </Card>
-      <Card data-testid="card-team-top-priorities">
-        <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
-          <div>
-            <CardTitle className="text-lg">Team top priorities</CardTitle>
-            <p className="mt-1 text-xs text-muted-foreground">
-              All top priorities, with related people and organizations grouped
-              together.
-            </p>
-          </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/top-priorities">View all</Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {renderList(team, "No top-priority people or organizations.")}
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -675,134 +506,4 @@ function WorklistsCard({
       </CardContent>
     </Card>
   );
-}
-
-function MyTasksRow() {
-  const { data: me } = useGetCurrentUser();
-  const userId = me?.id;
-  const OPEN_STATUSES: TaskStatus[] = ["open", "waiting"];
-  const myTasksParams = {
-    assigneeUserId: userId,
-    status: OPEN_STATUSES,
-    limit: 10,
-  };
-  const { data: tasksData, isLoading } = useListTasks(myTasksParams, {
-    query: { enabled: !!userId, queryKey: getListTasksQueryKey(myTasksParams) },
-  });
-  const myTasks = tasksData?.data ?? [];
-  const queryClient = useQueryClient();
-  const updateTask = useUpdateTask({
-    mutation: {
-      onSuccess: async () => {
-        await queryClient.invalidateQueries({
-          queryKey: getListTasksQueryKey(),
-        });
-      },
-    },
-  });
-  const fmtDate = (iso?: string | null) =>
-    iso
-      ? new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" })
-      : "—";
-  return (
-    <Card data-testid="card-my-tasks">
-      <CardHeader>
-        <CardTitle className="text-lg">My open tasks</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-12 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : myTasks.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No open tasks assigned to you. Review{" "}
-            <Link
-              href="/top-priorities"
-              className="text-primary hover:underline"
-            >
-              Top Priorities
-            </Link>{" "}
-            or{" "}
-            <Link href="/moves" className="text-primary hover:underline">
-              Moves
-            </Link>{" "}
-            to choose a next cultivation step.
-          </p>
-        ) : (
-          <ul className="space-y-2">
-            {myTasks.map((t) => (
-              <li
-                key={t.id}
-                className="flex items-center justify-between gap-3 text-sm border rounded-md p-2"
-                data-testid={`dash-task-${t.id}`}
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Badge
-                      variant={t.status === "waiting" ? "secondary" : "default"}
-                    >
-                      {t.status}
-                    </Badge>
-                    <span className="truncate font-medium">{t.title}</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                    <span>Due {fmtDate(t.dueDate)}</span>
-                    <TaskRecordLink task={t} />
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-primary"
-                  aria-label={`Mark ${t.title} done`}
-                  title="Mark done"
-                  disabled={updateTask.isPending}
-                  onClick={() =>
-                    updateTask.mutate({ id: t.id, data: { status: "done" } })
-                  }
-                  data-testid={`dash-task-done-${t.id}`}
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TaskRecordLink({ task }: { task: Task }) {
-  const target = task.organizationIds?.[0]
-    ? {
-        href: `/organizations/${task.organizationIds[0]}`,
-        label: "Open organization",
-      }
-    : task.personIds?.[0]
-      ? { href: `/individuals/${task.personIds[0]}`, label: "Open individual" }
-      : task.householdIds?.[0]
-        ? {
-            href: `/households/${task.householdIds[0]}`,
-            label: "Open household",
-          }
-        : task.opportunityIds?.[0]
-          ? {
-              href: `/opportunities/${task.opportunityIds[0]}`,
-              label: "Open opportunity",
-            }
-          : task.giftIds?.[0]
-            ? { href: `/gifts/${task.giftIds[0]}`, label: "Open gift" }
-            : task.grantLeadIds?.[0]
-              ? { href: "/grant-leads", label: "Open grant leads" }
-              : null;
-
-  return target ? (
-    <Link href={target.href} className="text-primary hover:underline">
-      {target.label}
-    </Link>
-  ) : null;
 }

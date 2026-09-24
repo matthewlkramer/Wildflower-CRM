@@ -1,47 +1,60 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
-  useListCalendarEvents,
-  useGetCurrentUser,
   getListCalendarEventsQueryKey,
   type CalendarEvent,
+  useGetCurrentUser,
+  useListCalendarEvents,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Calendar, Video, NotebookPen } from "lucide-react";
+import {
+  DashboardScopeToggle,
+  type DashboardScope,
+} from "@/components/dashboard-scope-toggle";
 import { useUserNameMap } from "@/components/user-picker";
+import { Calendar, NotebookPen, Video } from "lucide-react";
 
-/**
- * Extract a join URL for the meeting. Wildflower mostly uses Zoom; we also
- * pick up Google Meet and Microsoft Teams links because they're embedded the
- * same way (no schema change needed — we read from `location` first, then
- * `description`, and grab the first matching URL).
- *
- * Returns `{ url, kind }` so the button label can read "Start Zoom" / "Start
- * Meet" / "Start Teams" based on what actually got matched.
- */
 function extractJoinUrl(
-  ev: Pick<CalendarEvent, "location" | "description">,
+  event: Pick<CalendarEvent, "location" | "description">,
 ): { url: string; kind: "Zoom" | "Meet" | "Teams" } | null {
-  const haystacks = [ev.location ?? "", ev.description ?? ""];
-  const patterns: Array<{ kind: "Zoom" | "Meet" | "Teams"; re: RegExp }> = [
-    { kind: "Zoom", re: /https?:\/\/[a-z0-9.-]*zoom(?:gov)?\.us\/[^\s<>"']+/i },
-    { kind: "Meet", re: /https?:\/\/meet\.google\.com\/[^\s<>"']+/i },
-    { kind: "Teams", re: /https?:\/\/teams\.microsoft\.com\/[^\s<>"']+/i },
+  const haystacks = [event.location ?? "", event.description ?? ""];
+  const patterns: Array<{
+    kind: "Zoom" | "Meet" | "Teams";
+    pattern: RegExp;
+  }> = [
+    {
+      kind: "Zoom",
+      pattern: /https?:\/\/[a-z0-9.-]*zoom(?:gov)?\.us\/[^\s<>"']+/i,
+    },
+    { kind: "Meet", pattern: /https?:\/\/meet\.google\.com\/[^\s<>"']+/i },
+    {
+      kind: "Teams",
+      pattern: /https?:\/\/teams\.microsoft\.com\/[^\s<>"']+/i,
+    },
   ];
   for (const text of haystacks) {
-    for (const { kind, re } of patterns) {
-      const m = text.match(re);
-      if (m) {
-        // Strip trailing punctuation that often follows a URL in prose.
-        const url = m[0].replace(/[)\].,;!?]+$/, "");
-        return { url, kind };
+    for (const { kind, pattern } of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        return {
+          url: match[0].replace(/[)\].,;!?]+$/, ""),
+          kind,
+        };
       }
     }
   }
@@ -51,22 +64,20 @@ function extractJoinUrl(
 function formatWhen(startIso: string, endIso?: string | null) {
   const start = new Date(startIso);
   const end = endIso ? new Date(endIso) : null;
-  const dayFmt = new Intl.DateTimeFormat(undefined, {
+  const day = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
     day: "numeric",
-  });
-  const timeFmt = new Intl.DateTimeFormat(undefined, {
+  }).format(start);
+  const timeFormatter = new Intl.DateTimeFormat(undefined, {
     hour: "numeric",
     minute: "2-digit",
   });
-  const day = dayFmt.format(start);
-  const startT = timeFmt.format(start);
-  const endT = end ? timeFmt.format(end) : null;
-  return endT ? `${day} · ${startT}–${endT}` : `${day} · ${startT}`;
+  const startTime = timeFormatter.format(start);
+  const endTime = end ? timeFormatter.format(end) : null;
+  return endTime ? `${day} · ${startTime}–${endTime}` : `${day} · ${startTime}`;
 }
 
-/** The shared next-7-days window, computed once per render. */
 function useWeekWindow() {
   return useMemo(() => {
     const now = new Date();
@@ -75,75 +86,13 @@ function useWeekWindow() {
   }, []);
 }
 
-/**
- * Card shell shared by the "My" and "Team" meeting widgets. Both render the
- * same row + states; they differ only in which events they query and whether
- * each row is attributed to a team member (`resolveOwnerName`).
- */
-function MeetingsCard({
-  title,
-  testId,
-  isLoading,
-  isError,
-  events,
-  emptyMessage,
-  errorMessage,
-  resolveOwnerName,
-}: {
-  title: string;
-  testId: string;
-  isLoading: boolean;
-  isError: boolean;
-  events: CalendarEvent[];
-  emptyMessage: string;
-  errorMessage: string;
-  resolveOwnerName?: (ev: CalendarEvent) => string | undefined;
-}) {
-  return (
-    <Card data-testid={testId}>
-      <CardHeader>
-        <CardTitle className="text-lg">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : isError ? (
-          <p className="text-sm text-muted-foreground">{errorMessage}</p>
-        ) : events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
-        ) : (
-          <ul className="space-y-2">
-            {events.map((ev) => (
-              <UpcomingMeetingRow
-                key={ev.id}
-                ev={ev}
-                ownerName={resolveOwnerName?.(ev)}
-              />
-            ))}
-          </ul>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-/**
- * Dashboard widget: shows the caller's calendar events for the next 7 days
- * (scoped via `calendarUserId = me.id`, which is how the synced events are
- * keyed). Each row has three actions:
- *   - Open in Google Calendar (htmlLink deep-link)
- *   - Start Zoom/Meet/Teams (parsed from location/description)
- *   - Open the meeting workspace for preparation, notes, and recording
- */
 export default function UpcomingMeetingsCard() {
-  const { data: me } = useGetCurrentUser();
-  const userId = me?.id;
-
-  // The query key includes startBefore so react-query refetches naturally as
-  // the window slides (re-mounts on navigation produce a fresh window).
+  const [scope, setScope] = useState<DashboardScope>("mine");
+  const { data: currentUser } = useGetCurrentUser();
+  const userId = currentUser?.id;
+  const userNames = useUserNameMap();
   const { startAfter, startBefore } = useWeekWindow();
-
-  const params = userId
+  const myParams = userId
     ? {
         calendarUserId: userId,
         startAfter,
@@ -152,186 +101,213 @@ export default function UpcomingMeetingsCard() {
         limit: 20,
       }
     : undefined;
-
-  const { data, isLoading, isError } = useListCalendarEvents(params ?? {}, {
-    query: {
-      enabled: !!userId,
-      queryKey: getListCalendarEventsQueryKey(params),
-    },
-  });
-
-  const events = (data?.data ?? []).filter((ev) => ev.status !== "cancelled");
-
-  return (
-    <MeetingsCard
-      title="My upcoming meetings"
-      testId="card-upcoming-meetings"
-      isLoading={!userId || isLoading}
-      isError={isError}
-      events={events}
-      emptyMessage="Nothing scheduled in the next 7 days."
-      errorMessage="Couldn't load your calendar."
-    />
-  );
-}
-
-/**
- * Dashboard widget: the whole team's calendar events for the next 7 days.
- * Omits `calendarUserId`, so the server returns every event visible to the
- * caller (all non-private events plus the caller's own), deduplicated to one
- * row per physical meeting. Each row is attributed to the staff member whose
- * calendar it came from.
- */
-export function TeamUpcomingMeetingsCard() {
-  const { startAfter, startBefore } = useWeekWindow();
-  const userNames = useUserNameMap();
-
-  const params = {
+  const teamParams = {
     startAfter,
     startBefore,
     order: "asc" as const,
     limit: 50,
   };
-
-  const { data, isLoading, isError } = useListCalendarEvents(params, {
-    query: { queryKey: getListCalendarEventsQueryKey(params) },
+  const myQuery = useListCalendarEvents(myParams ?? {}, {
+    query: {
+      enabled: scope === "mine" && Boolean(userId),
+      queryKey: getListCalendarEventsQueryKey(myParams),
+    },
   });
-
-  const events = (data?.data ?? []).filter((ev) => ev.status !== "cancelled");
+  const teamQuery = useListCalendarEvents(teamParams, {
+    query: {
+      enabled: scope === "team",
+      queryKey: getListCalendarEventsQueryKey(teamParams),
+    },
+  });
+  const activeQuery = scope === "mine" ? myQuery : teamQuery;
+  const events = (activeQuery.data?.data ?? []).filter(
+    (event) => event.status !== "cancelled",
+  );
 
   return (
-    <MeetingsCard
-      title="Team upcoming meetings"
-      testId="card-team-upcoming-meetings"
-      isLoading={isLoading}
-      isError={isError}
-      events={events}
-      emptyMessage="Nothing scheduled for the team in the next 7 days."
-      errorMessage="Couldn't load the team calendar."
-      resolveOwnerName={(ev) => userNames.get(ev.calendarUserId)}
-    />
+    <Card data-testid="card-upcoming-meetings">
+      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+        <div>
+          <CardTitle className="text-lg">Upcoming meetings</CardTitle>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Calendar meetings scheduled during the next seven days.
+          </p>
+        </div>
+        <DashboardScopeToggle
+          value={scope}
+          onValueChange={setScope}
+          testId="meetings-scope-toggle"
+        />
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-48 pl-6">When</TableHead>
+              <TableHead>Meeting</TableHead>
+              <TableHead className="w-44">Owner</TableHead>
+              <TableHead className="w-32 pr-6 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {activeQuery.isLoading || (scope === "mine" && !userId) ? (
+              <TableRow>
+                <TableCell
+                  colSpan={4}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  Loading meetings…
+                </TableCell>
+              </TableRow>
+            ) : activeQuery.isError ? (
+              <TableRow>
+                <TableCell
+                  colSpan={4}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  Couldn't load {scope === "mine" ? "your" : "the team"}{" "}
+                  calendar.
+                </TableCell>
+              </TableRow>
+            ) : events.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={4}
+                  className="py-8 text-center text-muted-foreground"
+                >
+                  Nothing scheduled{" "}
+                  {scope === "mine" ? "for you" : "for the team"} in the next
+                  seven days.
+                </TableCell>
+              </TableRow>
+            ) : (
+              events.map((event) => (
+                <TableRow
+                  key={event.id}
+                  data-testid={`upcoming-meeting-${event.id}`}
+                >
+                  <TableCell className="pl-6 text-sm text-muted-foreground">
+                    {formatWhen(event.startAt, event.endAt)}
+                  </TableCell>
+                  <TableCell className="font-medium">
+                    {event.summary?.trim() || "(no title)"}
+                  </TableCell>
+                  <TableCell>
+                    {userNames.get(event.calendarUserId) ??
+                      (event.calendarUserId === userId ? "Me" : "—")}
+                  </TableCell>
+                  <TableCell className="pr-6">
+                    <MeetingActions event={event} />
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
   );
 }
 
-function UpcomingMeetingRow({
-  ev,
-  ownerName,
-}: {
-  ev: CalendarEvent;
-  ownerName?: string;
-}) {
-  const join = extractJoinUrl(ev);
-  const title = ev.summary?.trim() || "(no title)";
-
+function MeetingActions({ event }: { event: CalendarEvent }) {
+  const join = extractJoinUrl(event);
   return (
-    <li
-      className="flex items-center justify-between gap-3 text-sm border rounded-md p-2"
-      data-testid={`upcoming-meeting-${ev.id}`}
-    >
-      <div className="min-w-0 flex-1">
-        <div className="font-medium truncate">{title}</div>
-        <div className="text-xs text-muted-foreground">
-          {formatWhen(ev.startAt, ev.endAt)}
-          {ownerName ? ` · ${ownerName}` : ""}
-        </div>
-      </div>
-      <TooltipProvider delayDuration={200}>
-        <div className="flex items-center gap-1 shrink-0">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {ev.htmlLink ? (
-                <Button
-                  asChild
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                  data-testid={`button-open-gcal-${ev.id}`}
-                >
-                  <a
-                    href={ev.htmlLink}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Open in Google Calendar"
-                  >
-                    <Calendar className="h-4 w-4" />
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                  disabled
-                  aria-label="No Google Calendar link available"
-                  data-testid={`button-open-gcal-${ev.id}`}
-                >
-                  <Calendar className="h-4 w-4" />
-                </Button>
-              )}
-            </TooltipTrigger>
-            <TooltipContent>
-              {ev.htmlLink
-                ? "Open in Google Calendar"
-                : "No Google Calendar link available"}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              {join ? (
-                <Button
-                  asChild
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                  data-testid={`button-join-${ev.id}`}
-                >
-                  <a
-                    href={join.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Start ${join.kind}`}
-                  >
-                    <Video className="h-4 w-4" />
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 w-8 p-0"
-                  disabled
-                  aria-label="No video link found"
-                  data-testid={`button-join-${ev.id}`}
-                >
-                  <Video className="h-4 w-4" />
-                </Button>
-              )}
-            </TooltipTrigger>
-            <TooltipContent>
-              {join ? `Start ${join.kind}` : "No video link on this event"}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
+    <TooltipProvider delayDuration={200}>
+      <div className="flex items-center justify-end gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {event.htmlLink ? (
               <Button
                 asChild
                 size="sm"
                 variant="ghost"
                 className="h-8 w-8 p-0"
-                data-testid={`button-notes-${ev.id}`}
+                data-testid={`button-open-gcal-${event.id}`}
               >
-                <Link
-                  href={`/meetings/${ev.id}`}
-                  aria-label="Open meeting workspace"
+                <a
+                  href={event.htmlLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Open in Google Calendar"
                 >
-                  <NotebookPen className="h-4 w-4" />
-                </Link>
+                  <Calendar className="h-4 w-4" />
+                </a>
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Open meeting workspace</TooltipContent>
-          </Tooltip>
-        </div>
-      </TooltipProvider>
-    </li>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                disabled
+                aria-label="No Google Calendar link available"
+                data-testid={`button-open-gcal-${event.id}`}
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
+            )}
+          </TooltipTrigger>
+          <TooltipContent>
+            {event.htmlLink
+              ? "Open in Google Calendar"
+              : "No Google Calendar link available"}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {join ? (
+              <Button
+                asChild
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                data-testid={`button-join-${event.id}`}
+              >
+                <a
+                  href={join.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label={`Start ${join.kind}`}
+                >
+                  <Video className="h-4 w-4" />
+                </a>
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                disabled
+                aria-label="No video link found"
+                data-testid={`button-join-${event.id}`}
+              >
+                <Video className="h-4 w-4" />
+              </Button>
+            )}
+          </TooltipTrigger>
+          <TooltipContent>
+            {join ? `Start ${join.kind}` : "No video link on this event"}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              asChild
+              size="sm"
+              variant="ghost"
+              className="h-8 w-8 p-0"
+              data-testid={`button-notes-${event.id}`}
+            >
+              <Link
+                href={`/meetings/${event.id}`}
+                aria-label="Open meeting workspace"
+              >
+                <NotebookPen className="h-4 w-4" />
+              </Link>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open meeting workspace</TooltipContent>
+        </Tooltip>
+      </div>
+    </TooltipProvider>
   );
 }

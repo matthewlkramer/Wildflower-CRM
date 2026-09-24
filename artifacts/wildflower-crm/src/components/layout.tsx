@@ -19,7 +19,6 @@ import {
   Eye,
   FileClock,
   Landmark,
-  Star,
   FolderKanban,
   CreditCard,
   Scale,
@@ -84,12 +83,9 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
 const navItems: NavEntry[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
 
-  { section: "Records" },
+  { section: "Fundraising" },
   { href: "/individuals", label: "Individuals", icon: Users },
   { href: "/organizations", label: "Organizations", icon: Building2 },
-
-  { section: "Fundraising" },
-  { href: "/top-priorities", label: "Top Priorities", icon: Star },
   { href: "/opportunities", label: "Opportunities", icon: Target },
   { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
   { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
