@@ -68,3 +68,5 @@ export * from './generated/trip-plans/trip-plans';
 export * from './generated/feedback/feedback';
 export * from './generated/integrations/integrations';
 export * from './generated/grant-terms/grant-terms';
+export * from './generated/conferences/conferences';
+export * from './generated/enrichment/enrichment';

@@ -43,6 +43,7 @@ export const donorPaymentIntermediaries = pgTable(
     }),
     notes: text("notes"),
     isDefault: boolean("is_default").notNull().default(false),
+    archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -57,10 +58,15 @@ export const donorPaymentIntermediaries = pgTable(
       t.individualGiverPersonId,
     ),
     index("donor_payment_intermediaries_household_id_idx").on(t.householdId),
+    index("donor_payment_intermediaries_archived_at_idx").on(t.archivedAt),
     // Donor XOR: exactly one donor FK populated.
     check(
       "dpi_donor_xor",
       sql`num_nonnulls(${t.organizationId}, ${t.individualGiverPersonId}, ${t.householdId}) = 1`,
+    ),
+    check(
+      "dpi_default_active_ck",
+      sql`NOT ${t.isDefault} OR ${t.archivedAt} IS NULL`,
     ),
     // Dedupe (donor, intermediary) per donor type. Partial because only one
     // donor FK is non-null per row.
@@ -75,15 +81,19 @@ export const donorPaymentIntermediaries = pgTable(
       .where(sql`${t.householdId} IS NOT NULL`),
     uniqueIndex("dpi_default_org_uq")
       .on(t.organizationId)
-      .where(sql`${t.organizationId} IS NOT NULL AND ${t.isDefault} = true`),
+      .where(
+        sql`${t.organizationId} IS NOT NULL AND ${t.isDefault} = true AND ${t.archivedAt} IS NULL`,
+      ),
     uniqueIndex("dpi_default_person_uq")
       .on(t.individualGiverPersonId)
       .where(
-        sql`${t.individualGiverPersonId} IS NOT NULL AND ${t.isDefault} = true`,
+        sql`${t.individualGiverPersonId} IS NOT NULL AND ${t.isDefault} = true AND ${t.archivedAt} IS NULL`,
       ),
     uniqueIndex("dpi_default_household_uq")
       .on(t.householdId)
-      .where(sql`${t.householdId} IS NOT NULL AND ${t.isDefault} = true`),
+      .where(
+        sql`${t.householdId} IS NOT NULL AND ${t.isDefault} = true AND ${t.archivedAt} IS NULL`,
+      ),
   ],
 );
 

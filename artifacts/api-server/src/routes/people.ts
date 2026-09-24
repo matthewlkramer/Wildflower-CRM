@@ -1,10 +1,5 @@
 import { recordNewsletterPreference } from "../lib/newsletterPreferences";
-import {
-  Router,
-  type IRouter,
-  type Request,
-  type Response,
-} from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   people,
@@ -13,6 +8,7 @@ import {
   phoneNumbers,
   addresses,
   connectionEnthusiasmHistory,
+  households,
 } from "@workspace/db/schema";
 import { getAppUser } from "../lib/appRequest";
 import {
@@ -142,6 +138,15 @@ const NEWSLETTER_STATUS_SQL: Record<string, SQL> = {
 
 const router: IRouter = Router();
 router.use(requireAuth);
+
+async function primaryHouseholdIsAvailable(id: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: households.id, archivedAt: households.archivedAt })
+    .from(households)
+    .where(eq(households.id, id))
+    .limit(1);
+  return Boolean(row && !row.archivedAt);
+}
 
 // Server-computed aggregates appended to every list row. Each is a
 // correlated subquery scoped to `people.id` so we get one number per
@@ -314,169 +319,166 @@ async function buildPeopleListWhere(
   q: ReturnType<typeof ListPeopleQueryParams.parse>;
   where: SQL | undefined;
 } | null> {
-    const normalizedQuery = normalizeArrayQuery(
-      req.query as Record<string, unknown>,
-      PEOPLE_ARRAY_PARAMS,
+  const normalizedQuery = normalizeArrayQuery(
+    req.query as Record<string, unknown>,
+    PEOPLE_ARRAY_PARAMS,
+  );
+  const q = parseOrBadRequest(ListPeopleQueryParams, normalizedQuery, res);
+  if (!q) return null;
+  const filters: SQL[] = [];
+  if (q.search) {
+    const term = `%${q.search}%`;
+    const orClause = or(
+      ilike(people.fullName, term),
+      ilike(people.firstName, term),
+      ilike(people.lastName, term),
     );
-    const q = parseOrBadRequest(ListPeopleQueryParams, normalizedQuery, res);
-    if (!q) return null;
-    const filters: SQL[] = [];
-    if (q.search) {
-      const term = `%${q.search}%`;
-      const orClause = or(
-        ilike(people.fullName, term),
-        ilike(people.firstName, term),
-        ilike(people.lastName, term),
-      );
-      if (orClause) filters.push(orClause);
-    }
-    // Read deceased from the raw query string — see parseBoolQuery for why
-    // we bypass the generated zod field (zod.coerce.boolean inverts "false").
-    const deceased = parseBoolQuery(req, "deceased");
-    if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
-    // Hide internal Wildflower Foundation staff unless the "Show foundation
-    // partners" toggle is on. Read from the raw query string (like deceased,
-    // the generated zod coerces "false" to true). Param absent = no filter, so
-    // other listPeople consumers (pickers, etc.) are unaffected.
-    const showFoundationPartners = parseBoolQuery(
-      req,
-      "showFoundationPartners",
-    );
-    if (showFoundationPartners === false)
-      filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
-    if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
-    // Conference attendance is person-owned. A type filter means "ever
-    // attended"; an event filter narrows to one year/occurrence.
-    if (q.conferenceEventId) {
-      filters.push(sql`EXISTS (
+    if (orClause) filters.push(orClause);
+  }
+  // Read deceased from the raw query string — see parseBoolQuery for why
+  // we bypass the generated zod field (zod.coerce.boolean inverts "false").
+  const deceased = parseBoolQuery(req, "deceased");
+  if (deceased !== undefined) filters.push(eq(people.deceased, deceased));
+  // Hide internal Wildflower Foundation staff unless the "Show foundation
+  // partners" toggle is on. Read from the raw query string (like deceased,
+  // the generated zod coerces "false" to true). Param absent = no filter, so
+  // other listPeople consumers (pickers, etc.) are unaffected.
+  const showFoundationPartners = parseBoolQuery(req, "showFoundationPartners");
+  if (showFoundationPartners === false)
+    filters.push(sql`NOT ${peopleCurrentFoundationRoleExists}`);
+  if (q.regionId) filters.push(eq(people.currentHomeRegionId, q.regionId));
+  // Conference attendance is person-owned. A type filter means "ever
+  // attended"; an event filter narrows to one year/occurrence.
+  if (q.conferenceEventId) {
+    filters.push(sql`EXISTS (
         SELECT 1 FROM conference_attendance ca
         WHERE ca.person_id = ${people.id}
           AND ca.conference_event_id = ${q.conferenceEventId}
       )`);
-    } else if (q.conferenceTypeId) {
-      filters.push(sql`EXISTS (
+  } else if (q.conferenceTypeId) {
+    filters.push(sql`EXISTS (
         SELECT 1 FROM conference_attendance ca
         JOIN conference_events ce ON ce.id = ca.conference_event_id
         WHERE ca.person_id = ${people.id}
           AND ce.conference_type_id = ${q.conferenceTypeId}
       )`);
-    }
-    const capacityFilter = splitBlank(q.capacityRating);
-    if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {
-      filters.push(
-        or(
-          isNull(people.capacityRating),
-          inArray(people.capacityRating, capacityFilter.values as never[]),
-        )!,
-      );
-    } else if (capacityFilter.wantsBlank) {
-      filters.push(isNull(people.capacityRating));
-    } else if (capacityFilter.values.length > 0) {
-      filters.push(
+  }
+  const capacityFilter = splitBlank(q.capacityRating);
+  if (capacityFilter.wantsBlank && capacityFilter.values.length > 0) {
+    filters.push(
+      or(
+        isNull(people.capacityRating),
         inArray(people.capacityRating, capacityFilter.values as never[]),
-      );
-    }
-    const connectionFilter = splitBlank(q.connectionStatus);
-    if (connectionFilter.wantsBlank && connectionFilter.values.length > 0) {
-      filters.push(
-        or(
-          isNull(people.connectionStatus),
-          inArray(people.connectionStatus, connectionFilter.values as never[]),
-        )!,
-      );
-    } else if (connectionFilter.wantsBlank) {
-      filters.push(isNull(people.connectionStatus));
-    } else if (connectionFilter.values.length > 0) {
-      filters.push(
+      )!,
+    );
+  } else if (capacityFilter.wantsBlank) {
+    filters.push(isNull(people.capacityRating));
+  } else if (capacityFilter.values.length > 0) {
+    filters.push(
+      inArray(people.capacityRating, capacityFilter.values as never[]),
+    );
+  }
+  const connectionFilter = splitBlank(q.connectionStatus);
+  if (connectionFilter.wantsBlank && connectionFilter.values.length > 0) {
+    filters.push(
+      or(
+        isNull(people.connectionStatus),
         inArray(people.connectionStatus, connectionFilter.values as never[]),
-      );
-    }
-    {
-      const f = splitBlank(q.enthusiasm as string[] | undefined);
-      if (f.wantsBlank && f.values.length > 0)
-        filters.push(
-          or(
-            isNull(people.enthusiasm),
-            inArray(people.enthusiasm, f.values as never[]),
-          )!,
-        );
-      else if (f.wantsBlank) filters.push(isNull(people.enthusiasm));
-      else if (f.values.length > 0)
-        filters.push(inArray(people.enthusiasm, f.values as never[]));
-    }
-    const ownerFilter = splitBlank(q.ownerUserId);
-    if (ownerFilter.wantsBlank && ownerFilter.values.length > 0) {
+      )!,
+    );
+  } else if (connectionFilter.wantsBlank) {
+    filters.push(isNull(people.connectionStatus));
+  } else if (connectionFilter.values.length > 0) {
+    filters.push(
+      inArray(people.connectionStatus, connectionFilter.values as never[]),
+    );
+  }
+  {
+    const f = splitBlank(q.enthusiasm as string[] | undefined);
+    if (f.wantsBlank && f.values.length > 0)
       filters.push(
         or(
-          isNull(people.ownerUserId),
-          inArray(people.ownerUserId, ownerFilter.values),
+          isNull(people.enthusiasm),
+          inArray(people.enthusiasm, f.values as never[]),
         )!,
       );
-    } else if (ownerFilter.wantsBlank) {
-      filters.push(isNull(people.ownerUserId));
-    } else if (ownerFilter.values.length > 0) {
-      filters.push(inArray(people.ownerUserId, ownerFilter.values));
-    }
-    const priorityFilter = splitBlank(q.priority);
-    if (priorityFilter.wantsBlank && priorityFilter.values.length > 0) {
+    else if (f.wantsBlank) filters.push(isNull(people.enthusiasm));
+    else if (f.values.length > 0)
+      filters.push(inArray(people.enthusiasm, f.values as never[]));
+  }
+  const ownerFilter = splitBlank(q.ownerUserId);
+  if (ownerFilter.wantsBlank && ownerFilter.values.length > 0) {
+    filters.push(
+      or(
+        isNull(people.ownerUserId),
+        inArray(people.ownerUserId, ownerFilter.values),
+      )!,
+    );
+  } else if (ownerFilter.wantsBlank) {
+    filters.push(isNull(people.ownerUserId));
+  } else if (ownerFilter.values.length > 0) {
+    filters.push(inArray(people.ownerUserId, ownerFilter.values));
+  }
+  const priorityFilter = splitBlank(q.priority);
+  if (priorityFilter.wantsBlank && priorityFilter.values.length > 0) {
+    filters.push(
+      or(
+        isNull(people.priority),
+        inArray(people.priority, priorityFilter.values as never[]),
+      )!,
+    );
+  } else if (priorityFilter.wantsBlank) {
+    filters.push(isNull(people.priority));
+  } else if (priorityFilter.values.length > 0) {
+    filters.push(inArray(people.priority, priorityFilter.values as never[]));
+  }
+  // Array overlap filter: person must share at least one region with the requested set.
+  // Containment-aware: the requested ids expand to every contained region.
+  {
+    const ids = q.regionIds as string[] | undefined;
+    if (ids && ids.length > 0) {
+      const expanded = await expandRegionIdsForFilter(ids);
       filters.push(
-        or(
-          isNull(people.priority),
-          inArray(people.priority, priorityFilter.values as never[]),
-        )!,
+        sql`${people.regionIds} && ARRAY[${sql.join(
+          expanded.map((id) => sql`${id}`),
+          sql`, `,
+        )}]::text[]`,
       );
-    } else if (priorityFilter.wantsBlank) {
-      filters.push(isNull(people.priority));
-    } else if (priorityFilter.values.length > 0) {
-      filters.push(inArray(people.priority, priorityFilter.values as never[]));
     }
-    // Array overlap filter: person must share at least one region with the requested set.
-    // Containment-aware: the requested ids expand to every contained region.
-    {
-      const ids = q.regionIds as string[] | undefined;
-      if (ids && ids.length > 0) {
-        const expanded = await expandRegionIdsForFilter(ids);
-        filters.push(
-          sql`${people.regionIds} && ARRAY[${sql.join(
-            expanded.map((id) => sql`${id}`),
-            sql`, `,
-          )}]::text[]`,
-        );
-      }
-    }
-    // Presence filters on computed rollup fields (has value vs blank).
-    if (q.lifetimeGivingPresence === "has")
-      filters.push(sql`${peopleLifetimeGivingExpr} > 0`);
-    else if (q.lifetimeGivingPresence === "blank")
-      filters.push(sql`${peopleLifetimeGivingExpr} <= 0`);
-    if (q.lastGiftPresence === "has")
-      filters.push(sql`${peopleMostRecentGiftExpr} IS NOT NULL`);
-    else if (q.lastGiftPresence === "blank")
-      filters.push(sql`${peopleMostRecentGiftExpr} IS NULL`);
-    if (q.openAsksPresence === "has")
-      filters.push(sql`${peopleOpenOppCountExpr} > 0`);
-    else if (q.openAsksPresence === "blank")
-      filters.push(sql`${peopleOpenOppCountExpr} = 0`);
-    if (q.activeAffiliationPresence === "has")
-      filters.push(peopleActiveAffiliationExists);
-    else if (q.activeAffiliationPresence === "blank")
-      filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
-    if (q.lastContactedPresence === "has")
-      filters.push(sql`people.last_contacted IS NOT NULL`);
-    else if (q.lastContactedPresence === "blank")
-      filters.push(sql`people.last_contacted IS NULL`);
-    // Derived newsletter status — OR the selected statuses together.
-    {
-      const statuses = (q.newsletterStatus as string[] | undefined) ?? [];
-      const clauses = statuses
-        .map((s) => NEWSLETTER_STATUS_SQL[s])
-        .filter((c): c is SQL => !!c);
-      if (clauses.length > 0) filters.push(or(...clauses)!);
-    }
-    const archivedFilter = activeOnlyUnlessAdmin(req, people.archivedAt);
-    if (archivedFilter) filters.push(archivedFilter);
-    const where = filters.length ? and(...filters) : undefined;
-    return { q, where };
+  }
+  // Presence filters on computed rollup fields (has value vs blank).
+  if (q.lifetimeGivingPresence === "has")
+    filters.push(sql`${peopleLifetimeGivingExpr} > 0`);
+  else if (q.lifetimeGivingPresence === "blank")
+    filters.push(sql`${peopleLifetimeGivingExpr} <= 0`);
+  if (q.lastGiftPresence === "has")
+    filters.push(sql`${peopleMostRecentGiftExpr} IS NOT NULL`);
+  else if (q.lastGiftPresence === "blank")
+    filters.push(sql`${peopleMostRecentGiftExpr} IS NULL`);
+  if (q.openAsksPresence === "has")
+    filters.push(sql`${peopleOpenOppCountExpr} > 0`);
+  else if (q.openAsksPresence === "blank")
+    filters.push(sql`${peopleOpenOppCountExpr} = 0`);
+  if (q.activeAffiliationPresence === "has")
+    filters.push(peopleActiveAffiliationExists);
+  else if (q.activeAffiliationPresence === "blank")
+    filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
+  if (q.lastContactedPresence === "has")
+    filters.push(sql`people.last_contacted IS NOT NULL`);
+  else if (q.lastContactedPresence === "blank")
+    filters.push(sql`people.last_contacted IS NULL`);
+  // Derived newsletter status — OR the selected statuses together.
+  {
+    const statuses = (q.newsletterStatus as string[] | undefined) ?? [];
+    const clauses = statuses
+      .map((s) => NEWSLETTER_STATUS_SQL[s])
+      .filter((c): c is SQL => !!c);
+    if (clauses.length > 0) filters.push(or(...clauses)!);
+  }
+  const archivedFilter = activeOnlyUnlessAdmin(req, people.archivedAt);
+  if (archivedFilter) filters.push(archivedFilter);
+  const where = filters.length ? and(...filters) : undefined;
+  return { q, where };
 }
 
 router.get(
@@ -539,7 +541,10 @@ router.get(
         const row = maskPersonRow(raw, viewer) as Record<string, unknown>;
         // The UI hides an anonymous person's own name from non-owner
         // non-admins (client-side); the export must enforce the same rule.
-        const display = [row.fullName, [row.firstName, row.lastName].filter(Boolean).join(" ")]
+        const display = [
+          row.fullName,
+          [row.firstName, row.lastName].filter(Boolean).join(" "),
+        ]
           .map((v) => String(v ?? "").trim())
           .find(Boolean);
         row.fullName = maskName(
@@ -610,7 +615,13 @@ router.get(
 router.post(
   "/people/bulk-update",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.patch?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
+    if (
+      typeof req.body?.patch?.newsletter === "boolean" &&
+      getAppUser(req)?.role === "read_only"
+    ) {
+      res.status(403).json({ error: "write_permission_required" });
+      return;
+    }
     await executeBulkUpdate(req, res, {
       entity: "people",
       table: people,
@@ -639,10 +650,17 @@ router.post(
       ],
       extraApply: async (tx, id, vp) => {
         if (typeof vp.newsletter === "boolean") {
-          await recordNewsletterPreference(tx, { personId: id, eventType: vp.newsletter ? "staff_added" : "staff_removed",
-            occurredAt: new Date(), source: "CRM bulk edit", sourceKey: `bulk:${newId()}`,
-            evidence: vp.newsletter ? "Staff added this person to the newsletter audience." : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
-            recordedByUserId: getAppUser(req)?.id ?? null });
+          await recordNewsletterPreference(tx, {
+            personId: id,
+            eventType: vp.newsletter ? "staff_added" : "staff_removed",
+            occurredAt: new Date(),
+            source: "CRM bulk edit",
+            sourceKey: `bulk:${newId()}`,
+            evidence: vp.newsletter
+              ? "Staff added this person to the newsletter audience."
+              : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
+            recordedByUserId: getAppUser(req)?.id ?? null,
+          });
         }
         await reconcileArrayColumns(tx, people, id, vp, [
           {
@@ -722,18 +740,56 @@ router.post(
 router.post(
   "/people",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
+    if (
+      typeof req.body?.newsletter === "boolean" &&
+      getAppUser(req)?.role === "read_only"
+    ) {
+      res.status(403).json({ error: "write_permission_required" });
+      return;
+    }
     if (req.body && "unsubscribedToNewsletter" in req.body) {
-      res.status(400).json({ error: "preference_history_required", message: "Record opt-out or renewed consent with its source in Newsletter preferences." }); return;
+      res
+        .status(400)
+        .json({
+          error: "preference_history_required",
+          message:
+            "Record opt-out or renewed consent with its source in Newsletter preferences.",
+        });
+      return;
     }
     const body = parseOrBadRequest(CreatePersonBody, req.body, res);
     if (!body) return;
+    if (
+      body.primaryHouseholdId &&
+      !(await primaryHouseholdIsAvailable(body.primaryHouseholdId))
+    ) {
+      res.status(409).json({
+        error: "primary_household_unavailable",
+        message: "The selected primary household is missing or archived.",
+      });
+      return;
+    }
     const { newsletter, ...personFields } = body;
     const row = await db.transaction(async (tx) => {
-      const [created] = await tx.insert(people).values({ id: newId(), ...personFields }).returning();
-      if (newsletter) await recordNewsletterPreference(tx, { personId: created.id, eventType: "staff_added", occurredAt: new Date(),
-        source: "CRM", sourceKey: `staff:${newId()}`, evidence: "Staff selected this person for the newsletter audience.", recordedByUserId: getAppUser(req)?.id ?? null });
-      return tx.select().from(people).where(eq(people.id, created.id)).then((r) => r[0]);
+      const [created] = await tx
+        .insert(people)
+        .values({ id: newId(), ...personFields })
+        .returning();
+      if (newsletter)
+        await recordNewsletterPreference(tx, {
+          personId: created.id,
+          eventType: "staff_added",
+          occurredAt: new Date(),
+          source: "CRM",
+          sourceKey: `staff:${newId()}`,
+          evidence: "Staff selected this person for the newsletter audience.",
+          recordedByUserId: getAppUser(req)?.id ?? null,
+        });
+      return tx
+        .select()
+        .from(people)
+        .where(eq(people.id, created.id))
+        .then((r) => r[0]);
     });
     if (row) {
       await auditCreate(
@@ -753,13 +809,36 @@ router.post(
 router.patch(
   "/people/:id",
   asyncHandler(async (req, res) => {
-    if (typeof req.body?.newsletter === "boolean" && getAppUser(req)?.role === "read_only") { res.status(403).json({ error: "write_permission_required" }); return; }
+    if (
+      typeof req.body?.newsletter === "boolean" &&
+      getAppUser(req)?.role === "read_only"
+    ) {
+      res.status(403).json({ error: "write_permission_required" });
+      return;
+    }
     if (req.body && "unsubscribedToNewsletter" in req.body) {
-      res.status(400).json({ error: "preference_history_required", message: "Record opt-out or renewed consent with its source in Newsletter preferences." }); return;
+      res
+        .status(400)
+        .json({
+          error: "preference_history_required",
+          message:
+            "Record opt-out or renewed consent with its source in Newsletter preferences.",
+        });
+      return;
     }
     const body = parseOrBadRequest(UpdatePersonBody, req.body, res);
     if (!body) return;
     const id = paramId(req);
+    if (
+      body.primaryHouseholdId &&
+      !(await primaryHouseholdIsAvailable(body.primaryHouseholdId))
+    ) {
+      res.status(409).json({
+        error: "primary_household_unavailable",
+        message: "The selected primary household is missing or archived.",
+      });
+      return;
+    }
 
     // Full before-row for the audit diff (also reused for the connection/
     // enthusiasm change history below).
@@ -773,13 +852,29 @@ router.patch(
 
     const { newsletter, ...personFields } = body;
     const row = await db.transaction(async (tx) => {
-      const [updated] = await tx.update(people).set({ ...personFields, updatedAt: new Date() }).where(eq(people.id, id)).returning();
+      const [updated] = await tx
+        .update(people)
+        .set({ ...personFields, updatedAt: new Date() })
+        .where(eq(people.id, id))
+        .returning();
       if (!updated) return undefined;
-      if (typeof newsletter === "boolean") await recordNewsletterPreference(tx, { personId: id,
-        eventType: newsletter ? "staff_added" : "staff_removed", occurredAt: new Date(), source: "CRM", sourceKey: `staff:${newId()}`,
-        evidence: newsletter ? "Staff added this person to the newsletter audience." : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
-        recordedByUserId: getAppUser(req)?.id ?? null });
-      return tx.select().from(people).where(eq(people.id, id)).then((r) => r[0]);
+      if (typeof newsletter === "boolean")
+        await recordNewsletterPreference(tx, {
+          personId: id,
+          eventType: newsletter ? "staff_added" : "staff_removed",
+          occurredAt: new Date(),
+          source: "CRM",
+          sourceKey: `staff:${newId()}`,
+          evidence: newsletter
+            ? "Staff added this person to the newsletter audience."
+            : "Staff removed this person from the newsletter audience; this is not a donor opt-out.",
+          recordedByUserId: getAppUser(req)?.id ?? null,
+        });
+      return tx
+        .select()
+        .from(people)
+        .where(eq(people.id, id))
+        .then((r) => r[0]);
     });
     if (!row) return notFound(res, "person");
 

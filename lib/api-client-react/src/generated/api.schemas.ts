@@ -2415,14 +2415,36 @@ export interface DonorPaymentIntermediary {
   individualGiverPersonId?: string | null;
   householdId?: string | null;
   notes?: string | null;
+  /** Whether this active relationship is the donor's explicit preferred payment intermediary. */
+  isDefault: boolean;
+  /** When present, this relationship is inactive and cannot be used as a default. */
+  archivedAt: string | null;
   paymentIntermediary: PaymentIntermediary;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Whether the effective default is set on this record or inherited from its resolved donor of record.
+ * @nullable
+ */
+export type DonorPaymentIntermediaryListEffectiveDefaultSource = typeof DonorPaymentIntermediaryListEffectiveDefaultSource[keyof typeof DonorPaymentIntermediaryListEffectiveDefaultSource] | null;
+
+
+export const DonorPaymentIntermediaryListEffectiveDefaultSource = {
+  source: 'source',
+  resolved: 'resolved',
+} as const;
+
 export interface DonorPaymentIntermediaryList {
   data: DonorPaymentIntermediary[];
   giftDerived: PaymentIntermediary[];
+  effectiveDefaultPaymentIntermediary: PaymentIntermediary | null;
+  /**
+   * Whether the effective default is set on this record or inherited from its resolved donor of record.
+   * @nullable
+   */
+  effectiveDefaultSource: DonorPaymentIntermediaryListEffectiveDefaultSource;
 }
 
 export interface CreateDonorPaymentIntermediaryBody {
@@ -2431,6 +2453,12 @@ export interface CreateDonorPaymentIntermediaryBody {
   individualGiverPersonId?: string;
   householdId?: string;
   notes?: string;
+}
+
+export interface UpdateDonorPaymentIntermediaryBody {
+  /** @nullable */
+  notes?: string | null;
+  isDefault?: boolean;
 }
 
 export type PaymentIntermediaryDetail = PaymentIntermediary & {
@@ -2505,6 +2533,8 @@ export interface Person {
   pronouns?: Pronouns | null;
   deceased: boolean;
   currentHomeRegionId?: string | null;
+  /** The one current household used by automatic donor-of-record routing and related-giving views. */
+  primaryHouseholdId?: string | null;
   details?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
@@ -2579,6 +2609,7 @@ export interface CreatePersonBody {
   pronouns?: Pronouns;
   deceased?: boolean;
   currentHomeRegionId?: string;
+  primaryHouseholdId?: string;
   details?: string;
   ownerUserId?: string;
   tags?: string;
@@ -2621,6 +2652,7 @@ export interface UpdatePersonBody {
   pronouns?: Pronouns | null;
   deceased?: boolean;
   currentHomeRegionId?: string | null;
+  primaryHouseholdId?: string | null;
   details?: string | null;
   ownerUserId?: string | null;
   tags?: string | null;
@@ -8230,11 +8262,6 @@ export interface DonorRoutingIntermediaryReference {
   type?: string | null;
 }
 
-export interface DonorRoutingHouseholdReference {
-  id: string;
-  name: string;
-}
-
 export interface DonorRoutingSettings {
   source: DonorReference;
   mode: DonorRoutingMode;
@@ -8242,8 +8269,6 @@ export interface DonorRoutingSettings {
   resolved: DonorReference | null;
   path: DonorReference[];
   requiresDecision: boolean;
-  primaryHousehold: DonorRoutingHouseholdReference | null;
-  defaultPaymentIntermediary: DonorRoutingIntermediaryReference | null;
 }
 
 export interface UpdateDonorRoutingBody {
@@ -8251,10 +8276,6 @@ export interface UpdateDonorRoutingBody {
   targetKind: DonorRecordKind | null;
   /** @nullable */
   targetId: string | null;
-  /** @nullable */
-  primaryHouseholdId: string | null;
-  /** @nullable */
-  defaultPaymentIntermediaryId: string | null;
 }
 
 export type CleanupQueueStatus = typeof CleanupQueueStatus[keyof typeof CleanupQueueStatus];

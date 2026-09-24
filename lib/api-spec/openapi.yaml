@@ -296,7 +296,7 @@ paths:
     get:
       operationId: getDonorRouting
       tags: [donor-routing]
-      summary: Get the effective preferred donor pathway, primary household, and default intermediary for a donor record.
+      summary: Get the effective default donor-of-record pathway for a donor record.
       parameters:
         - {
             name: sourceKind,
@@ -323,7 +323,7 @@ paths:
     put:
       operationId: updateDonorRouting
       tags: [donor-routing]
-      summary: Replace a donor record's preferred pathway and related donor defaults.
+      summary: Replace a donor record's default donor-of-record pathway.
       parameters:
         - {
             name: sourceKind,
@@ -2163,25 +2163,64 @@ paths:
       parameters:
         - { name: active, in: query, schema: { type: boolean } }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceType" } } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        items: { $ref: "#/components/schemas/ConferenceType" },
+                      },
+                  },
+              },
+          }
     post:
       operationId: createConferenceType
       tags: [conferences]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeInput" } } }
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/ConferenceTypeInput" } },
+          }
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceType" } } } }
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ConferenceType" } },
+              },
+          }
   /conference-types/{id}:
     patch:
       operationId: updateConferenceType
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeUpdate" } } }
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/ConferenceTypeUpdate" } },
+          }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceType" } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ConferenceType" } },
+              },
+          }
   /conference-events:
     get:
       operationId: listConferenceEvents
@@ -2191,31 +2230,84 @@ paths:
         - { name: year, in: query, schema: { type: integer } }
         - { name: search, in: query, schema: { type: string } }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceEventSummary" } } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        items:
+                          {
+                            $ref: "#/components/schemas/ConferenceEventSummary",
+                          },
+                      },
+                  },
+              },
+          }
     post:
       operationId: createConferenceEvent
       tags: [conferences]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEventInput" } } }
+        content:
+          {
+            application/json:
+              { schema: { $ref: "#/components/schemas/ConferenceEventInput" } },
+          }
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ConferenceEvent" } },
+              },
+          }
   /conference-events/{id}:
     get:
       operationId: getConferenceEvent
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ConferenceEvent" } },
+              },
+          }
     patch:
       operationId: updateConferenceEvent
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEventUpdate" } } }
+        content:
+          {
+            application/json:
+              {
+                schema: { $ref: "#/components/schemas/ConferenceEventUpdate" },
+              },
+          }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/ConferenceEvent" } },
+              },
+          }
   /conference-events/{id}/attendance:
     get:
       operationId: listConferenceAttendance
@@ -2223,86 +2315,269 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
-        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200 } }
+        - {
+            name: limit,
+            in: query,
+            schema: { type: integer, minimum: 1, maximum: 200 },
+          }
         - { name: search, in: query, schema: { type: string } }
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceList" } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/ConferenceAttendanceList" },
+                  },
+              },
+          }
     post:
       operationId: createConferenceAttendance
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceInput" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/ConferenceAttendanceInput" },
+              },
+          }
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceRow" } } } }
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/ConferenceAttendanceRow" },
+                  },
+              },
+          }
   /conference-events/{id}/imports:
     post:
       operationId: stageConferenceImport
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportInput" } } }
+        content:
+          {
+            application/json:
+              {
+                schema: { $ref: "#/components/schemas/ConferenceImportInput" },
+              },
+          }
       responses:
-        "200": { description: Staged, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+        "200":
+          {
+            description: Staged,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/ConferenceImportBatch" },
+                  },
+              },
+          }
   /conference-imports/{id}:
     get:
       operationId: getConferenceImport
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/ConferenceImportBatch" },
+                  },
+              },
+          }
   /conference-imports/{id}/confirm:
     post:
       operationId: confirmConferenceImport
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportConfirmInput" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  { $ref: "#/components/schemas/ConferenceImportConfirmInput" },
+              },
+          }
       responses:
-        "200": { description: Confirmed, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceImportBatch" } } } }
+        "200":
+          {
+            description: Confirmed,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      { $ref: "#/components/schemas/ConferenceImportBatch" },
+                  },
+              },
+          }
   /conference-events/{id}/research-requests:
     post:
       operationId: createConferenceResearchRequest
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchRequestInput" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/ConferenceResearchRequestInput",
+                  },
+              },
+          }
       responses:
-        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchRequest" } } } }
+        "201":
+          {
+            description: Created,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/ConferenceResearchRequest",
+                      },
+                  },
+              },
+          }
   /conference-events/{id}/email-suggestions:
     get:
       operationId: listConferenceEmailSuggestions
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        items:
+                          {
+                            $ref: "#/components/schemas/ConferenceAttendanceSuggestion",
+                          },
+                      },
+                  },
+              },
+          }
     post:
       operationId: generateConferenceEmailSuggestions
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: Generated, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } } }
+        "200":
+          {
+            description: Generated,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        items:
+                          {
+                            $ref: "#/components/schemas/ConferenceAttendanceSuggestion",
+                          },
+                      },
+                  },
+              },
+          }
   /conference-attendance-suggestions/{id}:
     patch:
       operationId: reviewConferenceAttendanceSuggestion
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       requestBody:
         required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceSuggestionReview" } } }
+        content:
+          {
+            application/json:
+              {
+                schema:
+                  {
+                    $ref: "#/components/schemas/ConferenceAttendanceSuggestionReview",
+                  },
+              },
+          }
       responses:
-        "200": { description: Reviewed, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceAttendanceSuggestion" } } } }
+        "200":
+          {
+            description: Reviewed,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        $ref: "#/components/schemas/ConferenceAttendanceSuggestion",
+                      },
+                  },
+              },
+          }
   /people/{id}/conference-attendance:
     get:
       operationId: listPersonConferenceAttendance
       tags: [conferences]
-      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
       responses:
-        "200": { description: OK, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceRow" } } } } }
+        "200":
+          {
+            description: OK,
+            content:
+              {
+                application/json:
+                  {
+                    schema:
+                      {
+                        type: array,
+                        items:
+                          {
+                            $ref: "#/components/schemas/ConferenceAttendanceRow",
+                          },
+                      },
+                  },
+              },
+          }
 
   # ─── Fiscal years ──────────────────────────────────────────────────────────
   /fiscal-years:
@@ -2354,8 +2629,18 @@ paths:
             description: "Filter to direct child organizations of the given parent.",
             schema: { type: string },
           }
-        - { name: conferenceTypeId, in: query, description: "Organizations related (currently or historically) to an attendee of this conference type.", schema: { type: string } }
-        - { name: conferenceEventId, in: query, description: "Organizations related (currently or historically) to an attendee of this event.", schema: { type: string } }
+        - {
+            name: conferenceTypeId,
+            in: query,
+            description: "Organizations related (currently or historically) to an attendee of this conference type.",
+            schema: { type: string },
+          }
+        - {
+            name: conferenceEventId,
+            in: query,
+            description: "Organizations related (currently or historically) to an attendee of this event.",
+            schema: { type: string },
+          }
         - {
             name: lifetimeGivingPresence,
             in: query,
@@ -2602,9 +2887,17 @@ paths:
       parameters:
         - { name: fieldName, in: query, schema: { type: string } }
         - { name: sourceLabel, in: query, schema: { type: string } }
-        - { name: entityType, in: query, schema: { type: string, enum: [person, organization] } }
+        - {
+            name: entityType,
+            in: query,
+            schema: { type: string, enum: [person, organization] },
+          }
         - { name: ownerUserId, in: query, schema: { type: string } }
-        - { name: confidence, in: query, schema: { type: string, enum: [high, medium, low] } }
+        - {
+            name: confidence,
+            in: query,
+            schema: { type: string, enum: [high, medium, low] },
+          }
         - { $ref: "#/components/parameters/Limit" }
         - { $ref: "#/components/parameters/Page" }
       responses:
@@ -2627,7 +2920,8 @@ paths:
           description: Per-row resolution outcomes, including failures.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EnrichmentBulkResolveResult" }
+              schema:
+                { $ref: "#/components/schemas/EnrichmentBulkResolveResult" }
   /enrichment-suggestions/generate-home-regions:
     post:
       operationId: generateHomeRegionSuggestions
@@ -2638,7 +2932,8 @@ paths:
           description: Generation summary
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/EnrichmentGenerationResult" }
+              schema:
+                { $ref: "#/components/schemas/EnrichmentGenerationResult" }
         "403": { $ref: "#/components/responses/Forbidden" }
   /enrichment-suggestions/import-csv:
     post:
@@ -2948,8 +3243,18 @@ paths:
             schema: { type: boolean },
           }
         - { name: regionId, in: query, schema: { type: string } }
-        - { name: conferenceTypeId, in: query, description: "People who attended any event of this conference type.", schema: { type: string } }
-        - { name: conferenceEventId, in: query, description: "People who attended this specific conference event.", schema: { type: string } }
+        - {
+            name: conferenceTypeId,
+            in: query,
+            description: "People who attended any event of this conference type.",
+            schema: { type: string },
+          }
+        - {
+            name: conferenceEventId,
+            in: query,
+            description: "People who attended this specific conference event.",
+            schema: { type: string },
+          }
         # Presence filters on computed rollup fields. `has` keeps rows with a
         # value, `blank` keeps rows with none. Omit for no constraint.
         - {
@@ -3089,6 +3394,7 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: "The selected primary household is unavailable." }
   /people/{id}:
     get:
       operationId: getPerson
@@ -3130,6 +3436,7 @@ paths:
           }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The selected primary household is unavailable." }
   /people/{id}/relationship-summary:
     get:
       operationId: getPersonRelationshipSummary
@@ -3373,11 +3680,56 @@ paths:
           }
         "400": { $ref: "#/components/responses/BadRequest" }
   /donor-payment-intermediaries/{id}:
-    delete:
-      operationId: deleteDonorPaymentIntermediary
+    patch:
+      operationId: updateDonorPaymentIntermediary
       tags: [donor-payment-intermediaries]
       parameters: [{ $ref: "#/components/parameters/IdPath" }]
-      responses: { "204": { description: Deleted } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              {
+                $ref: "#/components/schemas/UpdateDonorPaymentIntermediaryBody",
+              }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonorPaymentIntermediary" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          {
+            description: "The intermediary is archived or otherwise unavailable.",
+          }
+  /donor-payment-intermediaries/{id}/archive:
+    post:
+      operationId: archiveDonorPaymentIntermediary
+      tags: [donor-payment-intermediaries]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Archived
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonorPaymentIntermediary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /donor-payment-intermediaries/{id}/unarchive:
+    post:
+      operationId: unarchiveDonorPaymentIntermediary
+      tags: [donor-payment-intermediaries]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DonorPaymentIntermediary" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          { description: "The underlying payment intermediary is archived." }
 
   # ─── Emails ────────────────────────────────────────────────────────────────
   /emails:
@@ -12991,7 +13343,16 @@ components:
       allOf: [{ $ref: "#/components/schemas/ConferenceEventInput" }]
     ConferenceAttendanceRow:
       type: object
-      required: [id, conferenceEventId, personId, personName, status, sourceType, createdAt]
+      required:
+        [
+          id,
+          conferenceEventId,
+          personId,
+          personName,
+          status,
+          sourceType,
+          createdAt,
+        ]
       properties:
         id: { type: string }
         conferenceEventId: { type: string }
@@ -13000,7 +13361,11 @@ components:
         organizationId: { type: [string, "null"] }
         organizationName: { type: [string, "null"] }
         status: { type: string, enum: [confirmed, likely, possible] }
-        sourceType: { type: string, enum: [uploaded_list, conference_website, wildflower_email, manual] }
+        sourceType:
+          {
+            type: string,
+            enum: [uploaded_list, conference_website, wildflower_email, manual],
+          }
         sourceReference: { type: [string, "null"] }
         evidenceNote: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
@@ -13008,7 +13373,11 @@ components:
       type: object
       required: [data, pagination]
       properties:
-        data: { type: array, items: { $ref: "#/components/schemas/ConferenceAttendanceRow" } }
+        data:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ConferenceAttendanceRow" },
+          }
         pagination: { $ref: "#/components/schemas/Pagination" }
     ConferenceAttendanceInput:
       type: object
@@ -13016,7 +13385,11 @@ components:
       properties:
         personId: { type: string }
         status: { type: string, enum: [confirmed, likely, possible] }
-        sourceType: { type: string, enum: [uploaded_list, conference_website, wildflower_email, manual] }
+        sourceType:
+          {
+            type: string,
+            enum: [uploaded_list, conference_website, wildflower_email, manual],
+          }
         sourceReference: { type: [string, "null"] }
         evidenceNote: { type: [string, "null"] }
     ConferenceImportInput:
@@ -13047,13 +13420,18 @@ components:
         conferenceEventId: { type: string }
         status: { type: string, enum: [staged, confirmed] }
         sourceFilename: { type: [string, "null"] }
-        rows: { type: array, items: { $ref: "#/components/schemas/ConferenceImportRow" } }
+        rows:
+          {
+            type: array,
+            items: { $ref: "#/components/schemas/ConferenceImportRow" },
+          }
         createdAt: { type: string, format: date-time }
     ConferenceImportConfirmInput:
       type: object
       properties:
         acceptedRowIds: { type: array, items: { type: string } }
-        personOverrides: { type: object, additionalProperties: { type: string } }
+        personOverrides:
+          { type: object, additionalProperties: { type: string } }
     ConferenceResearchRequestInput:
       type: object
       properties:
@@ -13072,7 +13450,17 @@ components:
         createdAt: { type: string, format: date-time }
     ConferenceAttendanceSuggestion:
       type: object
-      required: [id, conferenceEventId, personId, personName, confidence, evidenceNote, status, createdAt]
+      required:
+        [
+          id,
+          conferenceEventId,
+          personId,
+          personName,
+          confidence,
+          evidenceNote,
+          status,
+          createdAt,
+        ]
       properties:
         id: { type: string }
         conferenceEventId: { type: string }
@@ -13126,7 +13514,20 @@ components:
         id: { type: string }
         entityType: { type: string, enum: [person, organization] }
         entityId: { type: string }
-        fieldName: { type: string, enum: [currentHomeRegionId, regionIds, website, emailDomain, totalAssets, makesPris, ein] }
+        fieldName:
+          {
+            type: string,
+            enum:
+              [
+                currentHomeRegionId,
+                regionIds,
+                website,
+                emailDomain,
+                totalAssets,
+                makesPris,
+                ein,
+              ],
+          }
         suggestedValue:
           { $ref: "#/components/schemas/EnrichmentSuggestedValue" }
         sourceLabel: { type: string }
@@ -13157,7 +13558,15 @@ components:
       allOf:
         - { $ref: "#/components/schemas/EnrichmentSuggestion" }
         - type: object
-          required: [recordName, currentValue, suggestedValueDisplay, ownerUserId, viewerCanResolve, viewerCannotResolveReason]
+          required:
+            [
+              recordName,
+              currentValue,
+              suggestedValueDisplay,
+              ownerUserId,
+              viewerCanResolve,
+              viewerCannotResolveReason,
+            ]
           properties:
             recordName: { type: string }
             currentValue: { type: string, nullable: true }
@@ -13194,7 +13603,12 @@ components:
       type: object
       required: [outcomes, succeeded, failed]
       properties:
-        outcomes: { type: array, items: { $ref: "#/components/schemas/EnrichmentBulkResolveOutcome" } }
+        outcomes:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/EnrichmentBulkResolveOutcome" },
+          }
         succeeded: { type: integer }
         failed: { type: integer }
     EnrichmentGenerationResult:
@@ -13224,7 +13638,12 @@ components:
         created: { type: integer }
         skipped: { type: integer }
         invalid: { type: integer }
-        rows: { type: array, items: { $ref: "#/components/schemas/EnrichmentCsvImportRowResult" } }
+        rows:
+          {
+            type: array,
+            items:
+              { $ref: "#/components/schemas/EnrichmentCsvImportRowResult" },
+          }
 
     # ─── Enums ─────────────────────────────────────────────────────────────────
     RegionType:
@@ -15729,7 +16148,15 @@ components:
     DonorPaymentIntermediary:
       type: object
       required:
-        [id, paymentIntermediaryId, paymentIntermediary, createdAt, updatedAt]
+        [
+          id,
+          paymentIntermediaryId,
+          isDefault,
+          archivedAt,
+          paymentIntermediary,
+          createdAt,
+          updatedAt,
+        ]
       properties:
         id: { type: string }
         paymentIntermediaryId: { type: string }
@@ -15737,13 +16164,31 @@ components:
         individualGiverPersonId: { type: string, nullable: true }
         householdId: { type: string, nullable: true }
         notes: { type: string, nullable: true }
+        isDefault:
+          {
+            type: boolean,
+            description: "Whether this active relationship is the donor's explicit preferred payment intermediary.",
+          }
+        archivedAt:
+          {
+            type: string,
+            format: date-time,
+            nullable: true,
+            description: "When present, this relationship is inactive and cannot be used as a default.",
+          }
         paymentIntermediary:
           { $ref: "#/components/schemas/PaymentIntermediary" }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     DonorPaymentIntermediaryList:
       type: object
-      required: [data, giftDerived]
+      required:
+        [
+          data,
+          giftDerived,
+          effectiveDefaultPaymentIntermediary,
+          effectiveDefaultSource,
+        ]
       properties:
         data:
           {
@@ -15757,6 +16202,16 @@ components:
             type: array,
             items: { $ref: "#/components/schemas/PaymentIntermediary" },
           }
+        effectiveDefaultPaymentIntermediary:
+          anyOf:
+            - { $ref: "#/components/schemas/PaymentIntermediary" }
+            - { type: "null" }
+        effectiveDefaultSource:
+          {
+            type: [string, "null"],
+            enum: [source, resolved, null],
+            description: "Whether the effective default is set on this record or inherited from its resolved donor of record.",
+          }
     CreateDonorPaymentIntermediaryBody:
       type: object
       required: [paymentIntermediaryId]
@@ -15766,6 +16221,11 @@ components:
         individualGiverPersonId: { type: string }
         householdId: { type: string }
         notes: { type: string }
+    UpdateDonorPaymentIntermediaryBody:
+      type: object
+      properties:
+        notes: { type: [string, "null"] }
+        isDefault: { type: boolean }
 
     # ─── Payment intermediaries ────────────────────────────────────────────────
     PaymentIntermediary:
@@ -15934,6 +16394,12 @@ components:
           { allOf: [{ $ref: "#/components/schemas/Pronouns" }], nullable: true }
         deceased: { type: boolean }
         currentHomeRegionId: { type: string, nullable: true }
+        primaryHouseholdId:
+          {
+            type: string,
+            nullable: true,
+            description: "The one current household used by automatic donor-of-record routing and related-giving views.",
+          }
         details: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
@@ -16096,6 +16562,7 @@ components:
         pronouns: { $ref: "#/components/schemas/Pronouns" }
         deceased: { type: boolean }
         currentHomeRegionId: { type: string }
+        primaryHouseholdId: { type: string }
         details: { type: string }
         ownerUserId: { type: string }
         tags: { type: string }
@@ -16149,6 +16616,7 @@ components:
           { allOf: [{ $ref: "#/components/schemas/Pronouns" }], nullable: true }
         deceased: { type: boolean }
         currentHomeRegionId: { type: string, nullable: true }
+        primaryHouseholdId: { type: string, nullable: true }
         details: { type: string, nullable: true }
         ownerUserId: { type: string, nullable: true }
         tags: { type: string, nullable: true }
@@ -24116,25 +24584,9 @@ components:
         id: { type: string }
         name: { type: string }
         type: { type: string, nullable: true }
-    DonorRoutingHouseholdReference:
-      type: object
-      required: [id, name]
-      properties:
-        id: { type: string }
-        name: { type: string }
     DonorRoutingSettings:
       type: object
-      required:
-        [
-          source,
-          mode,
-          target,
-          resolved,
-          path,
-          requiresDecision,
-          primaryHousehold,
-          defaultPaymentIntermediary,
-        ]
+      required: [source, mode, target, resolved, path, requiresDecision]
       properties:
         source: { $ref: "#/components/schemas/DonorReference" }
         mode: { $ref: "#/components/schemas/DonorRoutingMode" }
@@ -24150,24 +24602,9 @@ components:
           type: array
           items: { $ref: "#/components/schemas/DonorReference" }
         requiresDecision: { type: boolean }
-        primaryHousehold:
-          anyOf:
-            - { $ref: "#/components/schemas/DonorRoutingHouseholdReference" }
-            - { type: "null" }
-        defaultPaymentIntermediary:
-          anyOf:
-            - { $ref: "#/components/schemas/DonorRoutingIntermediaryReference" }
-            - { type: "null" }
     UpdateDonorRoutingBody:
       type: object
-      required:
-        [
-          mode,
-          targetKind,
-          targetId,
-          primaryHouseholdId,
-          defaultPaymentIntermediaryId,
-        ]
+      required: [mode, targetKind, targetId]
       properties:
         mode: { $ref: "#/components/schemas/DonorRoutingMode" }
         targetKind:
@@ -24175,8 +24612,6 @@ components:
             - { $ref: "#/components/schemas/DonorRecordKind" }
             - { type: "null" }
         targetId: { type: [string, "null"] }
-        primaryHouseholdId: { type: [string, "null"] }
-        defaultPaymentIntermediaryId: { type: [string, "null"] }
 
     CleanupQueueStatus:
       type: string

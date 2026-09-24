@@ -138,18 +138,16 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
       source: { kind: "individual", id: PERSON_ID, name: "Arthur Rock" },
       resolved: { kind: "individual", id: PERSON_ID, name: "Arthur Rock" },
       path: [{ kind: "individual", id: PERSON_ID, name: "Arthur Rock" }],
-      primaryHousehold: null,
-      defaultPaymentIntermediary: null,
     });
+    expect(json).not.toHaveProperty("primaryHousehold");
+    expect(json).not.toHaveProperty("defaultPaymentIntermediary");
   });
 
-  it("routes Arthur to his company and saves household and DAF defaults", async () => {
+  it("routes Arthur to his company without mutating unrelated defaults", async () => {
     const { status, json } = await put("individual", PERSON_ID, {
       mode: "target",
       targetKind: "organization",
       targetId: ORG_ID,
-      primaryHouseholdId: HOUSEHOLD_ID,
-      defaultPaymentIntermediaryId: PI_ID,
     });
     expect(status).toBe(200);
     expect(json).toMatchObject({
@@ -160,33 +158,24 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
         { kind: "individual", id: PERSON_ID },
         { kind: "organization", id: ORG_ID },
       ],
-      primaryHousehold: { id: HOUSEHOLD_ID, name: "Rock Household" },
-      defaultPaymentIntermediary: {
-        id: PI_ID,
-        name: "Vanguard Charitable",
-        type: "daf",
-      },
     });
 
-    // people.primary_household_id is the sole household-membership authority
-    // (household rows in people_entity_roles are retired) — the route persists
-    // the household default there, not as a role row.
     const [person] = await db
       .select({ primaryHouseholdId: schema.people.primaryHouseholdId })
       .from(schema.people)
       .where(eq(schema.people.id, PERSON_ID));
-    expect(person.primaryHouseholdId).toBe(HOUSEHOLD_ID);
+    expect(person.primaryHouseholdId).toBeNull();
 
-    const [defaultPi] = await db
-      .select()
+    const defaults = await db
+      .select({ id: schema.donorPaymentIntermediaries.id })
       .from(schema.donorPaymentIntermediaries)
       .where(
-        eq(schema.donorPaymentIntermediaries.paymentIntermediaryId, PI_ID),
+        eq(
+          schema.donorPaymentIntermediaries.individualGiverPersonId,
+          PERSON_ID,
+        ),
       );
-    expect(defaultPi).toMatchObject({
-      individualGiverPersonId: PERSON_ID,
-      isDefault: true,
-    });
+    expect(defaults).toEqual([]);
   });
 
   it("rejects a pathway cycle without changing the organization", async () => {
@@ -194,8 +183,6 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
       mode: "target",
       targetKind: "individual",
       targetId: PERSON_ID,
-      primaryHouseholdId: null,
-      defaultPaymentIntermediaryId: null,
     });
     expect(status).toBe(409);
     expect(json.error).toBe("donor_routing_cycle");
@@ -213,15 +200,11 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
       mode: "self",
       targetKind: null,
       targetId: null,
-      primaryHouseholdId: HOUSEHOLD_ID,
-      defaultPaymentIntermediaryId: PI_ID,
     });
     await put("organization", ORG_ID, {
       mode: "self",
       targetKind: null,
       targetId: null,
-      primaryHouseholdId: null,
-      defaultPaymentIntermediaryId: null,
     });
 
     const results = await Promise.all([
@@ -229,15 +212,11 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
         mode: "target",
         targetKind: "organization",
         targetId: ORG_ID,
-        primaryHouseholdId: HOUSEHOLD_ID,
-        defaultPaymentIntermediaryId: PI_ID,
       }),
       put("organization", ORG_ID, {
         mode: "target",
         targetKind: "individual",
         targetId: PERSON_ID,
-        primaryHouseholdId: null,
-        defaultPaymentIntermediaryId: null,
       }),
     ]);
     expect(results.map((result) => result.status).sort()).toEqual([200, 409]);
@@ -251,8 +230,6 @@ describe.skipIf(!HAS_DB)("preferred donor pathways", () => {
       mode: "ask",
       targetKind: null,
       targetId: null,
-      primaryHouseholdId: HOUSEHOLD_ID,
-      defaultPaymentIntermediaryId: PI_ID,
     });
     expect(status).toBe(200);
     expect(json).toMatchObject({

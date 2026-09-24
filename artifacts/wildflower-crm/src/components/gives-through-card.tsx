@@ -4,14 +4,19 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   useListDonorPaymentIntermediaries,
   useCreateDonorPaymentIntermediary,
-  useDeleteDonorPaymentIntermediary,
+  useUpdateDonorPaymentIntermediary,
+  useArchiveDonorPaymentIntermediary,
   getListDonorPaymentIntermediariesQueryKey,
   type ListDonorPaymentIntermediariesParams,
   type CreateDonorPaymentIntermediaryBody,
   type PaymentIntermediary,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { RelatedCard, CardAction, AffiliationRow } from "@/components/record-layout";
+import {
+  RelatedCard,
+  CardAction,
+  AffiliationRow,
+} from "@/components/record-layout";
 import {
   EntityCombobox,
   useIntermediarySearch,
@@ -31,7 +36,9 @@ export interface GivesThroughDonor {
   householdId?: string;
 }
 
-function donorParams(d: GivesThroughDonor): ListDonorPaymentIntermediariesParams {
+function donorParams(
+  d: GivesThroughDonor,
+): ListDonorPaymentIntermediariesParams {
   if (d.organizationId) return { organizationId: d.organizationId };
   if (d.individualGiverPersonId)
     return { individualGiverPersonId: d.individualGiverPersonId };
@@ -57,7 +64,7 @@ function piRole(pi: PaymentIntermediary): string | undefined {
 }
 
 /**
- * "Gives through" — payment intermediaries (DAFs, foundations, etc.) a donor
+ * Payment intermediaries (DAFs, foundations, etc.) a donor
  * routes their giving through. Backed by the donor↔intermediary join table,
  * so the same intermediary can serve many donors. Intermediaries seen on the
  * donor's gifts but not yet logged here are offered as one-click suggestions.
@@ -75,7 +82,8 @@ export function GivesThroughCard({ donor }: { donor: GivesThroughDonor }) {
   });
 
   const createMut = useCreateDonorPaymentIntermediary();
-  const deleteMut = useDeleteDonorPaymentIntermediary();
+  const updateMut = useUpdateDonorPaymentIntermediary();
+  const archiveMut = useArchiveDonorPaymentIntermediary();
 
   const links = listQ.data?.data ?? [];
   const giftDerived = listQ.data?.giftDerived ?? [];
@@ -100,31 +108,62 @@ export function GivesThroughCard({ donor }: { donor: GivesThroughDonor }) {
     }
   };
 
-  const removeLink = async (id: string) => {
+  const archiveLink = async (id: string) => {
     try {
-      await deleteMut.mutateAsync({ id });
+      await archiveMut.mutateAsync({ id });
       await refresh();
     } catch {
       toast({
-        title: "Couldn't remove intermediary",
+        title: "Couldn't archive intermediary relationship",
         description: "Please try again.",
         variant: "destructive",
       });
     }
   };
 
+  const setPreferred = async (id: string, isDefault: boolean) => {
+    try {
+      await updateMut.mutateAsync({ id, data: { isDefault } });
+      await refresh();
+      toast({
+        title: isDefault
+          ? "Preferred payment intermediary saved"
+          : "Preferred payment intermediary cleared",
+      });
+    } catch {
+      toast({
+        title: "Couldn't set the preferred intermediary",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const effectiveDefault = listQ.data?.effectiveDefaultPaymentIntermediary;
+  const effectiveDefaultText = effectiveDefault
+    ? `${intermediaryDisplayName(effectiveDefault)}${
+        listQ.data?.effectiveDefaultSource === "resolved"
+          ? " (inherited from donor of record)"
+          : ""
+      }`
+    : "No preferred intermediary";
+
   return (
     <RelatedCard
-      title="Gives through"
+      title="Payment intermediaries"
       count={links.length}
-      empty={links.length === 0 && giftDerived.length === 0}
-      action={
-        <CardAction
-          label="Add"
-          onClick={() => setAdding((v) => !v)}
-        />
+      empty={
+        links.length === 0 && giftDerived.length === 0 && !effectiveDefault
       }
+      action={<CardAction label="Add" onClick={() => setAdding((v) => !v)} />}
     >
+      <div className="border-b px-2 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">
+          Preferred for new gifts:
+        </span>{" "}
+        {effectiveDefaultText}
+      </div>
+
       {adding ? (
         <div className="flex items-center gap-1 px-2 py-2">
           <EntityCombobox
@@ -166,21 +205,41 @@ export function GivesThroughCard({ donor }: { donor: GivesThroughDonor }) {
               <AffiliationRow
                 name={intermediaryDisplayName(link.paymentIntermediary)}
                 href={`/payment-intermediaries/${link.paymentIntermediaryId}`}
-                role={piRole(link.paymentIntermediary)}
+                role={[
+                  piRole(link.paymentIntermediary),
+                  link.isDefault ? "Preferred" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
                 hideStatusBadge
                 action={
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                    disabled={deleteMut.isPending}
-                    onClick={() => void removeLink(link.id)}
-                    aria-label={`Remove ${intermediaryDisplayName(link.paymentIntermediary)}`}
-                    data-testid={`button-remove-gives-through-${link.id}`}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-primary"
+                      disabled={updateMut.isPending || archiveMut.isPending}
+                      onClick={() =>
+                        void setPreferred(link.id, !link.isDefault)
+                      }
+                      data-testid={`button-prefer-gives-through-${link.id}`}
+                    >
+                      {link.isDefault ? "Clear preferred" : "Make preferred"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      disabled={archiveMut.isPending || updateMut.isPending}
+                      onClick={() => void archiveLink(link.id)}
+                      aria-label={`Archive ${intermediaryDisplayName(link.paymentIntermediary)}`}
+                      data-testid={`button-remove-gives-through-${link.id}`}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 }
               />
             </div>

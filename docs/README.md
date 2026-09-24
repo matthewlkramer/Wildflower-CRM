@@ -62,6 +62,9 @@ unverified and confirm against code before relying on it.
 - [`field-definitions.md`](field-definitions.md) — approved field definitions,
   canonical contact information, newsletter preference history, and shared
   cleanup projects.
+- [`donor-routing-and-payment-intermediaries.md`](donor-routing-and-payment-intermediaries.md) —
+  **ratified** separation of primary household, donor-of-record routing, and
+  payment-intermediary defaults, including new-gift precedence.
 - [`../lib/db/migrations/0246_0247_field_simplification_RUNBOOK.md`](../lib/db/migrations/0246_0247_field_simplification_RUNBOOK.md) — deployment sequence,
   preservation checks, evidence backfill, and cleanup-project seeds (0246–0248).
 

@@ -1,13 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import {
-  donorPaymentIntermediaries,
-  donorRoutingPreferences,
-  households,
-  paymentIntermediaries,
-  people,
-} from "@workspace/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { donorRoutingPreferences } from "@workspace/db/schema";
+import { sql } from "drizzle-orm";
 import {
   GetDonorRoutingParams,
   UpdateDonorRoutingBody,
@@ -31,7 +25,6 @@ import {
   loadDonorNode,
   resolveDonorRouting,
   sourceSql,
-  type DonorKind,
   type DonorNode,
   type DonorRef,
   type SqlExecutor,
@@ -43,22 +36,12 @@ router.use(requireAuth);
 
 const DONOR_ROUTING_ADVISORY_LOCK_KEY = 728411002;
 
-type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
 function donorRef(kind: string, id: string): DonorRef | null {
   return kind === "individual" ||
     kind === "household" ||
     kind === "organization"
     ? { kind, id }
     : null;
-}
-
-function donorColumns(ref: DonorRef) {
-  return {
-    organizationId: ref.kind === "organization" ? ref.id : null,
-    individualGiverPersonId: ref.kind === "individual" ? ref.id : null,
-    householdId: ref.kind === "household" ? ref.id : null,
-  };
 }
 
 function targetColumns(target: DonorRef | null) {
@@ -92,46 +75,6 @@ function displayNode(node: DonorNode, req: Parameters<typeof getViewer>[0]) {
   return { kind: node.kind, id: node.id, name };
 }
 
-async function defaultIntermediary(source: DonorRef) {
-  const donor = donorColumns(source);
-  const donorWhere = donor.organizationId
-    ? eq(donorPaymentIntermediaries.organizationId, donor.organizationId)
-    : donor.individualGiverPersonId
-      ? eq(
-          donorPaymentIntermediaries.individualGiverPersonId,
-          donor.individualGiverPersonId,
-        )
-      : eq(donorPaymentIntermediaries.householdId, donor.householdId as string);
-  const [row] = await db
-    .select({
-      id: paymentIntermediaries.id,
-      name: paymentIntermediaries.name,
-      type: paymentIntermediaries.type,
-    })
-    .from(donorPaymentIntermediaries)
-    .innerJoin(
-      paymentIntermediaries,
-      eq(
-        paymentIntermediaries.id,
-        donorPaymentIntermediaries.paymentIntermediaryId,
-      ),
-    )
-    .where(and(donorWhere, eq(donorPaymentIntermediaries.isDefault, true)))
-    .limit(1);
-  return row ?? null;
-}
-
-async function primaryHousehold(source: DonorRef) {
-  if (source.kind !== "individual") return null;
-  const [row] = await db
-    .select({ id: households.id, name: households.name })
-    .from(people)
-    .leftJoin(households, eq(households.id, people.primaryHouseholdId))
-    .where(eq(people.id, source.id))
-    .limit(1);
-  return row?.id ? row : null;
-}
-
 async function serializeSettings(
   req: Parameters<typeof getViewer>[0],
   source: DonorRef,
@@ -147,10 +90,6 @@ async function serializeSettings(
     direct?.mode === "target" && direct.target
       ? await loadDonorNode(db as unknown as SqlExecutor, direct.target)
       : null;
-  const [household, intermediary] = await Promise.all([
-    primaryHousehold(source),
-    defaultIntermediary(source),
-  ]);
   return {
     source: displayNode(sourceNode, req),
     mode: direct?.mode ?? "automatic",
@@ -160,78 +99,7 @@ async function serializeSettings(
       : null,
     path: resolution.path.map((node) => displayNode(node, req)),
     requiresDecision: resolution.requiresDecision,
-    primaryHousehold: household,
-    defaultPaymentIntermediary: intermediary,
   };
-}
-
-async function syncPrimaryHousehold(
-  tx: Tx,
-  personId: string,
-  householdId: string | null,
-) {
-  await tx
-    .update(people)
-    .set({ primaryHouseholdId: householdId, updatedAt: new Date() })
-    .where(eq(people.id, personId));
-}
-
-async function setDefaultIntermediary(
-  tx: Tx,
-  source: DonorRef,
-  paymentIntermediaryId: string | null,
-) {
-  const donor = donorColumns(source);
-  const donorWhere = donor.organizationId
-    ? eq(donorPaymentIntermediaries.organizationId, donor.organizationId)
-    : donor.individualGiverPersonId
-      ? eq(
-          donorPaymentIntermediaries.individualGiverPersonId,
-          donor.individualGiverPersonId,
-        )
-      : eq(donorPaymentIntermediaries.householdId, donor.householdId as string);
-  await tx
-    .update(donorPaymentIntermediaries)
-    .set({ isDefault: false, updatedAt: new Date() })
-    .where(and(donorWhere, eq(donorPaymentIntermediaries.isDefault, true)));
-  if (!paymentIntermediaryId) return;
-
-  const [pi] = await tx
-    .select({
-      id: paymentIntermediaries.id,
-      archivedAt: paymentIntermediaries.archivedAt,
-    })
-    .from(paymentIntermediaries)
-    .where(eq(paymentIntermediaries.id, paymentIntermediaryId))
-    .limit(1);
-  if (!pi || pi.archivedAt) throw new Error("default_intermediary_unavailable");
-
-  const [existing] = await tx
-    .select({ id: donorPaymentIntermediaries.id })
-    .from(donorPaymentIntermediaries)
-    .where(
-      and(
-        donorWhere,
-        eq(
-          donorPaymentIntermediaries.paymentIntermediaryId,
-          paymentIntermediaryId,
-        ),
-      ),
-    )
-    .limit(1);
-  if (existing) {
-    await tx
-      .update(donorPaymentIntermediaries)
-      .set({ isDefault: true, updatedAt: new Date() })
-      .where(eq(donorPaymentIntermediaries.id, existing.id));
-  } else {
-    await tx.insert(donorPaymentIntermediaries).values({
-      id: newId(),
-      ...donor,
-      paymentIntermediaryId,
-      isDefault: true,
-    });
-  }
 }
 
 router.get(
@@ -310,28 +178,6 @@ router.put(
         return;
       }
     }
-    if (source.kind !== "individual" && body.primaryHouseholdId) {
-      res.status(400).json({
-        error: "primary_household_not_allowed",
-        message: "Only an individual can have a primary household.",
-      });
-      return;
-    }
-    if (body.primaryHouseholdId) {
-      const [household] = await db
-        .select({ id: households.id, archivedAt: households.archivedAt })
-        .from(households)
-        .where(eq(households.id, body.primaryHouseholdId))
-        .limit(1);
-      if (!household || household.archivedAt) {
-        res.status(409).json({
-          error: "primary_household_unavailable",
-          message: "The selected primary household is missing or archived.",
-        });
-        return;
-      }
-    }
-
     const proposed: StoredPreference | null =
       body.mode === "automatic"
         ? null
@@ -392,30 +238,15 @@ router.put(
             updatedByUserId: actor?.id ?? null,
           });
         }
-        if (source.kind === "individual") {
-          await syncPrimaryHousehold(
-            tx,
-            source.id,
-            body.primaryHouseholdId ?? null,
-          );
-        }
-        await setDefaultIntermediary(
-          tx,
-          source,
-          body.defaultPaymentIntermediaryId ?? null,
-        );
         await recordAudit(tx, req, {
           action: "update",
           entityType: source.kind === "individual" ? "person" : source.kind,
           entityId: source.id,
-          summary: `Updated preferred donor settings for ${sourceNode.name}`,
+          summary: `Updated default donor of record for ${sourceNode.name}`,
           metadata: {
             donorRouting: {
               before,
               after: proposed,
-              primaryHouseholdId: body.primaryHouseholdId ?? null,
-              defaultPaymentIntermediaryId:
-                body.defaultPaymentIntermediaryId ?? null,
             },
           },
         });
@@ -433,16 +264,6 @@ router.put(
         res.status(409).json({
           error: "donor_routing_too_deep",
           message: "That preferred donor pathway is too long.",
-        });
-        return;
-      }
-      if (
-        error instanceof Error &&
-        error.message === "default_intermediary_unavailable"
-      ) {
-        res.status(409).json({
-          error: "default_intermediary_unavailable",
-          message: "The selected payment intermediary is missing or archived.",
         });
         return;
       }
