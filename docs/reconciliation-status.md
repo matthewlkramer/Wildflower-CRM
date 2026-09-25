@@ -48,7 +48,12 @@ Admins can reach the shared QuickBooks handling-rule editor from
 payments. New invoice-applied payments whose deposit coding contains
 “receivable” (including the observed “receivalbe” spelling) retain structured
 invoice applications; the bank-spine recompute emits excluded invoice-sized
-components and keeps any uncovered deposit balance unresolved.
+components and keeps any uncovered deposit balance unresolved. If the QBO
+deposit header has not linked yet, a Bill.com receivable is inferred only from
+a unique amount/date/payer match whose invoice applications equal the whole
+bank deposit; partial invoice evidence never excludes the bundle. Bank-only
+Broadstreet deposits receive an excluded lease-guaranty component directly
+from their bank memo.
 
 ## Bank-spine cutover — landed
 
