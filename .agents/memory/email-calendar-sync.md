@@ -19,6 +19,11 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
 
 ## Email intelligence (AI proposals)
 
+- Signature-update proposals accept only the most recent 24 months of source
+  mail. After AI drafting, `emailIntelActionValidation.ts` is the deterministic
+  authority that removes duplicate/no-op contact changes, evidence predating a
+  past-role update, and mailbox-owner phones/roles before actions are stored.
+  Apply-time dedupe remains the final safety net, not the review-queue filter.
 - New-correspondent discovery combines retained mail with owner-only
   `email_sync_skip` headers; count distinct messages, not invented historical
   threads. Reply-address proposals require same-mailbox outbound thread

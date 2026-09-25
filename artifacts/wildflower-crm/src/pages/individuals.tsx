@@ -496,6 +496,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Person>[] {
                 : ANONYMOUS_LABEL
             }
             testIdPrefix={`person-${p.id}`}
+            flagForResearch={{ targetType: "person", targetId: p.id }}
             disabled={ctx.inline.editingId !== null}
             archived={!!p.archivedAt}
             onOpen={() => ctx.onOpen(p)}

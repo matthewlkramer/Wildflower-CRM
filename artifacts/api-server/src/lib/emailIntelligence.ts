@@ -8,6 +8,7 @@ import {
   organizations,
   peopleEntityRoles,
   emails,
+  phoneNumbers,
   giftsAndPayments,
   type NewEmailProposal,
 } from "@workspace/db/schema";
@@ -39,6 +40,7 @@ import {
   isFreeMailDomain,
   isLikelyGrantDigest,
   isLinkedInNotificationSender,
+  isFreshSignatureEvidence,
   parseAutoResponderMove,
   parseBounce,
   parseEmailSignature,
@@ -542,7 +544,10 @@ async function handleSignature(
   },
   personId: string,
 ): Promise<void> {
-  const sig = parseEmailSignature(args.bodyText, args.bodyHtml);
+  if (!isFreshSignatureEvidence(args.emailSentAt)) return;
+
+  const parsedSig = parseEmailSignature(args.bodyText, args.bodyHtml);
+  const sig = parsedSig ? { ...parsedSig } : null;
   if (!sig) return;
   // Need either title or company changes vs current state for this
   // to be worth surfacing.
@@ -575,6 +580,33 @@ async function handleSignature(
     .limit(1)
     .then((r) => r[0]);
   if (!person) return;
+
+  // A quoted mailbox-owner signature can survive imperfect client-specific
+  // quote stripping. Remove facts that demonstrably belong to the mailbox
+  // owner before the proposal is persisted for somebody else.
+  const ownerFacts = await loadMailboxOwnerSignatureFacts(args.ownerEmail);
+  if (ownerFacts && ownerFacts.personId !== personId) {
+    if (
+      sig.phone &&
+      ownerFacts.phones.has(comparablePhone(sig.phone))
+    ) {
+      sig.phone = null;
+    }
+    if (sig.title && sig.company) {
+      const title = sig.title.trim().toLowerCase();
+      const company = sig.company.trim().toLowerCase();
+      const ownerRoleMatch = ownerFacts.currentRoles.some(
+        (role) =>
+          role.title?.trim().toLowerCase() === title &&
+          role.organizationName?.trim().toLowerCase() === company,
+      );
+      if (ownerRoleMatch) {
+        sig.title = null;
+        sig.company = null;
+      }
+    }
+    if (!sig.title && !sig.company && !sig.phone) return;
+  }
 
   // Name-attribution guard: if the signature carries its OWN name and
   // that name clearly isn't the CRM person we resolved the sender to,
@@ -644,6 +676,53 @@ async function handleSignature(
       fromEmail: args.fromEmail,
     },
   });
+}
+
+function comparablePhone(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+}
+
+async function loadMailboxOwnerSignatureFacts(ownerEmail: string | null): Promise<{
+  personId: string;
+  phones: Set<string>;
+  currentRoles: { title: string | null; organizationName: string | null }[];
+} | null> {
+  const normalized = ownerEmail?.trim().toLowerCase();
+  if (!normalized) return null;
+  const owner = await db
+    .select({ personId: emails.personId })
+    .from(emails)
+    .where(eq(sql`lower(${emails.email})`, normalized))
+    .limit(1)
+    .then((rows) => rows[0]);
+  if (!owner?.personId) return null;
+
+  const [ownerPhones, ownerRoles] = await Promise.all([
+    db
+      .select({ phoneNumber: phoneNumbers.phoneNumber })
+      .from(phoneNumbers)
+      .where(eq(phoneNumbers.personId, owner.personId)),
+    db
+      .select({
+        title: peopleEntityRoles.externalTitleOrRole,
+        organizationName: organizations.name,
+      })
+      .from(peopleEntityRoles)
+      .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
+      .where(
+        and(
+          eq(peopleEntityRoles.personId, owner.personId),
+          eq(peopleEntityRoles.current, "current"),
+        ),
+      ),
+  ]);
+
+  return {
+    personId: owner.personId,
+    phones: new Set(ownerPhones.map((row) => comparablePhone(row.phoneNumber))),
+    currentRoles: ownerRoles,
+  };
 }
 
 // ──────────────────────────────────────────────────────────────────
