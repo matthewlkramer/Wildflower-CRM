@@ -15,6 +15,170 @@ import { recomputeQboAccountingChecks } from "./qboAccountingRecompute";
  */
 const BANK_SPINE_ADVISORY_LOCK_KEY = 728411001;
 
+const receivableInvoicePaymentDepositMatches = sql`
+  linked_receivable_matches AS (
+    SELECT DISTINCT
+      payment.id AS staged_payment_id,
+      link.bank_deposit_id
+    FROM staged_payments payment
+    JOIN source_links link
+      ON link.qb_staged_payment_id = payment.id
+     AND link.link_type = 'qbo_line_deposit'
+    WHERE payment.qb_entity_type = 'payment'
+      AND jsonb_typeof(payment.qb_invoice_applications) = 'array'
+  ),
+  unlinked_receivable_candidates AS MATERIALIZED (
+    SELECT
+      payment.id AS staged_payment_id,
+      deposit.id AS bank_deposit_id,
+      count(*) OVER (PARTITION BY deposit.id) AS deposit_candidate_count,
+      count(*) OVER (PARTITION BY payment.id) AS payment_candidate_count
+    FROM bank_deposits deposit
+    JOIN staged_payments payment
+      ON payment.qb_entity_type = 'payment'
+     AND payment.amount = deposit.amount
+     AND payment.date_received BETWEEN deposit.deposit_date - 10
+                                   AND deposit.deposit_date
+     AND payment.payer_name IS NOT NULL
+    CROSS JOIN LATERAL (
+      SELECT
+        count(*) AS application_count,
+        count(*) FILTER (
+          WHERE application.value->>'invoiceId' IS NOT NULL
+            AND application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
+        ) AS valid_application_count,
+        COALESCE(sum(
+          CASE
+            WHEN application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
+              THEN (application.value->>'appliedAmount')::numeric
+            ELSE 0
+          END
+        ), 0) AS applied_total
+      FROM jsonb_array_elements(
+        CASE WHEN jsonb_typeof(payment.qb_invoice_applications) = 'array'
+          THEN payment.qb_invoice_applications ELSE '[]'::jsonb END
+      ) application(value)
+    ) applications
+    WHERE deposit.source = 'bank_csv_export'
+      AND concat_ws(' ', deposit.reference, deposit.memo)
+        ~* 'bill[.]com.*receiv(able|albe)|receiv(able|albe).*bill[.]com'
+      AND length(regexp_replace(
+        lower(trim(payment.payer_name)), '[^a-z0-9]+', '', 'g'
+      )) >= 6
+      AND regexp_replace(
+        lower(concat_ws(' ', deposit.reference, deposit.memo)),
+        '[^a-z0-9]+', '', 'g'
+      ) LIKE '%' || regexp_replace(
+        lower(trim(payment.payer_name)), '[^a-z0-9]+', '', 'g'
+      ) || '%'
+      AND applications.application_count > 0
+      AND applications.valid_application_count = applications.application_count
+      AND abs(applications.applied_total - deposit.amount) < 0.005
+      AND NOT EXISTS (
+        SELECT 1 FROM stripe_payouts payout
+        WHERE payout.bank_deposit_id = deposit.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM bank_deposit_components component
+        WHERE component.bank_deposit_id = deposit.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM source_links deposit_link
+        WHERE deposit_link.link_type = 'qbo_line_deposit'
+          AND deposit_link.bank_deposit_id = deposit.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM source_links payment_link
+        WHERE payment_link.link_type = 'qbo_line_deposit'
+          AND payment_link.qb_staged_payment_id = payment.id
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM bank_deposit_components payment_component
+        WHERE payment_component.source_staged_payment_id = payment.id
+      )
+  ),
+  invoice_payment_deposit_matches AS (
+    SELECT staged_payment_id, bank_deposit_id
+    FROM linked_receivable_matches
+    UNION ALL
+    SELECT staged_payment_id, bank_deposit_id
+    FROM unlinked_receivable_candidates
+    WHERE deposit_candidate_count = 1
+      AND payment_candidate_count = 1
+  )
+`;
+
+/** Broadstreet bank deposits are always lease-guaranty receipts, not gifts. */
+async function materializeBankOnlyBroadstreetComponents(): Promise<void> {
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      INSERT INTO payment_units (
+        id, kind, gross_amount, net_amount, currency, received_date, lifecycle
+      )
+      SELECT
+        'pu_bank_broadstreet_' || md5(deposit.id),
+        'direct_ach'::payment_unit_kind,
+        deposit.amount,
+        deposit.amount,
+        upper(COALESCE(deposit.currency, 'USD')),
+        deposit.deposit_date,
+        'received'::payment_unit_lifecycle
+      FROM bank_deposits deposit
+      WHERE deposit.source = 'bank_csv_export'
+        AND deposit.amount > 0
+        AND concat_ws(' ', deposit.reference, deposit.memo) ~* 'broadstreet'
+        AND NOT EXISTS (
+          SELECT 1 FROM stripe_payouts payout
+          WHERE payout.bank_deposit_id = deposit.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components component
+          WHERE component.bank_deposit_id = deposit.id
+        )
+      ON CONFLICT (id) DO UPDATE SET
+        gross_amount = EXCLUDED.gross_amount,
+        net_amount = EXCLUDED.net_amount,
+        currency = EXCLUDED.currency,
+        received_date = EXCLUDED.received_date,
+        updated_at = now()
+      WHERE payment_units.gift_id IS NULL
+        AND payment_units.source_staged_payment_id IS NULL
+        AND payment_units.stripe_charge_id IS NULL
+    `);
+
+    await tx.execute(sql`
+      INSERT INTO bank_deposit_components (
+        id, bank_deposit_id, payment_unit_id, amount, source,
+        needs_review, exclusion_reason, classification_source
+      )
+      SELECT
+        'bdc_bank_broadstreet_' || md5(deposit.id),
+        deposit.id,
+        'pu_bank_broadstreet_' || md5(deposit.id),
+        deposit.amount,
+        'bank_data'::bank_deposit_component_source,
+        false,
+        'lease_guaranty'::staged_payment_exclusion_reason,
+        'auto'::staged_payment_classification_source
+      FROM bank_deposits deposit
+      JOIN payment_units unit
+        ON unit.id = 'pu_bank_broadstreet_' || md5(deposit.id)
+      WHERE deposit.source = 'bank_csv_export'
+        AND deposit.amount > 0
+        AND concat_ws(' ', deposit.reference, deposit.memo) ~* 'broadstreet'
+        AND NOT EXISTS (
+          SELECT 1 FROM stripe_payouts payout
+          WHERE payout.bank_deposit_id = deposit.id
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM bank_deposit_components component
+          WHERE component.bank_deposit_id = deposit.id
+        )
+      ON CONFLICT (id) DO NOTHING
+    `);
+  });
+}
+
 type QboDepositLineMergeCandidate = {
   source_link_id: string;
   staged_payment_id: string;
@@ -872,6 +1036,10 @@ async function runBankSpineRecompute(): Promise<void> {
     ON CONFLICT (id) DO NOTHING
   `);
 
+  // 4a-ii. Broadstreet is a deterministic bank-memo classification and does
+  // not need to wait for downstream QuickBooks evidence.
+  await materializeBankOnlyBroadstreetComponents();
+
   // 4b. A QBO Deposit arriving after a manual decomposition is corroborating
   //     evidence for the existing unit, not permission to mint a parallel
   //     payment. Consolidate only the unique same-deposit/same-amount shape;
@@ -883,10 +1051,11 @@ async function runBankSpineRecompute(): Promise<void> {
   // retained in the deposit composition and filed as non-fundraising; any
   // unmatched balance remains unexplained for a human to review.
   await db.execute(sql`
-    WITH invoice_rows AS (
+    WITH ${receivableInvoicePaymentDepositMatches},
+    invoice_rows AS (
       SELECT
         sp.id AS staged_payment_id,
-        sl.bank_deposit_id,
+        matched_deposit.bank_deposit_id,
         sp.date_received,
         sp.qb_currency,
         sp.funding_source,
@@ -897,11 +1066,10 @@ async function runBankSpineRecompute(): Promise<void> {
         (application.value->>'appliedAmount')::numeric AS applied_amount,
         (application.value->>'invoiceId') AS invoice_id
       FROM staged_payments sp
-      JOIN source_links sl
-        ON sl.qb_staged_payment_id = sp.id
-       AND sl.link_type = 'qbo_line_deposit'
+      JOIN invoice_payment_deposit_matches matched_deposit
+        ON matched_deposit.staged_payment_id = sp.id
       JOIN bank_deposits bd
-        ON bd.id = sl.bank_deposit_id
+        ON bd.id = matched_deposit.bank_deposit_id
       CROSS JOIN LATERAL jsonb_array_elements(
         CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
           THEN sp.qb_invoice_applications ELSE '[]'::jsonb END
@@ -960,21 +1128,21 @@ async function runBankSpineRecompute(): Promise<void> {
   `);
 
   await db.execute(sql`
-    WITH invoice_rows AS (
+    WITH ${receivableInvoicePaymentDepositMatches},
+    invoice_rows AS (
       SELECT
         sp.id AS staged_payment_id,
-        sl.bank_deposit_id,
+        matched_deposit.bank_deposit_id,
         sp.exclusion_reason,
         application.value AS application,
         application.ordinality,
         (application.value->>'appliedAmount')::numeric AS applied_amount,
         (application.value->>'invoiceId') AS invoice_id
       FROM staged_payments sp
-      JOIN source_links sl
-        ON sl.qb_staged_payment_id = sp.id
-       AND sl.link_type = 'qbo_line_deposit'
+      JOIN invoice_payment_deposit_matches matched_deposit
+        ON matched_deposit.staged_payment_id = sp.id
       JOIN bank_deposits bd
-        ON bd.id = sl.bank_deposit_id
+        ON bd.id = matched_deposit.bank_deposit_id
       CROSS JOIN LATERAL jsonb_array_elements(
         CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
           THEN sp.qb_invoice_applications ELSE '[]'::jsonb END

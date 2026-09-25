@@ -486,6 +486,168 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
   });
 
+  it("classifies bank-only Broadstreet deposits as lease guaranty", async () => {
+    const depositId = await seedDeposit("50.00", "2026-06-21");
+    await db
+      .update(schema.bankDeposits)
+      .set({
+        memo: "WT FED#02N03 JPMORGAN CHASE /ORG=BROADSTREET IMPACT SERVICES, LLC",
+      })
+      .where(eqFn(schema.bankDeposits.id, depositId));
+
+    await recompute.recomputeBankSpine();
+    await recompute.recomputeBankSpine();
+
+    const components = await db
+      .select({
+        id: schema.bankDepositComponents.id,
+        paymentUnitId: schema.bankDepositComponents.paymentUnitId,
+        amount: schema.bankDepositComponents.amount,
+        source: schema.bankDepositComponents.source,
+        exclusionReason: schema.bankDepositComponents.exclusionReason,
+        classificationSource: schema.bankDepositComponents.classificationSource,
+      })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.bankDepositId, depositId));
+    componentIds.push(...components.map((component) => component.id));
+    paymentUnitIds.push(
+      ...components.map((component) => component.paymentUnitId),
+    );
+
+    expect(components).toEqual([
+      expect.objectContaining({
+        amount: "50.00",
+        source: "bank_data",
+        exclusionReason: "lease_guaranty",
+        classificationSource: "auto",
+      }),
+    ]);
+  });
+
+  it("infers Bill.com invoice components only when they cover the whole deposit", async () => {
+    const payerName = `${RUN} Mahogany Splendor Montessori Incorporated`;
+    const fullDeposit = await seedDeposit("456.00", "2026-06-23");
+    await db
+      .update(schema.bankDeposits)
+      .set({
+        reference: `Bill.com Receivable 996DVTEMK1BKZR4 ${payerName}`,
+      })
+      .where(eqFn(schema.bankDeposits.id, fullDeposit));
+    const bundledDeposit = await seedDeposit("1000.00", "2026-06-24");
+    await db
+      .update(schema.bankDeposits)
+      .set({
+        reference: `Bill.com Receivable bundle ${payerName}`,
+      })
+      .where(eqFn(schema.bankDeposits.id, bundledDeposit));
+
+    const fullStagedId = nextId("full_invoice_payment");
+    await db.insert(schema.stagedPayments).values({
+      id: fullStagedId,
+      realmId: REALM_ID,
+      qbEntityType: "payment",
+      qbEntityId: nextId("qbe"),
+      amount: "456.00",
+      dateReceived: "2026-06-21",
+      payerName,
+      qbInvoiceApplications: [
+        {
+          invoiceId: nextId("invoice"),
+          invoiceDocNumber: "INV-201",
+          invoiceTotal: "300.00",
+          appliedAmount: "300.00",
+          purpose: null,
+          lineItemNames: ["School Contributions"],
+          lineAccountNames: [],
+          lineDescriptions: [],
+        },
+        {
+          invoiceId: nextId("invoice"),
+          invoiceDocNumber: "INV-202",
+          invoiceTotal: "156.00",
+          appliedAmount: "156.00",
+          purpose: null,
+          lineItemNames: ["School Contributions"],
+          lineAccountNames: [],
+          lineDescriptions: [],
+        },
+      ],
+    });
+    stagedIds.push(fullStagedId);
+
+    const bundledStagedId = nextId("bundled_invoice_payment");
+    await db.insert(schema.stagedPayments).values({
+      id: bundledStagedId,
+      realmId: REALM_ID,
+      qbEntityType: "payment",
+      qbEntityId: nextId("qbe"),
+      amount: "1000.00",
+      dateReceived: "2026-06-22",
+      payerName,
+      qbInvoiceApplications: [
+        {
+          invoiceId: nextId("invoice"),
+          invoiceDocNumber: "INV-203",
+          invoiceTotal: "600.00",
+          appliedAmount: "600.00",
+          purpose: null,
+          lineItemNames: ["School Contributions"],
+          lineAccountNames: [],
+          lineDescriptions: [],
+        },
+      ],
+    });
+    stagedIds.push(bundledStagedId);
+
+    await recompute.recomputeBankSpine();
+    await recompute.recomputeBankSpine();
+
+    const components = await db
+      .select({
+        id: schema.bankDepositComponents.id,
+        bankDepositId: schema.bankDepositComponents.bankDepositId,
+        paymentUnitId: schema.bankDepositComponents.paymentUnitId,
+        amount: schema.bankDepositComponents.amount,
+        sourceInvoiceId: schema.bankDepositComponents.sourceInvoiceId,
+        exclusionReason: schema.bankDepositComponents.exclusionReason,
+      })
+      .from(schema.bankDepositComponents)
+      .where(
+        inArrayFn(schema.bankDepositComponents.bankDepositId, [
+          fullDeposit,
+          bundledDeposit,
+        ]),
+      );
+    componentIds.push(...components.map((component) => component.id));
+    paymentUnitIds.push(
+      ...components.map((component) => component.paymentUnitId),
+    );
+
+    expect(components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          bankDepositId: fullDeposit,
+          amount: "300.00",
+          exclusionReason: "membership",
+        }),
+        expect.objectContaining({
+          bankDepositId: fullDeposit,
+          amount: "156.00",
+          exclusionReason: "membership",
+        }),
+      ]),
+    );
+    expect(components).toHaveLength(2);
+    expect(components.every((component) => component.sourceInvoiceId)).toBe(
+      true,
+    );
+    expect(
+      components.some(
+        (component) => component.bankDepositId === bundledDeposit,
+      ),
+    ).toBe(false);
+  });
+
   it("composes a receivable-labelled bank deposit from linked invoice applications", async () => {
     const depositId = await seedDeposit("9876.54", "2026-06-21");
     await db
