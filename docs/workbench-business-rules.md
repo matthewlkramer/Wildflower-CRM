@@ -50,6 +50,14 @@ earned income. If invoice applications do not cover the whole bank deposit,
 the difference remains an unresolved remainder for human review. Broadstreet
 payments are classified separately as lease-guaranty payments.
 
+When a Bill.com receivable deposit has not yet been tied to its QuickBooks
+deposit header, the bank spine may infer the payment only from a unique
+amount/date/payer match whose invoice applications equal the entire bank
+deposit. A partial invoice match must not classify the whole deposit because
+the bundle may contain other money; it remains unresolved until its composition
+is known. Broadstreet is a separate deterministic bank-memo rule and receives
+an excluded lease-guaranty component without waiting for QuickBooks.
+
 The deposit-first surface is anchored by one `bank_deposits` row, but its
 actionable and row-aligned children are components/payment units:
 
