@@ -486,6 +486,100 @@ describe.skipIf(!HAS_DB)("bank-spine recompute (DB)", () => {
     expect(rows).toEqual([{ id: componentId, bankDepositId: existingDeposit }]);
   });
 
+  it("composes a receivable-labelled bank deposit from linked invoice applications", async () => {
+    const depositId = await seedDeposit("9876.54", "2026-06-21");
+    await db
+      .update(schema.bankDeposits)
+      .set({ reference: "Receivable deposit" })
+      .where(eqFn(schema.bankDeposits.id, depositId));
+
+    const stagedId = nextId("invoice_payment");
+    await db.insert(schema.stagedPayments).values({
+      id: stagedId,
+      realmId: REALM_ID,
+      qbEntityType: "payment",
+      qbEntityId: nextId("qbe"),
+      amount: "9000.00",
+      dateReceived: "2026-06-21",
+      exclusionReason: "loan_repayment",
+      qbInvoiceApplications: [
+        {
+          invoiceId: nextId("invoice"),
+          invoiceDocNumber: "INV-101",
+          invoiceTotal: "7000.00",
+          appliedAmount: "7000.00",
+          purpose: null,
+          lineItemNames: ["School Contributions"],
+          lineAccountNames: [],
+          lineDescriptions: [],
+        },
+        {
+          invoiceId: nextId("invoice"),
+          invoiceDocNumber: "INV-102",
+          invoiceTotal: "2000.00",
+          appliedAmount: "2000.00",
+          purpose: null,
+          lineItemNames: ["Loan repayment"],
+          lineAccountNames: [],
+          lineDescriptions: [],
+        },
+      ],
+    });
+    stagedIds.push(stagedId);
+    await db.insert(schema.sourceLinks).values({
+      id: `srcl_qld_${stagedId}`,
+      linkType: "qbo_line_deposit",
+      qbStagedPaymentId: stagedId,
+      bankDepositId: depositId,
+      lifecycle: "confirmed",
+      provenance: "system",
+      matchBasis: "deposit_header_exact",
+    });
+
+    await recompute.recomputeBankSpine();
+    await recompute.recomputeBankSpine();
+
+    const components = await db
+      .select({
+        id: schema.bankDepositComponents.id,
+        paymentUnitId: schema.bankDepositComponents.paymentUnitId,
+        amount: schema.bankDepositComponents.amount,
+        sourceInvoiceId: schema.bankDepositComponents.sourceInvoiceId,
+        exclusionReason: schema.bankDepositComponents.exclusionReason,
+        needsReview: schema.bankDepositComponents.needsReview,
+      })
+      .from(schema.bankDepositComponents)
+      .where(eqFn(schema.bankDepositComponents.bankDepositId, depositId));
+    componentIds.push(...components.map((component) => component.id));
+    paymentUnitIds.push(
+      ...components.map((component) => component.paymentUnitId),
+    );
+
+    expect(components).toHaveLength(2);
+    expect(components).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          amount: "7000.00",
+          exclusionReason: "membership",
+          needsReview: false,
+        }),
+        expect.objectContaining({
+          amount: "2000.00",
+          exclusionReason: "loan_repayment",
+          needsReview: false,
+        }),
+      ]),
+    );
+    expect(components.every((component) => component.sourceInvoiceId)).toBe(
+      true,
+    );
+    expect(
+      components.reduce((sum, component) => sum + Number(component.amount), 0),
+    ).toBe(9000);
+    // The remaining $876.54 is intentionally not fabricated as a component;
+    // the read model therefore continues to report the deposit as partial.
+  });
+
   it("merges a late QBO line into the unique full manual component", async () => {
     const stagedId = nextId("overfill_sp");
     const deposit = await seedDeposit("605.00", "2026-06-25");
