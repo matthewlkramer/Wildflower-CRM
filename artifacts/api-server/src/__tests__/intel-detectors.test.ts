@@ -3,6 +3,7 @@ import {
   extractGrantOpportunities,
   extractLinkedInJobChanges,
   isAutoResponder,
+  isFreshSignatureEvidence,
   parseAutoResponderMove,
   parseEmailSignature,
 } from "../lib/intelDetectors";
@@ -508,6 +509,44 @@ describe("parseEmailSignature — phone heuristics", () => {
     );
     expect(sig?.phone).toBeTruthy();
     expect(sig?.phone?.replace(/\D/g, "")).toContain("6175550142");
+  });
+
+  it("does not attribute a third party's phone to the sender", () => {
+    const sig = parseEmailSignature(
+      ["Jane Doe", "Program Director", "Acme Foundation", "Her cell: (612) 555-0100"].join("\n"),
+      null,
+    );
+    expect(sig?.phone ?? null).toBeNull();
+  });
+
+  it("does not parse a sentence about someone else's title as a signature title", () => {
+    const sig = parseEmailSignature(
+      ["Jane Doe", "Acme Foundation", "Matt is CEO of Wildflower Schools"].join("\n"),
+      null,
+    );
+    expect(sig?.title ?? null).toBeNull();
+  });
+
+  it("does not parse a street address containing School as a company", () => {
+    const sig = parseEmailSignature(
+      ["Jane Doe", "Program Director", "123 School Street"].join("\n"),
+      null,
+    );
+    expect(sig?.company ?? null).toBeNull();
+  });
+});
+
+describe("isFreshSignatureEvidence", () => {
+  const now = new Date("2026-09-25T12:00:00Z");
+
+  it("accepts evidence within the last 24 months", () => {
+    expect(isFreshSignatureEvidence(new Date("2025-01-01T00:00:00Z"), now)).toBe(true);
+  });
+
+  it("rejects stale, future, and undated evidence", () => {
+    expect(isFreshSignatureEvidence(new Date("2017-01-01T00:00:00Z"), now)).toBe(false);
+    expect(isFreshSignatureEvidence(new Date("2027-01-01T00:00:00Z"), now)).toBe(false);
+    expect(isFreshSignatureEvidence(null, now)).toBe(false);
   });
 });
 

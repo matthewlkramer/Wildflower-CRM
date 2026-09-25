@@ -417,6 +417,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<GiftOrPayment>[] {
           <RowActionIcons
             entityLabel={g.name ?? `Gift ${g.id}`}
             testIdPrefix={`gift-${g.id}`}
+            flagForResearch={{ targetType: "gift", targetId: g.id }}
             disabled={ctx.inline.editingId !== null}
             archived={!!g.archivedAt}
             onOpen={() => ctx.onOpen(g)}

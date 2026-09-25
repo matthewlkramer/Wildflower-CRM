@@ -501,6 +501,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
                 : ANONYMOUS_LABEL
             }
             testIdPrefix={`org-${f.id}`}
+            flagForResearch={{ targetType: "organization", targetId: f.id }}
             disabled={ctx.inline.editingId !== null}
             archived={!!f.archivedAt}
             onOpen={() => ctx.onOpen(f)}

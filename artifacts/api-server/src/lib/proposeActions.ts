@@ -9,6 +9,7 @@ import {
   people,
   peopleEntityRoles,
   phoneNumbers,
+  users,
   type EmailProposal,
 } from "@workspace/db/schema";
 import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
@@ -22,6 +23,7 @@ import {
   organizationNamesEquivalent,
 } from "./organizationNameMatching";
 import { loadWildflowerUpdateNote } from "./wildflowerUpdatesNote";
+import { sanitizeProposedActions } from "./emailIntelActionValidation";
 import {
   buildActionProposingCorePrompt,
   composeSystemPrompt,
@@ -500,7 +502,7 @@ const MODEL = "claude-sonnet-4-6";
 // Context loaders
 // ──────────────────────────────────────────────────────────────────
 
-interface PersonContext {
+export interface PersonContext {
   id: string;
   fullName: string | null;
   emails: { id: string; email: string; type: string | null; isPreferred: boolean; validity: string }[];
@@ -513,6 +515,7 @@ interface PersonContext {
     connection: string | null;
     externalTitleOrRole: string | null;
     current: string;
+    updatedAt: Date;
     // The role entity's known prior names, so the model can recognize a
     // signature still naming a former name as the SAME employer (no rename /
     // no duplicate-org proposal).
@@ -557,6 +560,7 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
         connection: peopleEntityRoles.connection,
         externalTitleOrRole: peopleEntityRoles.externalTitleOrRole,
         current: peopleEntityRoles.current,
+        updatedAt: peopleEntityRoles.updatedAt,
       })
       .from(peopleEntityRoles)
       .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
@@ -586,9 +590,20 @@ async function loadPersonContext(personId: string): Promise<PersonContext | null
       connection: r.connection,
       externalTitleOrRole: r.externalTitleOrRole,
       current: r.current,
+      updatedAt: r.updatedAt,
       entityHistoricalNames: r.organizationHistoricalNames ?? null,
     })),
   };
+}
+
+async function loadMailboxOwnerContext(mailboxUserId: string): Promise<PersonContext | null> {
+  const [mailboxUser] = await db
+    .select({ email: users.email })
+    .from(users)
+    .where(eq(users.id, mailboxUserId))
+    .limit(1);
+  const ownerPersonId = await resolvePersonByEmail(mailboxUser?.email ?? null);
+  return ownerPersonId ? loadPersonContext(ownerPersonId) : null;
 }
 
 // Resolve a CRM person from an email address (exact, case-insensitive).
@@ -1038,6 +1053,7 @@ export async function enrichRoleActionLabels(
 function buildUserPrompt(args: {
   proposal: EmailProposal;
   personContext: PersonContext | null;
+  mailboxOwnerContext: PersonContext | null;
   organizationCandidates: OrganizationCandidate[];
   targetOrgId: string | null;
   targetOrgName: string | null;
@@ -1045,7 +1061,7 @@ function buildUserPrompt(args: {
   reviewerGuidance?: string | null;
   wildflowerNote?: string | null;
 }): string {
-  const { proposal, personContext, organizationCandidates, targetOrgId, targetOrgName, messageBody, reviewerGuidance, wildflowerNote } = args;
+  const { proposal, personContext, mailboxOwnerContext, organizationCandidates, targetOrgId, targetOrgName, messageBody, reviewerGuidance, wildflowerNote } = args;
   const lines: string[] = [];
   lines.push(`PROPOSAL KIND: ${proposal.kind}`);
   lines.push(`PROPOSAL SUBJECT: ${proposal.subjectName ?? proposal.subjectEmail ?? "(none)"}`);
@@ -1092,6 +1108,20 @@ function buildUserPrompt(args: {
     }
   } else {
     lines.push("No matched person on file.");
+  }
+  if (mailboxOwnerContext && mailboxOwnerContext.id !== personContext?.id) {
+    lines.push("");
+    lines.push(
+      "MAILBOX OWNER — quoted owner facts must NEVER be attributed to the matched person:",
+    );
+    lines.push(
+      `  ${mailboxOwnerContext.fullName ?? "(unnamed)"}; phones: ${mailboxOwnerContext.phones.map((phone) => phone.phoneNumber).join(", ") || "(none)"}`,
+    );
+    for (const role of mailboxOwnerContext.roles.filter((candidate) => candidate.current === "current")) {
+      lines.push(
+        `  - ${role.externalTitleOrRole ?? "(no title)"} at ${role.entityName ?? "(unknown organization)"}`,
+      );
+    }
   }
   if (targetOrgId) {
     lines.push(`Matched organization: id=${targetOrgId} name=${targetOrgName ?? "?"}`);
@@ -1191,6 +1221,10 @@ export async function proposeActionsForProposal(
       const resolvedPersonId = await resolvePersonByEmail(proposal.subjectEmail);
       if (resolvedPersonId) personContext = await loadPersonContext(resolvedPersonId);
     }
+    const mailboxOwnerContext =
+      proposal.kind === "signature_update"
+        ? await loadMailboxOwnerContext(proposal.mailboxUserId)
+        : null;
 
     // For the organization side: prefer the detector-emitted hint
     // (targetFunderId, stored legacy name), else attempt a name lookup
@@ -1239,6 +1273,7 @@ export async function proposeActionsForProposal(
     const userPrompt = buildUserPrompt({
       proposal,
       personContext,
+      mailboxOwnerContext,
       organizationCandidates,
       targetOrgId,
       targetOrgName,
@@ -1344,6 +1379,7 @@ export async function proposeActionsForProposal(
         break;
       }
     }
+    const modelActionCount = actions.length;
 
     // Deterministically reconcile any create_org_with_per OR
     // create_funder_with_per against entities already in the CRM. The model
@@ -1367,6 +1403,23 @@ export async function proposeActionsForProposal(
     // render readable descriptions instead of bare "person" / raw role ids.
     actions = await enrichPersonActionNames(actions);
     actions = await enrichRoleActionLabels(actions);
+
+    actions = sanitizeProposedActions({
+      actions,
+      proposalSentAt: proposal.emailSentAt,
+      personContext,
+      mailboxOwnerContext,
+    });
+    if (
+      proposal.kind === "signature_update" &&
+      modelActionCount > 0 &&
+      actions.length === 0
+    ) {
+      suppress = {
+        shouldSuppress: true,
+        reason: "All proposed signature actions duplicated CRM data, relied on stale role evidence, or belonged to the mailbox owner.",
+      };
+    }
 
     // Belt-and-suspenders: deterministically drop any grant opportunity
     // whose application deadline is already in the past relative to

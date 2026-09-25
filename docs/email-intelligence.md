@@ -127,7 +127,9 @@ a matching "kind":
    retained for API and database compatibility.
 5. **Signature drift** (`signature_update`) — the signature block at the
    bottom of an inbound reply is parsed for a title/company/phone that
-   differs from what the CRM currently has.
+   differs from what the CRM currently has. Only messages from the most recent
+   24 months are eligible; older signatures are historical evidence, not a
+   reliable statement of somebody's current role or phone.
 6. **Thank-you acknowledgments** (`thank_you_acknowledgment`) — this one
    is *outbound*: when the fundraiser sends a "thank you" email with a
    document attached to a funder contact shortly after a gift, we propose
@@ -221,7 +223,8 @@ This is the heart of the feature, and it differs by path.
   auto-responder moves, and signature drift. Signature parsing is carefully
   attributed to the *actual sender* (not just anyone on the thread) and has several
   guards to avoid grabbing a quoted reply's signature or the mailbox
-  owner's own.
+  owner's own. The mailbox owner's known phones and current role are also
+  removed deterministically before a proposal is stored for another person.
 
 **Unmatched path** (nobody on the message is in the CRM):
 
@@ -307,6 +310,14 @@ Two deterministic clean-up steps run after the AI:
   "create new funder" suggestion rather than a stray organization.
 - **Deadline guard** — any grant opportunity whose deadline has already
   passed is dropped, regardless of what the AI said.
+- **Contact-action validation** — duplicate phones/emails, no-op title
+  changes, attempts to recreate an existing role, stale evidence that
+  predates a role already marked past, and mailbox-owner facts are removed
+  before actions are saved. Apply-time validation remains a final safety net.
+
+Reviewed data migrations may also retire stale pending signature proposals or
+strip already-known/mailbox-owner actions from the queue. They do not rewrite
+accepted proposal history or mutate contact records.
 
 This runs as fire-and-forget right after the proposal is created (so
 actions are usually ready by the time someone opens the queue), with a

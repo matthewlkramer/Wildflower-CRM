@@ -1,5 +1,8 @@
-import { FolderOpen, Pencil, Archive, ArchiveRestore, Trash2, Check, X } from "lucide-react";
+import { useState } from "react";
+import { FolderOpen, Pencil, Archive, ArchiveRestore, Trash2, Check, X, Flag } from "lucide-react";
+import type { FlagForResearchBodyTargetType } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
+import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 
 export type RowActionIconsProps = {
   /** Human-readable label of the row's entity, used for accessible button names. */
@@ -10,6 +13,10 @@ export type RowActionIconsProps = {
   onEdit?: () => void;
   onArchive?: () => void;
   onDelete?: () => void;
+  flagForResearch?: {
+    targetType: FlagForResearchBodyTargetType;
+    targetId: string;
+  };
   /** When true, the archive control shows an "unarchive" affordance instead. */
   archived?: boolean;
   /** Disable the whole group (e.g. while a sibling row is saving). */
@@ -29,11 +36,14 @@ export function RowActionIcons({
   onEdit,
   onArchive,
   onDelete,
+  flagForResearch,
   archived = false,
   disabled = false,
 }: RowActionIconsProps) {
+  const [flagOpen, setFlagOpen] = useState(false);
   const archiveLabel = archived ? "Unarchive" : "Archive";
   return (
+    <>
     <div
       className="flex items-center justify-end gap-0.5"
       onClick={(e) => e.stopPropagation()}
@@ -87,6 +97,21 @@ export function RowActionIcons({
           )}
         </Button>
       )}
+      {flagForResearch && (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          onClick={() => setFlagOpen(true)}
+          disabled={disabled}
+          aria-label={`Flag ${entityLabel} for research`}
+          title="Flag for research"
+          data-testid={`button-flag-${testIdPrefix}`}
+        >
+          <Flag className="h-4 w-4" />
+        </Button>
+      )}
       {onDelete && (
         <Button
           type="button"
@@ -103,6 +128,17 @@ export function RowActionIcons({
         </Button>
       )}
     </div>
+      {flagForResearch && (
+        <FlagForResearchDialog
+          targetType={flagForResearch.targetType}
+          targetId={flagForResearch.targetId}
+          recordLabel={entityLabel}
+          open={flagOpen}
+          onOpenChange={setFlagOpen}
+          hideTrigger
+        />
+      )}
+    </>
   );
 }
 
