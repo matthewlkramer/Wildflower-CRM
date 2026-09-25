@@ -17,6 +17,20 @@
 // emailMatcher domain branch) so the two can no longer drift apart.
 export { FREE_MAIL_DOMAINS, domainOf, isFreeMailDomain } from "./freeMailDomains";
 
+export const SIGNATURE_FRESHNESS_MONTHS = 24;
+
+/** Signature data is intentionally short-lived evidence, not timeless truth. */
+export function isFreshSignatureEvidence(
+  sentAt: Date | null | undefined,
+  now = new Date(),
+): boolean {
+  if (!sentAt || Number.isNaN(sentAt.getTime())) return false;
+  if (sentAt.getTime() > now.getTime()) return false;
+  const cutoff = new Date(now);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - SIGNATURE_FRESHNESS_MONTHS);
+  return sentAt.getTime() >= cutoff.getTime();
+}
+
 // ──────────────────────────────────────────────────────────────────
 // LinkedIn job-change detection
 // ──────────────────────────────────────────────────────────────────
@@ -538,6 +552,12 @@ export function parseEmailSignature(
   // "company" mentioning it is a mis-parse.
   const companyProseRe =
     /\b(membership|for all|on behalf|please|thank|regards|sincerely|looking forward|sent from|wildflower)\b/i;
+  const thirdPartyPhoneRe =
+    /\b(?:his|her|their)\s+(?:cell|phone|mobile)\b|\bcall\s+(?:him|her|them)\b/i;
+  const titleProseRe =
+    /\b(?:is|was|will|has|have|please|join|welcome|contact|require|immediate assistance)\b/i;
+  const streetAddressRe =
+    /^\d{1,6}\s+\S+(?:\s+\S+){0,6}\s+(?:st(?:reet)?|ave(?:nue)?|rd|road|blvd|boulevard|dr(?:ive)?|ln|lane|way|ct|court|pl|place|pkwy|parkway)\b/i;
 
   // Zoom / Google Meet / Teams dial-in blocks list "one tap mobile" and
   // "dial by your location" numbers that are MEETING ACCESS numbers, not
@@ -596,7 +616,7 @@ export function parseEmailSignature(
       const m = line.match(emailRe);
       if (m) email = m[0].toLowerCase();
     }
-    if (!phone && !meetingTainted[li]) {
+    if (!phone && !meetingTainted[li] && !thirdPartyPhoneRe.test(line)) {
       const hasLabel = phoneLabelRe.test(line);
       const m = line.match(phoneRe);
       if (m && looksLikePhone(m[0], hasLabel)) {
@@ -608,7 +628,12 @@ export function parseEmailSignature(
         if (bare && looksLikePhone(bare[0], true)) phone = bare[0].trim();
       }
     }
-    if (!title && line.length <= 90 && titleTokens.test(line)) {
+    if (
+      !title &&
+      line.length <= 90 &&
+      titleTokens.test(line) &&
+      !titleProseRe.test(line)
+    ) {
       // Strip leading bullet / icon chars
       title = line.replace(/^[\W_]+/, "").trim();
     }
@@ -623,6 +648,7 @@ export function parseEmailSignature(
       // produced bogus "company changed" drift for senders whose true
       // employer was elsewhere.
       !companyProseRe.test(line) &&
+      !streetAddressRe.test(line) &&
       // A real company line is a handful of (mostly capitalized) words,
       // not a sentence. Cap the wordy ones out.
       line.split(/\s+/).filter((w) => /[a-z]/i.test(w)).length <= 7

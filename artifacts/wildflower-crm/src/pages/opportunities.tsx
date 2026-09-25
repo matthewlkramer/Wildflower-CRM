@@ -347,6 +347,10 @@ function buildColumns(ctx: ColCtx): ColumnDef<OpportunityOrPledge>[] {
           <RowActionIcons
             entityLabel={o.name ?? `Untitled ${o.id}`}
             testIdPrefix={`opp-${o.id}`}
+            flagForResearch={{
+              targetType: ctx.isPledgeView ? "pledge" : "opportunity",
+              targetId: o.id,
+            }}
             disabled={ctx.inline.editingId !== null}
             archived={!!o.archivedAt}
             onOpen={() => ctx.onOpen(o)}
