@@ -900,17 +900,21 @@ async function runBankSpineRecompute(): Promise<void> {
       JOIN source_links sl
         ON sl.qb_staged_payment_id = sp.id
        AND sl.link_type = 'qbo_line_deposit'
+      JOIN bank_deposits bd
+        ON bd.id = sl.bank_deposit_id
       CROSS JOIN LATERAL jsonb_array_elements(
         CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
           THEN sp.qb_invoice_applications ELSE '[]'::jsonb END
       )
         WITH ORDINALITY AS application(value, ordinality)
       WHERE sp.qb_entity_type = 'payment'
-        AND sp.exclusion_reason IS NULL
         AND jsonb_typeof(sp.qb_invoice_applications) = 'array'
-        AND concat_ws(' ', sp.raw_reference, sp.line_description,
-          sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
-          ~* 'receiv(able|albe)'
+        AND (
+          concat_ws(' ', sp.raw_reference, sp.line_description,
+            sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
+            ~* 'receiv(able|albe)'
+          OR concat_ws(' ', bd.reference, bd.memo) ~* 'receiv(able|albe)'
+        )
         AND application.value->>'invoiceId' IS NOT NULL
         AND application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
         AND (application.value->>'appliedAmount')::numeric > 0
@@ -960,6 +964,7 @@ async function runBankSpineRecompute(): Promise<void> {
       SELECT
         sp.id AS staged_payment_id,
         sl.bank_deposit_id,
+        sp.exclusion_reason,
         application.value AS application,
         application.ordinality,
         (application.value->>'appliedAmount')::numeric AS applied_amount,
@@ -968,17 +973,21 @@ async function runBankSpineRecompute(): Promise<void> {
       JOIN source_links sl
         ON sl.qb_staged_payment_id = sp.id
        AND sl.link_type = 'qbo_line_deposit'
+      JOIN bank_deposits bd
+        ON bd.id = sl.bank_deposit_id
       CROSS JOIN LATERAL jsonb_array_elements(
         CASE WHEN jsonb_typeof(sp.qb_invoice_applications) = 'array'
           THEN sp.qb_invoice_applications ELSE '[]'::jsonb END
       )
         WITH ORDINALITY AS application(value, ordinality)
       WHERE sp.qb_entity_type = 'payment'
-        AND sp.exclusion_reason IS NULL
         AND jsonb_typeof(sp.qb_invoice_applications) = 'array'
-        AND concat_ws(' ', sp.raw_reference, sp.line_description,
-          sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
-          ~* 'receiv(able|albe)'
+        AND (
+          concat_ws(' ', sp.raw_reference, sp.line_description,
+            sp.qb_transaction_memo, array_to_string(sp.line_account_names, ' '))
+            ~* 'receiv(able|albe)'
+          OR concat_ws(' ', bd.reference, bd.memo) ~* 'receiv(able|albe)'
+        )
         AND application.value->>'invoiceId' IS NOT NULL
         AND application.value->>'appliedAmount' ~ '^[0-9]+(\\.[0-9]+)?$'
         AND (application.value->>'appliedAmount')::numeric > 0
@@ -1014,13 +1023,17 @@ async function runBankSpineRecompute(): Promise<void> {
       staged_payment_id,
       invoice_id,
       false,
-      CASE WHEN EXISTS (
-        SELECT 1
-        FROM jsonb_array_elements_text(
-          COALESCE(application->'lineItemNames', '[]'::jsonb)
-        ) item(name)
-        WHERE lower(trim(item.name)) = 'school contributions'
-      ) THEN 'membership' ELSE 'earned_income' END::staged_payment_exclusion_reason,
+      CASE
+        WHEN EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements_text(
+            COALESCE(application->'lineItemNames', '[]'::jsonb)
+          ) item(name)
+          WHERE lower(trim(item.name)) = 'school contributions'
+        ) THEN 'membership'
+        WHEN exclusion_reason IS NOT NULL THEN exclusion_reason
+        ELSE 'earned_income'
+      END::staged_payment_exclusion_reason,
       'auto'
     FROM candidates
     WHERE existing_total + running_total <= deposit_amount + 0.005
