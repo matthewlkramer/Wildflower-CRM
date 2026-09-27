@@ -343,15 +343,11 @@ function HouseholdView({ household }: { household: HouseholdDetail }) {
             )}
           </RelatedCard>
 
-          <GivingPipelineCard
-            scope={{ householdId: household.id }}
-            relationship={{ sourceKind: "household", sourceId: household.id }}
-          />
+          <GivingPipelineCard scope={{ householdId: household.id }} />
 
           <PreferredDonorCard sourceKind="household" sourceId={household.id} />
 
           <GivesThroughCard donor={{ householdId: household.id }} />
-
         </>
       }
     />

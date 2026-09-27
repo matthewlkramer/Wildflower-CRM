@@ -54,6 +54,7 @@ export * from "./calendarMeetingFilters";
 export * from "./internalEmailDomains";
 export * from "./quickbooksConnections";
 export * from "./quickbooksHandlingRules";
+export * from "./quickbooksDepositAttachments";
 export * from "./stagedPayments";
 export * from "./reconciliationBundleDrafts";
 export * from "./stripeSyncState";

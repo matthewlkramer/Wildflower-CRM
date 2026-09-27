@@ -37,9 +37,6 @@ Rules:
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
 
-const MEETING_PREPARATION_RULES = `
-- Sourced Wildflower news/progress below is eligible context only when it has a citation. Include its date as recorded (month/year/season/range/unknown, never an invented exact date), cite the source URL/title, and label work_in_progress or proposed_work explicitly as planned work. Never present a draft without a source as an achievement.`;
-
 const RECORD_PAGE_RULES = `
 - Keep this record-page summary compact. Do not enumerate schools, school status or risk details, funding geographies, markets, cities, or regions. Those details belong in the single-meeting preparation briefing. You may describe a regional opportunity broadly when it is material to the relationship.`;
 
@@ -121,37 +118,6 @@ function fmtSignals(signals: TaskSignals): string {
   if (signals.recentNewsletterEngagement.length === 0) lines.push("  (none)");
   for (const n of signals.recentNewsletterEngagement)
     lines.push(`  - ${n.date ?? "?"}: ${n.subject ?? "(untitled)"} — ${n.clicked ? "clicked" : n.opened ? "opened" : "not opened"}`);
-  if (signals.relevantWildflowerUpdates) {
-    lines.push("");
-    lines.push("RELEVANT SOURCED WILDFLOWER NEWS / PROGRESS:");
-    if (signals.relevantWildflowerUpdates.length === 0) lines.push("  (none)");
-  }
-  for (const update of signals.relevantWildflowerUpdates ?? []) {
-    const date = update.eventDate.startDate
-      ? update.eventDate.endDate
-        ? `${update.eventDate.startDate} to ${update.eventDate.endDate}`
-        : update.eventDate.startDate
-      : update.eventDate.year
-        ? `${update.eventDate.year}${update.eventDate.month ? `-${String(update.eventDate.month).padStart(2, "0")}` : ""}${update.eventDate.season ? ` (${update.eventDate.season})` : ""}`
-        : update.eventDate.startMonth
-          ? `${update.eventDate.startYear}-${String(update.eventDate.startMonth).padStart(2, "0")}–${update.eventDate.endYear}-${String(update.eventDate.endMonth).padStart(2, "0")}`
-        : update.eventDate.startYear
-          ? `${update.eventDate.startYear}-${String(update.eventDate.endYear ?? update.eventDate.startYear + 1).slice(-2)} school year`
-        : "(date unknown)";
-    const planned = update.status === "work_in_progress" || update.status === "proposed_work";
-    lines.push(`  - ${date}: ${update.title} [${planned ? "PLANNED / WORK IN PROGRESS" : update.status}] — ${update.details}`);
-    lines.push(`    topic match: ${update.topicMatches.join(", ") || "none"}; geography match: ${update.geographyMatches.join(", ") || "none"}`);
-    for (const source of update.sources) {
-      const publicationDate = source.publicationDate
-        ? source.publicationEndDate
-          ? `${source.publicationDate} to ${source.publicationEndDate}`
-          : source.publicationDate
-        : source.publicationYear
-          ? `${source.publicationYear}${source.publicationMonth ? `-${String(source.publicationMonth).padStart(2, "0")}` : ""}${source.publicationSeason ? ` (${source.publicationSeason})` : ""}`
-          : "(publication date unknown)";
-      lines.push(`    citation: ${source.title} — ${source.url} [published ${publicationDate}]`);
-    }
-  }
 
   return lines.join("\n");
 }
@@ -218,7 +184,7 @@ export async function generateRelationshipSummary(args: {
               model: MODEL,
               max_tokens: 1024,
               system: args.meetingPreparation
-                ? `${SYSTEM}${MEETING_PREPARATION_RULES}`
+                ? SYSTEM
                 : `${SYSTEM}${RECORD_PAGE_RULES}`,
               messages: [{ role: "user", content: fmtSignals(signals) }],
             },

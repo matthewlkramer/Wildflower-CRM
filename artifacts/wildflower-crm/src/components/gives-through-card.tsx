@@ -151,7 +151,6 @@ export function GivesThroughCard({ donor }: { donor: GivesThroughDonor }) {
   return (
     <RelatedCard
       title="Payment intermediaries"
-      count={links.length}
       empty={
         links.length === 0 && giftDerived.length === 0 && !effectiveDefault
       }

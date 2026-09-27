@@ -108,6 +108,41 @@ interface QbQueryResponse {
   };
 }
 
+interface QbAttachable {
+  Id: string;
+  FileName?: string;
+  ContentType?: string;
+  Note?: string;
+  TempDownloadUri?: string;
+  AttachableRef?: Array<{
+    EntityRef?: { value?: string; type?: string };
+  }>;
+  MetaData?: QbMeta;
+}
+
+export interface QuickbooksDepositAttachment {
+  id: string;
+  depositId: string;
+  fileName: string | null;
+  contentType: string | null;
+  note: string | null;
+  tempDownloadUri: string;
+  updatedAt: string | null;
+}
+
+export interface QuickbooksDepositForAttachment {
+  id: string;
+  totalAmount: string;
+  txnDate: string | null;
+  depositToAccountName: string | null;
+  privateNote: string | null;
+  currency: string | null;
+  exchangeRate: string | null;
+  createTime: string | null;
+  updatedAt: string | null;
+  raw: unknown;
+}
+
 const PAGE_SIZE = 100;
 // Chunk size for `... WHERE Id IN (...)` batch lookups (Invoice / Item /
 // Customer). QBO caps a single query's results; 50 keeps us comfortably under.
@@ -139,6 +174,99 @@ async function runQuery(
     throw new Error(`QuickBooks query failed: ${r.status} ${text}`);
   }
   return (await r.json()) as QbQueryResponse;
+}
+
+/**
+ * Attachments are queried independently of the transaction watermark because
+ * adding a file does not reliably update the parent Deposit. This is metadata
+ * only; file bytes are fetched lazily for new or changed attachments.
+ */
+export async function pullDepositAttachments(
+  accessToken: string,
+  realmId: string,
+): Promise<QuickbooksDepositAttachment[]> {
+  const attachments: QuickbooksDepositAttachment[] = [];
+  for (let start = 1; ; start += PAGE_SIZE) {
+    const q = `SELECT * FROM Attachable STARTPOSITION ${start} MAXRESULTS ${PAGE_SIZE}`;
+    const resp = await runQuery(accessToken, realmId, q);
+    const rows = (resp.QueryResponse?.["Attachable"] ?? []) as QbAttachable[];
+    for (const row of rows) {
+      if (!row.Id || !row.TempDownloadUri) continue;
+      for (const ref of row.AttachableRef ?? []) {
+        if (
+          ref.EntityRef?.type?.toLowerCase() !== "deposit" ||
+          !ref.EntityRef.value
+        ) {
+          continue;
+        }
+        attachments.push({
+          id: row.Id,
+          depositId: ref.EntityRef.value,
+          fileName: row.FileName?.trim() || null,
+          contentType: row.ContentType?.trim() || null,
+          note: row.Note?.trim() || null,
+          tempDownloadUri: row.TempDownloadUri,
+          updatedAt: row.MetaData?.LastUpdatedTime ?? null,
+        });
+      }
+    }
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return attachments;
+}
+
+export async function downloadQuickbooksAttachment(
+  accessToken: string,
+  tempDownloadUri: string,
+): Promise<{ bytes: Uint8Array; contentType: string | null }> {
+  const response = await fetch(tempDownloadUri, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `QuickBooks attachment download failed: ${response.status}`,
+    );
+  }
+  return {
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    contentType: response.headers.get("content-type"),
+  };
+}
+
+/** Fetch parent deposits for attachment evidence, including unchanged parents. */
+export async function pullDepositsForAttachments(
+  accessToken: string,
+  realmId: string,
+  depositIds: string[],
+): Promise<Map<string, QuickbooksDepositForAttachment>> {
+  const result = new Map<string, QuickbooksDepositForAttachment>();
+  const ids = uniq(depositIds);
+  for (let i = 0; i < ids.length; i += IN_CHUNK) {
+    const chunk = ids.slice(i, i + IN_CHUNK);
+    const inList = chunk.map((id) => `'${id.replace(/'/g, "''")}'`).join(",");
+    const response = await runQuery(
+      accessToken,
+      realmId,
+      `SELECT * FROM Deposit WHERE Id IN (${inList}) MAXRESULTS ${IN_CHUNK}`,
+    );
+    const rows = (response.QueryResponse?.["Deposit"] ?? []) as QbDeposit[];
+    for (const row of rows) {
+      result.set(row.Id, {
+        id: row.Id,
+        totalAmount: num(row.TotalAmt) ?? "0.00",
+        txnDate: row.TxnDate ?? null,
+        depositToAccountName: row.DepositToAccountRef?.name ?? null,
+        privateNote: row.PrivateNote ?? null,
+        currency: row.CurrencyRef?.value ?? null,
+        exchangeRate: rate(row.ExchangeRate),
+        createTime: row.MetaData?.CreateTime ?? null,
+        updatedAt: row.MetaData?.LastUpdatedTime ?? null,
+        raw: row,
+      });
+    }
+  }
+  return result;
 }
 
 type QbRef = { value?: string; name?: string; type?: string } | undefined;

@@ -28,6 +28,7 @@ import { logger } from "./logger";
 import { withSyncLock } from "./syncLock";
 import { getValidQuickbooksAccessToken } from "./quickbooksTokenStore";
 import { pullIncomingPayments } from "./quickbooksClient";
+import { prepareAttachmentDepositRows } from "./quickbooksAttachmentSync";
 import { scoreStagedPayment, type ScoredMatch } from "./quickbooksMatch";
 import {
   classifyStagedPayment,
@@ -874,6 +875,36 @@ export async function syncQuickbooks(
         .set({ lastError: msg, updatedAt: new Date() })
         .where(eq(quickbooksConnections.realmId, conn.realmId));
       throw e;
+    }
+
+    // Deposit attachments are a second, read-only composition signal. Adding
+    // an attachment does not reliably update the parent Deposit, so this pass
+    // is independent of the transaction watermark. It replaces only untouched
+    // QBO deposit-line evidence, and only when the extracted components sum
+    // exactly to the deposit total.
+    try {
+      const attachmentPlan = await prepareAttachmentDepositRows({
+        accessToken: conn.accessToken,
+        realmId: conn.realmId,
+      });
+      if (attachmentPlan.managedDepositIds.size) {
+        pulled = [
+          ...pulled.filter(
+            (row) =>
+              !(
+                (row.qbEntityType === "deposit" ||
+                  row.qbEntityType === "deposit_header") &&
+                attachmentPlan.managedDepositIds.has(row.qbEntityId)
+              ),
+          ),
+          ...attachmentPlan.rows,
+        ];
+      }
+    } catch (error) {
+      logger.warn(
+        { err: error },
+        "QuickBooks attachment composition pass failed; base sync continues",
+      );
     }
 
     let staged = 0;

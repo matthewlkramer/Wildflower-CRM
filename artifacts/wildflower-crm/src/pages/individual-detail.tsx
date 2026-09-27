@@ -1040,10 +1040,7 @@ function PersonView({ person }: { person: PersonDetail }) {
       right={
         <>
           <PinnedMediaCard personId={person.id} />
-          <GivingPipelineCard
-            scope={{ individualGiverPersonId: person.id }}
-            relationship={{ sourceKind: "individual", sourceId: person.id }}
-          />
+          <GivingPipelineCard scope={{ individualGiverPersonId: person.id }} />
 
           <PeopleCard person={person} />
 
@@ -1184,7 +1181,7 @@ function OrganizationsCard({
   return (
     <RelatedCard
       title="Organizations"
-      count={visibleRoles.length}
+      empty={visibleRoles.length === 0}
       action={
         <div className="flex items-center gap-1">
           {hasInactive ? (
