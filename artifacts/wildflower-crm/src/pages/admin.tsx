@@ -21,8 +21,6 @@ import {
   useUpdateCalendarMeetingFilters,
   useGetInternalEmailDomains,
   useUpdateInternalEmailDomains,
-  useGetWildflowerUpdate,
-  useUpdateWildflowerUpdate,
   useAdminListEmailIntelPrompts,
   useAdminSaveEmailIntelPrompt,
   useAdminGenerateEmailIntelPrompt,
@@ -54,7 +52,6 @@ import {
   getAdminGetMediaRelevanceBackfillStatusQueryKey,
   getGetCalendarMeetingFiltersQueryKey,
   getGetInternalEmailDomainsQueryKey,
-  getGetWildflowerUpdateQueryKey,
   getAdminListEmailIntelPromptsQueryKey,
   getAdminListEmailIntelFeedbackQueryKey,
   getAdminListQuickbooksRulesQueryKey,
@@ -213,7 +210,6 @@ export default function Admin() {
         <TabsContent value="email" className="space-y-8">
           <CalendarMeetingFiltersSection />
           <InternalEmailDomainsSection />
-          <WildflowerUpdatesSection />
           <EmailIntelligenceSection />
         </TabsContent>
 
@@ -1903,128 +1899,6 @@ function InternalEmailDomainsSection() {
               variant="outline"
               onClick={startEdit}
               data-testid="internal-domains-edit"
-            >
-              Edit
-            </Button>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function WildflowerUpdatesSection() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const q = useGetWildflowerUpdate({
-    query: { queryKey: getGetWildflowerUpdateQueryKey(), staleTime: 60_000 },
-  });
-
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-
-  const current = q.data;
-
-  const update = useUpdateWildflowerUpdate({
-    mutation: {
-      onSuccess: async () => {
-        await qc.invalidateQueries({ queryKey: getGetWildflowerUpdateQueryKey() });
-        toast({ title: "Wildflower updates note saved" });
-        setEditing(false);
-      },
-      onError: (err: unknown) => {
-        toast({
-          title: "Save failed",
-          description: err instanceof Error ? err.message : String(err),
-          variant: "destructive",
-        });
-      },
-    },
-  });
-
-  const startEdit = () => {
-    setDraft(current?.content ?? "");
-    setEditing(true);
-  };
-
-  const commit = () => {
-    update.mutate({ data: { content: draft } });
-  };
-
-  return (
-    <Card data-testid="admin-wildflower-updates-section">
-      <CardHeader>
-        <CardTitle>Wildflower updates</CardTitle>
-        <CardDescription>
-          A single shared note capturing the team's current Wildflower talking
-          points, themes, and news. It is fed into the AI prompts that suggest
-          donor next-step tasks and email-intelligence proposals, so suggestions
-          can weave in what the team currently wants to communicate to donors.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {q.isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
-        ) : editing ? (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="wildflower-updates">Note</Label>
-              <textarea
-                id="wildflower-updates"
-                data-testid="wildflower-updates-input"
-                className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm min-h-[160px] resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                placeholder="e.g. We just launched 3 new microschools in the Southeast; our matching-gift campaign runs through June…"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                onClick={commit}
-                disabled={update.isPending}
-                data-testid="wildflower-updates-save"
-              >
-                Save
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditing(false)}
-                disabled={update.isPending}
-              >
-                Cancel
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div>
-              <div className="text-xs font-medium text-muted-foreground mb-1">
-                Current note
-              </div>
-              {(current?.content ?? "").trim().length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No note set yet.
-                </p>
-              ) : (
-                <pre className="text-sm whitespace-pre-wrap rounded bg-muted p-3">
-                  {current?.content}
-                </pre>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Last updated:{" "}
-              {current?.updatedAt
-                ? new Date(current.updatedAt).toLocaleString()
-                : "never"}
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={startEdit}
-              data-testid="wildflower-updates-edit"
             >
               Edit
             </Button>

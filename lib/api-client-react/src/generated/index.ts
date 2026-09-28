@@ -69,5 +69,4 @@ export * from "./tasks/tasks";
 export * from "./top-priorities/top-priorities";
 export * from "./trip-plans/trip-plans";
 export * from "./users/users";
-export * from "./wildflower-updates/wildflower-updates";
 export * from "./api.schemas";

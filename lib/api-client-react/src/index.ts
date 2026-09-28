@@ -56,7 +56,6 @@ export * from './generated/storage/storage';
 export * from './generated/suppression-windows/suppression-windows';
 export * from './generated/calendar-meeting-filters/calendar-meeting-filters';
 export * from './generated/internal-email-domains/internal-email-domains';
-export * from './generated/wildflower-updates/wildflower-updates';
 export * from './generated/audit-log/audit-log';
 export * from './generated/reconciliation/reconciliation';
 export * from './generated/revenue-extractor/revenue-extractor';

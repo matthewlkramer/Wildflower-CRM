@@ -60,7 +60,6 @@ describe("relationship summary context", () => {
       ...baseSignals,
       schoolGeographySection:
         "Schools in Geographies of Interest\nExample School — Boston, MA",
-      relevantWildflowerUpdates: [],
     });
     mocks.createMessage.mockResolvedValue({
       content: [

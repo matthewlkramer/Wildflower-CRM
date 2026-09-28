@@ -1125,10 +1125,7 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
       right={
         <>
           <PinnedMediaCard organizationId={org.id} />
-          <GivingPipelineCard
-            scope={{ organizationId: org.id }}
-            relationship={{ sourceKind: "organization", sourceId: org.id }}
-          />
+          <GivingPipelineCard scope={{ organizationId: org.id }} />
 
           <RelatedCard
             title="People"

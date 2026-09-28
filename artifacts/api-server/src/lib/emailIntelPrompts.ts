@@ -31,9 +31,7 @@ type EmailProposalKind = (typeof emailProposalKindEnum.enumValues)[number];
  * accuracy + suppression review prompts for a single proposal's signal type to
  * form the full system prompt sent to the model.
  *
- * `wildflower_update` proposals are intentionally OUTSIDE this model: they are
- * materialized already-analyzed and never call the review step, so they have no
- * signal type here.
+ * Retired or otherwise non-reviewed proposal kinds have no signal type here.
  */
 
 export type EmailIntelSignalType =
@@ -48,9 +46,8 @@ export const EMAIL_INTEL_REVIEW_PHASES: readonly EmailIntelReviewPhase[] =
 
 /**
  * Map an `email_proposals.kind` to the review signal type it is reviewed
- * under. The two bounce kinds collapse to `bounce`; `wildflower_update`
- * (and any future non-reviewed kind) maps to null — those rows never go
- * through the AI review step.
+ * under. The two bounce kinds collapse to `bounce`; any non-reviewed kind maps
+ * to null and never goes through the AI review step.
  */
 export function signalTypeForKind(kind: string): EmailIntelSignalType | null {
   switch (kind) {
@@ -142,9 +139,6 @@ export function buildActionProposingCorePrompt(): string {
     "• `accuracy.isAccurate` — true when the detected signal is genuinely what it claims to be, false otherwise; when false add a short `accuracy.reason` (under 140 chars). Be conservative: only mark inaccurate when the signal is clearly wrong. An inaccurate proposal is hidden from the reviewer regardless of any actions, so do not flag a borderline-but-plausible signal as inaccurate.",
     "• `suppress.shouldSuppress` — true ONLY when an ACCURATE signal is nonetheless noise the reviewer should never have to triage; add a short `suppress.reason` (under 140 chars). When in doubt, leave it false and let the reviewer decide. When you suppress, you should normally also return an empty actions array.",
     "• Follow the signal-type-specific ACCURACY REVIEW and SUPPRESSION REVIEW criteria appended below.",
-    "",
-    "Wildflower updates (independent of actions / accuracy / suppression):",
-    "• When a WILDFLOWER UPDATES note appears in the context, it holds the team's current shared talking points / news. You MAY set the optional `wildflowerUpdate` object on the tool — but only rarely, when this specific email genuinely warrants it: `donorOutreach` to suggest reaching out to THIS matched donor about a relevant current update, and/or `noteRevision` to suggest editing the shared note when this email contains a concrete newsworthy Wildflower update worth adding. Omit `wildflowerUpdate` entirely when neither applies — that is the common case.",
     "",
     "Return an empty actions array when no automatic mutation is warranted — that is a valid and often correct answer.",
   ].join("\n");

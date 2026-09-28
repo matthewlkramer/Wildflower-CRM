@@ -46,8 +46,6 @@ import Meetings from "@/pages/meetings";
 import MeetingWorkspace from "@/pages/meeting-workspace";
 import TripPlanner from "@/pages/trip-planner";
 import Newsletter from "@/pages/newsletter";
-import WildflowerUpdates from "@/pages/wildflower-updates";
-import WildflowerUpdateDetail from "@/pages/wildflower-update-detail";
 import Conferences from "@/pages/conferences";
 import Layout from "@/components/layout";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -243,8 +241,8 @@ function ClerkProviderWithRoutes() {
           <Route path="/meetings/:id"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/trips"><ProtectedRoute component={TripPlanner} /></Route>
           <Route path="/conferences"><ProtectedRoute component={Conferences} /></Route>
-          <Route path="/wildflower-updates"><ProtectedRoute component={WildflowerUpdates} /></Route>
-          <Route path="/wildflower-updates/:id"><ProtectedRoute component={WildflowerUpdateDetail} /></Route>
+          <Route path="/wildflower-updates"><Redirect to="/dashboard" /></Route>
+          <Route path="/wildflower-updates/:id"><Redirect to="/dashboard" /></Route>
           <Route path="/newsletter"><ProtectedRoute component={Newsletter} /></Route>
           <Route path="/interactions"><Redirect to="/moves" /></Route>
           <Route path="/projections"><ProtectedRoute component={Projections} /></Route>

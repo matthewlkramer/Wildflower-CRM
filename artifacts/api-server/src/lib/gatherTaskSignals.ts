@@ -17,10 +17,6 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { deriveGiftTypeExpr } from "./giftTypeDerived";
 import { logger } from "./logger";
 import { getSchoolsInGeographiesOfInterest } from "./schoolGeographyMeetingPrep";
-import {
-  getRelevantWildflowerUpdates,
-  type RelevantWildflowerUpdate,
-} from "./wildflowerUpdateRelevance";
 
 /**
  * Read-only relationship snapshot for a single CRM entity (a person or an
@@ -84,7 +80,6 @@ export interface TaskSignals {
     clicked: boolean;
   }>;
   schoolGeographySection?: string;
-  relevantWildflowerUpdates?: RelevantWildflowerUpdate[];
 }
 
 const iso = (d: Date | string | null | undefined): string | null =>
@@ -453,25 +448,8 @@ export async function gatherMeetingPreparationSignals(args: {
     schoolGeographySection =
       "Schools in Geographies of Interest\nLive school information is unavailable for this generation. Please refresh to try again.";
   }
-  let relevantWildflowerUpdates: RelevantWildflowerUpdate[] = [];
-  try {
-    relevantWildflowerUpdates = await getRelevantWildflowerUpdates({
-      interests: signals.entity.interests,
-      fundingRegionIds: signals.entity.fundingRegionIds,
-    });
-  } catch (error) {
-    logger.warn(
-      {
-        errClass: error instanceof Error ? error.constructor.name : typeof error,
-        errMessage: error instanceof Error ? error.message : String(error),
-        entityId: signals.entity.id,
-      },
-      "Wildflower update relevance lookup failed while generating meeting preparation",
-    );
-  }
   return {
     ...signals,
     schoolGeographySection,
-    relevantWildflowerUpdates,
   };
 }

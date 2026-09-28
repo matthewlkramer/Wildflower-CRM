@@ -48,6 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { formatDisplayAddress } from "@/lib/format-address";
 import { formatEnum } from "@/lib/format";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 
@@ -61,7 +62,9 @@ export type ContactOwner =
   | { kind: "person"; id: string }
   | { kind: "organization"; id: string };
 
-function ownerCreateField(owner: ContactOwner): { personId: string } | { organizationId: string } {
+function ownerCreateField(
+  owner: ContactOwner,
+): { personId: string } | { organizationId: string } {
   return owner.kind === "person"
     ? { personId: owner.id }
     : { organizationId: owner.id };
@@ -698,9 +701,7 @@ export function PhoneNumbersEditor({
             <Button
               onClick={submit}
               disabled={
-                !form.phoneNumber.trim() ||
-                create.isPending ||
-                update.isPending
+                !form.phoneNumber.trim() || create.isPending || update.isPending
               }
               data-testid="btn-save-phone"
             >
@@ -742,14 +743,6 @@ export function PhoneNumbersEditor({
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  );
-}
-
-function formatAddress(a: Address): string {
-  return (
-    [a.street, a.cityName, a.stateCode, a.postalCode, a.country]
-      .filter(Boolean)
-      .join(", ") || "—"
   );
 }
 
@@ -853,7 +846,9 @@ export function AddressesEditor({
         data: {
           ...(form.street.trim() ? { street: form.street.trim() } : {}),
           ...(form.cityName.trim() ? { cityName: form.cityName.trim() } : {}),
-          ...(form.stateCode.trim() ? { stateCode: form.stateCode.trim() } : {}),
+          ...(form.stateCode.trim()
+            ? { stateCode: form.stateCode.trim() }
+            : {}),
           ...(form.postalCode.trim()
             ? { postalCode: form.postalCode.trim() }
             : {}),
@@ -894,7 +889,7 @@ export function AddressesEditor({
               className="flex items-center justify-between gap-2 group"
               data-testid={`address-row-${a.id}`}
             >
-              <span className="min-w-0">{formatAddress(a)}</span>
+              <span className="min-w-0">{formatDisplayAddress(a)}</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <Button
                   variant="ghost"
@@ -1025,7 +1020,8 @@ export function AddressesEditor({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this address?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleteTarget ? formatAddress(deleteTarget) : ""} will be removed.
+              {deleteTarget ? formatDisplayAddress(deleteTarget) : ""} will be
+              removed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

@@ -15,7 +15,6 @@ const KIND_LABEL: Record<string, string> = {
   signature_update: "Signature updates",
   grant_opportunity: "Grant opportunities",
   thank_you_acknowledgment: "Thank-you acknowledgments",
-  wildflower_update: "Wildflower updates",
 };
 
 const ALL_KINDS = [
@@ -26,7 +25,6 @@ const ALL_KINDS = [
   "signature_update",
   "grant_opportunity",
   "thank_you_acknowledgment",
-  "wildflower_update",
 ] as const;
 
 const OTHER_LABEL = "Other";
