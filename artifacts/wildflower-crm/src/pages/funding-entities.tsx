@@ -141,13 +141,60 @@ const ENTHUSIASM_OPTIONS = [
 const STRATEGIC_ALIGNMENTS = ["high", "medium", "low"] as const;
 
 const NONE = "__none__";
-type OrgDraft = {
+export type OrgDraft = {
+  activeStatus: string;
   priority: string;
   capacityRating: string;
   connectionStatus: string;
   enthusiasm: string;
   strategicAlignment: string;
 };
+
+export function organizationToInlineDraft(
+  organization: Pick<
+    Organization,
+    | "activeStatus"
+    | "priority"
+    | "capacityRating"
+    | "connectionStatus"
+    | "enthusiasm"
+    | "strategicAlignment"
+  >,
+): OrgDraft {
+  return {
+    activeStatus: organization.activeStatus ?? NONE,
+    priority: organization.priority ?? NONE,
+    capacityRating: organization.capacityRating ?? NONE,
+    connectionStatus: organization.connectionStatus ?? NONE,
+    enthusiasm: organization.enthusiasm ?? NONE,
+    strategicAlignment: organization.strategicAlignment ?? NONE,
+  };
+}
+
+export function organizationInlineDraftToPatch(draft: OrgDraft) {
+  return {
+    activeStatus:
+      draft.activeStatus === NONE
+        ? null
+        : (draft.activeStatus as ActiveStatus),
+    priority:
+      draft.priority === NONE ? null : (draft.priority as Priority),
+    capacityRating:
+      draft.capacityRating === NONE
+        ? null
+        : (draft.capacityRating as CapacityRating),
+    connectionStatus:
+      draft.connectionStatus === NONE
+        ? null
+        : (draft.connectionStatus as ConnectionStatus),
+    enthusiasm:
+      draft.enthusiasm === NONE ? null : (draft.enthusiasm as Enthusiasm),
+    strategicAlignment:
+      draft.strategicAlignment === NONE
+        ? null
+        : (draft.strategicAlignment as StrategicAlignment),
+  };
+}
 
 type InlineCtx = {
   editingId: string | null;
@@ -254,7 +301,27 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
       key: "active",
       label: "Active",
       cell: (f) =>
-        f.activeStatus ? (
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.activeStatus ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ activeStatus: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Active status"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-active-status-org-${f.id}`}
+            >
+              <SelectValue placeholder="Active status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="spenddown">Spend-down</SelectItem>
+              <SelectItem value="defunct">Defunct</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : f.activeStatus ? (
           <Badge variant={f.activeStatus === "active" ? "default" : "outline"}>
             {formatEnum(f.activeStatus)}
           </Badge>
@@ -699,33 +766,11 @@ export default function Organizations() {
 
   const inlineEdit = useInlineRowEdit<Organization, OrgDraft>({
     getId: (f) => f.id,
-    toDraft: (f) => ({
-      priority: f.priority ?? NONE,
-      capacityRating: f.capacityRating ?? NONE,
-      connectionStatus: f.connectionStatus ?? NONE,
-      enthusiasm: f.enthusiasm ?? NONE,
-      strategicAlignment: f.strategicAlignment ?? NONE,
-    }),
+    toDraft: organizationToInlineDraft,
     onSave: async (id, d) => {
       await updateOrganization.mutateAsync({
         id,
-        data: {
-          priority: d.priority === NONE ? null : (d.priority as Priority),
-          capacityRating:
-            d.capacityRating === NONE
-              ? null
-              : (d.capacityRating as CapacityRating),
-          connectionStatus:
-            d.connectionStatus === NONE
-              ? null
-              : (d.connectionStatus as ConnectionStatus),
-          enthusiasm:
-            d.enthusiasm === NONE ? null : (d.enthusiasm as Enthusiasm),
-          strategicAlignment:
-            d.strategicAlignment === NONE
-              ? null
-              : (d.strategicAlignment as StrategicAlignment),
-        },
+        data: organizationInlineDraftToPatch(d),
       });
       await refreshList();
       toast({ title: "Organization updated" });
