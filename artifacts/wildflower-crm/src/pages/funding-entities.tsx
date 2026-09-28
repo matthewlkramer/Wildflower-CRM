@@ -142,6 +142,7 @@ const STRATEGIC_ALIGNMENTS = ["high", "medium", "low"] as const;
 
 const NONE = "__none__";
 export type OrgDraft = {
+  entityType: string;
   activeStatus: string;
   priority: string;
   capacityRating: string;
@@ -153,6 +154,7 @@ export type OrgDraft = {
 export function organizationToInlineDraft(
   organization: Pick<
     Organization,
+    | "entityType"
     | "activeStatus"
     | "priority"
     | "capacityRating"
@@ -162,6 +164,7 @@ export function organizationToInlineDraft(
   >,
 ): OrgDraft {
   return {
+    entityType: organization.entityType ?? NONE,
     activeStatus: organization.activeStatus ?? NONE,
     priority: organization.priority ?? NONE,
     capacityRating: organization.capacityRating ?? NONE,
@@ -173,6 +176,8 @@ export function organizationToInlineDraft(
 
 export function organizationInlineDraftToPatch(draft: OrgDraft) {
   return {
+    entityType:
+      draft.entityType === NONE ? null : (draft.entityType as EntityType),
     activeStatus:
       draft.activeStatus === NONE
         ? null
@@ -283,7 +288,32 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
     {
       key: "entityType",
       label: "Type",
-      cell: (f) => formatEnum(f.entityType),
+      cell: (f) =>
+        ctx.inline.isEditing(f.id) ? (
+          <Select
+            value={ctx.inline.draft?.entityType ?? NONE}
+            onValueChange={(v) => ctx.inline.patch({ entityType: v })}
+          >
+            <SelectTrigger
+              className="h-8"
+              aria-label="Organization type"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`select-inline-entity-type-org-${f.id}`}
+            >
+              <SelectValue placeholder="Organization type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NONE}>None</SelectItem>
+              {SUBTYPES.map((type) => (
+                <SelectItem key={type} value={type}>
+                  {formatEnum(type)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          formatEnum(f.entityType)
+        ),
     },
     {
       key: "issuesGrants",
