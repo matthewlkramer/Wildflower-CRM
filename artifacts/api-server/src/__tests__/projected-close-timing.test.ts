@@ -3,6 +3,7 @@ import { validateOppProjectedCloseTiming } from "@workspace/api-zod";
 import {
   addCalendarMonths,
   effectiveProjectedCloseDate,
+  normalizeProjectedCloseTimingWrite,
 } from "../lib/effectiveProjectedCloseDate";
 
 describe("rolling projected close timing", () => {
@@ -13,9 +14,9 @@ describe("rolling projected close timing", () => {
   });
 
   it("prefers a stored specific date and otherwise derives a rolling date", () => {
-    expect(
-      effectiveProjectedCloseDate("2027-12-15", 2, "2027-01-31"),
-    ).toBe("2027-12-15");
+    expect(effectiveProjectedCloseDate("2027-12-15", 2, "2027-01-31")).toBe(
+      "2027-12-15",
+    );
     expect(effectiveProjectedCloseDate(null, 5, "2027-01-31")).toBe(
       "2027-06-30",
     );
@@ -63,6 +64,64 @@ describe("rolling projected close timing", () => {
     ).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ path: "projectedCloseMonthsOut" }),
+      ]),
+    );
+  });
+
+  it("normalizes a detail-editor fixed-to-rolling switch by value", () => {
+    expect(
+      normalizeProjectedCloseTimingWrite({
+        projectedCloseDate: null,
+        projectedCloseMonthsOut: 6,
+      }),
+    ).toEqual({
+      projectedCloseDate: null,
+      projectedCloseMonthsOut: 6,
+    });
+  });
+
+  it("normalizes a detail-editor rolling-to-fixed switch by value", () => {
+    expect(
+      normalizeProjectedCloseTimingWrite({
+        projectedCloseDate: "2027-12-31",
+        projectedCloseMonthsOut: null,
+      }),
+    ).toEqual({
+      projectedCloseDate: "2027-12-31",
+      projectedCloseMonthsOut: null,
+    });
+  });
+
+  it("clears the inactive mode when only one active value is supplied", () => {
+    expect(
+      normalizeProjectedCloseTimingWrite({ projectedCloseMonthsOut: 4 }),
+    ).toEqual({
+      projectedCloseDate: null,
+      projectedCloseMonthsOut: 4,
+    });
+    expect(
+      normalizeProjectedCloseTimingWrite({ projectedCloseDate: "2027-07-01" }),
+    ).toEqual({
+      projectedCloseDate: "2027-07-01",
+      projectedCloseMonthsOut: null,
+    });
+  });
+
+  it("leaves conflicting active values for invariant validation", () => {
+    const body = normalizeProjectedCloseTimingWrite({
+      stage: "warm_lead",
+      projectedCloseDate: "2027-07-01",
+      projectedCloseMonthsOut: 6,
+    });
+
+    expect(body).toEqual({
+      stage: "warm_lead",
+      projectedCloseDate: "2027-07-01",
+      projectedCloseMonthsOut: 6,
+    });
+    expect(validateOppProjectedCloseTiming(body)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "projectedCloseDate" }),
       ]),
     );
   });
