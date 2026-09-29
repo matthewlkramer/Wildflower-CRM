@@ -163,6 +163,7 @@ import { applyDerivedOppFieldsMany } from "../lib/pledgeStage";
 import {
   effectiveProjectedCloseDate,
   effectiveProjectedCloseDateSql,
+  normalizeProjectedCloseTimingWrite,
 } from "../lib/effectiveProjectedCloseDate";
 import { requireFinance } from "../lib/financeGuard";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -1150,12 +1151,7 @@ router.post(
       winProbability?: string | null;
       projectedCloseDate?: string | null;
       projectedCloseMonthsOut?: number | null;
-    } = { ...body };
-    if (body.projectedCloseDate !== undefined) {
-      writeValues.projectedCloseMonthsOut = null;
-    } else if (body.projectedCloseMonthsOut !== undefined) {
-      writeValues.projectedCloseDate = null;
-    }
+    } = normalizeProjectedCloseTimingWrite(body);
     // loanOrGrant comes straight from the body (authoritative flag); omitted →
     // the DB default 'grant'.
     if (
@@ -1741,12 +1737,7 @@ router.patch(
     );
     if (!body) return;
     const id = paramId(req);
-    const normalizedTimingBody =
-      body.projectedCloseDate !== undefined
-        ? { ...body, projectedCloseMonthsOut: null }
-        : body.projectedCloseMonthsOut !== undefined
-          ? { ...body, projectedCloseDate: null }
-          : body;
+    const normalizedTimingBody = normalizeProjectedCloseTimingWrite(body);
     const existing = await db
       .select()
       .from(opportunitiesAndPledges)
@@ -1818,11 +1809,6 @@ router.patch(
     } = {
       ...normalizedTimingBody,
     };
-    if (body.projectedCloseDate !== undefined) {
-      writeData.projectedCloseMonthsOut = null;
-    } else if (body.projectedCloseMonthsOut !== undefined) {
-      writeData.projectedCloseDate = null;
-    }
     // Award closure is meaningful ONLY on a cost-reimbursement pledge —
     // switching the model away clears the closure fields server-side (the
     // contract documents this; awardClosedAt is never PATCHable directly).
