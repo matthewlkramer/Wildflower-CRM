@@ -40,19 +40,22 @@ afterEach(() => {
 });
 
 describe("TripVisitActions", () => {
-  it("reports the Calendar time found by a confirmation refresh", async () => {
-    const onConfirm = vi.fn().mockResolvedValue({
+  it("reports the time found by the latest Gmail and Calendar review", async () => {
+    const onUpdateEvidence = vi.fn().mockResolvedValue({
       ...visit,
-      scheduledAt: "2026-10-03T15:30:00.000Z",
+      evidenceStatus: "confirmed",
+      evidenceConfirmedTime: "October 3 at 10:30 AM",
+      evidenceSummary: "The latest reply confirms October 3 at 10:30 AM.",
     });
     act(() => {
       root.render(
         <TripVisitActions
           visit={visit}
           onEdit={() => undefined}
-          onConfirm={onConfirm}
+          onUpdateEvidence={onUpdateEvidence}
           onUnavailable={() => undefined}
           unavailablePending={false}
+          timeZone="America/New_York"
         />,
       );
     });
@@ -60,14 +63,14 @@ describe("TripVisitActions", () => {
     await act(async () =>
       container
         .querySelector<HTMLButtonElement>(
-          '[data-testid="confirm-trip-visit-visit_1"]',
+          '[data-testid="update-trip-visit-evidence-visit_1"]',
         )
         ?.click(),
     );
 
-    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(onUpdateEvidence).toHaveBeenCalledTimes(1);
     expect(api.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: "Visit confirmed" }),
+      expect.objectContaining({ title: "Status updated: confirmed" }),
     );
   });
 
@@ -78,9 +81,10 @@ describe("TripVisitActions", () => {
         <TripVisitActions
           visit={visit}
           onEdit={() => undefined}
-          onConfirm={vi.fn()}
+          onUpdateEvidence={vi.fn()}
           onUnavailable={onUnavailable}
           unavailablePending={false}
+          timeZone="America/New_York"
         />,
       );
     });

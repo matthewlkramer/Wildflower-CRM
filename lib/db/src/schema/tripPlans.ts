@@ -29,6 +29,7 @@ export const tripPlans = pgTable(
     title: text("title"),
     destinationCity: text("destination_city"),
     destinationState: text("destination_state"),
+    timeZone: text("time_zone").notNull().default("America/Chicago"),
     travelStartsAt: timestamp("travel_starts_at", {
       withTimezone: true,
     }).notNull(),
@@ -102,6 +103,15 @@ export const tripVisitCandidates = pgTable(
     planningUpdatedAt: timestamp("planning_updated_at", {
       withTimezone: true,
     }),
+    evidenceStatus: text("evidence_status"),
+    evidenceSummary: text("evidence_summary"),
+    evidenceConfirmedTime: text("evidence_confirmed_time"),
+    evidenceConfirmedAt: timestamp("evidence_confirmed_at", {
+      withTimezone: true,
+    }),
+    evidenceReviewedAt: timestamp("evidence_reviewed_at", {
+      withTimezone: true,
+    }),
     archivedAt: timestamp("archived_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
@@ -121,6 +131,10 @@ export const tripVisitCandidates = pgTable(
     check(
       "trip_visit_candidates_source_check",
       sql`${t.source} in ('system_draft', 'manual')`,
+    ),
+    check(
+      "trip_visit_candidates_evidence_status_check",
+      sql`${t.evidenceStatus} is null or ${t.evidenceStatus} in ('not_invited', 'invited', 'responded', 'confirmed', 'bounced')`,
     ),
   ],
 );

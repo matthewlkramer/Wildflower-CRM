@@ -6820,6 +6820,20 @@ paths:
       responses:
         "204": { description: Archived }
         "404": { $ref: "#/components/responses/NotFound" }
+  /trips/{id}/visits/{visitId}/refresh-evidence:
+    post:
+      operationId: refreshTripVisitEvidence
+      tags: [trip-plans]
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: visitId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Latest bounded Gmail and synced Calendar evidence was reviewed and the visit status was updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripVisit" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   # ─── Calendar events (synced Google Calendar, read-only + privacy) ────────
   /calendar-events:
@@ -25175,6 +25189,7 @@ components:
           id,
           travelerUserId,
           createdByUserId,
+          timeZone,
           travelStartsAt,
           travelEndsAt,
           meetingWindowMinutes,
@@ -25190,6 +25205,11 @@ components:
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
+        timeZone:
+          {
+            type: string,
+            description: "IANA timezone used to display and interpret the trip's local schedule.",
+          }
         travelStartsAt: { type: string, format: date-time }
         travelEndsAt: { type: string, format: date-time }
         meetingWindowStartsAt:
@@ -25300,6 +25320,22 @@ components:
         responseMessageId: { type: string, nullable: true }
         scheduledEventId: { type: string, nullable: true }
         scheduledAt: { type: string, format: date-time, nullable: true }
+        evidenceStatus:
+          {
+            type: string,
+            enum: [not_invited, invited, responded, confirmed, bounced],
+            nullable: true,
+            description: "Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.",
+          }
+        evidenceSummary: { type: string, nullable: true }
+        evidenceConfirmedTime:
+          {
+            type: string,
+            nullable: true,
+            description: "Concise confirmed-time wording derived from the supporting evidence.",
+          }
+        evidenceConfirmedAt: { type: string, format: date-time, nullable: true }
+        evidenceReviewedAt: { type: string, format: date-time, nullable: true }
         archivedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -25330,12 +25366,13 @@ components:
               }
     CreateTripPlanBody:
       type: object
-      required: [travelerUserId, travelStartsAt, travelEndsAt]
+      required: [travelerUserId, timeZone, travelStartsAt, travelEndsAt]
       properties:
         travelerUserId: { type: string }
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
+        timeZone: { type: string }
         travelStartsAt: { type: string, format: date-time }
         travelEndsAt: { type: string, format: date-time }
         meetingWindowStartsAt:
@@ -25351,6 +25388,7 @@ components:
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
+        timeZone: { type: string }
         travelStartsAt: { type: string, format: date-time }
         travelEndsAt: { type: string, format: date-time }
         meetingWindowStartsAt:

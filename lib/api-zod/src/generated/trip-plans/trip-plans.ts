@@ -28,6 +28,11 @@ export const ListTripPlansResponse = zod.object({
       title: zod.string().nullish(),
       destinationCity: zod.string().nullish(),
       destinationState: zod.string().nullish(),
+      timeZone: zod
+        .string()
+        .describe(
+          "IANA timezone used to display and interpret the trip's local schedule.",
+        ),
       travelStartsAt: zod.string().datetime({}),
       travelEndsAt: zod.string().datetime({}),
       meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -72,6 +77,7 @@ export const CreateTripPlanBody = zod.object({
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
   destinationState: zod.string().nullish(),
+  timeZone: zod.string(),
   travelStartsAt: zod.string().datetime({}),
   travelEndsAt: zod.string().datetime({}),
   meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -99,6 +105,11 @@ export const GetTripPlanResponse = zod
     title: zod.string().nullish(),
     destinationCity: zod.string().nullish(),
     destinationState: zod.string().nullish(),
+    timeZone: zod
+      .string()
+      .describe(
+        "IANA timezone used to display and interpret the trip's local schedule.",
+      ),
     travelStartsAt: zod.string().datetime({}),
     travelEndsAt: zod.string().datetime({}),
     meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -162,6 +173,27 @@ export const GetTripPlanResponse = zod
           responseMessageId: zod.string().nullish(),
           scheduledEventId: zod.string().nullish(),
           scheduledAt: zod.string().datetime({}).nullish(),
+          evidenceStatus: zod
+            .enum([
+              "not_invited",
+              "invited",
+              "responded",
+              "confirmed",
+              "bounced",
+            ])
+            .nullish()
+            .describe(
+              "Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.",
+            ),
+          evidenceSummary: zod.string().nullish(),
+          evidenceConfirmedTime: zod
+            .string()
+            .nullish()
+            .describe(
+              "Concise confirmed-time wording derived from the supporting evidence.",
+            ),
+          evidenceConfirmedAt: zod.string().datetime({}).nullish(),
+          evidenceReviewedAt: zod.string().datetime({}).nullish(),
           archivedAt: zod.string().datetime({}).nullish(),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
@@ -273,6 +305,7 @@ export const UpdateTripPlanBody = zod.object({
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
   destinationState: zod.string().nullish(),
+  timeZone: zod.string().optional(),
   travelStartsAt: zod.string().datetime({}).optional(),
   travelEndsAt: zod.string().datetime({}).optional(),
   meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -295,6 +328,11 @@ export const UpdateTripPlanResponse = zod.object({
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
   destinationState: zod.string().nullish(),
+  timeZone: zod
+    .string()
+    .describe(
+      "IANA timezone used to display and interpret the trip's local schedule.",
+    ),
   travelStartsAt: zod.string().datetime({}),
   travelEndsAt: zod.string().datetime({}),
   meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -339,6 +377,11 @@ export const ArchiveTripPlanResponse = zod.object({
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
   destinationState: zod.string().nullish(),
+  timeZone: zod
+    .string()
+    .describe(
+      "IANA timezone used to display and interpret the trip's local schedule.",
+    ),
   travelStartsAt: zod.string().datetime({}),
   travelEndsAt: zod.string().datetime({}),
   meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -387,6 +430,11 @@ export const DraftTripVisitsResponse = zod
     title: zod.string().nullish(),
     destinationCity: zod.string().nullish(),
     destinationState: zod.string().nullish(),
+    timeZone: zod
+      .string()
+      .describe(
+        "IANA timezone used to display and interpret the trip's local schedule.",
+      ),
     travelStartsAt: zod.string().datetime({}),
     travelEndsAt: zod.string().datetime({}),
     meetingWindowStartsAt: zod.string().datetime({}).nullish(),
@@ -450,6 +498,27 @@ export const DraftTripVisitsResponse = zod
           responseMessageId: zod.string().nullish(),
           scheduledEventId: zod.string().nullish(),
           scheduledAt: zod.string().datetime({}).nullish(),
+          evidenceStatus: zod
+            .enum([
+              "not_invited",
+              "invited",
+              "responded",
+              "confirmed",
+              "bounced",
+            ])
+            .nullish()
+            .describe(
+              "Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.",
+            ),
+          evidenceSummary: zod.string().nullish(),
+          evidenceConfirmedTime: zod
+            .string()
+            .nullish()
+            .describe(
+              "Concise confirmed-time wording derived from the supporting evidence.",
+            ),
+          evidenceConfirmedAt: zod.string().datetime({}).nullish(),
+          evidenceReviewedAt: zod.string().datetime({}).nullish(),
           archivedAt: zod.string().datetime({}).nullish(),
           createdAt: zod.string().datetime({}),
           updatedAt: zod.string().datetime({}),
@@ -610,6 +679,21 @@ export const UpdateTripVisitResponse = zod.object({
   responseMessageId: zod.string().nullish(),
   scheduledEventId: zod.string().nullish(),
   scheduledAt: zod.string().datetime({}).nullish(),
+  evidenceStatus: zod
+    .enum(["not_invited", "invited", "responded", "confirmed", "bounced"])
+    .nullish()
+    .describe(
+      "Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.",
+    ),
+  evidenceSummary: zod.string().nullish(),
+  evidenceConfirmedTime: zod
+    .string()
+    .nullish()
+    .describe(
+      "Concise confirmed-time wording derived from the supporting evidence.",
+    ),
+  evidenceConfirmedAt: zod.string().datetime({}).nullish(),
+  evidenceReviewedAt: zod.string().datetime({}).nullish(),
   archivedAt: zod.string().datetime({}).nullish(),
   createdAt: zod.string().datetime({}),
   updatedAt: zod.string().datetime({}),
@@ -618,4 +702,57 @@ export const UpdateTripVisitResponse = zod.object({
 export const ArchiveTripVisitParams = zod.object({
   id: zod.coerce.string(),
   visitId: zod.coerce.string(),
+});
+
+export const RefreshTripVisitEvidenceParams = zod.object({
+  id: zod.coerce.string(),
+  visitId: zod.coerce.string(),
+});
+
+export const RefreshTripVisitEvidenceResponse = zod.object({
+  id: zod.string(),
+  tripId: zod.string(),
+  personId: zod.string(),
+  personName: zod.string(),
+  primaryEmail: zod.string().nullish(),
+  location: zod.string().nullish(),
+  priority: zod
+    .enum(["top", "high", "medium", "low"])
+    .describe(
+      "Manual overall assessment of the strongest prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. Blank means not assessed.",
+    )
+    .nullish(),
+  rank: zod.number(),
+  rationale: zod.string().nullish(),
+  source: zod.enum(["system_draft", "manual"]),
+  notes: zod.string().nullish(),
+  nextStep: zod.string().nullish(),
+  planningUpdatedByUserId: zod.string().nullish(),
+  planningUpdatedByUserName: zod.string().nullish(),
+  planningUpdatedAt: zod.string().datetime({}).nullish(),
+  outreachStatus: zod.enum(["not_invited", "invited", "responded"]),
+  invitationSentAt: zod.string().datetime({}).nullish(),
+  invitationMessageId: zod.string().nullish(),
+  respondedAt: zod.string().datetime({}).nullish(),
+  responseMessageId: zod.string().nullish(),
+  scheduledEventId: zod.string().nullish(),
+  scheduledAt: zod.string().datetime({}).nullish(),
+  evidenceStatus: zod
+    .enum(["not_invited", "invited", "responded", "confirmed", "bounced"])
+    .nullish()
+    .describe(
+      "Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.",
+    ),
+  evidenceSummary: zod.string().nullish(),
+  evidenceConfirmedTime: zod
+    .string()
+    .nullish()
+    .describe(
+      "Concise confirmed-time wording derived from the supporting evidence.",
+    ),
+  evidenceConfirmedAt: zod.string().datetime({}).nullish(),
+  evidenceReviewedAt: zod.string().datetime({}).nullish(),
+  archivedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
 });

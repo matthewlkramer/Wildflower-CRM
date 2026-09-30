@@ -8758,6 +8758,8 @@ export interface TripPlanSummary {
   title?: string | null;
   destinationCity?: string | null;
   destinationState?: string | null;
+  /** IANA timezone used to display and interpret the trip's local schedule. */
+  timeZone: string;
   travelStartsAt: string;
   travelEndsAt: string;
   meetingWindowStartsAt?: string | null;
@@ -8829,6 +8831,20 @@ export interface TripTravelBooking {
   sourceUrl?: string | null;
 }
 
+/**
+ * Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence.
+ */
+export type TripVisitEvidenceStatus = typeof TripVisitEvidenceStatus[keyof typeof TripVisitEvidenceStatus] | null;
+
+
+export const TripVisitEvidenceStatus = {
+  not_invited: 'not_invited',
+  invited: 'invited',
+  responded: 'responded',
+  confirmed: 'confirmed',
+  bounced: 'bounced',
+} as const;
+
 export interface TripVisit {
   id: string;
   tripId: string;
@@ -8852,6 +8868,13 @@ export interface TripVisit {
   responseMessageId?: string | null;
   scheduledEventId?: string | null;
   scheduledAt?: string | null;
+  /** Cached result of the latest user-requested AI review of bounded Gmail and synced Calendar evidence. */
+  evidenceStatus?: TripVisitEvidenceStatus;
+  evidenceSummary?: string | null;
+  /** Concise confirmed-time wording derived from the supporting evidence. */
+  evidenceConfirmedTime?: string | null;
+  evidenceConfirmedAt?: string | null;
+  evidenceReviewedAt?: string | null;
   archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -8914,6 +8937,7 @@ export interface CreateTripPlanBody {
   title?: string | null;
   destinationCity?: string | null;
   destinationState?: string | null;
+  timeZone: string;
   travelStartsAt: string;
   travelEndsAt: string;
   meetingWindowStartsAt?: string | null;
@@ -8930,6 +8954,7 @@ export interface UpdateTripPlanBody {
   title?: string | null;
   destinationCity?: string | null;
   destinationState?: string | null;
+  timeZone?: string;
   travelStartsAt?: string;
   travelEndsAt?: string;
   meetingWindowStartsAt?: string | null;

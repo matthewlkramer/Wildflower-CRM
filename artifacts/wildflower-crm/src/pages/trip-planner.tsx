@@ -11,6 +11,7 @@ import {
   useGetTripPlan,
   useListTripPlans,
   useListUsers,
+  useRefreshTripVisitEvidence,
   useUpdateTripPlan,
   useUpdateTripVisit,
   type CreateTripPlanBody,
@@ -59,17 +60,15 @@ import { useToast } from "@/hooks/use-toast";
 import { userDisplayName } from "@/components/user-picker";
 import { AddPeopleToTripDialog } from "@/components/trip-add-people-dialog";
 import { TripVisitActions } from "@/components/trip-visit-actions";
-
-function toLocalInput(value?: string | null) {
-  if (!value) return "";
-  const date = new Date(value);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
-}
-
-function toIso(value: string) {
-  return new Date(value).toISOString();
-}
+import {
+  formatTripDate,
+  formatTripDateTime,
+  inferTripTimeZone,
+  toZonedInput,
+  TRIP_TIME_ZONES,
+  tripTimeZoneAbbreviation,
+  zonedInputToIso,
+} from "@/lib/trip-time-zone";
 
 type CalendarDisplayEvent = Pick<
   TripPlanDetail["calendarEvents"][number],
@@ -114,14 +113,12 @@ export function getTripCalendarDisplay<T extends CalendarDisplayEvent>(
   };
 }
 
-function whenLabel(start: string, end?: string | null) {
-  const format = new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-  return `${format.format(new Date(start))}${end ? ` – ${format.format(new Date(end))}` : ""}`;
+function whenLabel(
+  start: string,
+  end: string | null | undefined,
+  timeZone: string,
+) {
+  return `${formatTripDateTime(start, timeZone)}${end ? ` – ${formatTripDateTime(end, timeZone)}` : ""}`;
 }
 
 function tripLabel(trip: TripPlanSummary) {
@@ -130,9 +127,13 @@ function tripLabel(trip: TripPlanSummary) {
   );
 }
 
-function bookingDateLabel(start?: string | null, end?: string | null) {
+function bookingDateLabel(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  timeZone: string,
+) {
   if (!start) return null;
-  return whenLabel(start, end);
+  return whenLabel(start, end, timeZone);
 }
 
 export function groupTripTravelBookings(
@@ -168,9 +169,17 @@ function TravelBookingSummary({ trip }: { trip: TripPlanDetail }) {
                   {booking.provider}
                 </p>
               ) : null}
-              {bookingDateLabel(booking.startAt, booking.endAt) ? (
+              {bookingDateLabel(
+                booking.startAt,
+                booking.endAt,
+                trip.timeZone,
+              ) ? (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {bookingDateLabel(booking.startAt, booking.endAt)}
+                  {bookingDateLabel(
+                    booking.startAt,
+                    booking.endAt,
+                    trip.timeZone,
+                  )}
                   {booking.location ? ` · ${booking.location}` : ""}
                 </p>
               ) : null}
@@ -245,6 +254,7 @@ export type TripFormState = {
   title: string;
   destinationCity: string;
   destinationState: string;
+  timeZone: string;
   availableStartsAt: string;
   availableEndsAt: string;
   notes: string;
@@ -256,17 +266,22 @@ function initialTripForm(trip?: TripPlanSummary): TripFormState {
   tomorrow.setHours(9, 0, 0, 0);
   const nextDay = new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000);
   nextDay.setHours(18, 0, 0, 0);
+  const timeZone = trip?.timeZone ?? inferTripTimeZone(trip?.destinationState);
   return {
     travelerUserId: trip?.travelerUserId ?? "",
     title: trip?.title ?? "",
     destinationCity: trip?.destinationCity ?? "",
     destinationState: trip?.destinationState ?? "",
+    timeZone,
     availableStartsAt: trip
-      ? toLocalInput(trip.meetingWindowStartsAt ?? trip.travelStartsAt)
-      : toLocalInput(tomorrow.toISOString()),
+      ? toZonedInput(
+          trip.meetingWindowStartsAt ?? trip.travelStartsAt,
+          timeZone,
+        )
+      : toZonedInput(tomorrow.toISOString(), timeZone),
     availableEndsAt: trip
-      ? toLocalInput(trip.meetingWindowEndsAt ?? trip.travelEndsAt)
-      : toLocalInput(nextDay.toISOString()),
+      ? toZonedInput(trip.meetingWindowEndsAt ?? trip.travelEndsAt, timeZone)
+      : toZonedInput(nextDay.toISOString(), timeZone),
     notes: trip?.notes ?? "",
   };
 }
@@ -290,10 +305,11 @@ export function buildTripData(
     title: form.title.trim() || null,
     destinationCity: form.destinationCity.trim() || null,
     destinationState: form.destinationState.trim() || null,
+    timeZone: form.timeZone,
     // The API retains these field names for compatibility, but the product has
     // one authoritative window: the time the traveler is available.
-    travelStartsAt: toIso(form.availableStartsAt),
-    travelEndsAt: toIso(form.availableEndsAt),
+    travelStartsAt: zonedInputToIso(form.availableStartsAt, form.timeZone),
+    travelEndsAt: zonedInputToIso(form.availableEndsAt, form.timeZone),
     meetingWindowStartsAt: null,
     meetingWindowEndsAt: null,
     outboundTravelMinutes: null,
@@ -353,7 +369,10 @@ function TripFormDialog({
       });
       return;
     }
-    if (new Date(form.availableEndsAt) <= new Date(form.availableStartsAt)) {
+    if (
+      new Date(zonedInputToIso(form.availableEndsAt, form.timeZone)) <=
+      new Date(zonedInputToIso(form.availableStartsAt, form.timeZone))
+    ) {
       toast({
         title: "Available until must be after available from.",
         variant: "destructive",
@@ -422,13 +441,44 @@ function TripFormDialog({
               id="trip-state"
               value={form.destinationState}
               onChange={(e) =>
-                setForm({ ...form, destinationState: e.target.value })
+                setForm({
+                  ...form,
+                  destinationState: e.target.value,
+                  timeZone: inferTripTimeZone(e.target.value, form.timeZone),
+                })
               }
               placeholder="MA"
             />
           </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label>Trip time zone</Label>
+            <Select
+              value={form.timeZone}
+              onValueChange={(value) => setForm({ ...form, timeZone: value })}
+            >
+              <SelectTrigger data-testid="trip-time-zone">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRIP_TIME_ZONES.map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              All trip and meeting times are shown in this time zone.
+            </p>
+          </div>
           <div className="space-y-2">
-            <Label htmlFor="trip-start">Available from</Label>
+            <Label htmlFor="trip-start">
+              Available from (
+              {TRIP_TIME_ZONES.find(
+                ([value]) => value === form.timeZone,
+              )?.[1] ?? form.timeZone}
+              )
+            </Label>
             <Input
               id="trip-start"
               type="datetime-local"
@@ -439,7 +489,13 @@ function TripFormDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="trip-end">Available until</Label>
+            <Label htmlFor="trip-end">
+              Available until (
+              {TRIP_TIME_ZONES.find(
+                ([value]) => value === form.timeZone,
+              )?.[1] ?? form.timeZone}
+              )
+            </Label>
             <Input
               id="trip-end"
               type="datetime-local"
@@ -578,9 +634,13 @@ function EditVisitDialog({
 }
 
 function OutreachBadge({ visit }: { visit: TripVisit }) {
-  if (visit.outreachStatus === "responded")
+  const status = visit.evidenceStatus ?? visit.outreachStatus;
+  if (status === "bounced") return <Badge variant="destructive">Bounced</Badge>;
+  if (status === "confirmed")
+    return <Badge className="bg-blue-700">Confirmed</Badge>;
+  if (status === "responded")
     return <Badge className="bg-emerald-700">Responded</Badge>;
-  if (visit.outreachStatus === "invited")
+  if (status === "invited")
     return <Badge variant="secondary">Invitation sent</Badge>;
   return <Badge variant="outline">Not invited</Badge>;
 }
@@ -589,12 +649,14 @@ function VisitRow({
   tripId,
   visit,
   onChanged,
-  onConfirm,
+  timeZone,
+  timeZoneReference,
 }: {
   tripId: string;
   visit: TripVisit;
   onChanged: () => void;
-  onConfirm: () => Promise<TripVisit | undefined>;
+  timeZone: string;
+  timeZoneReference: string;
 }) {
   const [editOpen, setEditOpen] = useState(false);
   const { toast } = useToast();
@@ -616,6 +678,7 @@ function VisitRow({
       },
     },
   });
+  const refreshEvidence = useRefreshTripVisitEvidence();
   return (
     <div
       className="rounded-lg border p-4"
@@ -649,11 +712,19 @@ function VisitRow({
         <TripVisitActions
           visit={visit}
           onEdit={() => setEditOpen(true)}
-          onConfirm={onConfirm}
+          onUpdateEvidence={async () => {
+            const refreshedVisit = await refreshEvidence.mutateAsync({
+              id: tripId,
+              visitId: visit.id,
+            });
+            onChanged();
+            return refreshedVisit;
+          }}
           onUnavailable={() =>
             archive.mutate({ id: tripId, visitId: visit.id })
           }
           unavailablePending={archive.isPending}
+          timeZone={timeZone}
         />
       </div>
       {visit.rationale ? (
@@ -669,6 +740,19 @@ function VisitRow({
         <div className="mt-2 rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm">
           <p className="text-xs font-medium text-blue-800">Next step</p>
           <p>{visit.nextStep}</p>
+        </div>
+      ) : null}
+      {visit.evidenceSummary ? (
+        <div className="mt-2 rounded border border-violet-200 bg-violet-50 px-3 py-2 text-sm">
+          <p className="text-xs font-medium text-violet-800">
+            Latest Gmail &amp; Calendar review
+          </p>
+          <p>{visit.evidenceSummary}</p>
+          {visit.evidenceReviewedAt ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Reviewed {new Date(visit.evidenceReviewedAt).toLocaleString()}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {visit.planningUpdatedByUserName && visit.planningUpdatedAt ? (
@@ -689,9 +773,20 @@ function VisitRow({
             · Reply {new Date(visit.respondedAt).toLocaleDateString()}
           </span>
         ) : null}
-        {visit.scheduledAt ? (
+        {visit.evidenceStatus === "confirmed" &&
+        (visit.evidenceConfirmedTime || visit.evidenceConfirmedAt) ? (
           <Badge className="bg-blue-700">
-            Scheduled {new Date(visit.scheduledAt).toLocaleString()}
+            Confirmed{" "}
+            {visit.evidenceConfirmedAt
+              ? formatTripDateTime(visit.evidenceConfirmedAt, timeZone)
+              : `${visit.evidenceConfirmedTime} (${tripTimeZoneAbbreviation(
+                  timeZone,
+                  timeZoneReference,
+                )})`}
+          </Badge>
+        ) : visit.scheduledAt ? (
+          <Badge className="bg-blue-700">
+            Scheduled {formatTripDateTime(visit.scheduledAt, timeZone)}
           </Badge>
         ) : null}
       </div>
@@ -733,6 +828,7 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
     for (const item of calendarDisplay.events) {
       const { event } = item;
       const key = new Intl.DateTimeFormat(undefined, {
+        timeZone: trip.timeZone,
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -740,7 +836,7 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
       groups.set(key, [...(groups.get(key) ?? []), item]);
     }
     return [...groups.entries()];
-  }, [calendarDisplay.events]);
+  }, [calendarDisplay.events, trip.timeZone]);
   const calendarBookings = useMemo(
     () =>
       new Map(
@@ -817,7 +913,11 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
                     </Badge>
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {bookingDateLabel(booking.startAt, booking.endAt)}
+                    {bookingDateLabel(
+                      booking.startAt,
+                      booking.endAt,
+                      trip.timeZone,
+                    )}
                     {booking.location ? ` · ${booking.location}` : ""}
                     {booking.confirmationNumber
                       ? ` · Confirmation ${booking.confirmationNumber}`
@@ -880,7 +980,11 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
                             ) : null}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {whenLabel(event.startAt, event.endAt)}
+                            {whenLabel(
+                              event.startAt,
+                              event.endAt,
+                              trip.timeZone,
+                            )}
                             {event.location ? ` · ${event.location}` : ""}
                           </p>
                         </div>
@@ -1069,7 +1173,11 @@ function TripDetailPanel({
                 {tripLabel(trip)}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {whenLabel(trip.travelStartsAt, trip.travelEndsAt)}
+                {whenLabel(
+                  trip.travelStartsAt,
+                  trip.travelEndsAt,
+                  trip.timeZone,
+                )}
               </p>
               <p className="mt-1 flex items-center gap-1 text-sm">
                 <MapPin className="h-4 w-4" />
@@ -1149,12 +1257,8 @@ function TripDetailPanel({
                 tripId={trip.id}
                 visit={visit}
                 onChanged={refresh}
-                onConfirm={async () => {
-                  const result = await detail.refetch();
-                  return result.data?.visits.find(
-                    (candidate) => candidate.id === visit.id,
-                  );
-                }}
+                timeZone={trip.timeZone}
+                timeZoneReference={trip.travelStartsAt}
               />
             ))
           )}
@@ -1269,8 +1373,8 @@ export default function TripPlannerPage() {
                   </p>
                 ) : null}
                 <p className="text-xs text-muted-foreground">
-                  {new Date(trip.travelStartsAt).toLocaleDateString()} –{" "}
-                  {new Date(trip.travelEndsAt).toLocaleDateString()}
+                  {formatTripDate(trip.travelStartsAt, trip.timeZone)} –{" "}
+                  {formatTripDate(trip.travelEndsAt, trip.timeZone)}
                 </p>
               </button>
             ))}

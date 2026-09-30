@@ -30,6 +30,14 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
   evidence plus an unambiguous full sender name. See `docs/email-intelligence.md`.
 - Meeting absence lives in `calendar_event_attendance` using the shared physical
   event key; never write attendance into Google's `attendee_emails` array.
+- Trip-visit `Update from Gmail & Calendar` must not advance Google sync
+  cursors. It combines viewer-visible retained evidence with a bounded,
+  read-only direct Gmail lookup for the mailbox owner, because messages can sit
+  in `email_sync_skip` when a personal address is linked after the message was
+  first processed. Exact-address Gmail search also recovers same-thread
+  mailer-daemon bounces. Its cached `evidence_*` interpretation is hidden as
+  soon as a newer matched message or Calendar update arrives, so source-derived
+  status remains the fallback.
 
 - [AI proposal call resilience](wildflower-ai-proposal-resilience.md) — per-proposal Anthropic call must use withRateLimitRetry + shared aiProposalLimit; SDK maxRetries:0; sweep retry phase drains error backlog w/o 24h cooldown.
 - [email-intel AI failure recovery](email-intel-failure-recovery.md) — errored-pending self-heal via analyzePendingForUser retry (cooldown-gated under per-user gmail lock; manual retry resets actionsError+actionsAnalyzedAt); BUT pending+analyzed_at NULL+no-error has NO auto path — only manual owner /retry unsticks ([stuck-analyzing](email-intel-stuck-analyzing.md)).

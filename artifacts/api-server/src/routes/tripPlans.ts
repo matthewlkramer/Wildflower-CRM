@@ -62,10 +62,13 @@ import {
   extractMessageParts,
   getHeader,
   getMessage,
+  listMessageIds,
   parseAddressHeader,
 } from "../lib/gmail";
 import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
 import { logger } from "../lib/logger";
+import { reviewTripVisitEvidence } from "../lib/reviewTripVisitEvidence";
+import { inferTripTimeZone, isValidTimeZone } from "../lib/tripTimeZone";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -75,6 +78,7 @@ type TripInput = {
   title?: string | null;
   destinationCity?: string | null;
   destinationState?: string | null;
+  timeZone?: string;
   travelStartsAt?: string;
   travelEndsAt?: string;
   meetingWindowStartsAt?: string | null;
@@ -118,6 +122,82 @@ function routeParam(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
 
+function gmailSearchDate(value: Date) {
+  return value.toISOString().slice(0, 10).replaceAll("-", "/");
+}
+
+type VisitEvidenceMessage = {
+  id: string;
+  gmailMessageId?: string | null;
+  direction: string;
+  sentAt: Date;
+  subject?: string | null;
+  snippet?: string | null;
+  bodyText?: string | null;
+  aiSummary?: string | null;
+};
+
+async function loadLiveVisitGmailEvidence(args: {
+  trip: TripPlan;
+  callerId: string;
+  personId: string;
+  outreachStart: Date;
+  outreachEnd: Date;
+}): Promise<VisitEvidenceMessage[]> {
+  // Direct Gmail evidence stays private to the mailbox owner. This is a
+  // bounded, read-only lookup for the explicit "Update from Gmail & Calendar"
+  // action; it does not advance or otherwise alter the normal sync cursor.
+  if (args.callerId !== args.trip.travelerUserId) return [];
+  const contactEmails = await db
+    .select({ email: emails.email })
+    .from(emails)
+    .where(eq(emails.personId, args.personId))
+    .then((rows) =>
+      [
+        ...new Set(
+          rows.map((row) => row.email.trim().toLowerCase()).filter(Boolean),
+        ),
+      ].slice(0, 10),
+    );
+  if (!contactEmails.length) return [];
+  const grant = await getValidGoogleAccessTokenForUser(
+    args.trip.travelerUserId,
+  );
+  if (!grant) return [];
+
+  const searchStart = new Date(args.outreachStart.getTime() - 86_400_000);
+  const searchEnd = new Date(args.outreachEnd.getTime() + 86_400_000);
+  const addressTerms = contactEmails.map((email) => `"${email}"`).join(" ");
+  const page = await listMessageIds(grant.accessToken, {
+    q: `after:${gmailSearchDate(searchStart)} before:${gmailSearchDate(searchEnd)} {${addressTerms}}`,
+    maxResults: 50,
+  });
+  const fetched = await Promise.allSettled(
+    page.messages.map(async ({ id }) => {
+      const message = await getMessage(grant.accessToken, id, "full");
+      const sentAt = new Date(Number(message.internalDate ?? Date.now()));
+      if (sentAt < args.outreachStart || sentAt > args.outreachEnd) return null;
+      const parts = extractMessageParts(message.payload);
+      const from = parseAddressHeader(getHeader(message.payload, "From"));
+      return {
+        id: `gmail:${message.id}`,
+        gmailMessageId: message.id,
+        direction: from.includes(grant.googleEmail.toLowerCase())
+          ? "sent"
+          : "received",
+        sentAt,
+        subject: getHeader(message.payload, "Subject") ?? null,
+        snippet: message.snippet ?? null,
+        bodyText: parts.bodyText,
+        aiSummary: null,
+      } satisfies VisitEvidenceMessage;
+    }),
+  );
+  return fetched.flatMap((result) =>
+    result.status === "fulfilled" && result.value ? [result.value] : [],
+  );
+}
+
 function badTrip(res: Response, message: string) {
   res.status(400).json({ error: "invalid_trip", message });
   return null;
@@ -152,9 +232,16 @@ async function tripValues(body: TripInput, res: Response, current?: TripPlan) {
       : body.meetingWindowEndsAt
         ? new Date(body.meetingWindowEndsAt)
         : null;
+  const requestedTimeZone =
+    body.timeZone?.trim() ||
+    current?.timeZone ||
+    inferTripTimeZone(body.destinationState ?? current?.destinationState);
 
   if (!travelerUserId || !travelStartsAt || !travelEndsAt) {
     return badTrip(res, "Traveler, start, and end are required.");
+  }
+  if (!isValidTimeZone(requestedTimeZone)) {
+    return badTrip(res, "Choose a valid trip time zone.");
   }
   if (
     !Number.isFinite(travelStartsAt.getTime()) ||
@@ -194,6 +281,7 @@ async function tripValues(body: TripInput, res: Response, current?: TripPlan) {
       body.destinationState,
       current?.destinationState,
     ),
+    timeZone: requestedTimeZone,
     outboundTravelMinutes:
       body.outboundTravelMinutes === undefined
         ? (current?.outboundTravelMinutes ?? null)
@@ -415,6 +503,11 @@ async function loadTripDetail(
         from ${users} u
         where u.id = ${tripVisitCandidates.planningUpdatedByUserId}
       )`,
+      evidenceStatus: tripVisitCandidates.evidenceStatus,
+      evidenceSummary: tripVisitCandidates.evidenceSummary,
+      evidenceConfirmedTime: tripVisitCandidates.evidenceConfirmedTime,
+      evidenceConfirmedAt: tripVisitCandidates.evidenceConfirmedAt,
+      evidenceReviewedAt: tripVisitCandidates.evidenceReviewedAt,
       archivedAt: tripVisitCandidates.archivedAt,
       createdAt: tripVisitCandidates.createdAt,
       updatedAt: tripVisitCandidates.updatedAt,
@@ -466,6 +559,7 @@ async function loadTripDetail(
           bodyText: emailMessages.bodyText,
           aiSummary: emailMessages.aiSummary,
           matchedPersonIds: emailMessages.matchedPersonIds,
+          createdAt: emailMessages.createdAt,
         })
         .from(emailMessages)
         .where(
@@ -503,11 +597,25 @@ async function loadTripDetail(
             message.sentAt > invitation.sentAt,
         )
       : undefined;
-    const scheduled = events.find(
+    const personEvents = events.filter(
       (event) =>
         event.status !== "cancelled" &&
         event.matchedPersonIds?.includes(row.personId),
     );
+    const scheduled = personEvents[0];
+    const latestEvidenceChange = [...personMessages, ...personEvents].reduce(
+      (latest, evidence) =>
+        Math.max(
+          latest,
+          "updatedAt" in evidence && evidence.updatedAt instanceof Date
+            ? evidence.updatedAt.getTime()
+            : evidence.createdAt.getTime(),
+        ),
+      0,
+    );
+    const evidenceReviewIsCurrent =
+      !!row.evidenceReviewedAt &&
+      latestEvidenceChange <= row.evidenceReviewedAt.getTime();
     return {
       id: row.id,
       tripId: row.tripId,
@@ -529,6 +637,25 @@ async function loadTripDetail(
       planningUpdatedByUserId: row.planningUpdatedByUserId,
       planningUpdatedByUserName: row.planningUpdatedByUserName,
       planningUpdatedAt: row.planningUpdatedAt,
+      evidenceStatus: evidenceReviewIsCurrent
+        ? (row.evidenceStatus as
+            | "not_invited"
+            | "invited"
+            | "responded"
+            | "confirmed"
+            | "bounced"
+            | null)
+        : null,
+      evidenceSummary: evidenceReviewIsCurrent ? row.evidenceSummary : null,
+      evidenceConfirmedTime: evidenceReviewIsCurrent
+        ? row.evidenceConfirmedTime
+        : null,
+      evidenceConfirmedAt: evidenceReviewIsCurrent
+        ? row.evidenceConfirmedAt
+        : null,
+      evidenceReviewedAt: evidenceReviewIsCurrent
+        ? row.evidenceReviewedAt
+        : null,
       outreachStatus: response
         ? ("responded" as const)
         : invitation
@@ -925,6 +1052,143 @@ router.post(
       .returning({ id: tripVisitCandidates.id });
     if (!row) return notFound(res, "trip visit");
     res.status(204).end();
+  }),
+);
+
+router.post(
+  "/trips/:id/visits/:visitId/refresh-evidence",
+  asyncHandler(async (req, res) => {
+    if (!canMutate(req, res)) return;
+    const trip = await loadTrip(req, paramId(req));
+    if (!trip) return notFound(res, "trip");
+    const visitId = routeParam(req.params.visitId);
+    const visit = await db
+      .select({
+        id: tripVisitCandidates.id,
+        personId: tripVisitCandidates.personId,
+        personName: sql<string>`coalesce(nullif(${people.fullName}, ''), nullif(concat_ws(' ', ${people.firstName}, ${people.lastName}), ''), 'Unnamed person')`,
+        anonymous: people.anonymous,
+        ownerUserId: people.ownerUserId,
+      })
+      .from(tripVisitCandidates)
+      .innerJoin(people, eq(people.id, tripVisitCandidates.personId))
+      .where(
+        and(
+          eq(tripVisitCandidates.id, visitId),
+          eq(tripVisitCandidates.tripId, trip.id),
+          isNull(tripVisitCandidates.archivedAt),
+        ),
+      )
+      .then((rows) => rows[0]);
+    if (!visit) return notFound(res, "trip visit");
+    const caller = getAppUser(req)!;
+    const personName =
+      maskName(
+        visit.personName,
+        { anonymous: visit.anonymous, ownerUserId: visit.ownerUserId },
+        getViewer(req),
+      ) ?? "Unnamed person";
+    const outreachStart = new Date(
+      Math.min(
+        trip.createdAt.getTime() - 7 * 86_400_000,
+        trip.travelStartsAt.getTime() - 180 * 86_400_000,
+      ),
+    );
+    const outreachEnd = new Date(trip.travelEndsAt.getTime() + 86_400_000);
+    // Record the evidence snapshot boundary before reading. If a sync inserts
+    // or updates anything while the AI call is running, loadTripDetail will
+    // treat this review as stale instead of letting it overwrite newer facts.
+    const evidenceSnapshotAt = new Date();
+    const latestMessages = await db
+      .select({
+        id: emailMessages.id,
+        gmailMessageId: emailMessages.gmailMessageId,
+        direction: emailMessages.direction,
+        sentAt: emailMessages.sentAt,
+        subject: emailMessages.subject,
+        snippet: emailMessages.snippet,
+        bodyText: emailMessages.bodyText,
+        aiSummary: emailMessages.aiSummary,
+      })
+      .from(emailMessages)
+      .where(
+        and(
+          eq(emailMessages.mailboxUserId, trip.travelerUserId),
+          or(
+            eq(emailMessages.isPrivate, false),
+            eq(emailMessages.mailboxUserId, caller.id),
+          ),
+          gte(emailMessages.sentAt, outreachStart),
+          lte(emailMessages.sentAt, outreachEnd),
+          sql`${emailMessages.matchedPersonIds} @> ARRAY[${visit.personId}]::text[]`,
+        ),
+      )
+      .orderBy(desc(emailMessages.sentAt))
+      .limit(30);
+    let liveMessages: VisitEvidenceMessage[] = [];
+    try {
+      liveMessages = await loadLiveVisitGmailEvidence({
+        trip,
+        callerId: caller.id,
+        personId: visit.personId,
+        outreachStart,
+        outreachEnd,
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, tripId: trip.id, visitId },
+        "Live trip-visit Gmail evidence lookup failed; using synced evidence",
+      );
+    }
+    const messagesByGmailId = new Map<string, VisitEvidenceMessage>();
+    for (const message of [...latestMessages, ...liveMessages]) {
+      messagesByGmailId.set(message.gmailMessageId ?? message.id, message);
+    }
+    const reviewMessages = [...messagesByGmailId.values()]
+      .sort((a, b) => a.sentAt.getTime() - b.sentAt.getTime())
+      .slice(-30);
+    const matchingEvents = (await loadTripEvents(trip, caller.id))
+      .filter(
+        (event) =>
+          event.status !== "cancelled" &&
+          event.matchedPersonIds?.includes(visit.personId),
+      )
+      .map((event) => ({
+        id: event.id,
+        summary: event.summary,
+        description: event.description,
+        location: event.location,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        status: event.status,
+      }));
+    const review = await reviewTripVisitEvidence({
+      trip,
+      personName,
+      messages: reviewMessages,
+      calendarEvents: matchingEvents,
+    });
+    const updatedAt = new Date();
+    await db
+      .update(tripVisitCandidates)
+      .set({
+        evidenceStatus: review.status,
+        evidenceSummary: review.summary,
+        evidenceConfirmedTime: review.confirmedTime,
+        evidenceConfirmedAt: review.confirmedAt
+          ? new Date(review.confirmedAt)
+          : null,
+        evidenceReviewedAt: evidenceSnapshotAt,
+        updatedAt,
+      })
+      .where(eq(tripVisitCandidates.id, visit.id));
+
+    const refreshedDetail = await loadTripDetail(req, trip);
+    const refreshedVisit = refreshedDetail.visits.find(
+      (row) => row.id === visitId,
+    );
+    if (!refreshedVisit) return notFound(res, "trip visit");
+    res.json(refreshedVisit);
   }),
 );
 

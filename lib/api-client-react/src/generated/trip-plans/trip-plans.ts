@@ -847,3 +847,81 @@ export const useArchiveTripVisit = <
 > => {
   return useMutation(getArchiveTripVisitMutationOptions(options));
 };
+export const getRefreshTripVisitEvidenceUrl = (id: string, visitId: string) => {
+  return `/api/trips/${id}/visits/${visitId}/refresh-evidence`;
+};
+
+export const refreshTripVisitEvidence = async (
+  id: string,
+  visitId: string,
+  options?: RequestInit,
+): Promise<TripVisit> => {
+  return customFetch<TripVisit>(getRefreshTripVisitEvidenceUrl(id, visitId), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRefreshTripVisitEvidenceMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshTripVisitEvidence>>,
+    TError,
+    { id: string; visitId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshTripVisitEvidence>>,
+  TError,
+  { id: string; visitId: string },
+  TContext
+> => {
+  const mutationKey = ["refreshTripVisitEvidence"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshTripVisitEvidence>>,
+    { id: string; visitId: string }
+  > = (props) => {
+    const { id, visitId } = props ?? {};
+
+    return refreshTripVisitEvidence(id, visitId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshTripVisitEvidenceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshTripVisitEvidence>>
+>;
+
+export type RefreshTripVisitEvidenceMutationError = ErrorType<NotFoundResponse>;
+
+export const useRefreshTripVisitEvidence = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshTripVisitEvidence>>,
+    TError,
+    { id: string; visitId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refreshTripVisitEvidence>>,
+  TError,
+  { id: string; visitId: string },
+  TContext
+> => {
+  return useMutation(getRefreshTripVisitEvidenceMutationOptions(options));
+};

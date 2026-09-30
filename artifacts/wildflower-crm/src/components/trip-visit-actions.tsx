@@ -1,48 +1,73 @@
 import { useState } from "react";
 import type { TripVisit } from "@workspace/api-client-react";
-import { CheckCircle2, Loader2, Pencil, UserX } from "lucide-react";
+import { Loader2, Pencil, RefreshCw, UserX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { formatTripDateTime } from "@/lib/trip-time-zone";
 
 export function TripVisitActions({
   visit,
   onEdit,
-  onConfirm,
+  onUpdateEvidence,
   onUnavailable,
   unavailablePending,
+  timeZone,
 }: {
   visit: TripVisit;
   onEdit: () => void;
-  onConfirm: () => Promise<TripVisit | undefined>;
+  onUpdateEvidence: () => Promise<TripVisit>;
   onUnavailable: () => void;
   unavailablePending: boolean;
+  timeZone: string;
 }) {
   const { toast } = useToast();
-  const [isConfirming, setIsConfirming] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  const confirm = async () => {
-    if (isConfirming) return;
-    setIsConfirming(true);
+  const updateEvidence = async () => {
+    if (isUpdating) return;
+    setIsUpdating(true);
     try {
-      const refreshedVisit = await onConfirm();
-      if (refreshedVisit?.scheduledAt) {
+      const refreshedVisit = await onUpdateEvidence();
+      if (refreshedVisit.evidenceStatus === "confirmed") {
         toast({
-          title: "Visit confirmed",
-          description: `${visit.personName} is scheduled for ${new Date(
-            refreshedVisit.scheduledAt,
-          ).toLocaleString()}.`,
+          title: "Status updated: confirmed",
+          description: refreshedVisit.evidenceConfirmedAt
+            ? `${visit.personName} is scheduled for ${formatTripDateTime(
+                refreshedVisit.evidenceConfirmedAt,
+                timeZone,
+              )}.`
+            : (refreshedVisit.evidenceConfirmedTime ??
+              refreshedVisit.evidenceSummary ??
+              "A confirmed time was found."),
         });
-      } else if (refreshedVisit?.outreachStatus === "responded") {
+      } else if (refreshedVisit.evidenceStatus === "bounced") {
         toast({
-          title: "Response found; time not found",
+          title: "Status updated: bounced",
           description:
-            "Gmail shows a reply, but no matching Calendar event has a confirmed time yet.",
+            refreshedVisit.evidenceSummary ??
+            "The invitation could not be delivered.",
+          variant: "destructive",
+        });
+      } else if (refreshedVisit.evidenceStatus === "responded") {
+        toast({
+          title: "Status updated: responded",
+          description:
+            refreshedVisit.evidenceSummary ??
+            "A reply was found, but no confirmed time.",
+        });
+      } else if (refreshedVisit.evidenceStatus === "invited") {
+        toast({
+          title: "Status updated: invitation sent",
+          description:
+            refreshedVisit.evidenceSummary ??
+            "An invitation was found with no reply yet.",
         });
       } else {
         toast({
-          title: "No confirmation found",
+          title: "Status updated: not invited",
           description:
-            "No matching Gmail response or Calendar event was found for this trip.",
+            refreshedVisit.evidenceSummary ??
+            "No trip-related outreach was found.",
         });
       }
     } catch (error) {
@@ -52,7 +77,7 @@ export function TripVisitActions({
         variant: "destructive",
       });
     } finally {
-      setIsConfirming(false);
+      setIsUpdating(false);
     }
   };
 
@@ -61,22 +86,22 @@ export function TripVisitActions({
       <Button
         variant="outline"
         size="sm"
-        onClick={confirm}
-        disabled={isConfirming || unavailablePending}
-        data-testid={`confirm-trip-visit-${visit.id}`}
+        onClick={updateEvidence}
+        disabled={isUpdating || unavailablePending}
+        data-testid={`update-trip-visit-evidence-${visit.id}`}
       >
-        {isConfirming ? (
+        {isUpdating ? (
           <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
         ) : (
-          <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
         )}
-        {isConfirming ? "Checking…" : "Confirm"}
+        {isUpdating ? "Reviewing…" : "Update from Gmail & Calendar"}
       </Button>
       <Button
         variant="ghost"
         size="sm"
         onClick={onUnavailable}
-        disabled={isConfirming || unavailablePending}
+        disabled={isUpdating || unavailablePending}
         data-testid={`unavailable-trip-visit-${visit.id}`}
       >
         <UserX className="mr-1.5 h-3.5 w-3.5" />
@@ -86,7 +111,7 @@ export function TripVisitActions({
         variant="ghost"
         size="icon"
         onClick={onEdit}
-        disabled={isConfirming || unavailablePending}
+        disabled={isUpdating || unavailablePending}
         aria-label={`Edit ${visit.personName}`}
       >
         <Pencil className="h-4 w-4" />

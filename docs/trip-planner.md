@@ -15,6 +15,10 @@ last_verified: 2026-09-10
   availability window. The older optional meeting-window and travel-minute
   columns remain nullable for compatibility, are cleared whenever a trip is
   saved in the CRM, and are not separate planning authorities.
+- Every trip has an IANA `time_zone`. The destination state selects a sensible
+  US default and the editor can override it. Travel windows, booking times,
+  confirmed visits, calendar day headings, and calendar-event times are all
+  rendered in that trip zone and include an explicit abbreviation such as EDT.
 - The visit list is editable CRM planning state. A team member can add, remove,
   reorder, and annotate people. The add dialog accepts multiple selections and
   submits them together. Each person has separate planning notes and a
@@ -29,10 +33,18 @@ last_verified: 2026-09-10
   remain available regardless of priority.
 - Each visit row has two planning actions. `Unavailable` archives the candidate
   and immediately hides them from this trip; adding the person later revives
-  that row. `Confirm` reloads the trip's visible Gmail and Calendar evidence.
-  It reports the matching Calendar time when one exists, distinguishes a Gmail
-  response with no matching Calendar time, and does not persist a second
-  confirmation status.
+  that row. `Update from Gmail & Calendar` asks AI to review the latest visible
+  messages for that person together with matching trip-window Calendar events.
+  For the mailbox owner, it also performs a bounded, read-only Gmail lookup.
+  This recovers messages placed in the unmatched ledger before a personal
+  address was linked to the CRM and delivery failures elsewhere in the same
+  conversation, without moving a sync cursor. It classifies the latest status
+  as not invited, invited, bounced, responded, or confirmed and extracts a
+  meeting time only when the evidence supports one. The review result and
+  timestamp are cached on the visit row; Gmail and Google Calendar remain the
+  underlying authorities. A later synced
+  message or Calendar change automatically makes the cached review stale, so
+  the normal source-derived status takes over until the next AI review.
 - The trip index can be filtered to one team traveler. Each trip card identifies
   its traveler, travel dates, and destination city when one has been entered.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
@@ -48,6 +60,8 @@ last_verified: 2026-09-10
   message from the traveler's synced mailbox contains meeting/visit language.
   `responded` requires a later visible received message in the same Gmail
   thread. Private messages are visible and count only for their mailbox owner.
+  A permanent delivery failure for the trip invitation produces `bounced`;
+  unrelated auto-replies do not count as a response.
 - Flight and hotel evidence is derived at read time from the trip window's
   visible Calendar events and the traveler's synced Gmail message index. A
   bounded set of travel-shaped messages that did not match a CRM contact is
@@ -85,11 +99,13 @@ last_verified: 2026-09-10
 
 ## Data model
 
-- `trip_plans` is the CRM-owned trip header and is soft-deleted with
-  `archived_at`.
+- `trip_plans` is the CRM-owned trip header, stores the display `time_zone`,
+  and is soft-deleted with `archived_at`.
 - `trip_visit_candidates` is unique by trip and person. Removing a person
   archives the row; adding them again revives it. `source` distinguishes a
-  `system_draft` suggestion from a `manual` addition.
+  `system_draft` suggestion from a `manual` addition. The `evidence_*` fields
+  cache the most recent AI review of source-owned Gmail and Calendar facts so
+  the result remains visible after a page reload.
 - No trip table points to Gmail messages or Calendar events. Evidence links are
   derived from the existing matched-person arrays, mailbox/calendar owner, and
   provider thread/event facts.
