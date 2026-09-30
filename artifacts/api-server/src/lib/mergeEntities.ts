@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { db } from "@workspace/db";
-import { organizations, people, bulkOperations } from "@workspace/db/schema";
-import { inArray, sql, type SQL } from "drizzle-orm";
+import { organizations, people, bulkOperations, conferenceAttendance, conferenceAttendanceSuggestions } from "@workspace/db/schema";
+import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { getAppUser } from "./appRequest";
 import { recordAudit } from "./audit";
@@ -125,6 +125,10 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donor_routing_preferences", col: "source_person_id" },
   { table: "donor_routing_preferences", col: "target_person_id" },
   { table: "trip_visit_candidates", col: "person_id" },
+  { table: "conference_attendance", col: "person_id" },
+  { table: "conference_attendance_suggestions", col: "person_id" },
+  { table: "conference_import_rows", col: "matched_person_id" },
+  { table: "conference_import_rows", col: "reviewed_person_id" },
 ];
 
 const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
@@ -330,6 +334,62 @@ function idArray(ids: ReadonlyArray<string>): SQL {
   )}]::text[]`;
 }
 
+type MergeTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** The conference tables have one row per event/person (and per email evidence).
+ * Consolidate collisions before the generic FK rewrite, in the same locked
+ * transaction, rather than deleting a loser's evidence via ON DELETE CASCADE. */
+async function consolidateConferenceRefs(tx: MergeTx, primaryId: string, ids: string[]) {
+  const attendance = await tx.select().from(conferenceAttendance)
+    .where(inArray(conferenceAttendance.personId, ids));
+  const attendanceByEvent = new Map<string, typeof attendance>();
+  for (const row of attendance) {
+    const group = attendanceByEvent.get(row.conferenceEventId) ?? [];
+    group.push(row);
+    attendanceByEvent.set(row.conferenceEventId, group);
+  }
+  const priority: Record<string, number> = { confirmed: 3, likely: 2, possible: 1 };
+  for (const group of attendanceByEvent.values()) {
+    if (group.length < 2) continue;
+    group.sort((a, b) => priority[b.status] - priority[a.status]
+      || Number(b.personId === primaryId) - Number(a.personId === primaryId)
+      || a.id.localeCompare(b.id));
+    const [winner, ...duplicates] = group;
+    const evidence = duplicates.map((row) =>
+      `Merged attendance (${row.status}, ${row.sourceType}${row.sourceReference ? `, ${row.sourceReference}` : ""}${row.reviewedByUserId ? `, reviewed by ${row.reviewedByUserId}` : ""}): ${row.evidenceNote ?? "No note"}`);
+    await tx.update(conferenceAttendance).set({
+      evidenceNote: [winner.evidenceNote, ...evidence].filter(Boolean).join("\n\n"),
+      updatedAt: new Date(),
+    }).where(eq(conferenceAttendance.id, winner.id));
+    await tx.delete(conferenceAttendance).where(inArray(conferenceAttendance.id, duplicates.map((r) => r.id)));
+  }
+
+  const suggestions = await tx.select().from(conferenceAttendanceSuggestions)
+    .where(inArray(conferenceAttendanceSuggestions.personId, ids));
+  const byEvidence = new Map<string, typeof suggestions>();
+  for (const row of suggestions) {
+    const key = JSON.stringify([row.conferenceEventId, row.emailMessageId]);
+    const group = byEvidence.get(key) ?? [];
+    group.push(row);
+    byEvidence.set(key, group);
+  }
+  for (const group of byEvidence.values()) {
+    if (group.length < 2) continue;
+    // Preserve an existing review decision ahead of a pending suggestion;
+    // prefer the primary's decision if both were reviewed.
+    group.sort((a, b) => Number(b.status !== "pending") - Number(a.status !== "pending")
+      || Number(b.personId === primaryId) - Number(a.personId === primaryId)
+      || a.id.localeCompare(b.id));
+    const [winner, ...duplicates] = group;
+    await tx.update(conferenceAttendanceSuggestions).set({
+      evidenceNote: [winner.evidenceNote, ...duplicates.map((row) =>
+        `Merged suggestion (${row.status}${row.reviewedByUserId ? `, reviewed by ${row.reviewedByUserId}` : ""}): ${row.evidenceNote}`)].join("\n\n"),
+      updatedAt: new Date(),
+    }).where(eq(conferenceAttendanceSuggestions.id, winner.id));
+    await tx.delete(conferenceAttendanceSuggestions).where(inArray(conferenceAttendanceSuggestions.id, duplicates.map((r) => r.id)));
+  }
+}
+
 /**
  * Execute a merge. Validates the request, then in one transaction:
  * applies the primary updates, re-points every FK + array reference from
@@ -456,6 +516,10 @@ export async function mergeEntity(
         WHERE rn > 1
       )
     `);
+
+    if (cfg.kind === "people") {
+      await consolidateConferenceRefs(tx, primaryId, allIds);
+    }
 
     // 2. Re-point direct FK references loser -> primary.
     for (const ref of cfg.fkRefs) {

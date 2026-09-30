@@ -368,17 +368,22 @@ router.patch("/conference-attendance-suggestions/:id", asyncHandler(async (req, 
   const userId = requireWrite(req, res); if (!userId) return;
   const body = parseOrBadRequest(ReviewConferenceAttendanceSuggestionBody, req.body, res); if (!body) return;
   const id = paramId(req);
-  const [suggestion] = await db.select().from(conferenceAttendanceSuggestions).where(eq(conferenceAttendanceSuggestions.id, id));
-  if (!suggestion) return notFound(res, "conference attendance suggestion");
-  await db.transaction(async (tx) => {
+  const outcome = await db.transaction(async (tx) => {
+    const [suggestion] = await tx.select().from(conferenceAttendanceSuggestions)
+      .where(eq(conferenceAttendanceSuggestions.id, id)).for("update");
+    if (!suggestion) return "missing";
+    if (suggestion.status !== "pending") return "reviewed";
     if (body.status === "accepted") await tx.insert(conferenceAttendance).values({
       id: newId(), conferenceEventId: suggestion.conferenceEventId, personId: suggestion.personId, status: "likely", sourceType: "wildflower_email",
       sourceReference: suggestion.emailMessageId, evidenceNote: suggestion.evidenceNote, reviewedByUserId: userId, reviewedAt: new Date(),
     }).onConflictDoNothing({ target: [conferenceAttendance.conferenceEventId, conferenceAttendance.personId] });
     await tx.update(conferenceAttendanceSuggestions).set({ status: body.status, reviewedByUserId: userId, reviewedAt: new Date(), updatedAt: new Date() })
-      .where(and(eq(conferenceAttendanceSuggestions.id, id), eq(conferenceAttendanceSuggestions.status, "pending")));
+      .where(eq(conferenceAttendanceSuggestions.id, id));
     await recordAudit(tx, req, { action: "conference_attendance_reviewed", entityType: "conference_attendance_suggestion", entityId: id, summary: `${body.status === "accepted" ? "Accepted" : "Dismissed"} email attendance suggestion` });
+    return "ok";
   });
+  if (outcome === "missing") return notFound(res, "conference attendance suggestion");
+  if (outcome === "reviewed") { res.status(409).json({ error: "already_reviewed", message: "This suggestion has already been reviewed." }); return; }
   const [result] = await db.select({
     id: conferenceAttendanceSuggestions.id, conferenceEventId: conferenceAttendanceSuggestions.conferenceEventId, personId: conferenceAttendanceSuggestions.personId,
     personName: people.fullName, emailMessageId: conferenceAttendanceSuggestions.emailMessageId, confidence: conferenceAttendanceSuggestions.confidence,

@@ -122,6 +122,11 @@ const EXPECTED: Record<string, FileClass> = {
     reason:
       "Grant-letter artifact write; grant letters are not frozen by the audit-close model.",
   },
+  "lib/grantTerms.ts": {
+    classification: "exempt",
+    reason:
+      "Accepted grant-term interpretation and append-only condition outcomes recompute pledge-allocation restriction/condition fields inside the caller's transaction; they do not edit pledged amounts, dates, or payment facts.",
+  },
   "lib/giftAllocationSeed.ts": {
     classification: "exempt",
     reason:
