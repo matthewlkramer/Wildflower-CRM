@@ -12,10 +12,11 @@ as part of code review or in a deployment build/startup hook.
    table, indexes, and the expanded attendance source constraint); do not select
    a data-overwrite option. The numbered SQL file is the reviewable schema
    reference, not a command to apply to the managed production database.
-2. Confirm the running API-server process is continuously scheduled. Its
-   conference worker runs at startup and every five minutes; a sleeping or
-   stopped server cannot process queued research or enqueue the 21-day and
-   2-day windows. A request remains in the database and resumes when it runs.
+2. Configure a **separate Replit Scheduled Deployment** for conference
+   research (below). The production API server does not start the conference
+   interval; Autoscale traffic must not become a second scheduler. Pending
+   requests remain in the database between runs. Local development still runs
+   the five-minute interval.
 3. Confirm the server-side OpenAI Responses integration can extract facts from
    fetched public pages. The Replit proxy did not complete the native
    `web_search` tool in development, so the server uses bounded public-web
@@ -31,6 +32,53 @@ as part of code review or in a deployment build/startup hook.
    Missing credentials or inaccessible sources leave visible retryable work;
    uncited or unsupported findings are rejected. Never put a credential in the
    browser, a runbook command, or a conference source field.
+
+## Scheduled Deployment (create only after schema publish)
+
+Use Replit Publishing → **Scheduled** to create a separate scheduled job for
+this project. It is a one-shot process, not a web service:
+
+- Cron: `15 */6 * * *` (00:15, 06:15, 12:15, 18:15).
+- Time zone: **America/Chicago**. Confirm the UI's displayed time zone and
+  next-run times, especially across daylight-saving changes; do not silently
+  treat a browser's fixed UTC offset as an IANA time zone. Due-window dates
+  retain the existing UTC calendar-day calculation.
+- Build command (from workspace root):
+  `pnpm --filter @workspace/api-server run build`
+- Run command (from workspace root):
+  `pnpm --filter @workspace/api-server run conference-research:once`
+  (executes `node --enable-source-maps ./dist/conference-research-once.mjs`
+  in the API package, never the HTTP entrypoint).
+- Recommended job timeout: **20 minutes**. The CLI stops starting new jobs
+  after 12 minutes or 20 attempted jobs; its parent process terminates a
+  still-running child at 15 minutes and exits nonzero, leaving any claimed
+  request for lease recovery on the next run. A reached soft cap leaves
+  remaining queue work for the next scheduled run.
+- Machine: use the Scheduled Deployment's default machine setting; no
+  documented minimum size is known. Do not configure it as a web Autoscale
+  deployment solely to get an interval.
+- Production environment must include the managed production `DATABASE_URL`,
+  `AI_INTEGRATIONS_OPENAI_API_KEY`, and
+  `AI_INTEGRATIONS_OPENAI_BASE_URL` (or the supported direct OpenAI fallback
+  `OPENAI_API_KEY` and `OPENAI_BASE_URL`). Do not paste their values into
+  commands. Public outbound HTTPS/DNS access to Bing/Google search and
+  qualifying organizer HTML/PDF URLs is required; there is no search API key.
+
+The job checks for the complete 0267 schema before queue writes and exits
+nonzero with `schema_not_ready` if Publish has not applied it. A session-level
+advisory lock skips an overlapping invocation; unique event/kind/window keys
+and row leases with skip-locked claims guard individual jobs. It logs
+aggregate counts only; enqueue failures, newly invalidated requests,
+failed/retryable jobs, exhausted stale leases, and hard timeouts produce a
+nonzero exit for alerts. A no-work or lock-skipped run exits zero.
+
+After the schema is published and the Scheduled Deployment is configured,
+use **Run now** once. Confirm the run completes within the timeout, has a
+zero exit when no work is due (or inspect reported failure counts if nonzero),
+and that the event/run UI shows cited public-source evidence for any processed
+work. Check the production database and OpenAI/outbound configuration if the
+job reports `schema_not_ready` or `initialization_or_job_error`; never run the
+numbered DDL file as a repair.
 
 ## Before the production backfill
 
@@ -57,9 +105,9 @@ In each event, inspect run status, errors, sources, and pending speaker
 proposals. Confirm proposed dates only after checking the cited page. Review
 ambiguous speaker matches rather than attaching by similar names; adding a new
 person is a reviewer action. "Retry" requeues a failed run after fixing its
-error. The nightly/daily catch-up sweep is idempotent; a running API process is
-required for it. It does not automatically research historical events outside
-the explicit backfill.
+error. The six-hour scheduled catch-up sweep is idempotent; a successful
+Scheduled Deployment run is required for it. It does not automatically research
+historical events outside the explicit backfill.
 
 For read-only SQL checks, compare event coverage and job states:
 

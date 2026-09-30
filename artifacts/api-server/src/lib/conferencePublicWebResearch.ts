@@ -309,6 +309,9 @@ function pinnedRequest(
     };
     const requestOptions = {
       method: "GET",
+      // Node's socket timeout is inactivity-based; cap total elapsed request
+      // time too so a slow trickle cannot hold a scheduled job indefinitely.
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: {
         "User-Agent": "WildflowerConferenceResearch/1.0 (+public event research)",
         Accept: "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml,application/pdf",

@@ -189,22 +189,28 @@ export function getDueConferenceResearchWindows(
   return due;
 }
 
-async function enqueueScheduledResearch(): Promise<void> {
+export async function enqueueScheduledResearch(now = new Date()): Promise<{
+  eventsScanned: number; windowsDue: number; enqueueFailures: number;
+}> {
   const events = await db.select({
     id: conferenceEvents.id,
     startDate: conferenceEvents.startDate,
     endDate: conferenceEvents.endDate,
   }).from(conferenceEvents);
-  const today = new Date().toISOString().slice(0, 10);
+  const today = now.toISOString().slice(0, 10);
+  const summary = { eventsScanned: events.length, windowsDue: 0, enqueueFailures: 0 };
   for (const event of events) {
     for (const due of getDueConferenceResearchWindows(event, today)) {
+      summary.windowsDue += 1;
       try {
         await enqueueConferenceResearch(event.id, due.kind, due.windowKey);
-      } catch (error) {
-        logger.warn({ error, conferenceEventId: event.id, ...due }, "Could not enqueue scheduled conference research");
+      } catch {
+        summary.enqueueFailures += 1;
+        logger.warn({ kind: due.kind }, "Could not enqueue scheduled conference research");
       }
     }
   }
+  return summary;
 }
 
 function confidenceBand(confidence: number): "high" | "medium" | "low" {
@@ -361,9 +367,11 @@ async function saveCompletedResult(
   return saved;
 }
 
-async function claimNextRequest(): Promise<typeof conferenceResearchRequests.$inferSelect | null> {
+/** The existing lease recovery rules; callers run this once before claiming jobs. */
+export async function recoverExpiredConferenceResearchLeases(): Promise<{ requeued: number; exhausted: number }> {
   const now = new Date();
   const staleBefore = new Date(now.getTime() - LEASE_TIMEOUT_MS);
+  const summary = { requeued: 0, exhausted: 0 };
   await db.transaction(async (tx) => {
     const staleRequests = await tx.select().from(conferenceResearchRequests).where(and(
       eq(conferenceResearchRequests.status, "running"),
@@ -371,7 +379,7 @@ async function claimNextRequest(): Promise<typeof conferenceResearchRequests.$in
     )).for("update", { skipLocked: true });
     for (const request of staleRequests) {
       const exhausted = request.attempts >= MAX_ATTEMPTS;
-      await tx.update(conferenceResearchRequests).set({
+      const [changed] = await tx.update(conferenceResearchRequests).set({
         status: exhausted ? "failed" : "queued",
         nextAttemptAt: exhausted ? null : now,
         error: exhausted
@@ -387,9 +395,15 @@ async function claimNextRequest(): Promise<typeof conferenceResearchRequests.$in
         request.startedAt
           ? eq(conferenceResearchRequests.startedAt, request.startedAt)
           : isNull(conferenceResearchRequests.startedAt),
-      ));
+      )).returning({ id: conferenceResearchRequests.id });
+      if (changed) summary[exhausted ? "exhausted" : "requeued"] += 1;
     }
   });
+  return summary;
+}
+
+async function claimNextRequest(): Promise<typeof conferenceResearchRequests.$inferSelect | null> {
+  const now = new Date();
   return db.transaction(async (tx) => {
     const [request] = await tx.select().from(conferenceResearchRequests)
       .where(and(
@@ -411,7 +425,8 @@ async function claimNextRequest(): Promise<typeof conferenceResearchRequests.$in
   });
 }
 
-async function invalidateStaleActiveRequests(): Promise<void> {
+export async function invalidateStaleActiveRequests(): Promise<number> {
+  let invalidated = 0;
   const active = await db.select({ id: conferenceResearchRequests.id })
     .from(conferenceResearchRequests)
     .where(inArray(conferenceResearchRequests.status, ["queued", "running"]));
@@ -432,7 +447,7 @@ async function invalidateStaleActiveRequests(): Promise<void> {
         ? staleContextMessage(request, joined.event, joined.typeName)
         : "Conference event or type no longer exists.";
       if (!error) return;
-      await tx.update(conferenceResearchRequests).set({
+      const [changed] = await tx.update(conferenceResearchRequests).set({
         status: "failed",
         error,
         nextAttemptAt: null,
@@ -445,9 +460,11 @@ async function invalidateStaleActiveRequests(): Promise<void> {
         request.startedAt
           ? eq(conferenceResearchRequests.startedAt, request.startedAt)
           : isNull(conferenceResearchRequests.startedAt),
-      ));
+      )).returning({ id: conferenceResearchRequests.id });
+      if (changed) invalidated += 1;
     });
   }
+  return invalidated;
 }
 
 async function verifyLeaseContext(lease: ResearchLease): Promise<boolean> {
@@ -522,11 +539,17 @@ export function getResearchRetryDelayMs(attempts: number, credentialsUnavailable
   return Math.min(6 * 60 * 60_000, 60_000 * 2 ** Math.min(safeAttempts, 18));
 }
 
-async function runOneResearchJob(): Promise<boolean> {
+export type ResearchJobOutcome = "completed" | "retry" | "failed" | "skipped";
+
+export async function runOneResearchJob(): Promise<ResearchJobOutcome | null> {
   const request = await claimNextRequest();
-  if (!request) return false;
+  if (!request) return null;
   try {
     await processRequest(request);
+    const [current] = await db.select({ status: conferenceResearchRequests.status })
+      .from(conferenceResearchRequests).where(eq(conferenceResearchRequests.id, request.id));
+    return current?.status === "completed" ? "completed" :
+      current?.status === "failed" ? "failed" : "skipped";
   } catch (error) {
     const attempts = request.attempts;
      const credentialUnavailable = isCredentialUnavailable(error);
@@ -538,7 +561,7 @@ async function runOneResearchJob(): Promise<boolean> {
      const exhausted = !retryable || (!delayedRetry && attempts >= MAX_ATTEMPTS);
      const retryDelay = getResearchRetryDelayMs(attempts, delayedRetry);
     const message = error instanceof Error ? error.message : "Conference research failed.";
-    await db.update(conferenceResearchRequests).set({
+     const [changed] = await db.update(conferenceResearchRequests).set({
       status: exhausted ? "failed" : "queued",
       error: message,
       nextAttemptAt: exhausted ? null : new Date(Date.now() + retryDelay),
@@ -549,10 +572,14 @@ async function runOneResearchJob(): Promise<boolean> {
       id: request.id,
       attempts: request.attempts,
       startedAt: request.startedAt,
-    }));
-    logger.warn({ error, requestId: request.id, attempts, retryable }, "Conference research job failed");
+     })).returning({ id: conferenceResearchRequests.id });
+     if (!changed) return "skipped";
+     // Error messages can contain public page text or provider details. Keep job
+     // diagnostics in the request row; scheduled-deployment logs contain counts only.
+     logger.warn({ attempts, retryable, category: unsupportedPublicPdf ? "unsupported_pdf" :
+       credentialUnavailable ? "provider_unavailable" : "research_error" }, "Conference research job failed");
+     return exhausted ? "failed" : "retry";
   }
-  return true;
 }
 
 let workerRunning = false;
@@ -563,10 +590,11 @@ export async function runConferenceResearchWorkerTick(): Promise<void> {
   workerRunning = true;
   try {
     await invalidateStaleActiveRequests();
+    await recoverExpiredConferenceResearchLeases();
     await enqueueScheduledResearch();
     // Bound each tick so the scheduler remains responsive.
     for (let i = 0; i < 5; i += 1) {
-      if (!(await runOneResearchJob())) break;
+      if ((await runOneResearchJob()) === null) break;
     }
   } catch (error) {
     logger.error({ error }, "Conference research worker tick failed");
@@ -580,6 +608,57 @@ export function startConferenceResearchScheduler(): void {
   schedulerStarted = true;
   void runConferenceResearchWorkerTick();
   setInterval(() => void runConferenceResearchWorkerTick(), WORK_INTERVAL_MS);
+}
+
+/** Production runs conference research only through the separate scheduled CLI. */
+export function shouldStartConferenceResearchScheduler(nodeEnv = process.env.NODE_ENV): boolean {
+  return nodeEnv !== "production";
+}
+
+/** Read-only preflight: never enqueue against a partially published schema. */
+export async function assertConferenceResearchSchemaReady(): Promise<void> {
+  const result = await db.execute(sql`
+    SELECT
+      to_regclass('public.conference_speaker_proposals') IS NOT NULL
+      AND (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'conference_events'
+          AND column_name IN ('date_source_url', 'date_evidence', 'date_confidence',
+            'date_researched_at', 'date_reviewed_by_user_id', 'date_reviewed_at')) = 6
+      AND (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'conference_attendance'
+          AND column_name = 'role') = 1
+      AND (SELECT count(*) FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'conference_research_requests'
+          AND column_name IN ('kind', 'window_key', 'attempts', 'next_attempt_at',
+            'started_at', 'completed_at', 'error', 'sources', 'evidence',
+            'proposed_start_date', 'proposed_end_date', 'proposed_date_confidence')) = 12
+      AND (SELECT count(*) FROM pg_indexes WHERE schemaname = 'public'
+        AND indexname IN ('conference_research_requests_status_next_attempt_idx',
+          'conference_research_requests_event_kind_window_uq',
+          'conference_speaker_proposals_event_fingerprint_uq',
+          'conference_speaker_proposals_event_status_idx',
+          'conference_speaker_proposals_run_idx')) = 5
+      AND (SELECT count(*) FROM pg_constraint
+        WHERE conname IN ('conference_research_requests_kind_ck',
+          'conference_research_requests_attempts_ck',
+          'conference_speaker_proposals_status_ck',
+          'conference_speaker_proposals_confidence_ck')) = 4
+      AND EXISTS (SELECT 1 FROM pg_constraint
+        WHERE conname = 'conference_attendance_source_type_ck'
+          AND pg_get_constraintdef(oid) LIKE '%agenda_speaker%') AS ready
+  `);
+  requireConferenceResearchSchema(result.rows[0]?.ready);
+}
+
+export class ConferenceResearchSchemaNotReadyError extends Error {
+  constructor() {
+    super("Conference research schema is not ready: publish migration 0267 before running the scheduled job.");
+    this.name = "ConferenceResearchSchemaNotReadyError";
+  }
+}
+
+export function requireConferenceResearchSchema(ready: unknown): void {
+  if (ready !== true) throw new ConferenceResearchSchemaNotReadyError();
 }
 
 export async function enqueueConferenceResearchBackfill(args: {

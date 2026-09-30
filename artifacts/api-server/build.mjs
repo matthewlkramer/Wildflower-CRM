@@ -18,6 +18,7 @@ async function buildAll() {
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/cli/backfill.ts"),
+       path.resolve(artifactDir, "src/cli/conference-research-once.ts"),
     ],
     entryNames: "[name]",
     platform: "node",

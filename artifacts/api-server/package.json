@@ -8,6 +8,7 @@
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
+    "conference-research:once": "node --enable-source-maps ./dist/conference-research-once.mjs",
     "typecheck": "flock /tmp/wf-tsc-libs.lock sh -c 'tsc --build ../../tsconfig.json && tsc -p tsconfig.json --noEmit'",
     "test": "flock /tmp/wf-test-db.lock vitest run",
     "ingest:media": "tsx src/scripts/ingest-media-mentions.ts",

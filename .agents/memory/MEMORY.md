@@ -22,6 +22,7 @@ code/docs and update or archive the stale memory.
 - [Email and calendar](email-calendar-sync.md) — Gmail/Calendar sync, open tracking, email intelligence, Flodesk, dedup.
 - [CRM domain notes](crm-domain-notes.md) — gifts/pledges, donors/orgs/people, lists/dashboards, tasks/ingestion/admin feature lessons.
 - [Platform and delivery notes](platform-and-delivery-notes.md) — build/env, API plumbing, prod-migration and data-operation gotchas.
+- [Scheduled conference research safety](conference-scheduled-run-safety.md) — a one-shot worker must own its advisory lock; a supervising process cannot safely hold it on the worker's behalf.
 
 ## Core data-model invariants
 
