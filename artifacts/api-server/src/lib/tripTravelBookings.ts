@@ -101,21 +101,14 @@ export function detectTripTravelKind(
   const text = evidenceText({ id: "", source: "calendar", ...evidence });
   const title = evidence.title?.trim() ?? "";
   const hasFlightNumber = FLIGHT_NUMBER.test(text.toUpperCase());
-  // Ordinary correspondence often mentions somebody's arrival, departure,
-  // airport, or flight while coordinating a meeting. Treat those as travel
-  // bookings only when the subject explicitly identifies a flight, the
-  // message contains a booking document marker, or a flight number appears
-  // alongside itinerary/booking context.
-  if (
-    FLIGHT_IN_TITLE.test(title) ||
-    FLIGHT_DOCUMENT.test(text) ||
-    (hasFlightNumber &&
-      (FLIGHT_BOOKING_CONTEXT.test(text) ||
-        FLIGHT_NUMBER_CONTEXT.test(text))) ||
-    (/\bflight\b/i.test(text) && FLIGHT_BOOKING_CONTEXT.test(text))
-  ) {
+  // An explicit flight subject or ticket document beats incidental hotel
+  // language in a broader travel itinerary.
+  if (FLIGHT_IN_TITLE.test(title) || FLIGHT_DOCUMENT.test(text)) {
     return "flight";
   }
+  // Hotel confirmations often contain alphanumeric room/booking references
+  // that resemble airline flight numbers. Classify their lodging evidence
+  // before applying the weaker number-and-booking flight heuristic.
   if (
     HOTEL_LANGUAGE.test(title) ||
     (HOTEL_LANGUAGE.test(text) &&
@@ -124,6 +117,19 @@ export function detectTripTravelKind(
         extractTravelConfirmation(text) !== null))
   ) {
     return "hotel";
+  }
+  // Ordinary correspondence often mentions somebody's arrival, departure,
+  // airport, or flight while coordinating a meeting. Treat those as travel
+  // bookings only when the subject explicitly identifies a flight, the
+  // message contains a booking document marker, or a flight number appears
+  // alongside itinerary/booking context.
+  if (
+    (hasFlightNumber &&
+      (FLIGHT_BOOKING_CONTEXT.test(text) ||
+        FLIGHT_NUMBER_CONTEXT.test(text))) ||
+    (/\bflight\b/i.test(text) && FLIGHT_BOOKING_CONTEXT.test(text))
+  ) {
+    return "flight";
   }
   return null;
 }

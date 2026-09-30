@@ -217,6 +217,15 @@ describe("trip travel booking derivations", () => {
         fromEmail: "receipts@united.com",
       }),
     ).toBe("flight");
+    expect(
+      detectTripTravelKind({
+        title: "Dialog hotel booking confirmation for New York",
+        description:
+          "Room AB1234 reserved for your stay. Check-in October 11, 2026; check-out October 15, 2026. Confirmation ABC123.",
+        location: null,
+        fromEmail: "booking@dialog.example",
+      }),
+    ).toBe("hotel");
   });
 
   it("extracts common confirmation and record-locator formats", () => {

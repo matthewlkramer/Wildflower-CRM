@@ -52,7 +52,8 @@ last_verified: 2026-09-30
 - The trip summary separates detected flights and hotels. It shows each
   booking's dates, location, and confirmation number when available; otherwise
   it displays `No flights` or `No hotel booked`. Dated Gmail bookings and
-  Calendar bookings also appear in the schedule.
+  Calendar bookings also appear in the schedule. Lodging confirmations take
+  precedence over incidental flight-like codes in their body text.
 
 ## Evidence and privacy boundaries
 
