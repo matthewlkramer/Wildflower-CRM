@@ -248,6 +248,7 @@ describe("merge config inventory", () => {
     expect(arr.sort()).toEqual(
       [
         "calendar_events.matched_person_ids",
+        "conference_speaker_proposals.candidate_person_ids",
         "email_messages.matched_person_ids",
         "interactions.person_ids",
         "media_mentions.person_ids",

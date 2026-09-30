@@ -1,0 +1,32 @@
+Extend the conference attendance feature with the following requirements. Work on current main, use existing project patterns, add migrations/API/UI/tests/codegen, and commit when complete. Do not push, publish, or change production yet.
+
+1. Conference dates and creation flow
+- Every conference event/year should have start date and optional end date. On create/edit, explicitly ask the user for the date(s).
+- Include a clear “I don’t know — find the dates” path. That should run public-web research, show the proposed dates with citations/evidence, and require user confirmation before saving uncertain results. Store date source URL, evidence, confidence, researched-at timestamp, and reviewer metadata.
+- Dates must be editable later. Historical records may remain marked date-unknown until researched, but the UI should surface that state.
+
+2. Agenda/speaker research
+- For every conference event, provide “Research agenda & speakers now.” Search the public web for the official event page, agenda/program, speaker roster, and credible organizer pages. Store research runs, source URLs, timestamps, extracted agenda/session/speaker evidence, and errors. Do not store credentials, bypass paywalls, or claim access to private attendee directories.
+- Use the project’s existing AI/provider abstraction if available; otherwise implement a server-side OpenAI Responses/Web Search integration behind an existing secret pattern and a job queue. Do not expose keys in the browser. If no usable provider credential exists, fail visibly and retain a retryable queued request rather than fabricating results.
+- Match researched speakers to CRM people conservatively: exact email, or unique normalized name plus organization. Automatically upsert high-confidence matched speakers as event attendees with role Speaker, confirmed status, source agenda_speaker, and citations. Ambiguous matches must go to review; never attach on name-only ambiguity.
+
+3. Automatic timing and retroactive coverage
+- Run agenda/speaker research when an event is first created (after dates/URL are available), again 21 days before start, and again 2 days before start. Use the existing scheduler/job infrastructure; jobs must be idempotent, retryable, auditable, and rescheduled when dates change. A daily sweep may enqueue due work, with unique event+research-kind+window keys and catch-up behavior for missed windows.
+- Prepare a safe retroactive backfill for every existing conference event: research missing dates first, then agenda/speakers. Apply it to development for verification. Create an explicit post-deploy production runbook/action, but do not mutate production in this task.
+
+4. Speaker proposals
+- Add an event-linked proposal/review queue for researched speakers not currently in the CRM, plus ambiguous matches. Include name, title, organization, bio/profile URL, source URL, session/agenda evidence, confidence, match candidates, and status: pending, added, ignored.
+- Allow multi-select bulk Add to CRM and bulk Ignore. Bulk add must re-check duplicates, create minimal individual records with provenance, link to an existing matched organization when confident, not silently create organizations, then add the new person as a confirmed Speaker attendee. Make retries idempotent and audit every decision.
+- Allow undo/reopen of an ignored proposal where consistent with audit patterns.
+
+5. Conference type and historical-event management
+- Add full admin UI/API for conference types: list, search, add, edit/rename, aliases, organizer/default URL, active/archive, and delete.
+- Permit editing historical event display name/year/type/dates/location/URLs and reassigning an event to another conference type.
+- Protect referential integrity: an unused type may be hard-deleted after confirmation; a referenced type must be merged into another type, have all events reassigned, or be archived. Never cascade-delete events or attendance. Type merges must deduplicate same-type/year collisions safely and preserve attendance, research, proposals, imports, and audit history.
+- Add permissions/audit logs consistent with existing CRM admin patterns.
+
+6. UX and validation
+- Integrate these controls into Conferences under Engagement with clear run status, next scheduled research dates, citations, proposal counts, bulk actions, and errors.
+- Keep saved-view attendance filters working.
+- Add focused tests for date workflow, provider failures, scheduler windows/idempotency/rescheduling, speaker matching/proposals/bulk decisions, type CRUD/merge/reassignment/deletion protections, person merges, and retroactive job enqueueing.
+- Run codegen, full typecheck, all web tests, API unit/full suites, and focused tests. Inspect schema diff. Commit on current main, leave working tree clean, and report the migration number, commit, validation, production runbook, and any external credential/scheduler prerequisite.

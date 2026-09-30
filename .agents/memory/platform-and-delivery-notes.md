@@ -19,6 +19,8 @@ topic files relevant to the symptom.
 
 ## API plumbing
 
+- [Conference public research provider](conference-public-research-provider.md) — Replit's Responses proxy may not complete native web_search; verify public-page fallback with a dated official URL, not credentials alone.
+
 - [parseOrBadRequest 2nd arg](parse-or-bad-request-arg.md) — pass req.body/req.query, never req; wrong call type-checks (param is unknown) but always 400s at runtime; only HTTP tests catch it.
 - [Router self-prefix + 401 mask](router-self-prefix-401-mask.md) — reconciliation routers self-prefix full paths; requireAuth-before-routing makes curl 401 mask an unregistered route (verify authed, not bare curl).
 - [Shared multi-outcome handler gating](shared-outcome-flag-gating.md) — gate behavior on the explicit outcome flag, not a shared body field's presence; a stray field else silently hijacks another outcome.

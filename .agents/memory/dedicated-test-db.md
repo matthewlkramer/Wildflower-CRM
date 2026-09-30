@@ -71,6 +71,22 @@ locking CTE serializes that parent set predictably; a rerun is not a fix.
 strengthen this to `FOR UPDATE`: ordinary Stripe fact refreshes do not need to
 be blocked while the projection holds its parent rows stable.
 
+## Bank-spine full-suite failures
+
+A full API run can occasionally report a 40P01 deadlock in parallel bank-spine
+recompute tests, followed by FK errors during that test file's cleanup. Treat
+the cleanup errors as possible downstream effects, not independent proof of a
+schema regression.
+
+**Why:** recomputes and other integration writers operate concurrently in the
+shared test database; a single failed recompute may leave the file's fixture
+cleanup unable to remove dependent rows in its expected order.
+
+**How to apply:** inspect the first failure and rerun the full suite once on a
+freshly truncated test DB. A passing rerun helps establish release validation,
+but does not repair the underlying lock-order issue. If the failure repeats,
+investigate bank-spine concurrency rather than changing unrelated code.
+
 ## No DDL in parallel test files
 
 A test that runs `ALTER TABLE` mid-suite (e.g. dropping/re-adding a CHECK

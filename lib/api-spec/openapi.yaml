@@ -2161,6 +2161,7 @@ paths:
       tags: [conferences]
       parameters:
         - { name: active, in: query, schema: { type: boolean } }
+        - { name: search, in: query, schema: { type: string } }
       responses:
         "200":
           {
@@ -2197,6 +2198,10 @@ paths:
                   { schema: { $ref: "#/components/schemas/ConferenceType" } },
               },
           }
+        "400":
+          { description: Invalid conference type, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: Conference type name already exists, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /conference-types/{id}:
     patch:
       operationId: updateConferenceType
@@ -2220,6 +2225,38 @@ paths:
                   { schema: { $ref: "#/components/schemas/ConferenceType" } },
               },
           }
+        "400":
+          { description: Invalid update, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: Name already exists, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+    delete:
+      operationId: deleteConferenceType
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { description: Deleted unused conference type }
+        "404": { description: Conference type not found }
+        "409":
+          { description: Type is referenced by one or more events; archive or merge it instead, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-types/{id}/merge:
+    post:
+      operationId: mergeConferenceType
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string }, description: Source type to merge into the target }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeMergeInput" } } }
+      responses:
+        "200":
+          { description: Events reassigned and source type merged, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceTypeMergeResult" } } } }
+        "400":
+          { description: Invalid merge request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "404": { description: Source or target type not found }
+        "409":
+          { description: Same-year event collision requires explicit event resolution, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /conference-events:
     get:
       operationId: listConferenceEvents
@@ -2267,6 +2304,10 @@ paths:
                   { schema: { $ref: "#/components/schemas/ConferenceEvent" } },
               },
           }
+        "400":
+          { description: Invalid event or date range, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: A conference event already exists for this type and year, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /conference-events/{id}:
     get:
       operationId: getConferenceEvent
@@ -2307,6 +2348,27 @@ paths:
                   { schema: { $ref: "#/components/schemas/ConferenceEvent" } },
               },
           }
+        "400":
+          { description: Invalid dates or event fields, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: A conference event already exists for this type and year, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-events/{id}/confirm-dates:
+    post:
+      operationId: confirmConferenceEventDates
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: "#/components/schemas/ConferenceEventDateConfirmation" } } }
+      responses:
+        "200":
+          { description: Dates confirmed and saved, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceEvent" } } } }
+        "400":
+          { description: Invalid date range or missing evidence for a researched proposal, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: Event changed since the date proposal was researched, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
   /conference-events/{id}/attendance:
     get:
       operationId: listConferenceAttendance
@@ -2438,6 +2500,14 @@ paths:
               },
           }
   /conference-events/{id}/research-requests:
+    get:
+      operationId: listConferenceResearchRequests
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          { description: Research runs for the event, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceResearchRequest" } } } } }
     post:
       operationId: createConferenceResearchRequest
       tags: [conferences]
@@ -2470,6 +2540,93 @@ paths:
                   },
               },
           }
+        "400":
+          { description: Invalid research request, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: An equivalent run is already active or the event is not eligible for the requested window, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-research-requests/{id}/retry:
+    post:
+      operationId: retryConferenceResearchRequest
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "202":
+          { description: Retry queued, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchRequest" } } } }
+        "404": { description: Research run not found }
+        "409":
+          { description: Run is not failed or retryable, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-events/{id}/speaker-proposals:
+    get:
+      operationId: listConferenceSpeakerProposals
+      tags: [conferences]
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, added, ignored] } }
+      responses:
+        "200":
+          { description: Speaker proposals for the event, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/ConferenceSpeakerProposal" } } } } }
+  /conference-events/{id}/speaker-proposals/bulk-add:
+    post:
+      operationId: bulkAddConferenceSpeakerProposals
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: "#/components/schemas/ConferenceSpeakerProposalBulkInput" } } }
+      responses:
+        "200":
+          { description: Added proposals or per-item duplicate conflicts, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceSpeakerProposalBulkResult" } } } }
+        "400":
+          { description: Empty or invalid proposal selection, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: One or more proposals are no longer pending or matched an existing person during duplicate re-check, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-events/{id}/speaker-proposals/bulk-ignore:
+    post:
+      operationId: bulkIgnoreConferenceSpeakerProposals
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: "#/components/schemas/ConferenceSpeakerProposalBulkInput" } } }
+      responses:
+        "200":
+          { description: Proposals ignored, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceSpeakerProposalBulkResult" } } } }
+        "400":
+          { description: Empty or invalid proposal selection, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "409":
+          { description: One or more proposals are not pending, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /conference-speaker-proposals/{id}/reopen:
+    post:
+      operationId: reopenConferenceSpeakerProposal
+      tags: [conferences]
+      parameters:
+        [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200":
+          { description: Ignored proposal reopened for review, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceSpeakerProposal" } } } }
+        "404": { description: Proposal not found }
+        "409":
+          { description: Only an ignored proposal can be reopened, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /admin/conference-research/backfill:
+    post:
+      operationId: enqueueConferenceResearchBackfill
+      tags: [conferences]
+      description: Admin-only. Enqueues idempotent retroactive work for existing events; missing dates are queued before agenda and speaker research.
+      requestBody:
+        required: true
+        content:
+          { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchBackfillInput" } } }
+      responses:
+        "202":
+          { description: Backfill work enqueued, content: { application/json: { schema: { $ref: "#/components/schemas/ConferenceResearchBackfillResult" } } } }
+        "400":
+          { description: Invalid event selection, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+        "403": { description: Admin permission required }
   /conference-events/{id}/email-suggestions:
     get:
       operationId: listConferenceEmailSuggestions
@@ -13120,7 +13277,38 @@ components:
         active: { type: boolean }
         notes: { type: [string, "null"] }
     ConferenceTypeUpdate:
-      allOf: [{ $ref: "#/components/schemas/ConferenceTypeInput" }]
+      type: object
+      properties:
+        displayName: { type: string, minLength: 1 }
+        aliases: { type: array, items: { type: string } }
+        organizer: { type: [string, "null"] }
+        websiteUrl: { type: [string, "null"], format: uri }
+        active: { type: boolean }
+        notes: { type: [string, "null"] }
+    ConferenceTypeMergeInput:
+      type: object
+      required: [targetTypeId]
+      properties:
+        targetTypeId: { type: string, minLength: 1 }
+        eventResolutions:
+          type: array
+          items: { $ref: "#/components/schemas/ConferenceTypeMergeEventResolution" }
+          description: Explicit event mappings required only when source and target both have an event in the same year.
+    ConferenceTypeMergeEventResolution:
+      type: object
+      required: [sourceEventId, targetEventId]
+      properties:
+        sourceEventId: { type: string }
+        targetEventId: { type: string }
+        strategy: { type: string, enum: [preserve_all_history] }
+    ConferenceTypeMergeResult:
+      type: object
+      required: [sourceTypeId, targetType, reassignedEventCount]
+      properties:
+        sourceTypeId: { type: string }
+        targetType: { $ref: "#/components/schemas/ConferenceType" }
+        reassignedEventCount: { type: integer }
+        consolidatedEventIds: { type: array, items: { type: string } }
     ConferenceEvent:
       type: object
       required: [id, conferenceTypeId, year, status, createdAt, updatedAt]
@@ -13131,6 +13319,13 @@ components:
         nameOverride: { type: [string, "null"] }
         startDate: { type: [string, "null"], format: date }
         endDate: { type: [string, "null"], format: date }
+        datesUnknown: { type: boolean, description: Derived true when startDate is null; null start dates remain valid for historical records. }
+        dateSourceUrl: { type: [string, "null"], format: uri }
+        dateEvidence: { type: [string, "null"] }
+        dateConfidence: { type: [string, "null"], enum: [high, medium, low, null] }
+        dateResearchedAt: { type: [string, "null"], format: date-time }
+        dateReviewedByUserId: { type: [string, "null"] }
+        dateReviewedAt: { type: [string, "null"], format: date-time }
         location: { type: [string, "null"] }
         attendeeSiteUrl: { type: [string, "null"] }
         source: { type: [string, "null"] }
@@ -13155,13 +13350,38 @@ components:
         nameOverride: { type: [string, "null"] }
         startDate: { type: [string, "null"], format: date }
         endDate: { type: [string, "null"], format: date }
+        datesUnknown: { type: boolean, description: Explicitly mark the event dates unknown; when true, startDate and endDate must be null. }
         location: { type: [string, "null"] }
         attendeeSiteUrl: { type: [string, "null"] }
         source: { type: [string, "null"] }
         status: { type: string, enum: [planned, completed, cancelled] }
         notes: { type: [string, "null"] }
     ConferenceEventUpdate:
-      allOf: [{ $ref: "#/components/schemas/ConferenceEventInput" }]
+      type: object
+      properties:
+        conferenceTypeId: { type: string }
+        year: { type: integer, minimum: 2000, maximum: 2200 }
+        nameOverride: { type: [string, "null"] }
+        startDate: { type: [string, "null"], format: date }
+        endDate: { type: [string, "null"], format: date }
+        datesUnknown: { type: boolean, description: Explicitly clear dates while retaining a visible unknown-date state. }
+        location: { type: [string, "null"] }
+        attendeeSiteUrl: { type: [string, "null"], format: uri }
+        source: { type: [string, "null"] }
+        status: { type: string, enum: [planned, completed, cancelled] }
+        notes: { type: [string, "null"] }
+    ConferenceEventDateConfirmation:
+      type: object
+      required: [startDate, dateSourceUrl, dateEvidence, dateConfidence, confirmed]
+      properties:
+        researchRequestId: { type: [string, "null"] }
+        startDate: { type: string, format: date }
+        endDate: { type: [string, "null"], format: date }
+        dateSourceUrl: { type: string, format: uri }
+        dateEvidence: { type: string, minLength: 1 }
+        dateConfidence: { type: string, enum: [high, medium, low] }
+        expectedUpdatedAt: { type: [string, "null"], format: date-time }
+        confirmed: { type: boolean, const: true, description: Required explicit reviewer confirmation before saving researched dates. }
     ConferenceAttendanceRow:
       type: object
       required:
@@ -13185,8 +13405,9 @@ components:
         sourceType:
           {
             type: string,
-            enum: [uploaded_list, conference_website, wildflower_email, manual],
+              enum: [uploaded_list, conference_website, wildflower_email, manual, agenda_speaker],
           }
+        role: { type: string, default: Attendee, description: Attendance role such as Attendee or Speaker. }
         sourceReference: { type: [string, "null"] }
         evidenceNote: { type: [string, "null"] }
         createdAt: { type: string, format: date-time }
@@ -13209,8 +13430,9 @@ components:
         sourceType:
           {
             type: string,
-            enum: [uploaded_list, conference_website, wildflower_email, manual],
+            enum: [uploaded_list, conference_website, wildflower_email, manual, agenda_speaker],
           }
+        role: { type: string, default: Attendee }
         sourceReference: { type: [string, "null"] }
         evidenceNote: { type: [string, "null"] }
     ConferenceImportInput:
@@ -13258,6 +13480,9 @@ components:
       properties:
         attendeeSiteUrl: { type: [string, "null"] }
         instructions: { type: [string, "null"] }
+        kind: { type: string, enum: [dates, agenda_speakers], default: agenda_speakers }
+        windowKey:
+          { type: [string, "null"], description: Idempotency window such as created, before_21_days, before_2_days, or retroactive. }
     ConferenceResearchRequest:
       type: object
       required: [id, conferenceEventId, prompt, status, createdAt]
@@ -13267,8 +13492,101 @@ components:
         attendeeSiteUrl: { type: [string, "null"] }
         instructions: { type: [string, "null"] }
         prompt: { type: string }
-        status: { type: string }
+        status: { type: string, description: New run statuses are queued, running, completed, and failed; legacy statuses remain readable. }
+        kind: { type: string, enum: [dates, agenda_speakers] }
+        windowKey: { type: [string, "null"] }
+        attempts: { type: integer }
+        nextAttemptAt: { type: [string, "null"], format: date-time }
+        startedAt: { type: [string, "null"], format: date-time }
+        completedAt: { type: [string, "null"], format: date-time }
+        error: { type: [string, "null"] }
+        sources:
+          type: array
+          items: { $ref: "#/components/schemas/ConferenceResearchSource" }
+        evidence: { type: array, items: { type: object, additionalProperties: true } }
+        proposedStartDate: { type: [string, "null"], format: date }
+        proposedEndDate: { type: [string, "null"], format: date }
+        proposedDateConfidence: { type: [string, "null"], enum: [high, medium, low, null] }
         createdAt: { type: string, format: date-time }
+    ConferenceResearchSource:
+      type: object
+      required: [url]
+      properties:
+        url: { type: string, format: uri }
+        title: { type: [string, "null"] }
+        publisher: { type: [string, "null"] }
+        fetchedAt: { type: [string, "null"], format: date-time }
+    ConferenceSpeakerMatchCandidate:
+      type: object
+      required: [personId, name]
+      properties:
+        personId: { type: string }
+        name: { type: string }
+        organizationId: { type: [string, "null"] }
+        organizationName: { type: [string, "null"] }
+        matchEvidence: { type: [string, "null"] }
+    ConferenceSpeakerProposal:
+      type: object
+      required: [id, conferenceEventId, speakerFingerprint, name, confidence, candidatePersonIds, status, createdAt]
+      properties:
+        id: { type: string }
+        conferenceEventId: { type: string }
+        conferenceResearchRequestId: { type: [string, "null"] }
+        speakerFingerprint: { type: string }
+        name: { type: string }
+        title: { type: [string, "null"] }
+        organizationName: { type: [string, "null"] }
+        bio: { type: [string, "null"] }
+        profileUrl: { type: [string, "null"], format: uri }
+        sourceUrl: { type: [string, "null"], format: uri }
+        sessionEvidence: { type: [string, "null"] }
+        confidence: { type: string, enum: [high, medium, low] }
+        candidatePersonIds: { type: array, items: { type: string } }
+        matchCandidates: { type: array, items: { $ref: "#/components/schemas/ConferenceSpeakerMatchCandidate" } }
+        matchedPersonId: { type: [string, "null"] }
+        matchedOrganizationId: { type: [string, "null"] }
+        addedPersonId: { type: [string, "null"] }
+        status: { type: string, enum: [pending, added, ignored] }
+        reviewedByUserId: { type: [string, "null"] }
+        reviewedAt: { type: [string, "null"], format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ConferenceSpeakerProposalBulkInput:
+      type: object
+      required: [proposalIds]
+      properties:
+        proposalIds: { type: array, minItems: 1, uniqueItems: true, items: { type: string } }
+        personSelections:
+          type: array
+          description: Explicit reviewer choices for ambiguous matches when adding speakers. Ignored by bulk ignore.
+          items:
+            type: object
+            required: [proposalId, personId]
+            properties:
+              proposalId: { type: string }
+              personId: { type: string }
+        idempotencyKey: { type: [string, "null"] }
+    ConferenceSpeakerProposalBulkResult:
+      type: object
+      required: [results, succeededCount, conflictCount]
+      properties:
+        results: { type: array, items: { $ref: "#/components/schemas/ConferenceSpeakerProposal" } }
+        succeededCount: { type: integer }
+        conflictCount: { type: integer }
+    ConferenceResearchBackfillInput:
+      type: object
+      properties:
+        eventIds: { type: array, uniqueItems: true, items: { type: string }, description: Omit to enqueue all existing events. }
+        includeKnownDates: { type: boolean, default: false }
+        includeCompletedEvents: { type: boolean, default: true }
+    ConferenceResearchBackfillResult:
+      type: object
+      required: [selectedEventCount, dateRunsQueued, agendaRunsQueued, requestIds]
+      properties:
+        selectedEventCount: { type: integer }
+        dateRunsQueued: { type: integer }
+        agendaRunsQueued: { type: integer }
+        requestIds: { type: array, items: { type: string } }
     ConferenceAttendanceSuggestion:
       type: object
       required:
