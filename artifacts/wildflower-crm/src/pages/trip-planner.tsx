@@ -3,16 +3,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   getGetTripPlanQueryKey,
   getListTripPlansQueryKey,
-  getListPeopleQueryKey,
-  useAddTripVisit,
   useArchiveTripPlan,
   useArchiveTripVisit,
   useCreateTripPlan,
   useCreateTripComment,
   useDraftTripVisits,
-  useGetCurrentUser,
   useGetTripPlan,
-  useListPeople,
   useListTripPlans,
   useListUsers,
   useUpdateTripPlan,
@@ -60,8 +56,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { displayPersonName } from "@/lib/visibility";
 import { userDisplayName } from "@/components/user-picker";
+import { AddPeopleToTripDialog } from "@/components/trip-add-people-dialog";
+import { TripVisitActions } from "@/components/trip-visit-actions";
 
 function toLocalInput(value?: string | null) {
   if (!value) return "";
@@ -475,96 +472,6 @@ function TripFormDialog({
   );
 }
 
-function AddVisitDialog({
-  tripId,
-  open,
-  onOpenChange,
-  onSaved,
-}: {
-  tripId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSaved: () => void;
-}) {
-  const [search, setSearch] = useState("");
-  const [personId, setPersonId] = useState("");
-  const { toast } = useToast();
-  const viewer = useGetCurrentUser().data ?? null;
-  const peopleParams = {
-    search: search.trim() || undefined,
-    deceased: false,
-    showFoundationPartners: false,
-    limit: 50,
-  };
-  const peopleQuery = useListPeople(peopleParams, {
-    query: { enabled: open, queryKey: getListPeopleQueryKey(peopleParams) },
-  });
-  const add = useAddTripVisit({
-    mutation: {
-      onSuccess: () => {
-        onSaved();
-        onOpenChange(false);
-        setPersonId("");
-      },
-      onError: () =>
-        toast({
-          title: "This person could not be added",
-          description: "They may already be on the trip list.",
-          variant: "destructive",
-        }),
-    },
-  });
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add someone to visit</DialogTitle>
-          <DialogDescription>
-            Search CRM people and add one to this trip’s priority list.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 py-2">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people…"
-            autoFocus
-          />
-          <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border p-2">
-            {peopleQuery.isLoading ? (
-              <p className="p-2 text-sm text-muted-foreground">Loading…</p>
-            ) : null}
-            {(peopleQuery.data?.data ?? []).map((person) => (
-              <button
-                key={person.id}
-                type="button"
-                onClick={() => setPersonId(person.id)}
-                className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm ${personId === person.id ? "bg-primary/10 text-primary" : "hover:bg-muted"}`}
-              >
-                <span>{displayPersonName(person, viewer)}</span>
-                {person.priority ? (
-                  <Badge variant="outline">{person.priority}</Badge>
-                ) : null}
-              </button>
-            ))}
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={!personId || add.isPending}
-            onClick={() => add.mutate({ id: tripId, data: { personId } })}
-          >
-            {add.isPending ? "Adding…" : "Add person"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function EditVisitDialog({
   tripId,
   visit,
@@ -682,13 +589,33 @@ function VisitRow({
   tripId,
   visit,
   onChanged,
+  onConfirm,
 }: {
   tripId: string;
   visit: TripVisit;
   onChanged: () => void;
+  onConfirm: () => Promise<TripVisit | undefined>;
 }) {
   const [editOpen, setEditOpen] = useState(false);
-  const archive = useArchiveTripVisit({ mutation: { onSuccess: onChanged } });
+  const { toast } = useToast();
+  const archive = useArchiveTripVisit({
+    mutation: {
+      onSuccess: () => {
+        toast({
+          title: `${visit.personName} marked unavailable`,
+          description: "They have been hidden from this trip’s visit list.",
+        });
+        onChanged();
+      },
+      onError: (error: unknown) => {
+        toast({
+          title: "Could not mark this person unavailable",
+          description: error instanceof Error ? error.message : String(error),
+          variant: "destructive",
+        });
+      },
+    },
+  });
   return (
     <div
       className="rounded-lg border p-4"
@@ -719,24 +646,15 @@ function VisitRow({
               "No city or email recorded"}
           </p>
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setEditOpen(true)}
-            aria-label={`Edit ${visit.personName}`}
-          >
-            <Pencil className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => archive.mutate({ id: tripId, visitId: visit.id })}
-            aria-label={`Remove ${visit.personName}`}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
+        <TripVisitActions
+          visit={visit}
+          onEdit={() => setEditOpen(true)}
+          onConfirm={onConfirm}
+          onUnavailable={() =>
+            archive.mutate({ id: tripId, visitId: visit.id })
+          }
+          unavailablePending={archive.isPending}
+        />
       </div>
       {visit.rationale ? (
         <p className="mt-3 text-sm">{visit.rationale}</p>
@@ -1231,6 +1149,12 @@ function TripDetailPanel({
                 tripId={trip.id}
                 visit={visit}
                 onChanged={refresh}
+                onConfirm={async () => {
+                  const result = await detail.refetch();
+                  return result.data?.visits.find(
+                    (candidate) => candidate.id === visit.id,
+                  );
+                }}
               />
             ))
           )}
@@ -1247,7 +1171,7 @@ function TripDetailPanel({
           refresh();
         }}
       />
-      <AddVisitDialog
+      <AddPeopleToTripDialog
         tripId={trip.id}
         open={addOpen}
         onOpenChange={setAddOpen}

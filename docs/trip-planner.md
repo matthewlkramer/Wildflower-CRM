@@ -16,7 +16,8 @@ last_verified: 2026-09-10
   columns remain nullable for compatibility, are cleared whenever a trip is
   saved in the CRM, and are not separate planning authorities.
 - The visit list is editable CRM planning state. A team member can add, remove,
-  reorder, and annotate people. Each person has separate planning notes and a
+  reorder, and annotate people. The add dialog accepts multiple selections and
+  submits them together. Each person has separate planning notes and a
   next step, plus the name and timestamp of the teammate who last edited those
   fields. The system-draft action adds up to 25 active,
   living CRM people whose address city (and state, when entered) exactly matches
@@ -26,6 +27,12 @@ last_verified: 2026-09-10
   Low-priority and unprioritized people and organizations are never system-drafted.
   The action never overwrites a team's existing refinements; manual additions
   remain available regardless of priority.
+- Each visit row has two planning actions. `Unavailable` archives the candidate
+  and immediately hides them from this trip; adding the person later revives
+  that row. `Confirm` reloads the trip's visible Gmail and Calendar evidence.
+  It reports the matching Calendar time when one exists, distinguishes a Gmail
+  response with no matching Calendar time, and does not persist a second
+  confirmation status.
 - The trip index can be filtered to one team traveler. Each trip card identifies
   its traveler, travel dates, and destination city when one has been entered.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
