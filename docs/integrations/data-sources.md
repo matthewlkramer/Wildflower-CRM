@@ -104,7 +104,10 @@ document set (see [`../README.md`](../README.md)).
   sync retains CRM-matched meetings; when the user has active `trip_plans`, a
   date-bounded pass also captures every primary-calendar event overlapping
   those travel windows. Unmatched trip events default private and expire when
-  no active trip or linked CRM note requires them.
+  no active trip or linked CRM note requires them. The activity feed offers
+  **Add sender** only when the received message's exact sender address has no
+  existing CRM email row; message-level matched-person arrays can also reflect
+  recipients and are not proof that the sender is known.
 - **Flodesk** — newsletter eligibility derives from `newsletter_preference_events`;
   the two people flags are read-only projections. Staff removal removes the
   configured segment membership; opt-out suppresses delivery. Resubscription

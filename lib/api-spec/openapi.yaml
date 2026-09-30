@@ -25858,6 +25858,12 @@ components:
             readOnly: true,
             description: "True when fromEmail belongs to an admin-configured internal staff domain. Clients use this server-derived fact to suppress donor/contact creation actions for staff senders.",
           }
+        isKnownSender:
+          {
+            type: boolean,
+            readOnly: true,
+            description: "True when fromEmail exactly matches an email address already attached to any CRM record. Clients suppress Add sender for known addresses.",
+          }
         toEmails: { type: array, items: { type: string }, nullable: true }
         ccEmails: { type: array, items: { type: string }, nullable: true }
         bccEmails: { type: array, items: { type: string }, nullable: true }
