@@ -3,6 +3,7 @@ import { isIP } from "node:net";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { logger } from "./logger";
+import { extractConferencePdfText, MAX_PDF_BYTES, UnsupportedConferencePdfError } from "./conferencePdf";
 
 const DEFAULT_MODEL = "gpt-5-mini";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -85,6 +86,7 @@ export class ConferenceResearchError extends Error {
     | "provider_not_configured"
     | "provider_request_failed"
     | "web_search_unsupported"
+    | "unsupported_public_pdf"
     | "invalid_provider_response"
     | "uncited_research";
   readonly retryable: boolean;
@@ -309,7 +311,7 @@ function pinnedRequest(
       method: "GET",
       headers: {
         "User-Agent": "WildflowerConferenceResearch/1.0 (+public event research)",
-        Accept: "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml",
+        Accept: "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml,application/pdf",
       },
       lookup: pinnedLookup,
       servername: url.hostname,
@@ -346,11 +348,18 @@ async function safePublicFetch(args: {
   fetcher?: typeof globalThis.fetch;
   resolveHost: HostResolver;
   maxBytes: number;
+  httpsOnly?: boolean;
+  rejectPdfRedirectFromHttp?: boolean;
 }): Promise<{ response: Response; url: URL }> {
   let currentUrl = args.value;
   for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
     const destination = await assertPublicDestination(currentUrl, args.resolveHost);
     const url = destination.url;
+    if (args.httpsOnly && url.protocol !== "https:") {
+      throw new ConferenceResearchError(
+        "provider_request_failed", "Public PDF research refuses non-HTTPS URLs and redirects.", false,
+      );
+    }
     let response: Response;
     if (args.fetcher) {
       try {
@@ -359,7 +368,7 @@ async function safePublicFetch(args: {
           redirect: "manual",
           headers: {
             "User-Agent": "WildflowerConferenceResearch/1.0",
-            Accept: "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml",
+            Accept: "text/html,application/xhtml+xml,application/rss+xml,application/xml,text/xml,application/pdf",
           },
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
@@ -382,6 +391,19 @@ async function safePublicFetch(args: {
         );
       }
       const target = new URL(location, url).toString();
+      if (args.rejectPdfRedirectFromHttp &&
+        new URL(args.value).protocol === "http:" && /\.pdf$/i.test(new URL(target).pathname)) {
+        throw new ConferenceResearchError(
+          "provider_request_failed",
+          "Public PDF research will not follow a PDF link from an insecure HTTP page.",
+          false,
+        );
+      }
+      if (args.httpsOnly && new URL(target).protocol !== "https:") {
+        throw new ConferenceResearchError(
+          "provider_request_failed", "Public PDF research refuses non-HTTPS redirects.", false,
+        );
+      }
       // Validate redirect targets before following. The next request will also pin
       // its DNS lookup to the vetted public address.
       await assertPublicDestination(target, args.resolveHost);
@@ -397,8 +419,14 @@ async function safePublicFetch(args: {
   );
 }
 
-async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
-  if (!response.body) return "";
+async function readBoundedBytes(response: Response, maxBytes: number): Promise<Buffer> {
+  const declaredLength = response.headers.get("content-length");
+  if (declaredLength && Number(declaredLength) > maxBytes) {
+    throw new ConferenceResearchError(
+      "provider_request_failed", "Public source exceeded the permitted response size.", false,
+    );
+  }
+  if (!response.body) return Buffer.alloc(0);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let totalBytes = 0;
@@ -420,7 +448,11 @@ async function readBoundedText(response: Response, maxBytes: number): Promise<st
   } finally {
     reader.releaseLock();
   }
-  return new TextDecoder().decode(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))));
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+}
+
+async function readBoundedText(response: Response, maxBytes: number): Promise<string> {
+  return new TextDecoder().decode(await readBoundedBytes(response, maxBytes));
 }
 
 function decodeEntities(value: string): string {
@@ -435,20 +467,32 @@ function decodeEntities(value: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
 }
 
-function stripHtml(html: string): { title: string | null; text: string; links: string[] } {
+function stripHtml(html: string, baseUrl?: string): { title: string | null; text: string; links: string[]; pdfLinks: string[] } {
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  const resolveLink = (href: string): string | null => {
+    try {
+      return publicHttpUrl(baseUrl ? new URL(decodeEntities(href), baseUrl).toString() : decodeEntities(href));
+    } catch {
+      return null;
+    }
+  };
   const links = [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)]
-    .map((match) => decodeEntities(match[1]))
-    .map((href) => publicHttpUrl(href))
+    .map((match) => resolveLink(match[1]))
     .filter((href): href is string => !!href)
     .slice(0, 100);
+  const pdfLinks = [...html.matchAll(/<a\b([^>]*href=["']([^"']+)["'][^>]*)>([\s\S]*?)<\/a>/gi)]
+    .filter((match) => isHttpsPdfUrl(resolveLink(match[2]) ?? "") ||
+      /\bpdf\b/i.test(match[1] + " " + match[3].replace(/<[^>]+>/g, " ")))
+    .map((match) => resolveLink(match[2]))
+    .filter((href): href is string => !!href && new URL(href).protocol === "https:")
+    .slice(0, 30);
   const text = decodeEntities(
     html
       .replace(/<(script|style|svg|noscript|iframe|nav|footer|header)\b[^>]*>[\s\S]*?<\/\1>/gi, " ")
       .replace(/<!--[\s\S]*?-->/g, " ")
       .replace(/<[^>]+>/g, " "),
   ).replace(/\s+/g, " ").trim();
-  return { title: title ? decodeEntities(title.replace(/<[^>]+>/g, "")).trim().slice(0, 300) : null, text, links };
+  return { title: title ? decodeEntities(title.replace(/<[^>]+>/g, "")).trim().slice(0, 300) : null, text, links, pdfLinks };
 }
 
 function rejectRestrictedPage(text: string): boolean {
@@ -498,15 +542,24 @@ function groundedIn(value: string, sourceText: string): boolean {
 function dateGrounded(value: string, sourceText: string): boolean {
   const date = new Date(`${value}T00:00:00.000Z`);
   const month = date.toLocaleString("en-US", { month: "long", timeZone: "UTC" });
-  const day = String(date.getUTCDate());
+  const day = date.getUTCDate();
   const year = String(date.getUTCFullYear());
   const shortMonth = month.slice(0, 3);
-  const numeric = normalizeForGrounding(value);
   const normalizedSource = normalizeForGrounding(sourceText);
-  return normalizedSource.includes(numeric) ||
-    (normalizedSource.includes(year) && normalizedSource.includes(day) &&
-      (normalizedSource.includes(normalizeForGrounding(month)) ||
-        normalizedSource.includes(normalizeForGrounding(shortMonth))));
+  const monthNumber = String(date.getUTCMonth() + 1);
+  const monthPattern = `(?:${month.toLowerCase()}|${shortMonth.toLowerCase()})`;
+  const dayPattern = `0?${day}(?:st|nd|rd|th)?`;
+  // Ground a whole date expression, not independent substrings: "May 14,
+  // 2027" must never be accepted as evidence for May 1, 2027.
+  return [
+    new RegExp(`\\b${year} 0?${monthNumber} ${dayPattern}\\b`),
+    new RegExp(`\\b0?${monthNumber} ${dayPattern} ${year}\\b`),
+    new RegExp(`\\b${monthPattern} ${dayPattern} ${year}\\b`),
+    new RegExp(`\\b${dayPattern} ${monthPattern} ${year}\\b`),
+    // Printed schedules often give an inclusive range: April 12–15, 2026.
+    new RegExp(`\\b${monthPattern} ${dayPattern} (?:to |through )?\\d{1,2} ${year}\\b`),
+    new RegExp(`\\b${monthPattern} \\d{1,2} (?:to |through )?${dayPattern} ${year}\\b`),
+  ].some((pattern) => pattern.test(normalizedSource));
 }
 
 function parseJson(text: string): unknown {
@@ -808,6 +861,27 @@ interface FetchedPublicPage {
   links: Set<string>;
 }
 
+function isHttpsPdfUrl(value: string): boolean {
+  const safe = publicHttpUrl(value);
+  if (!safe) return false;
+  const url = new URL(safe);
+  return url.protocol === "https:" && /\.pdf$/i.test(url.pathname);
+}
+
+function isOfficialSearchHit(
+  result: { title: string | null; url: string },
+  conferenceName: string,
+  year: number,
+): boolean {
+  const title = normalizeForGrounding(result.title ?? "");
+  const name = normalizeForGrounding(conferenceName);
+  const hostname = new URL(result.url).hostname.toLowerCase();
+  return name.length >= 5 && title.includes(name) &&
+    (title.includes(String(year)) || result.url.includes(String(year))) &&
+    !/(?:^|\.)(?:facebook|linkedin|instagram|youtube|reddit|google|bing)\./.test(hostname) &&
+    /\b(official|conference|summit|agenda|program|speaker|schedule)\b/.test(title);
+}
+
 async function performFallbackResearch(args: {
   conferenceName: string;
   year: number;
@@ -862,39 +936,99 @@ async function performFallbackResearch(args: {
     );
   }
   const seen = new Set<string>();
-  const candidates: Array<{ url: string; title: string | null; official: boolean }> = [];
-  const addCandidate = (value: string, title: string | null, isOfficial: boolean) => {
+  const candidates: Array<{ url: string; title: string | null; official: boolean; pdfLink: boolean }> = [];
+  const addCandidate = (value: string, title: string | null, isOfficial: boolean, pdfLink = false) => {
     const url = publicHttpUrl(value);
     if (!url || seen.has(url)) return;
     seen.add(url);
-    candidates.push({ url, title, official: isOfficial });
+    candidates.push({ url, title, official: isOfficial, pdfLink });
   };
-  if (official) addCandidate(official.toString(), "Official event page", true);
+  if (official) addCandidate(official.toString(), "Official event page", true, isHttpsPdfUrl(official.toString()));
   for (const result of searchResults) {
+    const sameOfficialHost = !!official && new URL(result.url).hostname === official.hostname;
+    const credibleOrganizerHit = !official && isOfficialSearchHit(result, args.conferenceName, args.year);
     addCandidate(
       result.url,
       result.title,
-      !!official && new URL(result.url).hostname === official.hostname,
+      sameOfficialHost || credibleOrganizerHit,
+      (sameOfficialHost || credibleOrganizerHit) && new URL(result.url).protocol === "https:" &&
+        (isHttpsPdfUrl(result.url) || /\bpdf\b/i.test(result.title ?? "")),
     );
   }
-  candidates.sort((left, right) => Number(right.official) - Number(left.official));
+  candidates.sort((left, right) =>
+    Number(right.official) - Number(left.official) ||
+    Number(right.pdfLink) - Number(left.pdfLink));
   const pages: FetchedPublicPage[] = [];
-  for (const candidate of candidates) {
-    if (pages.length >= MAX_PAGES) break;
+  let fetchAttempts = 0;
+  let pdfFailure: ConferenceResearchError | null = null;
+  for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+    const candidate = candidates[candidateIndex];
+    if (pages.length >= MAX_PAGES || fetchAttempts >= MAX_PAGES * 3) break;
+    if (/\.pdf$/i.test(new URL(candidate.url).pathname) &&
+      new URL(candidate.url).protocol !== "https:") continue;
+    fetchAttempts += 1;
     let fetched: { response: Response; url: URL };
     try {
       fetched = await safePublicFetch({
         value: candidate.url,
         fetcher: args.publicFetch,
         resolveHost: args.resolveHost,
-        maxBytes: MAX_PAGE_BYTES,
+        maxBytes: candidate.pdfLink ? MAX_PDF_BYTES : MAX_PAGE_BYTES,
+        httpsOnly: candidate.pdfLink,
+        rejectPdfRedirectFromHttp: true,
       });
     } catch (error) {
-      if (error instanceof ConferenceResearchError && !error.retryable) continue;
+      if (candidate.pdfLink) {
+        pdfFailure = new ConferenceResearchError(
+          "unsupported_public_pdf",
+          `The linked public PDF could not be safely fetched: ${error instanceof Error ? error.message : "unknown error"}`,
+        );
+      }
+      continue;
+    }
+    if (candidate.pdfLink && !fetched.response.ok) {
+      pdfFailure = new ConferenceResearchError(
+        "unsupported_public_pdf", `The linked public PDF returned HTTP ${fetched.response.status}.`,
+      );
       continue;
     }
     if (!fetched.response.ok) continue;
     const contentType = fetched.response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (candidate.pdfLink || (candidate.official && contentType.startsWith("application/pdf"))) {
+      if (fetched.url.protocol !== "https:" || !/^application\/pdf(?:\s*;|$)/.test(contentType)) {
+        pdfFailure = new ConferenceResearchError(
+          "unsupported_public_pdf", "The public PDF did not have an HTTPS PDF URL and application/pdf content type.",
+        );
+        continue;
+      }
+      if (new URL(candidate.url).protocol !== "https:") {
+        pdfFailure = new ConferenceResearchError(
+          "unsupported_public_pdf", "An insecure HTTP page cannot provide a trusted PDF research source.",
+        );
+        continue;
+      }
+      try {
+        const bytes = await readBoundedBytes(fetched.response, MAX_PDF_BYTES);
+        const text = await extractConferencePdfText(bytes);
+        pages.push({
+          citation: { url: fetched.url.toString(), title: candidate.title, accessedAt: args.researchedAt },
+          text,
+          links: new Set((text.match(/https:\/\/[^\s<>)"']+/g) ?? [])
+            .map((link) => publicHttpUrl(link)).filter((link): link is string => !!link)),
+        });
+      } catch (error) {
+        if (error instanceof UnsupportedConferencePdfError ||
+          error instanceof ConferenceResearchError) {
+          pdfFailure = new ConferenceResearchError(
+            "unsupported_public_pdf",
+            `Public PDF source is unsupported: ${error.message}`,
+          );
+          continue;
+        }
+        throw error;
+      }
+      continue;
+    }
     if (contentType && !/(?:text\/html|application\/xhtml\+xml|text\/xml|application\/xml)/.test(contentType)) {
       continue;
     }
@@ -904,7 +1038,7 @@ async function performFallbackResearch(args: {
     } catch {
       continue;
     }
-    const extracted = stripHtml(html);
+    const extracted = stripHtml(html, fetched.url.toString());
     if (!extracted.text || rejectRestrictedPage(extracted.text)) continue;
     pages.push({
       citation: {
@@ -915,8 +1049,18 @@ async function performFallbackResearch(args: {
       text: extracted.text.slice(0, MAX_PAGE_TEXT),
       links: new Set(extracted.links),
     });
+    if (candidate.official && fetched.url.protocol === "https:") {
+      const previouslyQueued = candidates.length;
+      for (const link of extracted.pdfLinks) {
+        addCandidate(link, "Official linked PDF agenda", true, true);
+      }
+      // A linked agenda must be considered before less-specific search hits
+      // consume the six-source quota.
+      candidates.splice(candidateIndex + 1, 0, ...candidates.splice(previouslyQueued));
+    }
   }
   if (pages.length === 0) {
+    if (pdfFailure) throw pdfFailure;
     throw new ConferenceResearchError(
       "provider_request_failed",
       "Public search found no accessible, non-paywalled event or organizer pages to research.",
@@ -1030,6 +1174,7 @@ async function performFallbackResearch(args: {
     sourceTexts,
     sourceLinks,
   );
+  if (results.length === 0 && pdfFailure) throw pdfFailure;
   return { kind: args.kind, researchedAt: args.researchedAt, results, citations };
 }
 

@@ -11,6 +11,7 @@ import {
 import { logger } from "./logger";
 import { newId } from "./helpers";
 import {
+  ConferenceResearchError,
   researchConferencePublicWeb,
   type ConferenceResearchKind,
   type ConferenceResearchResult,
@@ -528,11 +529,14 @@ async function runOneResearchJob(): Promise<boolean> {
     await processRequest(request);
   } catch (error) {
     const attempts = request.attempts;
-    const credentialUnavailable = isCredentialUnavailable(error);
-    const retryable = credentialUnavailable ||
+     const credentialUnavailable = isCredentialUnavailable(error);
+     const unsupportedPublicPdf = error instanceof ConferenceResearchError &&
+       error.code === "unsupported_public_pdf";
+     const delayedRetry = credentialUnavailable || unsupportedPublicPdf;
+     const retryable = delayedRetry ||
       !(error && typeof error === "object" && "retryable" in error && error.retryable === false);
-    const exhausted = !retryable || (!credentialUnavailable && attempts >= MAX_ATTEMPTS);
-    const retryDelay = getResearchRetryDelayMs(attempts, credentialUnavailable);
+     const exhausted = !retryable || (!delayedRetry && attempts >= MAX_ATTEMPTS);
+     const retryDelay = getResearchRetryDelayMs(attempts, delayedRetry);
     const message = error instanceof Error ? error.message : "Conference research failed.";
     await db.update(conferenceResearchRequests).set({
       status: exhausted ? "failed" : "queued",

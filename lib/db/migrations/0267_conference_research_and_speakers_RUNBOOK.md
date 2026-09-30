@@ -19,8 +19,14 @@ as part of code review or in a deployment build/startup hook.
 3. Confirm the server-side OpenAI Responses integration can extract facts from
    fetched public pages. The Replit proxy did not complete the native
    `web_search` tool in development, so the server uses bounded public-web
-   search/fetch and source-grounded extraction instead. Network access to public
-   search and organizer sites is also required. A credential alone is **not
+   search/fetch and source-grounded extraction instead. It can also read
+   public HTTPS PDF agendas from qualifying organizer search results or links
+   on fetched official pages. PDFs must have a valid PDF response type and
+   signature, fit within 3 MB and 24 pages, and provide extractable text;
+   the first 10,000 characters are available for cited extraction. Scanned,
+   malformed, private, or inaccessible PDFs remain visible delayed-retry work,
+   not inferred findings. Network access to public search and organizer sites
+   is also required. A credential alone is **not
    proof** that research works; test a known official page and check run errors.
    Missing credentials or inaccessible sources leave visible retryable work;
    uncited or unsupported findings are rejected. Never put a credential in the

@@ -52,6 +52,7 @@
     "http-proxy-middleware": "^3.0.5",
     "nanoid": "^5.1.9",
     "p-limit": "^7.3.0",
+    "pdf-parse": "2.4.5",
     "pino": "^9",
     "pino-http": "^10",
     "stripe": "^22.2.1",
