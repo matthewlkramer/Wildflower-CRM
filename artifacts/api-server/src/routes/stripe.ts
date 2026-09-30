@@ -1739,7 +1739,14 @@ router.get(
   "/stripe/sync-status",
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const rows = await db.select().from(stripeSyncState);
+    // More than one account cursor can remain after reconnecting Stripe.
+    // An unordered read can surface the old account's last run even though
+    // the currently connected account just synced successfully.
+    const rows = await db
+      .select()
+      .from(stripeSyncState)
+      .orderBy(sql`${stripeSyncState.lastRunAt} DESC NULLS LAST`)
+      .limit(1);
     const state = rows[0] ?? null;
     res.json({
       configured: rows.length > 0,

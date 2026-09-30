@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronsUpDown, Pencil, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -177,9 +171,7 @@ export function InlineEditMultiSelect({
               <Badge
                 key={v}
                 variant="secondary"
-                data-testid={
-                  testIdBase ? `chip-${testIdBase}-${v}` : undefined
-                }
+                data-testid={testIdBase ? `chip-${testIdBase}-${v}` : undefined}
               >
                 {chipLabel(v)}
               </Badge>
@@ -231,9 +223,7 @@ export function InlineEditMultiSelect({
     !creatingOption;
 
   const toggle = (v: string) => {
-    setDraft((d) =>
-      d.includes(v) ? d.filter((x) => x !== v) : [...d, v],
-    );
+    setDraft((d) => (d.includes(v) ? d.filter((x) => x !== v) : [...d, v]));
   };
   const removeChip = (v: string) => setDraft((d) => d.filter((x) => x !== v));
   const addCustom = () => {
@@ -263,7 +253,10 @@ export function InlineEditMultiSelect({
   const trySave = () => {
     if (!dirty || busy) return;
     const next = nullWhenEmpty && draft.length === 0 ? null : draft;
-    run(() => onSave(next), () => setEditing(false));
+    run(
+      () => onSave(next),
+      () => setEditing(false),
+    );
   };
 
   return (
@@ -277,9 +270,7 @@ export function InlineEditMultiSelect({
               key={v}
               variant="secondary"
               className="gap-1 pr-1"
-              data-testid={
-                testIdBase ? `chip-${testIdBase}-${v}` : undefined
-              }
+              data-testid={testIdBase ? `chip-${testIdBase}-${v}` : undefined}
             >
               {chipLabel(v)}
               <button
@@ -309,9 +300,7 @@ export function InlineEditMultiSelect({
               size="sm"
               className="h-8 min-w-0 flex-1 justify-between font-normal"
               disabled={busy}
-              data-testid={
-                testIdBase ? `select-${testIdBase}` : undefined
-              }
+              data-testid={testIdBase ? `select-${testIdBase}` : undefined}
             >
               <span className="truncate">
                 {placeholder ?? `Add ${label.toLowerCase()}…`}
@@ -333,7 +322,9 @@ export function InlineEditMultiSelect({
                 }
               />
               <CommandList>
-                {visibleOptions.length === 0 && !showAddCustom && !showCreateOption ? (
+                {visibleOptions.length === 0 &&
+                !showAddCustom &&
+                !showCreateOption ? (
                   <CommandEmpty>No matches.</CommandEmpty>
                 ) : null}
                 {visibleOptions.length > 0 ? (
@@ -393,13 +384,13 @@ export function InlineEditMultiSelect({
                       onSelect={handleCreateOption}
                       disabled={creatingOption}
                       data-testid={
-                        testIdBase
-                          ? `select-${testIdBase}-create`
-                          : undefined
+                        testIdBase ? `select-${testIdBase}-create` : undefined
                       }
                     >
                       <Plus className="mr-2 h-4 w-4" />
-                      {creatingOption ? "Creating…" : `Create "${trimmedQuery}"`}
+                      {creatingOption
+                        ? "Creating…"
+                        : `Create "${trimmedQuery}"`}
                     </CommandItem>
                   </CommandGroup>
                 ) : null}
@@ -479,6 +470,8 @@ export const INTERESTS_AGES_SUGGESTIONS: ReadonlyArray<MultiSelectOption> = [
 export const INTERESTS_GOV_MODELS_SUGGESTIONS: ReadonlyArray<MultiSelectOption> =
   [
     { value: "Charter", label: "Charter" },
+    { value: "Childcare center", label: "Childcare center" },
+    { value: "Head Start", label: "Head Start" },
     { value: "Voucher", label: "Voucher" },
   ];
 
@@ -608,7 +601,10 @@ export function InlineEditMultiRegionPicker({
   const trySave = () => {
     if (!dirty || busy) return;
     const next = draft.length === 0 ? null : draft;
-    run(() => onSave(next), () => setEditing(false));
+    run(
+      () => onSave(next),
+      () => setEditing(false),
+    );
   };
 
   const renderItem = (o: RegionOption) => {
@@ -773,9 +769,7 @@ export function InlineEditMultiRegionPicker({
           open={createOpen}
           onOpenChange={setCreateOpen}
           initialName={term}
-          onCreated={(id) =>
-            setDraft((d) => (d.includes(id) ? d : [...d, id]))
-          }
+          onCreated={(id) => setDraft((d) => (d.includes(id) ? d : [...d, id]))}
         />
       )}
     </div>

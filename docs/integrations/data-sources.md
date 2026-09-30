@@ -87,7 +87,9 @@ record count. Never print the token, Authorization header, or school records.
   approval, and unit→gift review facts remain CRM-owned and are not overwritten.
 - **Stripe** — payouts and per-charge gross records
   (`stripe_payouts` / `stripe_staged_charges`), watermarked in
-  `stripe_sync_state`.
+  `stripe_sync_state`. The admin sync card reports the latest run across saved
+  account cursors, so an older disconnected account cannot mask a successful
+  run after reconnecting.
 - **Donorbox** — donations into `donorbox_donations`, watermarked in
   `donorbox_sync_state`. Donorbox is donor/purpose evidence, not transaction
   evidence.
