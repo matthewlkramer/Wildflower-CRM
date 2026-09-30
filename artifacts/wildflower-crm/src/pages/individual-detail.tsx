@@ -1347,7 +1347,6 @@ function HouseholdMembersSection({
             href={`/individuals/${m.personId}`}
             role={roleLine}
             status={m.current === "current" ? "active" : "past"}
-            primary={m.primaryContact ?? false}
             hideStatusBadge
             action={<EditPeopleEntityRoleDialog role={m} />}
           />
@@ -1450,7 +1449,6 @@ function ColleagueMembers({
             href={`/individuals/${m.personId}`}
             role={roleLine}
             status={isCurrent ? "active" : "past"}
-            primary={m.primaryContact}
             hideStatusBadge
             action={
               <EditPeopleEntityRoleDialog

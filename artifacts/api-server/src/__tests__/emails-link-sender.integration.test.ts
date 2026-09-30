@@ -200,6 +200,21 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
     expect(byId[MSG_ALREADY]).toEqual([PERSON_ID]); // no duplicate append
   }, 30_000);
 
+  it("GET /email-messages labels a known sender by exact email identity", async () => {
+    const response = await fetch(
+      `${baseUrl}/api/email-messages?mailboxUserId=${TEST_USER_ID}`,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: { id: string; isKnownSender: boolean }[];
+    };
+    const byId = Object.fromEntries(
+      body.data.map((row) => [row.id, row.isKnownSender]),
+    );
+    expect(byId[MSG_FROM]).toBe(true);
+    expect(byId[MSG_UNRELATED]).toBe(false);
+  }, 30_000);
+
   it("POST /emails re-attributes retained Calendar events for the address", async () => {
     const row = await db
       .select({ matched: calendarEvents.matchedPersonIds })

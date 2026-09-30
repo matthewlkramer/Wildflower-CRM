@@ -9,6 +9,7 @@ import {
   getTripCalendarDisplay,
   groupTripTravelBookings,
   isBirthdayCalendarEvent,
+  tripCalendarEventKey,
   type TripFormState,
 } from "./trip-planner";
 
@@ -50,6 +51,7 @@ describe("trip planner calendar display", () => {
       status: string | null;
       description: string | null;
       gcalCalendarId: string;
+      gcalEventId: string;
     }> = {},
   ) => ({
     id,
@@ -57,6 +59,7 @@ describe("trip planner calendar display", () => {
     status: "confirmed",
     description: null,
     gcalCalendarId: "primary",
+    gcalEventId: id,
     ...overrides,
   });
 
@@ -84,18 +87,42 @@ describe("trip planner calendar display", () => {
       event("cancelled", "Cancelled meeting", { status: "cancelled" }),
     ];
 
-    const hidden = getTripCalendarDisplay(events, ["manual"], false);
+    const hidden = getTripCalendarDisplay(
+      events,
+      [tripCalendarEventKey(events[1])],
+      false,
+    );
     expect(hidden.hiddenCount).toBe(2);
     expect(hidden.events.map(({ event: item }) => item.id)).toEqual([
       "visible",
     ]);
 
-    const revealed = getTripCalendarDisplay(events, ["manual"], true);
+    const revealed = getTripCalendarDisplay(
+      events,
+      [tripCalendarEventKey(events[1])],
+      true,
+    );
     expect(revealed.events.map(({ event: item }) => item.id)).toEqual([
       "visible",
       "manual",
       "birthday",
     ]);
+  });
+
+  it("keeps a hidden event hidden if the database row ID changes on refresh", () => {
+    const original = event("row-1", "Internal hold", {
+      gcalEventId: "google-event-1",
+    });
+    const refreshed = event("row-2", "Internal hold", {
+      gcalEventId: "google-event-1",
+    });
+    expect(
+      getTripCalendarDisplay(
+        [refreshed],
+        [tripCalendarEventKey(original)],
+        false,
+      ).events,
+    ).toEqual([]);
   });
 });
 

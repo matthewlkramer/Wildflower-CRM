@@ -41,19 +41,11 @@ import {
   MeetingNoteRow,
   type MeetingContext,
 } from "@/components/meeting-notes-panel";
-import {
-  AddNoteDialog,
-  NoteMeetingLinkDialog,
-} from "@/components/notes-panel";
+import { AddNoteDialog, NoteMeetingLinkDialog } from "@/components/notes-panel";
 import { AddTaskDialog } from "@/components/tasks-panel";
 import { type EntityLinks } from "@/components/entity-links-editor";
 import { MediaMentionRow } from "@/components/media-mentions-panel";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -273,12 +265,16 @@ export function splitMediaMentionsByRelevance(rows: MediaMention[]): {
 }
 
 export function shouldOfferAddSender(
-  message: Pick<EmailMessage, "direction" | "fromEmail" | "isInternalSender">,
+  message: Pick<
+    EmailMessage,
+    "direction" | "fromEmail" | "isInternalSender" | "isKnownSender"
+  >,
 ): boolean {
   return (
     message.direction === "received" &&
     Boolean(message.fromEmail) &&
-    !message.isInternalSender
+    !message.isInternalSender &&
+    !message.isKnownSender
   );
 }
 
@@ -301,17 +297,23 @@ export function UnifiedActivityFeed({
 
   // Notes/tasks scope — falls back to the relationship scope when no
   // explicit context is given (the common funder/person/household case).
-  const nt: NotesContext = notesContext ?? { personId, organizationId, householdId };
+  const nt: NotesContext = notesContext ?? {
+    personId,
+    organizationId,
+    householdId,
+  };
 
   // Interactions / emails / calendar / meetings are only linkable to a
   // person, funder, or household — never to an opportunity or gift. Gate
   // those queries so opportunity/gift pages don't fetch global lists.
-  const relationScoped = global || !!(personId || organizationId || householdId);
+  const relationScoped =
+    global || !!(personId || organizationId || householdId);
   const relParams = {
     personId,
     organizationId,
     householdId,
-    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    includeLinkedPeople:
+      organizationId && includeLinkedPeople ? true : undefined,
     limit,
   };
 
@@ -345,7 +347,8 @@ export function UnifiedActivityFeed({
   const proposalParams = {
     personId,
     organizationId,
-    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    includeLinkedPeople:
+      organizationId && includeLinkedPeople ? true : undefined,
     limit,
     status: "pending" as const,
   };
@@ -380,7 +383,8 @@ export function UnifiedActivityFeed({
   const mediaParams = {
     personId,
     organizationId,
-    includeLinkedPeople: organizationId && includeLinkedPeople ? true : undefined,
+    includeLinkedPeople:
+      organizationId && includeLinkedPeople ? true : undefined,
     includeHidden: showHiddenMedia ? true : undefined,
     includeFiltered: true,
     limit,
@@ -636,7 +640,13 @@ export function UnifiedActivityFeed({
     { key: "note", label: SOURCE_LABEL.note, count: counts.note },
     ...(hideTasks
       ? []
-      : [{ key: "task" as const, label: SOURCE_LABEL.task, count: counts.task }]),
+      : [
+          {
+            key: "task" as const,
+            label: SOURCE_LABEL.task,
+            count: counts.task,
+          },
+        ]),
     ...(relationScoped
       ? [
           {
@@ -644,7 +654,11 @@ export function UnifiedActivityFeed({
             label: SOURCE_LABEL.interaction,
             count: counts.interaction,
           },
-          { key: "email" as const, label: SOURCE_LABEL.email, count: counts.email },
+          {
+            key: "email" as const,
+            label: SOURCE_LABEL.email,
+            count: counts.email,
+          },
           {
             key: "calendar" as const,
             label: SOURCE_LABEL.calendar,
@@ -658,10 +672,22 @@ export function UnifiedActivityFeed({
         ]
       : []),
     ...(proposalsEnabled
-      ? [{ key: "intel" as const, label: SOURCE_LABEL.intel, count: counts.intel }]
+      ? [
+          {
+            key: "intel" as const,
+            label: SOURCE_LABEL.intel,
+            count: counts.intel,
+          },
+        ]
       : []),
     ...(mediaEnabled
-      ? [{ key: "media" as const, label: SOURCE_LABEL.media, count: counts.media }]
+      ? [
+          {
+            key: "media" as const,
+            label: SOURCE_LABEL.media,
+            count: counts.media,
+          },
+        ]
       : []),
   ];
 
@@ -669,63 +695,73 @@ export function UnifiedActivityFeed({
     <Card data-testid="activity-timeline">
       <CardHeader className="space-y-3">
         <div className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">{global ? "Recent activity" : "Activity"}</CardTitle>
+          <CardTitle className="text-lg">
+            {global ? "Recent activity" : "Activity"}
+          </CardTitle>
         </div>
 
         {/* Pinned composer — quick note box plus quick-action triggers
             that reuse the existing dialogs (no functionality dropped). */}
-        {global ? null : <div
-          className="rounded-lg border bg-background p-3"
-          data-testid="activity-composer"
-        >
-          <Textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            placeholder="Add a note or log an activity…"
-            rows={2}
-            className="resize-none"
-            data-testid="composer-note-input"
-          />
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <AddNoteDialog ctx={nt} />
-              {hideTasks ? null : <AddTaskDialog ctx={nt} />}
-              {relationScoped ? (
-                <>
-                  <LogInteractionDialog
-                    prefillPersonId={personId}
-                    prefillFunderId={organizationId}
-                    prefillHouseholdId={householdId}
-                    compact
-                  />
-                  <AddMeetingNoteDialog
-                    ctx={{ personId, organizationId, householdId } as MeetingContext}
-                    trigger={
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        data-testid="button-take-meeting-notes"
-                      >
-                        <Sparkles className="mr-1.5 h-4 w-4" />
-                        Take meeting notes
-                      </Button>
-                    }
-                  />
-                </>
-              ) : null}
+        {global ? null : (
+          <div
+            className="rounded-lg border bg-background p-3"
+            data-testid="activity-composer"
+          >
+            <Textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Add a note or log an activity…"
+              rows={2}
+              className="resize-none"
+              data-testid="composer-note-input"
+            />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <AddNoteDialog ctx={nt} />
+                {hideTasks ? null : <AddTaskDialog ctx={nt} />}
+                {relationScoped ? (
+                  <>
+                    <LogInteractionDialog
+                      prefillPersonId={personId}
+                      prefillFunderId={organizationId}
+                      prefillHouseholdId={householdId}
+                      compact
+                    />
+                    <AddMeetingNoteDialog
+                      ctx={
+                        {
+                          personId,
+                          organizationId,
+                          householdId,
+                        } as MeetingContext
+                      }
+                      trigger={
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          data-testid="button-take-meeting-notes"
+                        >
+                          <Sparkles className="mr-1.5 h-4 w-4" />
+                          Take meeting notes
+                        </Button>
+                      }
+                    />
+                  </>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={saveQuickNote}
+                disabled={!draft.trim() || createNote.isPending}
+                data-testid="composer-save-note"
+              >
+                {createNote.isPending ? "Saving…" : "Save note"}
+              </Button>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              onClick={saveQuickNote}
-              disabled={!draft.trim() || createNote.isPending}
-              data-testid="composer-save-note"
-            >
-              {createNote.isPending ? "Saving…" : "Save note"}
-            </Button>
           </div>
-        </div>}
+        )}
 
         {/* Full-text search across every in-scope activity source. */}
         <div className="relative">
@@ -898,13 +934,13 @@ export function UnifiedActivityFeed({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {(Object.keys(TASK_STATUS_LABEL) as TaskStatus[]).map(
-                              (s) => (
-                                <SelectItem key={s} value={s}>
-                                  {TASK_STATUS_LABEL[s]}
-                                </SelectItem>
-                              ),
-                            )}
+                            {(
+                              Object.keys(TASK_STATUS_LABEL) as TaskStatus[]
+                            ).map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {TASK_STATUS_LABEL[s]}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                         {r.status !== "done" ? (
@@ -1086,13 +1122,13 @@ export function UnifiedActivityFeed({
                       ) : null}
                     </div>
                     <div className="truncate font-medium">
-                      {r.subject ? decodeHtmlEntities(r.subject) : "(no subject)"}
+                      {r.subject
+                        ? decodeHtmlEntities(r.subject)
+                        : "(no subject)"}
                     </div>
                     <div className="truncate text-xs text-muted-foreground">
                       {r.fromEmail ?? "(unknown)"}
-                      {r.toEmails?.length
-                        ? ` → ${r.toEmails.join(", ")}`
-                        : ""}
+                      {r.toEmails?.length ? ` → ${r.toEmails.join(", ")}` : ""}
                     </div>
                     {r.aiSummary || r.snippet ? (
                       <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -1231,7 +1267,9 @@ export function UnifiedActivityFeed({
             </button>
           </div>
         ) : null}
-        {showMediaDisclosure && showFilteredMedia && filteredMediaItems.length ? (
+        {showMediaDisclosure &&
+        showFilteredMedia &&
+        filteredMediaItems.length ? (
           <ul className="mt-3 space-y-3" data-testid="media-filtered-list">
             {filteredMediaItems.map((row) => (
               <li

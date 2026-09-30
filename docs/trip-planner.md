@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-10
+last_verified: 2026-09-30
 ---
 
 # Trip planner
@@ -52,7 +52,8 @@ last_verified: 2026-09-10
 - The trip summary separates detected flights and hotels. It shows each
   booking's dates, location, and confirmation number when available; otherwise
   it displays `No flights` or `No hotel booked`. Dated Gmail bookings and
-  Calendar bookings also appear in the schedule.
+  Calendar bookings also appear in the schedule. Lodging confirmations take
+  precedence over incidental flight-like codes in their body text.
 
 ## Evidence and privacy boundaries
 
@@ -94,8 +95,10 @@ last_verified: 2026-09-10
   may see a partial estimate when the traveler has private events.
 - The trip calendar hides birthday events by default. A viewer can also hide
   any other event for that trip and later reveal or restore hidden events. This
-  browser-persisted choice changes only the trip calendar presentation: it does
-  not alter Google Calendar, shared synced evidence, or availability math.
+  browser-persisted choice is keyed by the Google calendar and event IDs so it
+  survives a refreshed CRM calendar row. It changes only the trip calendar
+  presentation: it does not alter Google Calendar, shared synced evidence, or
+  availability math.
 
 ## Data model
 

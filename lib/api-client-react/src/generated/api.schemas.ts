@@ -9335,6 +9335,8 @@ export interface EmailMessage {
   fromEmail?: string | null;
   /** True when fromEmail belongs to an admin-configured internal staff domain. Clients use this server-derived fact to suppress donor/contact creation actions for staff senders. */
   readonly isInternalSender: boolean;
+  /** True when fromEmail exactly matches an email address already attached to any CRM record. Clients suppress Add sender for known addresses. */
+  readonly isKnownSender?: boolean;
   toEmails?: string[] | null;
   ccEmails?: string[] | null;
   bccEmails?: string[] | null;

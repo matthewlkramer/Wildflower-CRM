@@ -72,8 +72,12 @@ import {
 
 type CalendarDisplayEvent = Pick<
   TripPlanDetail["calendarEvents"][number],
-  "id" | "status" | "summary" | "description" | "gcalCalendarId"
+  "id" | "status" | "summary" | "description" | "gcalCalendarId" | "gcalEventId"
 >;
+
+export function tripCalendarEventKey(event: CalendarDisplayEvent): string {
+  return `${event.gcalCalendarId}:${event.gcalEventId}`;
+}
 
 export function isBirthdayCalendarEvent(event: CalendarDisplayEvent) {
   const calendarId = event.gcalCalendarId.toLowerCase();
@@ -97,11 +101,14 @@ export function getTripCalendarDisplay<T extends CalendarDisplayEvent>(
     .filter((event) => event.status !== "cancelled")
     .map((event) => {
       const birthday = isBirthdayCalendarEvent(event);
+      const manuallyHiddenEvent =
+        manuallyHidden.has(tripCalendarEventKey(event)) ||
+        manuallyHidden.has(event.id);
       return {
         event,
         birthday,
-        manuallyHidden: manuallyHidden.has(event.id),
-        hidden: birthday || manuallyHidden.has(event.id),
+        manuallyHidden: manuallyHiddenEvent,
+        hidden: birthday || manuallyHiddenEvent,
       };
     });
 
@@ -853,12 +860,17 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
         .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? "")),
     [trip.travelBookings],
   );
-  const setEventHidden = (eventId: string, hidden: boolean) => {
+  const setEventHidden = (event: CalendarDisplayEvent, hidden: boolean) => {
     setManuallyHiddenEventIds((current) => {
+      const key = tripCalendarEventKey(event);
       const next = hidden
-        ? [...new Set([...current, eventId])]
-        : current.filter((id) => id !== eventId);
-      window.localStorage.setItem(hiddenStorageKey, JSON.stringify(next));
+        ? [...new Set([...current, key])]
+        : current.filter((id) => id !== key && id !== event.id);
+      try {
+        window.localStorage.setItem(hiddenStorageKey, JSON.stringify(next));
+      } catch {
+        // Hiding still works for this view when browser storage is unavailable.
+      }
       return next;
     });
   };
@@ -994,7 +1006,7 @@ function Schedule({ trip }: { trip: TripPlanDetail }) {
                               type="button"
                               variant="ghost"
                               size="sm"
-                              onClick={() => setEventHidden(event.id, !hidden)}
+                              onClick={() => setEventHidden(event, !hidden)}
                             >
                               {hidden ? (
                                 <Eye className="mr-2 h-4 w-4" />
@@ -1129,11 +1141,27 @@ function TripDetailPanel({
   };
   const draft = useDraftTripVisits({
     mutation: {
-      onSuccess: refresh,
+      onSuccess: (updated) => {
+        const added = Math.max(
+          0,
+          updated.visits.length - (detail.data?.visits.length ?? 0),
+        );
+        refresh();
+        toast({
+          title:
+            added > 0
+              ? `${added} outreach ${added === 1 ? "suggestion" : "suggestions"} added`
+              : "No new outreach suggestions",
+          description:
+            added > 0
+              ? "Review the suggested people in the visit list."
+              : "Suggestions require a matching destination city and medium, high, or top solicitation priority. You can still add people manually.",
+        });
+      },
       onError: () =>
         toast({
-          title: "People could not be drafted",
-          description: "Add a destination city first.",
+          title: "Outreach could not be suggested",
+          description: "Please try again. A destination city is required.",
           variant: "destructive",
         }),
     },
@@ -1234,7 +1262,9 @@ function TripDetailPanel({
                 onClick={() => draft.mutate({ id: trip.id })}
               >
                 <Sparkles className="mr-2 h-4 w-4" />
-                {draft.isPending ? "Drafting…" : "Draft from CRM"}
+                {draft.isPending
+                  ? "Finding suggestions…"
+                  : "Auto-suggest outreach"}
               </Button>
             </div>
           </div>
@@ -1247,8 +1277,8 @@ function TripDetailPanel({
         <CardContent className="space-y-3">
           {trip.visits.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No one is on the visit list yet. Add a person or draft from CRM
-              priorities and matching city addresses.
+              No one is on the visit list yet. Add a person or auto-suggest
+              outreach from CRM priorities and matching city addresses.
             </p>
           ) : (
             trip.visits.map((visit) => (

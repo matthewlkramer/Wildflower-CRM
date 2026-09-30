@@ -1,7 +1,18 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { emailAttachments, emailMessages } from "@workspace/db/schema";
-import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { emailAttachments, emailMessages, emails } from "@workspace/db/schema";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import {
   ListEmailMessagesQueryParams,
   UpdateEmailMessagePrivacyBody,
@@ -45,6 +56,24 @@ function visibleToCaller(callerId: string): SQL {
     eq(emailMessages.isPrivate, false),
     eq(emailMessages.mailboxUserId, callerId),
   )!;
+}
+
+async function knownSenderAddresses(
+  addresses: readonly (string | null | undefined)[],
+): Promise<Set<string>> {
+  const normalized = [
+    ...new Set(
+      addresses
+        .map((value) => value?.trim().toLowerCase())
+        .filter((value): value is string => !!value),
+    ),
+  ];
+  if (normalized.length === 0) return new Set();
+  const rows = await db
+    .select({ email: emails.email })
+    .from(emails)
+    .where(inArray(sql<string>`lower(trim(${emails.email}))`, normalized));
+  return new Set(rows.map((row) => row.email.trim().toLowerCase()));
 }
 
 router.get(
@@ -141,13 +170,14 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(deduped),
     ]);
-    const [trackingMap, internalDomains] = await Promise.all([
+    const [trackingMap, internalDomains, knownSenders] = await Promise.all([
       computeTracking(rows, {
         personId: q.personId,
         organizationId: q.organizationId,
         householdId: q.householdId,
       }),
       loadInternalDomains(),
+      knownSenderAddresses(rows.map((row) => row.fromEmail)),
     ]);
     const data = rows.map((r) => {
       const t = trackingMap.get(r.id);
@@ -155,11 +185,15 @@ router.get(
         r.fromEmail,
         internalDomains,
       );
+      const isKnownSender = knownSenders.has(
+        r.fromEmail?.trim().toLowerCase() ?? "",
+      );
       return t
-        ? { ...r, ...t, isInternalSender }
+        ? { ...r, ...t, isInternalSender, isKnownSender }
         : {
             ...r,
             isInternalSender,
+            isKnownSender,
             isTracked: false,
             trackingTotalViews: null,
             trackingLastOpenedAt: null,
@@ -180,12 +214,13 @@ router.get(
     const row = await db
       .select()
       .from(emailMessages)
-      .where(
-        and(eq(emailMessages.id, paramId(req)), visibleToCaller(user.id)),
-      )
+      .where(and(eq(emailMessages.id, paramId(req)), visibleToCaller(user.id)))
       .then((r) => r[0]);
     if (!row) return notFound(res, "email message");
-    const internalDomains = await loadInternalDomains();
+    const [internalDomains, knownSenders] = await Promise.all([
+      loadInternalDomains(),
+      knownSenderAddresses([row.fromEmail]),
+    ]);
     const atts = await db
       .select({
         id: emailAttachments.id,
@@ -199,6 +234,9 @@ router.get(
     res.json({
       ...row,
       isInternalSender: isInternalEmailAddress(row.fromEmail, internalDomains),
+      isKnownSender: knownSenders.has(
+        row.fromEmail?.trim().toLowerCase() ?? "",
+      ),
       attachments: atts,
     });
   }),
@@ -212,7 +250,11 @@ router.patch(
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
-    const body = parseOrBadRequest(UpdateEmailMessagePrivacyBody, req.body, res);
+    const body = parseOrBadRequest(
+      UpdateEmailMessagePrivacyBody,
+      req.body,
+      res,
+    );
     if (!body) return;
     // Owner-only check: the WHERE clause restricts the UPDATE to
     // rows where mailbox_user_id matches the caller. A non-owner
@@ -234,10 +276,16 @@ router.patch(
       )
       .returning();
     if (!row) return notFound(res, "email message");
-    const internalDomains = await loadInternalDomains();
+    const [internalDomains, knownSenders] = await Promise.all([
+      loadInternalDomains(),
+      knownSenderAddresses([row.fromEmail]),
+    ]);
     res.json({
       ...row,
       isInternalSender: isInternalEmailAddress(row.fromEmail, internalDomains),
+      isKnownSender: knownSenders.has(
+        row.fromEmail?.trim().toLowerCase() ?? "",
+      ),
     });
   }),
 );
