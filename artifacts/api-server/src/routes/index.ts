@@ -72,6 +72,7 @@ import newsletterRouter from "./newsletter";
 import newsletterPreferencesRouter from "./newsletterPreferences";
 import tripPlansRouter from "./tripPlans";
 import enrichmentRouter from "./enrichment";
+import conferenceResearchRouter from "./conferenceResearch";
 import conferencesRouter from "./conferences";
 
 const router: IRouter = Router();
@@ -162,6 +163,9 @@ router.use(newsletterRouter);
 router.use(newsletterPreferencesRouter);
 router.use(tripPlansRouter);
 router.use(enrichmentRouter);
+// This router owns durable research routes that intentionally shadow the
+// legacy draft-only research handler in conferencesRouter.
+router.use(conferenceResearchRouter);
 router.use(conferencesRouter);
 
 export default router;

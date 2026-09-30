@@ -65,7 +65,57 @@ export interface ConferenceTypeInput {
   notes?: string | null;
 }
 
-export type ConferenceTypeUpdate = ConferenceTypeInput;
+export interface ConferenceTypeUpdate {
+  /** @minLength 1 */
+  displayName?: string;
+  aliases?: string[];
+  /** @nullable */
+  organizer?: string | null;
+  /** @nullable */
+  websiteUrl?: string | null;
+  active?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type ConferenceTypeMergeEventResolutionStrategy = typeof ConferenceTypeMergeEventResolutionStrategy[keyof typeof ConferenceTypeMergeEventResolutionStrategy];
+
+
+export const ConferenceTypeMergeEventResolutionStrategy = {
+  preserve_all_history: 'preserve_all_history',
+} as const;
+
+export interface ConferenceTypeMergeEventResolution {
+  sourceEventId: string;
+  targetEventId: string;
+  strategy?: ConferenceTypeMergeEventResolutionStrategy;
+}
+
+export interface ConferenceTypeMergeInput {
+  /** @minLength 1 */
+  targetTypeId: string;
+  /** Explicit event mappings required only when source and target both have an event in the same year. */
+  eventResolutions?: ConferenceTypeMergeEventResolution[];
+}
+
+export interface ConferenceTypeMergeResult {
+  sourceTypeId: string;
+  targetType: ConferenceType;
+  reassignedEventCount: number;
+  consolidatedEventIds?: string[];
+}
+
+/**
+ * @nullable
+ */
+export type ConferenceEventDateConfidence = typeof ConferenceEventDateConfidence[keyof typeof ConferenceEventDateConfidence] | null;
+
+
+export const ConferenceEventDateConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
 
 export type ConferenceEventStatus = typeof ConferenceEventStatus[keyof typeof ConferenceEventStatus];
 
@@ -86,6 +136,20 @@ export interface ConferenceEvent {
   startDate?: string | null;
   /** @nullable */
   endDate?: string | null;
+  /** Derived true when startDate is null; null start dates remain valid for historical records. */
+  datesUnknown?: boolean;
+  /** @nullable */
+  dateSourceUrl?: string | null;
+  /** @nullable */
+  dateEvidence?: string | null;
+  /** @nullable */
+  dateConfidence?: ConferenceEventDateConfidence;
+  /** @nullable */
+  dateResearchedAt?: string | null;
+  /** @nullable */
+  dateReviewedByUserId?: string | null;
+  /** @nullable */
+  dateReviewedAt?: string | null;
   /** @nullable */
   location?: string | null;
   /** @nullable */
@@ -126,6 +190,8 @@ export interface ConferenceEventInput {
   startDate?: string | null;
   /** @nullable */
   endDate?: string | null;
+  /** Explicitly mark the event dates unknown; when true */
+  datesUnknown?: boolean;
   /** @nullable */
   location?: string | null;
   /** @nullable */
@@ -137,7 +203,65 @@ export interface ConferenceEventInput {
   notes?: string | null;
 }
 
-export type ConferenceEventUpdate = ConferenceEventInput;
+export type ConferenceEventUpdateStatus = typeof ConferenceEventUpdateStatus[keyof typeof ConferenceEventUpdateStatus];
+
+
+export const ConferenceEventUpdateStatus = {
+  planned: 'planned',
+  completed: 'completed',
+  cancelled: 'cancelled',
+} as const;
+
+export interface ConferenceEventUpdate {
+  conferenceTypeId?: string;
+  /**
+   * @minimum 2000
+   * @maximum 2200
+   */
+  year?: number;
+  /** @nullable */
+  nameOverride?: string | null;
+  /** @nullable */
+  startDate?: string | null;
+  /** @nullable */
+  endDate?: string | null;
+  /** Explicitly clear dates while retaining a visible unknown-date state. */
+  datesUnknown?: boolean;
+  /** @nullable */
+  location?: string | null;
+  /** @nullable */
+  attendeeSiteUrl?: string | null;
+  /** @nullable */
+  source?: string | null;
+  status?: ConferenceEventUpdateStatus;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type ConferenceEventDateConfirmationDateConfidence = typeof ConferenceEventDateConfirmationDateConfidence[keyof typeof ConferenceEventDateConfirmationDateConfidence];
+
+
+export const ConferenceEventDateConfirmationDateConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface ConferenceEventDateConfirmation {
+  /** @nullable */
+  researchRequestId?: string | null;
+  startDate: string;
+  /** @nullable */
+  endDate?: string | null;
+  dateSourceUrl: string;
+  /** @minLength 1 */
+  dateEvidence: string;
+  dateConfidence: ConferenceEventDateConfirmationDateConfidence;
+  /** @nullable */
+  expectedUpdatedAt?: string | null;
+  /** Required explicit reviewer confirmation before saving researched dates. */
+  confirmed: true;
+}
 
 export type ConferenceAttendanceRowStatus = typeof ConferenceAttendanceRowStatus[keyof typeof ConferenceAttendanceRowStatus];
 
@@ -156,6 +280,7 @@ export const ConferenceAttendanceRowSourceType = {
   conference_website: 'conference_website',
   wildflower_email: 'wildflower_email',
   manual: 'manual',
+  agenda_speaker: 'agenda_speaker',
 } as const;
 
 export interface ConferenceAttendanceRow {
@@ -169,6 +294,8 @@ export interface ConferenceAttendanceRow {
   organizationName?: string | null;
   status: ConferenceAttendanceRowStatus;
   sourceType: ConferenceAttendanceRowSourceType;
+  /** Attendance role such as Attendee or Speaker. */
+  role?: string;
   /** @nullable */
   sourceReference?: string | null;
   /** @nullable */
@@ -204,12 +331,14 @@ export const ConferenceAttendanceInputSourceType = {
   conference_website: 'conference_website',
   wildflower_email: 'wildflower_email',
   manual: 'manual',
+  agenda_speaker: 'agenda_speaker',
 } as const;
 
 export interface ConferenceAttendanceInput {
   personId: string;
   status?: ConferenceAttendanceInputStatus;
   sourceType?: ConferenceAttendanceInputSourceType;
+  role?: string;
   /** @nullable */
   sourceReference?: string | null;
   /** @nullable */
@@ -285,11 +414,57 @@ export interface ConferenceImportConfirmInput {
   personOverrides?: ConferenceImportConfirmInputPersonOverrides;
 }
 
+export type ConferenceResearchRequestInputKind = typeof ConferenceResearchRequestInputKind[keyof typeof ConferenceResearchRequestInputKind];
+
+
+export const ConferenceResearchRequestInputKind = {
+  dates: 'dates',
+  agenda_speakers: 'agenda_speakers',
+} as const;
+
 export interface ConferenceResearchRequestInput {
   /** @nullable */
   attendeeSiteUrl?: string | null;
   /** @nullable */
   instructions?: string | null;
+  kind?: ConferenceResearchRequestInputKind;
+  /**
+   * Idempotency window such as created
+   * @nullable
+   */
+  windowKey?: string | null;
+}
+
+export type ConferenceResearchRequestKind = typeof ConferenceResearchRequestKind[keyof typeof ConferenceResearchRequestKind];
+
+
+export const ConferenceResearchRequestKind = {
+  dates: 'dates',
+  agenda_speakers: 'agenda_speakers',
+} as const;
+
+export type ConferenceResearchRequestEvidenceItem = { [key: string]: unknown };
+
+/**
+ * @nullable
+ */
+export type ConferenceResearchRequestProposedDateConfidence = typeof ConferenceResearchRequestProposedDateConfidence[keyof typeof ConferenceResearchRequestProposedDateConfidence] | null;
+
+
+export const ConferenceResearchRequestProposedDateConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export interface ConferenceResearchSource {
+  url: string;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  publisher?: string | null;
+  /** @nullable */
+  fetchedAt?: string | null;
 }
 
 export interface ConferenceResearchRequest {
@@ -300,8 +475,129 @@ export interface ConferenceResearchRequest {
   /** @nullable */
   instructions?: string | null;
   prompt: string;
+  /** New run statuses are queued */
   status: string;
+  kind?: ConferenceResearchRequestKind;
+  /** @nullable */
+  windowKey?: string | null;
+  attempts?: number;
+  /** @nullable */
+  nextAttemptAt?: string | null;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  completedAt?: string | null;
+  /** @nullable */
+  error?: string | null;
+  sources?: ConferenceResearchSource[];
+  evidence?: ConferenceResearchRequestEvidenceItem[];
+  /** @nullable */
+  proposedStartDate?: string | null;
+  /** @nullable */
+  proposedEndDate?: string | null;
+  /** @nullable */
+  proposedDateConfidence?: ConferenceResearchRequestProposedDateConfidence;
   createdAt: string;
+}
+
+export interface ConferenceSpeakerMatchCandidate {
+  personId: string;
+  name: string;
+  /** @nullable */
+  organizationId?: string | null;
+  /** @nullable */
+  organizationName?: string | null;
+  /** @nullable */
+  matchEvidence?: string | null;
+}
+
+export type ConferenceSpeakerProposalConfidence = typeof ConferenceSpeakerProposalConfidence[keyof typeof ConferenceSpeakerProposalConfidence];
+
+
+export const ConferenceSpeakerProposalConfidence = {
+  high: 'high',
+  medium: 'medium',
+  low: 'low',
+} as const;
+
+export type ConferenceSpeakerProposalStatus = typeof ConferenceSpeakerProposalStatus[keyof typeof ConferenceSpeakerProposalStatus];
+
+
+export const ConferenceSpeakerProposalStatus = {
+  pending: 'pending',
+  added: 'added',
+  ignored: 'ignored',
+} as const;
+
+export interface ConferenceSpeakerProposal {
+  id: string;
+  conferenceEventId: string;
+  /** @nullable */
+  conferenceResearchRequestId?: string | null;
+  speakerFingerprint: string;
+  name: string;
+  /** @nullable */
+  title?: string | null;
+  /** @nullable */
+  organizationName?: string | null;
+  /** @nullable */
+  bio?: string | null;
+  /** @nullable */
+  profileUrl?: string | null;
+  /** @nullable */
+  sourceUrl?: string | null;
+  /** @nullable */
+  sessionEvidence?: string | null;
+  confidence: ConferenceSpeakerProposalConfidence;
+  candidatePersonIds: string[];
+  matchCandidates?: ConferenceSpeakerMatchCandidate[];
+  /** @nullable */
+  matchedPersonId?: string | null;
+  /** @nullable */
+  matchedOrganizationId?: string | null;
+  /** @nullable */
+  addedPersonId?: string | null;
+  status: ConferenceSpeakerProposalStatus;
+  /** @nullable */
+  reviewedByUserId?: string | null;
+  /** @nullable */
+  reviewedAt?: string | null;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type ConferenceSpeakerProposalBulkInputPersonSelectionsItem = {
+  proposalId: string;
+  personId: string;
+};
+
+export interface ConferenceSpeakerProposalBulkInput {
+  /** @minItems 1 */
+  proposalIds: string[];
+  /** Explicit reviewer choices for ambiguous matches when adding speakers. Ignored by bulk ignore. */
+  personSelections?: ConferenceSpeakerProposalBulkInputPersonSelectionsItem[];
+  /** @nullable */
+  idempotencyKey?: string | null;
+}
+
+export interface ConferenceSpeakerProposalBulkResult {
+  results: ConferenceSpeakerProposal[];
+  succeededCount: number;
+  conflictCount: number;
+}
+
+export interface ConferenceResearchBackfillInput {
+  /** Omit to enqueue all existing events. */
+  eventIds?: string[];
+  includeKnownDates?: boolean;
+  includeCompletedEvents?: boolean;
+}
+
+export interface ConferenceResearchBackfillResult {
+  selectedEventCount: number;
+  dateRunsQueued: number;
+  agendaRunsQueued: number;
+  requestIds: string[];
 }
 
 export type ConferenceAttendanceSuggestionConfidence = typeof ConferenceAttendanceSuggestionConfidence[keyof typeof ConferenceAttendanceSuggestionConfidence];
@@ -11459,6 +11755,7 @@ includeArchived?: IncludeArchivedQueryParameter;
 
 export type ListConferenceTypesParams = {
 active?: boolean;
+search?: string;
 };
 
 export type ListConferenceEventsParams = {
@@ -11479,6 +11776,19 @@ page?: number;
 limit?: number;
 search?: string;
 };
+
+export type ListConferenceSpeakerProposalsParams = {
+status?: ListConferenceSpeakerProposalsStatus;
+};
+
+export type ListConferenceSpeakerProposalsStatus = typeof ListConferenceSpeakerProposalsStatus[keyof typeof ListConferenceSpeakerProposalsStatus];
+
+
+export const ListConferenceSpeakerProposalsStatus = {
+  pending: 'pending',
+  added: 'added',
+  ignored: 'ignored',
+} as const;
 
 export type ListFiscalYearsParams = {
 /**

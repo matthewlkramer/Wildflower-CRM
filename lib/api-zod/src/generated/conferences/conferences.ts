@@ -9,7 +9,8 @@ import * as zod from 'zod';
 
 
 export const ListConferenceTypesQueryParams = zod.object({
-  "active": zod.coerce.boolean().optional()
+  "active": zod.coerce.boolean().optional(),
+  "search": zod.coerce.string().optional()
 })
 
 export const ListConferenceTypesResponseItem = zod.object({
@@ -45,10 +46,10 @@ export const UpdateConferenceTypeParams = zod.object({
 
 
 export const UpdateConferenceTypeBody = zod.object({
-  "displayName": zod.string().min(1),
+  "displayName": zod.string().min(1).optional(),
   "aliases": zod.array(zod.string()).optional(),
   "organizer": zod.string().nullish(),
-  "websiteUrl": zod.string().nullish(),
+  "websiteUrl": zod.string().url().nullish(),
   "active": zod.boolean().optional(),
   "notes": zod.string().nullish()
 })
@@ -65,6 +66,43 @@ export const UpdateConferenceTypeResponse = zod.object({
   "updatedAt": zod.string().datetime({})
 })
 
+export const DeleteConferenceTypeParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const MergeConferenceTypeParams = zod.object({
+  "id": zod.coerce.string().describe('Source type to merge into the target')
+})
+
+
+
+
+export const MergeConferenceTypeBody = zod.object({
+  "targetTypeId": zod.string().min(1),
+  "eventResolutions": zod.array(zod.object({
+  "sourceEventId": zod.string(),
+  "targetEventId": zod.string(),
+  "strategy": zod.enum(['preserve_all_history']).optional()
+})).optional().describe('Explicit event mappings required only when source and target both have an event in the same year.')
+})
+
+export const MergeConferenceTypeResponse = zod.object({
+  "sourceTypeId": zod.string(),
+  "targetType": zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "aliases": zod.array(zod.string()),
+  "organizer": zod.string().nullish(),
+  "websiteUrl": zod.string().nullish(),
+  "active": zod.boolean(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+}),
+  "reassignedEventCount": zod.number(),
+  "consolidatedEventIds": zod.array(zod.string()).optional()
+})
+
 export const ListConferenceEventsQueryParams = zod.object({
   "conferenceTypeId": zod.coerce.string().optional(),
   "year": zod.coerce.number().optional(),
@@ -78,6 +116,13 @@ export const ListConferenceEventsResponseItem = zod.object({
   "nameOverride": zod.string().nullish(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Derived true when startDate is null; null start dates remain valid for historical records.'),
+  "dateSourceUrl": zod.string().url().nullish(),
+  "dateEvidence": zod.string().nullish(),
+  "dateConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "dateResearchedAt": zod.string().datetime({}).nullish(),
+  "dateReviewedByUserId": zod.string().nullish(),
+  "dateReviewedAt": zod.string().datetime({}).nullish(),
   "location": zod.string().nullish(),
   "attendeeSiteUrl": zod.string().nullish(),
   "source": zod.string().nullish(),
@@ -102,6 +147,7 @@ export const CreateConferenceEventBody = zod.object({
   "nameOverride": zod.string().nullish(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Explicitly mark the event dates unknown; when true'),
   "location": zod.string().nullish(),
   "attendeeSiteUrl": zod.string().nullish(),
   "source": zod.string().nullish(),
@@ -120,6 +166,13 @@ export const GetConferenceEventResponse = zod.object({
   "nameOverride": zod.string().nullish(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Derived true when startDate is null; null start dates remain valid for historical records.'),
+  "dateSourceUrl": zod.string().url().nullish(),
+  "dateEvidence": zod.string().nullish(),
+  "dateConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "dateResearchedAt": zod.string().datetime({}).nullish(),
+  "dateReviewedByUserId": zod.string().nullish(),
+  "dateReviewedAt": zod.string().datetime({}).nullish(),
   "location": zod.string().nullish(),
   "attendeeSiteUrl": zod.string().nullish(),
   "source": zod.string().nullish(),
@@ -133,19 +186,20 @@ export const UpdateConferenceEventParams = zod.object({
   "id": zod.coerce.string()
 })
 
-export const updateConferenceEventBodyOneYearMin = 2000;
-export const updateConferenceEventBodyOneYearMax = 2200;
+export const updateConferenceEventBodyYearMin = 2000;
+export const updateConferenceEventBodyYearMax = 2200;
 
 
 
 export const UpdateConferenceEventBody = zod.object({
-  "conferenceTypeId": zod.string(),
-  "year": zod.number().min(updateConferenceEventBodyOneYearMin).max(updateConferenceEventBodyOneYearMax),
+  "conferenceTypeId": zod.string().optional(),
+  "year": zod.number().min(updateConferenceEventBodyYearMin).max(updateConferenceEventBodyYearMax).optional(),
   "nameOverride": zod.string().nullish(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Explicitly clear dates while retaining a visible unknown-date state.'),
   "location": zod.string().nullish(),
-  "attendeeSiteUrl": zod.string().nullish(),
+  "attendeeSiteUrl": zod.string().url().nullish(),
   "source": zod.string().nullish(),
   "status": zod.enum(['planned', 'completed', 'cancelled']).optional(),
   "notes": zod.string().nullish()
@@ -158,6 +212,54 @@ export const UpdateConferenceEventResponse = zod.object({
   "nameOverride": zod.string().nullish(),
   "startDate": zod.string().date().nullish(),
   "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Derived true when startDate is null; null start dates remain valid for historical records.'),
+  "dateSourceUrl": zod.string().url().nullish(),
+  "dateEvidence": zod.string().nullish(),
+  "dateConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "dateResearchedAt": zod.string().datetime({}).nullish(),
+  "dateReviewedByUserId": zod.string().nullish(),
+  "dateReviewedAt": zod.string().datetime({}).nullish(),
+  "location": zod.string().nullish(),
+  "attendeeSiteUrl": zod.string().nullish(),
+  "source": zod.string().nullish(),
+  "status": zod.enum(['planned', 'completed', 'cancelled']),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+export const ConfirmConferenceEventDatesParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const ConfirmConferenceEventDatesBody = zod.object({
+  "researchRequestId": zod.string().nullish(),
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date().nullish(),
+  "dateSourceUrl": zod.string().url(),
+  "dateEvidence": zod.string().min(1),
+  "dateConfidence": zod.enum(['high', 'medium', 'low']),
+  "expectedUpdatedAt": zod.string().datetime({}).nullish(),
+  "confirmed": zod.boolean().describe('Required explicit reviewer confirmation before saving researched dates.')
+})
+
+export const ConfirmConferenceEventDatesResponse = zod.object({
+  "id": zod.string(),
+  "conferenceTypeId": zod.string(),
+  "year": zod.number(),
+  "nameOverride": zod.string().nullish(),
+  "startDate": zod.string().date().nullish(),
+  "endDate": zod.string().date().nullish(),
+  "datesUnknown": zod.boolean().optional().describe('Derived true when startDate is null; null start dates remain valid for historical records.'),
+  "dateSourceUrl": zod.string().url().nullish(),
+  "dateEvidence": zod.string().nullish(),
+  "dateConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "dateResearchedAt": zod.string().datetime({}).nullish(),
+  "dateReviewedByUserId": zod.string().nullish(),
+  "dateReviewedAt": zod.string().datetime({}).nullish(),
   "location": zod.string().nullish(),
   "attendeeSiteUrl": zod.string().nullish(),
   "source": zod.string().nullish(),
@@ -182,6 +284,8 @@ export const ListConferenceAttendanceQueryParams = zod.object({
   "search": zod.coerce.string().optional()
 })
 
+export const listConferenceAttendanceResponseDataItemRoleDefault = `Attendee`;
+
 export const ListConferenceAttendanceResponse = zod.object({
   "data": zod.array(zod.object({
   "id": zod.string(),
@@ -191,7 +295,8 @@ export const ListConferenceAttendanceResponse = zod.object({
   "organizationId": zod.string().nullish(),
   "organizationName": zod.string().nullish(),
   "status": zod.enum(['confirmed', 'likely', 'possible']),
-  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual']),
+  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual', 'agenda_speaker']),
+  "role": zod.string().default(listConferenceAttendanceResponseDataItemRoleDefault).describe('Attendance role such as Attendee or Speaker.'),
   "sourceReference": zod.string().nullish(),
   "evidenceNote": zod.string().nullish(),
   "createdAt": zod.string().datetime({})
@@ -207,10 +312,13 @@ export const CreateConferenceAttendanceParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const createConferenceAttendanceBodyRoleDefault = `Attendee`;
+
 export const CreateConferenceAttendanceBody = zod.object({
   "personId": zod.string(),
   "status": zod.enum(['confirmed', 'likely', 'possible']).optional(),
-  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual']).optional(),
+  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual', 'agenda_speaker']).optional(),
+  "role": zod.string().default(createConferenceAttendanceBodyRoleDefault),
   "sourceReference": zod.string().nullish(),
   "evidenceNote": zod.string().nullish()
 })
@@ -300,13 +408,242 @@ export const ConfirmConferenceImportResponse = zod.object({
   "createdAt": zod.string().datetime({})
 })
 
+export const ListConferenceResearchRequestsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListConferenceResearchRequestsResponseItem = zod.object({
+  "id": zod.string(),
+  "conferenceEventId": zod.string(),
+  "attendeeSiteUrl": zod.string().nullish(),
+  "instructions": zod.string().nullish(),
+  "prompt": zod.string(),
+  "status": zod.string().describe('New run statuses are queued'),
+  "kind": zod.enum(['dates', 'agenda_speakers']).optional(),
+  "windowKey": zod.string().nullish(),
+  "attempts": zod.number().optional(),
+  "nextAttemptAt": zod.string().datetime({}).nullish(),
+  "startedAt": zod.string().datetime({}).nullish(),
+  "completedAt": zod.string().datetime({}).nullish(),
+  "error": zod.string().nullish(),
+  "sources": zod.array(zod.object({
+  "url": zod.string().url(),
+  "title": zod.string().nullish(),
+  "publisher": zod.string().nullish(),
+  "fetchedAt": zod.string().datetime({}).nullish()
+})).optional(),
+  "evidence": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
+  "proposedStartDate": zod.string().date().nullish(),
+  "proposedEndDate": zod.string().date().nullish(),
+  "proposedDateConfidence": zod.union([zod.literal('high'),zod.literal('medium'),zod.literal('low'),zod.literal(null)]).nullish(),
+  "createdAt": zod.string().datetime({})
+})
+export const ListConferenceResearchRequestsResponse = zod.array(ListConferenceResearchRequestsResponseItem)
+
 export const CreateConferenceResearchRequestParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const createConferenceResearchRequestBodyKindDefault = `agenda_speakers`;
+
 export const CreateConferenceResearchRequestBody = zod.object({
   "attendeeSiteUrl": zod.string().nullish(),
-  "instructions": zod.string().nullish()
+  "instructions": zod.string().nullish(),
+  "kind": zod.enum(['dates', 'agenda_speakers']).default(createConferenceResearchRequestBodyKindDefault),
+  "windowKey": zod.string().nullish().describe('Idempotency window such as created')
+})
+
+export const RetryConferenceResearchRequestParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListConferenceSpeakerProposalsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ListConferenceSpeakerProposalsQueryParams = zod.object({
+  "status": zod.enum(['pending', 'added', 'ignored']).optional()
+})
+
+export const ListConferenceSpeakerProposalsResponseItem = zod.object({
+  "id": zod.string(),
+  "conferenceEventId": zod.string(),
+  "conferenceResearchRequestId": zod.string().nullish(),
+  "speakerFingerprint": zod.string(),
+  "name": zod.string(),
+  "title": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "profileUrl": zod.string().url().nullish(),
+  "sourceUrl": zod.string().url().nullish(),
+  "sessionEvidence": zod.string().nullish(),
+  "confidence": zod.enum(['high', 'medium', 'low']),
+  "candidatePersonIds": zod.array(zod.string()),
+  "matchCandidates": zod.array(zod.object({
+  "personId": zod.string(),
+  "name": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "matchEvidence": zod.string().nullish()
+})).optional(),
+  "matchedPersonId": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "addedPersonId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'added', 'ignored']),
+  "reviewedByUserId": zod.string().nullish(),
+  "reviewedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}).optional()
+})
+export const ListConferenceSpeakerProposalsResponse = zod.array(ListConferenceSpeakerProposalsResponseItem)
+
+export const BulkAddConferenceSpeakerProposalsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const BulkAddConferenceSpeakerProposalsBody = zod.object({
+  "proposalIds": zod.array(zod.string()).min(1),
+  "personSelections": zod.array(zod.object({
+  "proposalId": zod.string(),
+  "personId": zod.string()
+})).optional().describe('Explicit reviewer choices for ambiguous matches when adding speakers. Ignored by bulk ignore.'),
+  "idempotencyKey": zod.string().nullish()
+})
+
+export const BulkAddConferenceSpeakerProposalsResponse = zod.object({
+  "results": zod.array(zod.object({
+  "id": zod.string(),
+  "conferenceEventId": zod.string(),
+  "conferenceResearchRequestId": zod.string().nullish(),
+  "speakerFingerprint": zod.string(),
+  "name": zod.string(),
+  "title": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "profileUrl": zod.string().url().nullish(),
+  "sourceUrl": zod.string().url().nullish(),
+  "sessionEvidence": zod.string().nullish(),
+  "confidence": zod.enum(['high', 'medium', 'low']),
+  "candidatePersonIds": zod.array(zod.string()),
+  "matchCandidates": zod.array(zod.object({
+  "personId": zod.string(),
+  "name": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "matchEvidence": zod.string().nullish()
+})).optional(),
+  "matchedPersonId": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "addedPersonId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'added', 'ignored']),
+  "reviewedByUserId": zod.string().nullish(),
+  "reviewedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}).optional()
+})),
+  "succeededCount": zod.number(),
+  "conflictCount": zod.number()
+})
+
+export const BulkIgnoreConferenceSpeakerProposalsParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+
+
+
+export const BulkIgnoreConferenceSpeakerProposalsBody = zod.object({
+  "proposalIds": zod.array(zod.string()).min(1),
+  "personSelections": zod.array(zod.object({
+  "proposalId": zod.string(),
+  "personId": zod.string()
+})).optional().describe('Explicit reviewer choices for ambiguous matches when adding speakers. Ignored by bulk ignore.'),
+  "idempotencyKey": zod.string().nullish()
+})
+
+export const BulkIgnoreConferenceSpeakerProposalsResponse = zod.object({
+  "results": zod.array(zod.object({
+  "id": zod.string(),
+  "conferenceEventId": zod.string(),
+  "conferenceResearchRequestId": zod.string().nullish(),
+  "speakerFingerprint": zod.string(),
+  "name": zod.string(),
+  "title": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "profileUrl": zod.string().url().nullish(),
+  "sourceUrl": zod.string().url().nullish(),
+  "sessionEvidence": zod.string().nullish(),
+  "confidence": zod.enum(['high', 'medium', 'low']),
+  "candidatePersonIds": zod.array(zod.string()),
+  "matchCandidates": zod.array(zod.object({
+  "personId": zod.string(),
+  "name": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "matchEvidence": zod.string().nullish()
+})).optional(),
+  "matchedPersonId": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "addedPersonId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'added', 'ignored']),
+  "reviewedByUserId": zod.string().nullish(),
+  "reviewedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}).optional()
+})),
+  "succeededCount": zod.number(),
+  "conflictCount": zod.number()
+})
+
+export const ReopenConferenceSpeakerProposalParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const ReopenConferenceSpeakerProposalResponse = zod.object({
+  "id": zod.string(),
+  "conferenceEventId": zod.string(),
+  "conferenceResearchRequestId": zod.string().nullish(),
+  "speakerFingerprint": zod.string(),
+  "name": zod.string(),
+  "title": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "bio": zod.string().nullish(),
+  "profileUrl": zod.string().url().nullish(),
+  "sourceUrl": zod.string().url().nullish(),
+  "sessionEvidence": zod.string().nullish(),
+  "confidence": zod.enum(['high', 'medium', 'low']),
+  "candidatePersonIds": zod.array(zod.string()),
+  "matchCandidates": zod.array(zod.object({
+  "personId": zod.string(),
+  "name": zod.string(),
+  "organizationId": zod.string().nullish(),
+  "organizationName": zod.string().nullish(),
+  "matchEvidence": zod.string().nullish()
+})).optional(),
+  "matchedPersonId": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "addedPersonId": zod.string().nullish(),
+  "status": zod.enum(['pending', 'added', 'ignored']),
+  "reviewedByUserId": zod.string().nullish(),
+  "reviewedAt": zod.string().datetime({}).nullish(),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({}).optional()
+})
+
+/**
+ * Admin-only. Enqueues idempotent retroactive work for existing events; missing dates are queued before agenda and speaker research.
+ */
+export const enqueueConferenceResearchBackfillBodyIncludeKnownDatesDefault = false;
+export const enqueueConferenceResearchBackfillBodyIncludeCompletedEventsDefault = true;
+
+export const EnqueueConferenceResearchBackfillBody = zod.object({
+  "eventIds": zod.array(zod.string()).optional().describe('Omit to enqueue all existing events.'),
+  "includeKnownDates": zod.boolean().default(enqueueConferenceResearchBackfillBodyIncludeKnownDatesDefault),
+  "includeCompletedEvents": zod.boolean().default(enqueueConferenceResearchBackfillBodyIncludeCompletedEventsDefault)
 })
 
 export const ListConferenceEmailSuggestionsParams = zod.object({
@@ -367,6 +704,8 @@ export const ListPersonConferenceAttendanceParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const listPersonConferenceAttendanceResponseRoleDefault = `Attendee`;
+
 export const ListPersonConferenceAttendanceResponseItem = zod.object({
   "id": zod.string(),
   "conferenceEventId": zod.string(),
@@ -375,7 +714,8 @@ export const ListPersonConferenceAttendanceResponseItem = zod.object({
   "organizationId": zod.string().nullish(),
   "organizationName": zod.string().nullish(),
   "status": zod.enum(['confirmed', 'likely', 'possible']),
-  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual']),
+  "sourceType": zod.enum(['uploaded_list', 'conference_website', 'wildflower_email', 'manual', 'agenda_speaker']),
+  "role": zod.string().default(listPersonConferenceAttendanceResponseRoleDefault).describe('Attendance role such as Attendee or Speaker.'),
   "sourceReference": zod.string().nullish(),
   "evidenceNote": zod.string().nullish(),
   "createdAt": zod.string().datetime({})

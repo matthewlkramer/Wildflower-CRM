@@ -26,19 +26,29 @@ import type {
   ConferenceAttendanceSuggestion,
   ConferenceAttendanceSuggestionReview,
   ConferenceEvent,
+  ConferenceEventDateConfirmation,
   ConferenceEventInput,
   ConferenceEventSummary,
   ConferenceEventUpdate,
   ConferenceImportBatch,
   ConferenceImportConfirmInput,
   ConferenceImportInput,
+  ConferenceResearchBackfillInput,
+  ConferenceResearchBackfillResult,
   ConferenceResearchRequest,
   ConferenceResearchRequestInput,
+  ConferenceSpeakerProposal,
+  ConferenceSpeakerProposalBulkInput,
+  ConferenceSpeakerProposalBulkResult,
   ConferenceType,
   ConferenceTypeInput,
+  ConferenceTypeMergeInput,
+  ConferenceTypeMergeResult,
   ConferenceTypeUpdate,
+  ErrorResponse,
   ListConferenceAttendanceParams,
   ListConferenceEventsParams,
+  ListConferenceSpeakerProposalsParams,
   ListConferenceTypesParams
 } from '../api.schemas';
 
@@ -152,7 +162,7 @@ export const createConferenceType = async (conferenceTypeInput: ConferenceTypeIn
 
 
 
-export const getCreateConferenceTypeMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateConferenceTypeMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceType>>, TError,{data: BodyType<ConferenceTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createConferenceType>>, TError,{data: BodyType<ConferenceTypeInput>}, TContext> => {
 
@@ -181,9 +191,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateConferenceTypeMutationResult = NonNullable<Awaited<ReturnType<typeof createConferenceType>>>
     export type CreateConferenceTypeMutationBody = BodyType<ConferenceTypeInput>
-    export type CreateConferenceTypeMutationError = ErrorType<unknown>
+    export type CreateConferenceTypeMutationError = ErrorType<ErrorResponse>
 
-    export const useCreateConferenceType = <TError = ErrorType<unknown>,
+    export const useCreateConferenceType = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceType>>, TError,{data: BodyType<ConferenceTypeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createConferenceType>>,
@@ -217,7 +227,7 @@ export const updateConferenceType = async (id: string,
 
 
 
-export const getUpdateConferenceTypeMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateConferenceTypeMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeUpdate>}, TContext> => {
 
@@ -246,9 +256,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateConferenceTypeMutationResult = NonNullable<Awaited<ReturnType<typeof updateConferenceType>>>
     export type UpdateConferenceTypeMutationBody = BodyType<ConferenceTypeUpdate>
-    export type UpdateConferenceTypeMutationError = ErrorType<unknown>
+    export type UpdateConferenceTypeMutationError = ErrorType<ErrorResponse>
 
-    export const useUpdateConferenceType = <TError = ErrorType<unknown>,
+    export const useUpdateConferenceType = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateConferenceType>>,
@@ -257,6 +267,134 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateConferenceTypeMutationOptions(options));
+    }
+    export const getDeleteConferenceTypeUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-types/${id}`
+}
+
+export const deleteConferenceType = async (id: string, options?: RequestInit): Promise<void> => {
+  
+  return customFetch<void>(getDeleteConferenceTypeUrl(id),
+  {      
+    ...options,
+    method: 'DELETE'
+    
+    
+  }
+);}
+  
+
+
+
+export const getDeleteConferenceTypeMutationOptions = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteConferenceType>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteConferenceType>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['deleteConferenceType'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteConferenceType>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteConferenceType(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteConferenceTypeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteConferenceType>>>
+    
+    export type DeleteConferenceTypeMutationError = ErrorType<void | ErrorResponse>
+
+    export const useDeleteConferenceType = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteConferenceType>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteConferenceType>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getDeleteConferenceTypeMutationOptions(options));
+    }
+    export const getMergeConferenceTypeUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-types/${id}/merge`
+}
+
+export const mergeConferenceType = async (id: string,
+    conferenceTypeMergeInput: ConferenceTypeMergeInput, options?: RequestInit): Promise<ConferenceTypeMergeResult> => {
+  
+  return customFetch<ConferenceTypeMergeResult>(getMergeConferenceTypeUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceTypeMergeInput,)
+  }
+);}
+  
+
+
+
+export const getMergeConferenceTypeMutationOptions = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mergeConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeMergeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof mergeConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeMergeInput>}, TContext> => {
+
+const mutationKey = ['mergeConferenceType'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeConferenceType>>, {id: string;data: BodyType<ConferenceTypeMergeInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  mergeConferenceType(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MergeConferenceTypeMutationResult = NonNullable<Awaited<ReturnType<typeof mergeConferenceType>>>
+    export type MergeConferenceTypeMutationBody = BodyType<ConferenceTypeMergeInput>
+    export type MergeConferenceTypeMutationError = ErrorType<ErrorResponse | void>
+
+    export const useMergeConferenceType = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof mergeConferenceType>>, TError,{id: string;data: BodyType<ConferenceTypeMergeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof mergeConferenceType>>,
+        TError,
+        {id: string;data: BodyType<ConferenceTypeMergeInput>},
+        TContext
+      > => {
+      return useMutation(getMergeConferenceTypeMutationOptions(options));
     }
     export const getListConferenceEventsUrl = (params?: ListConferenceEventsParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -356,7 +494,7 @@ export const createConferenceEvent = async (conferenceEventInput: ConferenceEven
 
 
 
-export const getCreateConferenceEventMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateConferenceEventMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceEvent>>, TError,{data: BodyType<ConferenceEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createConferenceEvent>>, TError,{data: BodyType<ConferenceEventInput>}, TContext> => {
 
@@ -385,9 +523,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateConferenceEventMutationResult = NonNullable<Awaited<ReturnType<typeof createConferenceEvent>>>
     export type CreateConferenceEventMutationBody = BodyType<ConferenceEventInput>
-    export type CreateConferenceEventMutationError = ErrorType<unknown>
+    export type CreateConferenceEventMutationError = ErrorType<ErrorResponse>
 
-    export const useCreateConferenceEvent = <TError = ErrorType<unknown>,
+    export const useCreateConferenceEvent = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceEvent>>, TError,{data: BodyType<ConferenceEventInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createConferenceEvent>>,
@@ -489,7 +627,7 @@ export const updateConferenceEvent = async (id: string,
 
 
 
-export const getUpdateConferenceEventMutationOptions = <TError = ErrorType<unknown>,
+export const getUpdateConferenceEventMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConferenceEvent>>, TError,{id: string;data: BodyType<ConferenceEventUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateConferenceEvent>>, TError,{id: string;data: BodyType<ConferenceEventUpdate>}, TContext> => {
 
@@ -518,9 +656,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateConferenceEventMutationResult = NonNullable<Awaited<ReturnType<typeof updateConferenceEvent>>>
     export type UpdateConferenceEventMutationBody = BodyType<ConferenceEventUpdate>
-    export type UpdateConferenceEventMutationError = ErrorType<unknown>
+    export type UpdateConferenceEventMutationError = ErrorType<ErrorResponse>
 
-    export const useUpdateConferenceEvent = <TError = ErrorType<unknown>,
+    export const useUpdateConferenceEvent = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateConferenceEvent>>, TError,{id: string;data: BodyType<ConferenceEventUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof updateConferenceEvent>>,
@@ -529,6 +667,71 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateConferenceEventMutationOptions(options));
+    }
+    export const getConfirmConferenceEventDatesUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-events/${id}/confirm-dates`
+}
+
+export const confirmConferenceEventDates = async (id: string,
+    conferenceEventDateConfirmation: ConferenceEventDateConfirmation, options?: RequestInit): Promise<ConferenceEvent> => {
+  
+  return customFetch<ConferenceEvent>(getConfirmConferenceEventDatesUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceEventDateConfirmation,)
+  }
+);}
+  
+
+
+
+export const getConfirmConferenceEventDatesMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmConferenceEventDates>>, TError,{id: string;data: BodyType<ConferenceEventDateConfirmation>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof confirmConferenceEventDates>>, TError,{id: string;data: BodyType<ConferenceEventDateConfirmation>}, TContext> => {
+
+const mutationKey = ['confirmConferenceEventDates'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmConferenceEventDates>>, {id: string;data: BodyType<ConferenceEventDateConfirmation>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  confirmConferenceEventDates(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ConfirmConferenceEventDatesMutationResult = NonNullable<Awaited<ReturnType<typeof confirmConferenceEventDates>>>
+    export type ConfirmConferenceEventDatesMutationBody = BodyType<ConferenceEventDateConfirmation>
+    export type ConfirmConferenceEventDatesMutationError = ErrorType<ErrorResponse>
+
+    export const useConfirmConferenceEventDates = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof confirmConferenceEventDates>>, TError,{id: string;data: BodyType<ConferenceEventDateConfirmation>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof confirmConferenceEventDates>>,
+        TError,
+        {id: string;data: BodyType<ConferenceEventDateConfirmation>},
+        TContext
+      > => {
+      return useMutation(getConfirmConferenceEventDatesMutationOptions(options));
     }
     export const getListConferenceAttendanceUrl = (id: string,
     params?: ListConferenceAttendanceParams,) => {
@@ -873,7 +1076,75 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getConfirmConferenceImportMutationOptions(options));
     }
-    export const getCreateConferenceResearchRequestUrl = (id: string,) => {
+    export const getListConferenceResearchRequestsUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-events/${id}/research-requests`
+}
+
+export const listConferenceResearchRequests = async (id: string, options?: RequestInit): Promise<ConferenceResearchRequest[]> => {
+  
+  return customFetch<ConferenceResearchRequest[]>(getListConferenceResearchRequestsUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListConferenceResearchRequestsQueryKey = (id: string,) => {
+    return [
+    `/api/conference-events/${id}/research-requests`
+    ] as const;
+    }
+
+    
+export const getListConferenceResearchRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConferenceResearchRequestsQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceResearchRequests>>> = ({ signal }) => listConferenceResearchRequests(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListConferenceResearchRequestsQueryResult = NonNullable<Awaited<ReturnType<typeof listConferenceResearchRequests>>>
+export type ListConferenceResearchRequestsQueryError = ErrorType<unknown>
+
+
+
+export function useListConferenceResearchRequests<TData = Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError = ErrorType<unknown>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListConferenceResearchRequestsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getCreateConferenceResearchRequestUrl = (id: string,) => {
 
 
   
@@ -897,7 +1168,7 @@ export const createConferenceResearchRequest = async (id: string,
 
 
 
-export const getCreateConferenceResearchRequestMutationOptions = <TError = ErrorType<unknown>,
+export const getCreateConferenceResearchRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceResearchRequest>>, TError,{id: string;data: BodyType<ConferenceResearchRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createConferenceResearchRequest>>, TError,{id: string;data: BodyType<ConferenceResearchRequestInput>}, TContext> => {
 
@@ -926,9 +1197,9 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateConferenceResearchRequestMutationResult = NonNullable<Awaited<ReturnType<typeof createConferenceResearchRequest>>>
     export type CreateConferenceResearchRequestMutationBody = BodyType<ConferenceResearchRequestInput>
-    export type CreateConferenceResearchRequestMutationError = ErrorType<unknown>
+    export type CreateConferenceResearchRequestMutationError = ErrorType<ErrorResponse>
 
-    export const useCreateConferenceResearchRequest = <TError = ErrorType<unknown>,
+    export const useCreateConferenceResearchRequest = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConferenceResearchRequest>>, TError,{id: string;data: BodyType<ConferenceResearchRequestInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createConferenceResearchRequest>>,
@@ -937,6 +1208,409 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateConferenceResearchRequestMutationOptions(options));
+    }
+    export const getRetryConferenceResearchRequestUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-research-requests/${id}/retry`
+}
+
+export const retryConferenceResearchRequest = async (id: string, options?: RequestInit): Promise<ConferenceResearchRequest> => {
+  
+  return customFetch<ConferenceResearchRequest>(getRetryConferenceResearchRequestUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getRetryConferenceResearchRequestMutationOptions = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryConferenceResearchRequest>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryConferenceResearchRequest>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['retryConferenceResearchRequest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryConferenceResearchRequest>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  retryConferenceResearchRequest(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryConferenceResearchRequestMutationResult = NonNullable<Awaited<ReturnType<typeof retryConferenceResearchRequest>>>
+    
+    export type RetryConferenceResearchRequestMutationError = ErrorType<void | ErrorResponse>
+
+    export const useRetryConferenceResearchRequest = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryConferenceResearchRequest>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryConferenceResearchRequest>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRetryConferenceResearchRequestMutationOptions(options));
+    }
+    export const getListConferenceSpeakerProposalsUrl = (id: string,
+    params?: ListConferenceSpeakerProposalsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/conference-events/${id}/speaker-proposals?${stringifiedParams}` : `/api/conference-events/${id}/speaker-proposals`
+}
+
+export const listConferenceSpeakerProposals = async (id: string,
+    params?: ListConferenceSpeakerProposalsParams, options?: RequestInit): Promise<ConferenceSpeakerProposal[]> => {
+  
+  return customFetch<ConferenceSpeakerProposal[]>(getListConferenceSpeakerProposalsUrl(id,params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+  
+
+
+
+
+export const getListConferenceSpeakerProposalsQueryKey = (id: string,
+    params?: ListConferenceSpeakerProposalsParams,) => {
+    return [
+    `/api/conference-events/${id}/speaker-proposals`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+    
+export const getListConferenceSpeakerProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError = ErrorType<unknown>>(id: string,
+    params?: ListConferenceSpeakerProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConferenceSpeakerProposalsQueryKey(id,params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>> = ({ signal }) => listConferenceSpeakerProposals(id,params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListConferenceSpeakerProposalsQueryResult = NonNullable<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>>
+export type ListConferenceSpeakerProposalsQueryError = ErrorType<unknown>
+
+
+
+export function useListConferenceSpeakerProposals<TData = Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError = ErrorType<unknown>>(
+ id: string,
+    params?: ListConferenceSpeakerProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListConferenceSpeakerProposalsQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getBulkAddConferenceSpeakerProposalsUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-events/${id}/speaker-proposals/bulk-add`
+}
+
+export const bulkAddConferenceSpeakerProposals = async (id: string,
+    conferenceSpeakerProposalBulkInput: ConferenceSpeakerProposalBulkInput, options?: RequestInit): Promise<ConferenceSpeakerProposalBulkResult> => {
+  
+  return customFetch<ConferenceSpeakerProposalBulkResult>(getBulkAddConferenceSpeakerProposalsUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceSpeakerProposalBulkInput,)
+  }
+);}
+  
+
+
+
+export const getBulkAddConferenceSpeakerProposalsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext> => {
+
+const mutationKey = ['bulkAddConferenceSpeakerProposals'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>, {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  bulkAddConferenceSpeakerProposals(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkAddConferenceSpeakerProposalsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>>
+    export type BulkAddConferenceSpeakerProposalsMutationBody = BodyType<ConferenceSpeakerProposalBulkInput>
+    export type BulkAddConferenceSpeakerProposalsMutationError = ErrorType<ErrorResponse>
+
+    export const useBulkAddConferenceSpeakerProposals = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>,
+        TError,
+        {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>},
+        TContext
+      > => {
+      return useMutation(getBulkAddConferenceSpeakerProposalsMutationOptions(options));
+    }
+    export const getBulkIgnoreConferenceSpeakerProposalsUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-events/${id}/speaker-proposals/bulk-ignore`
+}
+
+export const bulkIgnoreConferenceSpeakerProposals = async (id: string,
+    conferenceSpeakerProposalBulkInput: ConferenceSpeakerProposalBulkInput, options?: RequestInit): Promise<ConferenceSpeakerProposalBulkResult> => {
+  
+  return customFetch<ConferenceSpeakerProposalBulkResult>(getBulkIgnoreConferenceSpeakerProposalsUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceSpeakerProposalBulkInput,)
+  }
+);}
+  
+
+
+
+export const getBulkIgnoreConferenceSpeakerProposalsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext> => {
+
+const mutationKey = ['bulkIgnoreConferenceSpeakerProposals'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>, {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  bulkIgnoreConferenceSpeakerProposals(id,data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BulkIgnoreConferenceSpeakerProposalsMutationResult = NonNullable<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>>
+    export type BulkIgnoreConferenceSpeakerProposalsMutationBody = BodyType<ConferenceSpeakerProposalBulkInput>
+    export type BulkIgnoreConferenceSpeakerProposalsMutationError = ErrorType<ErrorResponse>
+
+    export const useBulkIgnoreConferenceSpeakerProposals = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>, TError,{id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>,
+        TError,
+        {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>},
+        TContext
+      > => {
+      return useMutation(getBulkIgnoreConferenceSpeakerProposalsMutationOptions(options));
+    }
+    export const getReopenConferenceSpeakerProposalUrl = (id: string,) => {
+
+
+  
+
+  return `/api/conference-speaker-proposals/${id}/reopen`
+}
+
+export const reopenConferenceSpeakerProposal = async (id: string, options?: RequestInit): Promise<ConferenceSpeakerProposal> => {
+  
+  return customFetch<ConferenceSpeakerProposal>(getReopenConferenceSpeakerProposalUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+  
+
+
+
+export const getReopenConferenceSpeakerProposalMutationOptions = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['reopenConferenceSpeakerProposal'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  reopenConferenceSpeakerProposal(id,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReopenConferenceSpeakerProposalMutationResult = NonNullable<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>>
+    
+    export type ReopenConferenceSpeakerProposalMutationError = ErrorType<void | ErrorResponse>
+
+    export const useReopenConferenceSpeakerProposal = <TError = ErrorType<void | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getReopenConferenceSpeakerProposalMutationOptions(options));
+    }
+    /**
+ * Admin-only. Enqueues idempotent retroactive work for existing events; missing dates are queued before agenda and speaker research.
+ */
+export const getEnqueueConferenceResearchBackfillUrl = () => {
+
+
+  
+
+  return `/api/admin/conference-research/backfill`
+}
+
+export const enqueueConferenceResearchBackfill = async (conferenceResearchBackfillInput: ConferenceResearchBackfillInput, options?: RequestInit): Promise<ConferenceResearchBackfillResult> => {
+  
+  return customFetch<ConferenceResearchBackfillResult>(getEnqueueConferenceResearchBackfillUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceResearchBackfillInput,)
+  }
+);}
+  
+
+
+
+export const getEnqueueConferenceResearchBackfillMutationOptions = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>, TError,{data: BodyType<ConferenceResearchBackfillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>, TError,{data: BodyType<ConferenceResearchBackfillInput>}, TContext> => {
+
+const mutationKey = ['enqueueConferenceResearchBackfill'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>, {data: BodyType<ConferenceResearchBackfillInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  enqueueConferenceResearchBackfill(data,requestOptions)
+        }
+
+
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type EnqueueConferenceResearchBackfillMutationResult = NonNullable<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>>
+    export type EnqueueConferenceResearchBackfillMutationBody = BodyType<ConferenceResearchBackfillInput>
+    export type EnqueueConferenceResearchBackfillMutationError = ErrorType<ErrorResponse | void>
+
+    export const useEnqueueConferenceResearchBackfill = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>, TError,{data: BodyType<ConferenceResearchBackfillInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>,
+        TError,
+        {data: BodyType<ConferenceResearchBackfillInput>},
+        TContext
+      > => {
+      return useMutation(getEnqueueConferenceResearchBackfillMutationOptions(options));
     }
     export const getListConferenceEmailSuggestionsUrl = (id: string,) => {
 
