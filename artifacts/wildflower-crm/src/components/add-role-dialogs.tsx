@@ -44,7 +44,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { History, Plus, Pencil, Trash2 } from "lucide-react";
 import {
   EntityCombobox,
   useOrganizationSearch,
@@ -966,10 +966,13 @@ EditRoleIconButton.displayName = "EditRoleIconButton";
 export function EditPeopleEntityRoleDialog({
   role,
   contextLabel,
+  quickMarkPast = false,
 }: {
   role: PeopleEntityRole;
   /** Optional name shown in the dialog header for context (entity or person). */
   contextLabel?: string;
+  /** Show an immediate current → past action alongside the full editor. */
+  quickMarkPast?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [connection, setConnection] = useState(role.connection ?? "");
@@ -999,8 +1002,6 @@ export function EditPeopleEntityRoleDialog({
       getGetPersonQueryKey(role.personId),
       getListPeopleEntityRolesQueryKey(),
     ];
-    if (role.organizationId)
-      keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.organizationId)
       keys.push(getGetOrganizationQueryKey(role.organizationId));
     if (role.householdId) keys.push(getGetHouseholdQueryKey(role.householdId));
@@ -1066,89 +1067,111 @@ export function EditPeopleEntityRoleDialog({
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(v) => {
-        if (pending) return;
-        if (v) syncFromRole();
-        setOpen(v);
-      }}
-    >
-      <DialogTrigger asChild>
-        <EditRoleIconButton testId={`button-edit-role-${role.id}`} />
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit relationship</DialogTitle>
-          <DialogDescription>
-            {contextLabel
-              ? `Update how this person is connected to ${contextLabel}.`
-              : "Update this person↔entity relationship."}
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit();
-          }}
-          className="space-y-3"
+    <>
+      {quickMarkPast && role.current === PeopleRoleCurrent.current ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          disabled={pending}
+          onClick={() =>
+            update.mutate({
+              id: role.id,
+              data: { current: PeopleRoleCurrent.past },
+            })
+          }
+          aria-label={`Mark role at ${contextLabel ?? "organization"} no longer current`}
+          title="Mark role no longer current"
+          data-testid={`button-mark-role-past-${role.id}`}
         >
-          <RoleAttributeFields
-            connection={connection}
-            setConnection={setConnection}
-            title={title}
-            setTitle={setTitle}
-            notes={notes}
-            setNotes={setNotes}
-            current={current}
-            setCurrent={setCurrent}
-            primary={primary}
-            setPrimary={setPrimary}
-            idPrefix="edit-role"
-          />
-          <DialogFooter className="sm:justify-between">
-            <Button
-              type="button"
-              variant={confirmDelete ? "destructive" : "ghost"}
-              onClick={() => {
-                if (confirmDelete) {
-                  remove.mutate({ id: role.id });
-                } else {
-                  setConfirmDelete(true);
-                }
-              }}
-              disabled={pending}
-              data-testid={`button-delete-role-${role.id}`}
-              className={confirmDelete ? "" : "text-destructive"}
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              {remove.isPending
-                ? "Removing…"
-                : confirmDelete
-                  ? "Confirm remove"
-                  : "Remove"}
-            </Button>
-            <div className="flex gap-2">
+          <History className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          if (pending) return;
+          if (v) syncFromRole();
+          setOpen(v);
+        }}
+      >
+        <DialogTrigger asChild>
+          <EditRoleIconButton testId={`button-edit-role-${role.id}`} />
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit relationship</DialogTitle>
+            <DialogDescription>
+              {contextLabel
+                ? `Update how this person is connected to ${contextLabel}.`
+                : "Update this person↔entity relationship."}
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit();
+            }}
+            className="space-y-3"
+          >
+            <RoleAttributeFields
+              connection={connection}
+              setConnection={setConnection}
+              title={title}
+              setTitle={setTitle}
+              notes={notes}
+              setNotes={setNotes}
+              current={current}
+              setCurrent={setCurrent}
+              primary={primary}
+              setPrimary={setPrimary}
+              idPrefix="edit-role"
+            />
+            <DialogFooter className="sm:justify-between">
               <Button
                 type="button"
-                variant="ghost"
-                onClick={() => setOpen(false)}
+                variant={confirmDelete ? "destructive" : "ghost"}
+                onClick={() => {
+                  if (confirmDelete) {
+                    remove.mutate({ id: role.id });
+                  } else {
+                    setConfirmDelete(true);
+                  }
+                }}
                 disabled={pending}
+                data-testid={`button-delete-role-${role.id}`}
+                className={confirmDelete ? "" : "text-destructive"}
               >
-                Cancel
+                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                {remove.isPending
+                  ? "Removing…"
+                  : confirmDelete
+                    ? "Confirm remove"
+                    : "Remove"}
               </Button>
-              <Button
-                type="submit"
-                disabled={pending}
-                data-testid={`button-save-role-${role.id}`}
-              >
-                {update.isPending ? "Saving…" : "Save"}
-              </Button>
-            </div>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setOpen(false)}
+                  disabled={pending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={pending}
+                  data-testid={`button-save-role-${role.id}`}
+                >
+                  {update.isPending ? "Saving…" : "Save"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

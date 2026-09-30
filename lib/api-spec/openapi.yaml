@@ -14033,6 +14033,8 @@ components:
         sourceKey: { type: string }
         sourceUrl: { type: string, nullable: true }
         evidence: { type: string }
+        sourceEmail:
+          { type: string, nullable: true, description: Email address named in provider evidence, when recorded. }
         recordedByUserId: { type: string, nullable: true }
     CreateNewsletterPreferenceEventBody:
       type: object
@@ -15501,6 +15503,14 @@ components:
         paymentStatus: { type: string, nullable: true }
         opportunityId: { type: string, nullable: true }
 
+    TopPriorityEmailThread:
+      type: object
+      required: [subject, sentAt, awaitingReply]
+      properties:
+        subject: { type: string }
+        sentAt: { type: string, format: date-time }
+        awaitingReply: { type: boolean }
+
     TopPriorityOrganization:
       type: object
       required:
@@ -15521,6 +15531,9 @@ components:
         ownerUserId: { type: string, nullable: true }
         openOpportunityCount: { type: integer }
         openTaskCount: { type: integer }
+        recentEmailThreads:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityEmailThread" }
         openAsks:
           type: array
           items: { $ref: "#/components/schemas/TopPriorityOpenAsk" }
@@ -15557,6 +15570,9 @@ components:
         ownerUserId: { type: string, nullable: true }
         openOpportunityCount: { type: integer }
         openTaskCount: { type: integer }
+        recentEmailThreads:
+          type: array
+          items: { $ref: "#/components/schemas/TopPriorityEmailThread" }
         openAsks:
           type: array
           items: { $ref: "#/components/schemas/TopPriorityOpenAsk" }
@@ -17070,7 +17086,7 @@ components:
 
     Address:
       type: object
-      required: [id, createdAt, updatedAt]
+      required: [id, isCurrent, createdAt, updatedAt]
       properties:
         id: { type: string }
         street: { type: string, nullable: true }
@@ -17080,6 +17096,7 @@ components:
         stateCode: { type: string, nullable: true }
         postalCode: { type: string, nullable: true }
         country: { type: string, nullable: true }
+        isCurrent: { type: boolean }
         personId: { type: string, nullable: true }
         organizationId: { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }
@@ -17102,6 +17119,7 @@ components:
         stateCode: { type: string }
         postalCode: { type: string }
         country: { type: string }
+        isCurrent: { type: boolean }
         personId: { type: string }
         organizationId: { type: string }
         paymentIntermediaryId: { type: string }
@@ -17116,6 +17134,7 @@ components:
         stateCode: { type: string, nullable: true }
         postalCode: { type: string, nullable: true }
         country: { type: string, nullable: true }
+        isCurrent: { type: boolean }
         personId: { type: string, nullable: true }
         organizationId: { type: string, nullable: true }
         paymentIntermediaryId: { type: string, nullable: true }

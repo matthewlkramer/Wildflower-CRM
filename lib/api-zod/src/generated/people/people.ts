@@ -252,6 +252,7 @@ export const GetPersonResponse = zod.object({
   "stateCode": zod.string().nullish(),
   "postalCode": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "isCurrent": zod.boolean(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),
@@ -683,6 +684,7 @@ export const ListNewsletterPreferencesResponse = zod.object({
   "sourceKey": zod.string(),
   "sourceUrl": zod.string().nullish(),
   "evidence": zod.string(),
+  "sourceEmail": zod.string().nullish().describe('Email address named in provider evidence'),
   "recordedByUserId": zod.string().nullish()
 })),
   "newsletter": zod.boolean(),

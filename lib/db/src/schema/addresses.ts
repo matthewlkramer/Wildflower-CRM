@@ -1,4 +1,4 @@
-import { check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, check, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { regions } from "./regions";
 import { people } from "./people";
@@ -23,6 +23,7 @@ export const addresses = pgTable(
     stateCode: text("state_code"),
     postalCode: text("postal_code"),
     country: text("country"),
+    isCurrent: boolean("is_current").notNull().default(true),
     // Exactly one of the four owner FKs is set (enforced by CHECK below).
     // CASCADE: deleting the owning entity removes its address rows.
     personId: text("person_id").references(() => people.id, {

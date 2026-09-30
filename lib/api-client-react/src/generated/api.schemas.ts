@@ -1057,6 +1057,8 @@ export interface NewsletterPreferenceEvent {
   sourceKey: string;
   sourceUrl?: string | null;
   evidence: string;
+  /** Email address named in provider evidence */
+  sourceEmail?: string | null;
   recordedByUserId?: string | null;
 }
 
@@ -2163,6 +2165,12 @@ export interface TopPriorityGiftOrPledgeSummary {
   opportunityId: string | null;
 }
 
+export interface TopPriorityEmailThread {
+  subject: string;
+  sentAt: string;
+  awaitingReply: boolean;
+}
+
 export interface TopPriorityOrganization {
   id: string;
   name: string;
@@ -2170,6 +2178,7 @@ export interface TopPriorityOrganization {
   ownerUserId: string | null;
   openOpportunityCount: number;
   openTaskCount: number;
+  recentEmailThreads?: TopPriorityEmailThread[];
   openAsks: TopPriorityOpenAsk[];
   affiliatedPeople: TopPriorityAffiliate[];
   lastGiftDate?: string | null;
@@ -2186,6 +2195,7 @@ export interface TopPriorityPerson {
   ownerUserId: string | null;
   openOpportunityCount: number;
   openTaskCount: number;
+  recentEmailThreads?: TopPriorityEmailThread[];
   openAsks: TopPriorityOpenAsk[];
   lastGiftDate?: string | null;
   lastGiftAmount?: string | null;
@@ -2516,6 +2526,7 @@ export interface Address {
   stateCode?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  isCurrent: boolean;
   personId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;
@@ -3098,6 +3109,7 @@ export interface CreateAddressBody {
   stateCode?: string;
   postalCode?: string;
   country?: string;
+  isCurrent?: boolean;
   personId?: string;
   organizationId?: string;
   paymentIntermediaryId?: string;
@@ -3112,6 +3124,7 @@ export interface UpdateAddressBody {
   stateCode?: string | null;
   postalCode?: string | null;
   country?: string | null;
+  isCurrent?: boolean;
   personId?: string | null;
   organizationId?: string | null;
   paymentIntermediaryId?: string | null;

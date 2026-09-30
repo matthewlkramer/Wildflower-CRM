@@ -890,7 +890,7 @@ async function existingAddress(row: CodingFormRowSelect): Promise<{
       country: addresses.country,
     })
     .from(addresses)
-    .where(where)
+    .where(and(where, eq(addresses.isCurrent, true)))
     .limit(1);
   return rows[0] ?? null;
 }

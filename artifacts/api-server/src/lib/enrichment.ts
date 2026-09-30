@@ -161,13 +161,13 @@ export async function derivePersonHomeRegion(
     db
       .select()
       .from(addresses)
-      .where(eq(addresses.personId, personId))
+      .where(and(eq(addresses.personId, personId), eq(addresses.isCurrent, true)))
       .orderBy(desc(addresses.updatedAt)),
     primaryHouseholdId
       ? db
           .select()
           .from(addresses)
-          .where(eq(addresses.householdId, primaryHouseholdId))
+          .where(and(eq(addresses.householdId, primaryHouseholdId), eq(addresses.isCurrent, true)))
           .orderBy(desc(addresses.updatedAt))
       : Promise.resolve([]),
     db
@@ -182,6 +182,7 @@ export async function derivePersonHomeRegion(
           eq(peopleEntityRoles.personId, personId),
           eq(peopleEntityRoles.entityType, "organization"),
           eq(peopleEntityRoles.current, "current"),
+          eq(addresses.isCurrent, true),
         ),
       )
       .orderBy(desc(addresses.updatedAt)),

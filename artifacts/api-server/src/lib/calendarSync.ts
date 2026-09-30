@@ -315,6 +315,7 @@ export async function syncUserCalendar(
               syncToken: null,
               bootstrapCompletedAt: null,
               bootstrapPageToken: null,
+              noProgressRuns: 0,
               incrementalPageToken: null,
               lastError:
                 "Calendar sync token expired; re-bootstrapping on next run",
@@ -346,6 +347,7 @@ export async function syncUserCalendar(
         .set({
           bootstrapCompletedAt: null,
           bootstrapPageToken: null,
+          noProgressRuns: 0,
           incrementalPageToken: null,
           updatedAt: new Date(),
         })
@@ -379,7 +381,14 @@ export async function syncUserCalendar(
     logger.error({ err: e, userId }, "Calendar sync run failed");
     await db
       .update(calendarSyncState)
-      .set({ lastError: msg, lastSyncedAt: new Date(), updatedAt: new Date() })
+      .set({
+        lastError: msg,
+        lastSyncedAt: new Date(),
+        noProgressRuns: state.bootstrapCompletedAt
+          ? state.noProgressRuns
+          : state.noProgressRuns + 1,
+        updatedAt: new Date(),
+      })
       .where(eq(calendarSyncState.calendarUserId, userId));
     return { ok: false, error: msg };
   }
@@ -440,6 +449,7 @@ async function runBootstrapPass(
         .update(calendarSyncState)
         .set({
           bootstrapPageToken: currentPageToken,
+          noProgressRuns: state.noProgressRuns + 1,
           updatedAt: new Date(),
         })
         .where(eq(calendarSyncState.calendarUserId, grant.userId));
@@ -465,6 +475,7 @@ async function runBootstrapPass(
         bootstrapCompletedAt: new Date(),
         bootstrapPageToken: null,
         syncToken: finalSyncToken,
+        noProgressRuns: 0,
         updatedAt: new Date(),
       })
       .where(eq(calendarSyncState.calendarUserId, grant.userId));
@@ -475,6 +486,9 @@ async function runBootstrapPass(
       .update(calendarSyncState)
       .set({
         bootstrapPageToken: pageToken,
+        noProgressRuns: pageToken === state.bootstrapPageToken
+          ? state.noProgressRuns + 1
+          : 0,
         updatedAt: new Date(),
       })
       .where(eq(calendarSyncState.calendarUserId, grant.userId));

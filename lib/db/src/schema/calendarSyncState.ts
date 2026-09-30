@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { users } from "./users";
 
 /**
@@ -43,6 +43,7 @@ export const calendarSyncState = pgTable("calendar_sync_state", {
   incrementalPageToken: text("incremental_page_token"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   lastError: text("last_error"),
+  noProgressRuns: integer("no_progress_runs").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

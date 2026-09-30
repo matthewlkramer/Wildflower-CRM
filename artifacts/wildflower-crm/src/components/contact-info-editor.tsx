@@ -50,7 +50,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatDisplayAddress } from "@/lib/format-address";
 import { formatEnum } from "@/lib/format";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  CircleCheck,
+  CircleX,
+  History,
+  Pencil,
+  Plus,
+  Star,
+  Trash2,
+} from "lucide-react";
 
 /**
  * Contact records (emails / phones / addresses) belong to exactly one owner —
@@ -115,6 +123,7 @@ type AddressFormState = {
   stateCode: string;
   postalCode: string;
   country: string;
+  isCurrent: boolean;
 };
 
 const EMPTY_EMAIL: EmailFormState = {
@@ -137,6 +146,7 @@ const EMPTY_ADDRESS: AddressFormState = {
   stateCode: "",
   postalCode: "",
   country: "",
+  isCurrent: true,
 };
 
 export function EmailsEditor({
@@ -278,6 +288,55 @@ export function EmailsEditor({
                   {e.isPreferred ? "preferred • " : ""}
                   {formatEnum(e.validity)}
                 </span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={update.isPending}
+                  onClick={() =>
+                    update.mutate({
+                      id: e.id,
+                      data: {
+                        validity: e.validity === "valid" ? "invalid" : "valid",
+                      },
+                    })
+                  }
+                  aria-label={
+                    e.validity === "valid"
+                      ? `Mark ${e.email} invalid`
+                      : `Mark ${e.email} valid`
+                  }
+                  aria-pressed={e.validity === "valid"}
+                  title={e.validity === "valid" ? "Mark invalid" : "Mark valid"}
+                  data-testid={`btn-toggle-email-validity-${e.id}`}
+                >
+                  {e.validity === "valid" ? (
+                    <CircleCheck className="h-3.5 w-3.5 text-emerald-700" />
+                  ) : (
+                    <CircleX className="h-3.5 w-3.5 text-muted-foreground" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={update.isPending || e.isPreferred}
+                  onClick={() =>
+                    update.mutate({ id: e.id, data: { isPreferred: true } })
+                  }
+                  aria-label={
+                    e.isPreferred
+                      ? `${e.email} is preferred`
+                      : `Make ${e.email} preferred`
+                  }
+                  aria-pressed={e.isPreferred}
+                  title={e.isPreferred ? "Preferred email" : "Make preferred"}
+                  data-testid={`btn-prefer-email-${e.id}`}
+                >
+                  <Star
+                    className={`h-3.5 w-3.5 ${e.isPreferred ? "fill-amber-400 text-amber-600" : "text-muted-foreground"}`}
+                  />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -821,6 +880,7 @@ export function AddressesEditor({
       stateCode: a.stateCode ?? "",
       postalCode: a.postalCode ?? "",
       country: a.country ?? "",
+      isCurrent: a.isCurrent,
     });
     setEditTarget(a);
   };
@@ -838,6 +898,7 @@ export function AddressesEditor({
       stateCode: form.stateCode.trim() || null,
       postalCode: form.postalCode.trim() || null,
       country: form.country.trim() || null,
+      isCurrent: form.isCurrent,
     };
     if (editTarget) {
       update.mutate({ id: editTarget.id, data: fields });
@@ -853,13 +914,16 @@ export function AddressesEditor({
             ? { postalCode: form.postalCode.trim() }
             : {}),
           ...(form.country.trim() ? { country: form.country.trim() } : {}),
+          isCurrent: form.isCurrent,
           ...ownerCreateField(owner),
         },
       });
     }
   };
 
-  const list = addresses ?? [];
+  const list = [...(addresses ?? [])].sort(
+    (a, b) => Number(b.isCurrent) - Number(a.isCurrent),
+  );
   const dialogOpen = adding || editTarget !== null;
   const closeDialog = () => {
     setAdding(false);
@@ -889,8 +953,38 @@ export function AddressesEditor({
               className="flex items-center justify-between gap-2 group"
               data-testid={`address-row-${a.id}`}
             >
-              <span className="min-w-0">{formatDisplayAddress(a)}</span>
+              <span
+                className={`min-w-0 ${a.isCurrent ? "" : "text-muted-foreground"}`}
+              >
+                {formatDisplayAddress(a)}
+                {a.isCurrent ? "" : " · Past"}
+              </span>
               <div className="flex items-center gap-2 flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  disabled={update.isPending}
+                  onClick={() =>
+                    update.mutate({
+                      id: a.id,
+                      data: { isCurrent: !a.isCurrent },
+                    })
+                  }
+                  aria-label={`${a.isCurrent ? "Mark" : "Restore"} ${formatDisplayAddress(a)} ${a.isCurrent ? "as past" : "as current"}`}
+                  title={
+                    a.isCurrent
+                      ? "Mark past address"
+                      : "Restore current address"
+                  }
+                  data-testid={`btn-toggle-address-current-${a.id}`}
+                >
+                  {a.isCurrent ? (
+                    <History className="h-3.5 w-3.5" />
+                  ) : (
+                    <CircleCheck className="h-3.5 w-3.5" />
+                  )}
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -994,6 +1088,15 @@ export function AddressesEditor({
                 />
               </div>
             </div>
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={form.isCurrent}
+                onCheckedChange={(checked) =>
+                  setForm({ ...form, isCurrent: checked === true })
+                }
+              />
+              Current address
+            </label>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeDialog}>

@@ -61,7 +61,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm, formatOrganizationNameShort } from "@/lib/format";
+import { formatCapacity, formatCurrency, formatDateShort, formatEnum, formatEnthusiasm } from "@/lib/format";
 import { useDebounce } from "@/hooks/use-debounce";
 import {
   Table,
@@ -75,6 +75,16 @@ import { Skeleton, SkeletonRows } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { CreateOrganizationDialog } from "@/components/create-funder-dialog";
 import { PriorityStar } from "@/components/priority-star";
 import { PriorityTooltip } from "@/components/priority-tooltip";
@@ -85,7 +95,7 @@ import { INTERESTS_THEMATIC_SUGGESTIONS } from "@/components/multi-select-picker
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useUserNameMap } from "@/components/user-picker";
-import { canSeeIdentity, displayOrganizationName, ANONYMOUS_LABEL, type Viewer } from "@/lib/visibility";
+import { canSeeIdentity, ANONYMOUS_LABEL, sharedListOrganizationName, type Viewer } from "@/lib/visibility";
 import { useRegionNameMap } from "@/components/region-picker";
 import {
   Pagination,
@@ -242,8 +252,15 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
       required: true,
       tdClassName: "font-medium",
       cell: (f) => (
-        <Link href={`/organizations/${f.id}`} className="block w-full">
-          {canSeeIdentity(f, ctx.viewer) ? formatOrganizationNameShort(f.name) : ANONYMOUS_LABEL}
+        <Link
+          href={`/organizations/${f.id}`}
+          className="block w-full"
+          onClick={(event) => {
+            event.preventDefault();
+            ctx.onOpen(f);
+          }}
+        >
+          {sharedListOrganizationName(f)}
         </Link>
       ),
     },
@@ -483,7 +500,11 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
       key: "primaryContact",
       label: "Primary contact",
       cell: (f) =>
-        f.primaryContactPersonId ? (
+        !f.primaryContactPersonId ? (
+          "—"
+        ) : f.anonymous ? (
+          ANONYMOUS_LABEL
+        ) : (
           <Link
             href={`/individuals/${f.primaryContactPersonId}`}
             className="hover:underline"
@@ -491,8 +512,6 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
           >
             {f.primaryContactPersonName ?? f.primaryContactPersonId}
           </Link>
-        ) : (
-          "—"
         ),
     },
     {
@@ -592,11 +611,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
           />
         ) : (
           <RowActionIcons
-            entityLabel={
-              canSeeIdentity(f, ctx.viewer)
-                ? formatOrganizationNameShort(f.name)
-                : ANONYMOUS_LABEL
-            }
+            entityLabel={sharedListOrganizationName(f)}
             testIdPrefix={`org-${f.id}`}
             flagForResearch={{ targetType: "organization", targetId: f.id }}
             disabled={ctx.inline.editingId !== null}
@@ -618,6 +633,7 @@ function buildColumns(ctx: ColCtx): ColumnDef<Organization>[] {
 
 export default function Organizations() {
   const [, navigate] = useLocation();
+  const [revealTarget, setRevealTarget] = useState<Organization | null>(null);
   // Filter state persists per-tab so back-navigation from a funder
   // detail restores the same filtered view.
   const [search, setSearch] = usePersistedState<string>("wf.list.funders.search", "");
@@ -775,7 +791,7 @@ export default function Organizations() {
 
   const mergeLabel = (r: MergeRecord): string => {
     const f = r as unknown as Organization;
-    return (f.name as string | null) || f.id;
+    return sharedListOrganizationName(f);
   };
 
   const viewer = useGetCurrentUser().data ?? null;
@@ -860,7 +876,10 @@ export default function Organizations() {
           cancel: inlineEdit.cancel,
           saving: inlineEdit.saving,
         },
-        onOpen: (f) => navigate(`/organizations/${f.id}`),
+        onOpen: (f) => {
+          if (f.anonymous && canSeeIdentity(f, viewer)) setRevealTarget(f);
+          else navigate(`/organizations/${f.id}`);
+        },
         onStartEdit: (f) => inlineEdit.start(f),
         onArchive: archiveOrg,
         onUnarchive: unarchiveOrg,
@@ -1214,7 +1233,7 @@ export default function Organizations() {
         rows,
         {
           priority: (r) => (r.priority === "top" ? 1 : 0),
-          name: (r) => displayOrganizationName(r, viewer).toLowerCase(),
+          name: (r) => sharedListOrganizationName(r).toLowerCase(),
           entityType: (r) => r.entityType ?? null,
           active: (r) => r.activeStatus ?? null,
           connection: (r) => r.connectionStatus ?? null,
@@ -1573,10 +1592,15 @@ export default function Organizations() {
               <Link
                 href={`/organizations/${org.id}`}
                 className="font-medium text-foreground hover:text-primary line-clamp-1 text-sm"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (org.anonymous && canSeeIdentity(org, viewer)) setRevealTarget(org);
+                  else navigate(`/organizations/${org.id}`);
+                }}
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                {canSeeIdentity(org, viewer) ? displayOrganizationName(org, viewer) : ANONYMOUS_LABEL}
+                {sharedListOrganizationName(org)}
               </Link>
               <div className="mt-1 text-xs text-muted-foreground">
                 {formatEnum(org.entityType)}
@@ -1640,7 +1664,7 @@ export default function Organizations() {
                     <Checkbox
                       checked={selection.isSelected(f.id)}
                       onCheckedChange={() => selection.toggle(f.id)}
-                      aria-label={`Select ${displayOrganizationName(f, viewer)}`}
+                      aria-label={`Select ${sharedListOrganizationName(f)}`}
                       data-testid={`checkbox-select-${f.id}`}
                     />
                   </TableCell>
@@ -1757,6 +1781,27 @@ export default function Organizations() {
           </PaginationContent>
         </Pagination>
       )}
+      <AlertDialog open={revealTarget !== null} onOpenChange={(open) => { if (!open) setRevealTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Open anonymous donor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This organization is displayed as Anonymous in the shared list. Opening its record will reveal the donor's real name to you.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (revealTarget) navigate(`/organizations/${revealTarget.id}`);
+                setRevealTarget(null);
+              }}
+            >
+              Open and reveal
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

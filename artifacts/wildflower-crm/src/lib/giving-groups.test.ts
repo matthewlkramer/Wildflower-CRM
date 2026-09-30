@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupGiving } from "./giving-groups";
+import { groupGiving, hasRecordedPayments } from "./giving-groups";
 
 const opp = (id: string, status: string | null) => ({ id, status });
 const gift = (
@@ -7,6 +7,14 @@ const gift = (
   opportunityId: string | null = null,
   dateReceived: string | null = null,
 ) => ({ id, opportunityId, dateReceived });
+
+describe("commitment versus payment display", () => {
+  it("shows the commitment amount only before any payment is recorded", () => {
+    expect(hasRecordedPayments("0", 0)).toBe(false);
+    expect(hasRecordedPayments("25.00", 0)).toBe(true);
+    expect(hasRecordedPayments(null, 1)).toBe(true);
+  });
+});
 
 describe("groupGiving", () => {
   it("routes opportunities into sections by status", () => {

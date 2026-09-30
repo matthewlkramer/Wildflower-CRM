@@ -652,6 +652,13 @@ function OutreachBadge({ visit }: { visit: TripVisit }) {
   return <Badge variant="outline">Not invited</Badge>;
 }
 
+// The reviewed status can supersede an unrelated older message. Do not show
+// dates from the raw keyword match beside that reviewed conclusion; the
+// review summary is the evidence in that state.
+export function showRawOutreachDates(visit: Pick<TripVisit, "evidenceStatus">): boolean {
+  return visit.evidenceStatus == null;
+}
+
 function VisitRow({
   tripId,
   visit,
@@ -770,12 +777,12 @@ function VisitRow({
       ) : null}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <OutreachBadge visit={visit} />
-        {visit.invitationSentAt ? (
+        {showRawOutreachDates(visit) && visit.invitationSentAt ? (
           <span>
             Sent {new Date(visit.invitationSentAt).toLocaleDateString()}
           </span>
         ) : null}
-        {visit.respondedAt ? (
+        {showRawOutreachDates(visit) && visit.respondedAt ? (
           <span>
             · Reply {new Date(visit.respondedAt).toLocaleDateString()}
           </span>

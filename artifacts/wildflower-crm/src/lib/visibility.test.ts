@@ -3,6 +3,7 @@ import {
   canSeeIdentity,
   canManageIdentity,
   displayOrganizationName,
+  sharedListOrganizationName,
   displayPersonName,
   ANONYMOUS_LABEL,
 } from "./visibility";
@@ -52,6 +53,11 @@ describe("canManageIdentity", () => {
 });
 
 describe("display helpers", () => {
+  it("masks an anonymous organization in the shared list even for an admin", () => {
+    const funder = { name: "Acme Foundation", anonymous: true };
+    expect(sharedListOrganizationName(funder)).toBe(ANONYMOUS_LABEL);
+    expect(sharedListOrganizationName({ ...funder, anonymous: false })).toBe("Acme Fnd");
+  });
   it("masks organization name for unauthorized viewers", () => {
     const funder = { name: "Acme Foundation", anonymous: true, ownerUserId: "u1" };
     expect(displayOrganizationName(funder, otherUser)).toBe(ANONYMOUS_LABEL);
