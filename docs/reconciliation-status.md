@@ -55,6 +55,14 @@ bank deposit; partial invoice evidence never excludes the bundle. Bank-only
 Broadstreet deposits receive an excluded lease-guaranty component directly
 from their bank memo.
 
+QuickBooks deposit attachment extraction accepts either one attachment that
+itemizes the whole deposit or several distinct check attachments whose observed
+payments together equal the deposit to the cent. Partial or conflicting evidence
+is cached for review, not staged as a guessed composition. Existing reviewed
+deposit rows, gift ties, and manual classifications remain protected from
+automatic replacement. This path requires a healthy QuickBooks connection to
+verify against newly imported attachments.
+
 ## Bank-spine cutover — landed
 
 The bank-spine cutover landed across PRs **#34–#42**. `bank_deposits` are the

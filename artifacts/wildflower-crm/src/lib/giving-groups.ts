@@ -30,6 +30,15 @@ export interface GivingThread<O, G> {
   gifts: G[];
 }
 
+/** A parent commitment should not occupy the same amount column as its
+ * payment rows, even when pagination did not fetch every linked gift. */
+export function hasRecordedPayments(
+  paidAmount: string | number | null | undefined,
+  visibleGiftCount: number,
+): boolean {
+  return visibleGiftCount > 0 || Number(paidAmount ?? 0) > 0;
+}
+
 export interface PastGivingEntry<O, G> {
   /** Null for a standalone gift with no (fetched) source opportunity. */
   opp: O | null;

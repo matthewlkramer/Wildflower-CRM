@@ -71,6 +71,7 @@ router.get(
         calendarLastError: calendarSyncState.lastError,
         calendarBootstrapCompletedAt: calendarSyncState.bootstrapCompletedAt,
         calendarBootstrapPageToken: calendarSyncState.bootstrapPageToken,
+        calendarNoProgressRuns: calendarSyncState.noProgressRuns,
         calendarUpdatedAt: calendarSyncState.updatedAt,
       })
       .from(users)
@@ -107,7 +108,7 @@ router.get(
 
     res.json({
       data: rows.map((r) => {
-        const connected = !r.revokedAt;
+        const connected = !!r.grantedAt && !r.revokedAt;
         const gmailBootstrapDone = !!r.gmailBootstrapCompletedAt;
         const gmailNoProgress = r.gmailNoProgressRuns ?? 0;
         // A bootstrap is "stuck" when the initial sync hasn't completed and
@@ -125,14 +126,16 @@ router.get(
               r.grantedAt ?? null,
             ));
         const calendarBootstrapDone = !!r.calendarBootstrapCompletedAt;
+        const calendarNoProgress = r.calendarNoProgressRuns ?? 0;
         const calendarBootstrapStuck =
           connected &&
           !calendarBootstrapDone &&
-          isStale(
-            r.calendarBootstrapCompletedAt ?? null,
-            r.calendarUpdatedAt ?? r.calendarLastSyncedAt ?? null,
-            r.grantedAt ?? null,
-          );
+          (calendarNoProgress >= STUCK_NO_PROGRESS_THRESHOLD ||
+            isStale(
+              r.calendarBootstrapCompletedAt ?? null,
+              r.calendarUpdatedAt ?? r.calendarLastSyncedAt ?? null,
+              r.grantedAt ?? null,
+            ));
         return {
           userId: r.userId,
           userEmail: r.userEmail,
@@ -164,10 +167,8 @@ router.get(
             bootstrapInProgress:
               !r.calendarBootstrapCompletedAt && !!r.calendarBootstrapPageToken,
             bootstrapStuck: calendarBootstrapStuck,
-            // Calendar sync doesn't track no-progress runs yet; report the
-            // shared shape as healthy so the admin panel stays consistent.
-            noProgressRuns: 0,
-            stuck: false,
+            noProgressRuns: calendarNoProgress,
+            stuck: calendarNoProgress >= STUCK_NO_PROGRESS_THRESHOLD,
           },
         };
       }),

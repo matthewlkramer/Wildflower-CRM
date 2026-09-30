@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import type {
   TopPriorityAffiliate,
   TopPriorityGiftOrPledgeSummary,
+  TopPriorityEmailThread,
   TopPriorityOpenAsk,
   TopPriorityOrganization,
   TopPriorityPerson,
@@ -132,6 +133,36 @@ function GiftOrPledgeCell({
   );
 }
 
+function EmailThreadsCell({ threads }: { threads: TopPriorityEmailThread[] }) {
+  if (!threads.length) return <span className="text-muted-foreground">—</span>;
+  return (
+    <div className="space-y-1.5 py-1 text-xs">
+      {threads.map((thread, index) => (
+        <div
+          key={`${thread.sentAt}-${index}`}
+          className={
+            thread.awaitingReply
+              ? "rounded border-l-2 border-amber-500 bg-amber-50 px-2 py-1 text-foreground dark:bg-amber-950/20"
+              : "text-muted-foreground"
+          }
+        >
+          <div
+            className={thread.awaitingReply ? "font-semibold" : "font-medium"}
+          >
+            {thread.subject}
+          </div>
+          <div>
+            {formatDateShort(thread.sentAt)}
+            {thread.awaitingReply
+              ? " · Donor replied — awaiting our response"
+              : ""}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function FundersTable({
   funders,
   loading,
@@ -184,17 +215,18 @@ function FundersTable({
           >
             Open tasks
           </SortableTH>
+          <TableHead className="min-w-48">Recent email threads</TableHead>
           <TableHead className="w-40">Affiliated people</TableHead>
           <TableHead className="w-40 pr-6">Gift or pledge</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {loading ? (
-          <SkeletonRows cols={6} />
+          <SkeletonRows cols={7} />
         ) : funders.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={6}
+              colSpan={7}
               className="py-8 pl-6 text-center text-muted-foreground"
             >
               No top-priority funders in this view
@@ -222,6 +254,9 @@ function FundersTable({
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
+              </TableCell>
+              <TableCell>
+                <EmailThreadsCell threads={funder.recentEmailThreads ?? []} />
               </TableCell>
               <TableCell>
                 <AffiliatedPeopleCell people={funder.affiliatedPeople ?? []} />
@@ -292,16 +327,17 @@ function IndividualsTable({
           >
             Open tasks
           </SortableTH>
+          <TableHead className="min-w-48">Recent email threads</TableHead>
           <TableHead className="w-40 pr-6">Gift or pledge</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
         {loading ? (
-          <SkeletonRows cols={5} />
+          <SkeletonRows cols={6} />
         ) : individuals.length === 0 ? (
           <TableRow>
             <TableCell
-              colSpan={5}
+              colSpan={6}
               className="py-8 pl-6 text-center text-muted-foreground"
             >
               No top-priority individuals in this view
@@ -329,6 +365,9 @@ function IndividualsTable({
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
+              </TableCell>
+              <TableCell>
+                <EmailThreadsCell threads={person.recentEmailThreads ?? []} />
               </TableCell>
               <TableCell className="pr-6">
                 <GiftOrPledgeCell summary={person.giftOrPledgeSummary} />

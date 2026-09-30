@@ -109,6 +109,9 @@ last_verified: 2026-09-30
   `system_draft` suggestion from a `manual` addition. The `evidence_*` fields
   cache the most recent AI review of source-owned Gmail and Calendar facts so
   the result remains visible after a page reload.
+  When a current review supplies the displayed outreach status, its summary
+  takes precedence over dates from an older raw keyword match that may relate
+  to a different trip.
 - No trip table points to Gmail messages or Calendar events. Evidence links are
   derived from the existing matched-person arrays, mailbox/calendar owner, and
   provider thread/event facts.

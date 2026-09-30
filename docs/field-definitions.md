@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-23
+last_verified: 2026-09-30
 ---
 
 # Donor fields and shared cleanup work
@@ -13,15 +13,22 @@ These definitions reflect the owner's field/schema decisions of September 12,
 | Priority | Staff's overall assessment of the best prospects for future giving, considering capacity, connection, enthusiasm, and organizational fit. It remains manual; supporting ratings are useful context, not duplicate versions of priority. |
 | Potential annual giving to Wildflower | Estimated annual giving potential to Wildflower, using the existing capacity bands. Blank means not assessed. It is not net worth, lifetime giving, or an expected pledge. |
 | Relationship owner | Staff member responsible for cultivating and coordinating the relationship. |
+| Last contacted | Read-only latest past contact date from the imported historical date, logged interactions, and synced Gmail/Calendar evidence. Private communication can contribute a date for everyone without revealing its contents; future and cancelled calendar events do not count. |
 | Organization type | The organization's canonical structural/type classification. It is optional, can be set during organization creation, and remains editable on the organization record. |
 | Organization EIN | Federal Employer Identification Number, stored in `NN-NNNNNNN` format and unique across organizations. It may be entered manually or accepted through the enrichment review queue. |
 | Organization funding regions | Places the organization is interested in funding. Office location comes from Contact info addresses and must not populate this field. Blank means interests are unknown. |
 | Person funding regions | Geographic funding interests, separate from current home region. |
-| Display as Anonymous in CRM | Existing CRM name masking. This does not record a public recognition instruction or imply complete anonymity from authorized staff. |
+| Display as Anonymous in CRM | Anonymous organizations show as Anonymous in the shared organization list, including for admins and owners. An authorized viewer confirms before opening a named record. This does not record a public recognition instruction or imply complete anonymity from authorized staff. |
 | Assistant | Optional person-to-person link identifying the administrative assistant supporting an individual. |
 | Relationship notes | Context specific to one person's affiliation with an organization or payment intermediary. This belongs on the affiliation, not in either record's general notes. |
 | Organization interaction count | Read-only imported count of recorded interactions. It is displayed for context and is not manually editable. |
 | Organization email | Canonical rows in Contact info → Emails. The detail shortcut derives the preferred usable address, then the oldest usable address. There is no independently editable organization email. |
+| Preferred email | At most one email per contact owner is preferred. Choosing a different preferred email clears the previous choice for that person, organization, household, or intermediary. Validity and preferred status can be changed directly from Contact info or in the full email editor. |
+| Email validity | An address with unknown stored validity is shown as valid when a synced inbound email from that exact address establishes an exchange. Explicit invalidation or a confirmed hard bounce remains invalid until corrected; the evidence does not override it. |
+| Address currentness | Contact addresses remain in the record when marked Past; newly added and existing addresses default to Current until reviewed. The reviewed Bentonville address for Emma Pengelly is migrated to Past. Marking an address Past does not automatically select or create a replacement. |
+| Newsletter opt-out evidence | The person-level preference history shows the exact email address when the source event recorded one. An address absent from an opt-out event is not, by itself, evidence of consent to email that other address. |
+| Giving & pipeline amounts | A pledge is a commitment and its linked gifts are payments against it, not additional giving. The compact donor card shows the commitment amount only before payments exist; once payments are recorded, their rows carry the amounts. The pledge detail retains the full commitment and balance. |
+| Organization role currentness | A person's affiliation can be marked past directly from the Organizations card; the full relationship editor remains available for corrections and notes. This changes the role, not the organization or person record. |
 | Expected commitment date | Anticipated donor decision/commitment date, separate from payment timing and fiscal-year credit. |
 | Committed amount / award ceiling | Relevant to a pledge or verbally confirmed commitment. Initial prospect forms do not ask for it. |
 | Fiscal year credited | Fiscal year receiving fundraising credit on an allocation; review separately from the date money is expected. |

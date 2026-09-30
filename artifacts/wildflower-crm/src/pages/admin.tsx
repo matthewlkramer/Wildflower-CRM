@@ -508,7 +508,7 @@ function AdminSyncSection() {
                     {r.gmail.bootstrapStuck ? (
                       <div
                         className="mt-1 inline-flex items-center gap-1 rounded bg-destructive px-1.5 py-0.5 text-xs font-medium text-destructive-foreground"
-                        title="The initial sync never finished and has stopped progressing. Click Sync now to resume it."
+                        title="The initial Gmail sync has stopped progressing. Click Sync now to retry it."
                         data-testid={`gmail-bootstrap-stuck-${r.userId}`}
                       >
                         ⚠ Initial sync stuck
@@ -538,10 +538,10 @@ function AdminSyncSection() {
                     {r.calendar.bootstrapStuck ? (
                       <div
                         className="mt-1 inline-flex items-center gap-1 rounded bg-destructive px-1.5 py-0.5 text-xs font-medium text-destructive-foreground"
-                        title="The initial sync never finished and has stopped progressing. Click Sync now to resume it."
+                        title={`The initial Calendar sync has made no forward progress for ${r.calendar.noProgressRuns} runs (or has not run for over a day). See the error below; Sync now can retry the same page.`}
                         data-testid={`calendar-bootstrap-stuck-${r.userId}`}
                       >
-                        ⚠ Initial sync stuck
+                        ⚠ Initial sync stuck{r.calendar.noProgressRuns > 0 ? ` · ${r.calendar.noProgressRuns} retries` : ""}
                       </div>
                     ) : r.calendar.bootstrapInProgress ? (
                       <div className="text-xs text-amber-700">

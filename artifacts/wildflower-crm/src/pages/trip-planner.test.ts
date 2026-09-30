@@ -9,6 +9,7 @@ import {
   getTripCalendarDisplay,
   groupTripTravelBookings,
   isBirthdayCalendarEvent,
+  showRawOutreachDates,
   tripCalendarEventKey,
   type TripFormState,
 } from "./trip-planner";
@@ -167,5 +168,13 @@ describe("trip travel booking summary", () => {
       hotels: [bookings[1]],
     });
     expect(groupTripTravelBookings([])).toEqual({ flights: [], hotels: [] });
+  });
+});
+
+describe("trip outreach evidence", () => {
+  it("does not mix stale keyword-match dates into a current reviewed status", () => {
+    expect(showRawOutreachDates({ evidenceStatus: "responded" })).toBe(false);
+    expect(showRawOutreachDates({ evidenceStatus: "not_invited" })).toBe(false);
+    expect(showRawOutreachDates({ evidenceStatus: null })).toBe(true);
   });
 });

@@ -38,7 +38,16 @@ router.get(
         desc(newsletterPreferenceEvents.recordedAt),
         desc(newsletterPreferenceEvents.id),
       );
-    res.json({ ...person, data });
+    res.json({
+      ...person,
+      data: data.map(({ metadata, ...event }) => ({
+        ...event,
+        sourceEmail:
+          typeof metadata?.normalizedEmail === "string"
+            ? metadata.normalizedEmail
+            : null,
+      })),
+    });
   }),
 );
 router.post(

@@ -18,8 +18,9 @@ import {
   type QuickbooksDepositForAttachment,
 } from "./quickbooksClient";
 import {
+  chooseAttachmentComposition,
   extractDepositAttachmentComposition,
-  validateAttachmentComposition,
+  normalizeAttachmentComponents,
   type ExtractedDepositComponent,
 } from "./quickbooksAttachmentComposition";
 
@@ -65,17 +66,6 @@ function hasLinkedIncomingMoney(
   });
 }
 
-function compositionKey(components: ExtractedDepositComponent[]): string {
-  return JSON.stringify(
-    components.map((component) => ({
-      amount: component.amount,
-      payerName: component.payerName,
-      checkNumber: component.checkNumber,
-      reference: component.reference,
-    })),
-  );
-}
-
 async function extractOrLoadAttachment(args: {
   accessToken: string;
   realmId: string;
@@ -87,9 +77,14 @@ async function extractOrLoadAttachment(args: {
   const unchanged =
     existing && sameTimestamp(existing.qbUpdatedAt, attachment.updatedAt);
   if (unchanged && existing.extractionStatus === "extracted") {
-    return validateAttachmentComposition(depositTotal, existing.components);
+    return normalizeAttachmentComponents(depositTotal, existing.components);
   }
-  if (unchanged && existing.extractionStatus === "ignored") return null;
+  if (
+    unchanged &&
+    existing.extractionStatus === "ignored" &&
+    existing.extractionError !== "No exact-sum multi-payment composition found"
+  )
+    return null;
 
   const now = new Date();
   const baseValues = {
@@ -160,7 +155,7 @@ async function extractOrLoadAttachment(args: {
         components,
         extractionError: components
           ? null
-          : "No exact-sum multi-payment composition found",
+          : "No usable incoming payments found",
         extractedAt: now,
       })
       .onConflictDoUpdate({
@@ -176,7 +171,7 @@ async function extractOrLoadAttachment(args: {
           components,
           extractionError: components
             ? null
-            : "No exact-sum multi-payment composition found",
+            : "No usable incoming payments found",
           extractedAt: now,
         },
       });
@@ -350,48 +345,52 @@ async function removeReplaceableStagedRows(args: {
 }
 
 function toStagedRows(args: {
-  attachment: QuickbooksDepositAttachment;
   deposit: QuickbooksDepositForAttachment;
-  components: ExtractedDepositComponent[];
+  groups: Array<{
+    attachment: QuickbooksDepositAttachment;
+    components: ExtractedDepositComponent[];
+  }>;
 }): NormalizedQuickbooksPayment[] {
-  return args.components.map((component, index) => ({
-    qbEntityType: "deposit",
-    qbEntityId: args.deposit.id,
-    qbLineId: `attachment:${args.attachment.id}:${index + 1}`,
-    qbDepositId: args.deposit.id,
-    amount: component.amount,
-    dateReceived: args.deposit.txnDate,
-    payerName: component.payerName,
-    payerEmail: null,
-    rawReference: component.checkNumber ?? component.reference,
-    lineDescription:
-      component.reference ?? args.attachment.note ?? args.deposit.privateNote,
-    lastUpdatedTime: args.attachment.updatedAt ?? args.deposit.updatedAt,
-    lineItemNames: [],
-    lineAccountNames: [],
-    lineClasses: [],
-    qbPayerType: null,
-    qbPayerId: null,
-    qbPaymentMethod: component.checkNumber ? "Check" : null,
-    qbCheckNumber: component.checkNumber,
-    qbDepositToAccountName: args.deposit.depositToAccountName,
-    qbDocNumber: null,
-    qbBillingAddress: null,
-    qbTransactionMemo: args.deposit.privateNote,
-    qbLocation: null,
-    qbCurrency: args.deposit.currency,
-    qbExchangeRate: args.deposit.exchangeRate,
-    qbCreateTime: args.deposit.createTime,
-    qbLinkedTxn: null,
-    qbInvoiceApplications: null,
-    qbRaw: args.deposit.raw,
-    qbRawLine: {
-      source: "quickbooks_attachment",
-      attachableId: args.attachment.id,
-      fileName: args.attachment.fileName,
-      component,
-    },
-  }));
+  return args.groups.flatMap(({ attachment, components }) =>
+    components.map((component, index) => ({
+      qbEntityType: "deposit",
+      qbEntityId: args.deposit.id,
+      qbLineId: `attachment:${attachment.id}:${index + 1}`,
+      qbDepositId: args.deposit.id,
+      amount: component.amount,
+      dateReceived: args.deposit.txnDate,
+      payerName: component.payerName,
+      payerEmail: null,
+      rawReference: component.checkNumber ?? component.reference,
+      lineDescription:
+        component.reference ?? attachment.note ?? args.deposit.privateNote,
+      lastUpdatedTime: attachment.updatedAt ?? args.deposit.updatedAt,
+      lineItemNames: [],
+      lineAccountNames: [],
+      lineClasses: [],
+      qbPayerType: null,
+      qbPayerId: null,
+      qbPaymentMethod: component.checkNumber ? "Check" : null,
+      qbCheckNumber: component.checkNumber,
+      qbDepositToAccountName: args.deposit.depositToAccountName,
+      qbDocNumber: null,
+      qbBillingAddress: null,
+      qbTransactionMemo: args.deposit.privateNote,
+      qbLocation: null,
+      qbCurrency: args.deposit.currency,
+      qbExchangeRate: args.deposit.exchangeRate,
+      qbCreateTime: args.deposit.createTime,
+      qbLinkedTxn: null,
+      qbInvoiceApplications: null,
+      qbRaw: args.deposit.raw,
+      qbRawLine: {
+        source: "quickbooks_attachment",
+        attachableId: attachment.id,
+        fileName: attachment.fileName,
+        component,
+      },
+    })),
+  );
 }
 
 /**
@@ -457,20 +456,21 @@ export async function prepareAttachmentDepositRows(args: {
     }
     if (candidates.length === 0) continue;
 
-    const interpretations = new Map<string, (typeof candidates)[number]>();
-    for (const candidate of candidates) {
-      interpretations.set(compositionKey(candidate.components), candidate);
-    }
-    if (interpretations.size !== 1) {
+    const chosen = chooseAttachmentComposition(
+      deposit.totalAmount,
+      candidates.map((candidate) => ({
+        ...candidate,
+        attachmentId: candidate.attachment.id,
+      })),
+    );
+    if (!chosen) {
       logger.warn(
         { depositId, attachmentIds: candidates.map((c) => c.attachment.id) },
-        "QuickBooks deposit attachments disagree; composition left unresolved",
+        "QuickBooks deposit attachments do not make one exact, unambiguous composition",
       );
       continue;
     }
-    const candidate = [...interpretations.values()][0];
-    if (!candidate) continue;
-    const stagedRows = toStagedRows({ deposit, ...candidate });
+    const stagedRows = toStagedRows({ deposit, groups: chosen });
     const canReplace = await removeReplaceableStagedRows({
       realmId: args.realmId,
       depositId,

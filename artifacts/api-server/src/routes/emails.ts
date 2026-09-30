@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { emails } from "@workspace/db/schema";
-import { and, count, desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, getTableColumns, ne, sql, type SQL } from "drizzle-orm";
 import {
   ListEmailsQueryParams,
   CreateEmailBody,
@@ -32,6 +32,19 @@ function isUniqueViolation(err: unknown): boolean {
     "code" in err &&
     (err as { code?: string }).code === "23505"
   );
+}
+
+// A preferred address belongs to its contact owner, not to a particular
+// editor. Use this for both the full dialog and the inline preference action.
+function preferredSiblingWhere(row: typeof emails.$inferSelect): SQL {
+  const owner = row.personId
+    ? eq(emails.personId, row.personId)
+    : row.organizationId
+      ? eq(emails.organizationId, row.organizationId)
+      : row.paymentIntermediaryId
+        ? eq(emails.paymentIntermediaryId, row.paymentIntermediaryId)
+        : eq(emails.householdId, row.householdId!);
+  return and(owner, ne(emails.id, row.id))!;
 }
 
 function historicalAttributionQueries(personId: string, emailAddress: string) {
@@ -86,7 +99,20 @@ router.get(
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
-        .select()
+        .select({
+          ...getTableColumns(emails),
+          // An inbound exchange proves delivery. Preserve an explicit/hard-
+          // bounce invalidation, but do not require staff to mark historical
+          // correspondents valid one by one. Message privacy is unchanged.
+          validity: sql<"valid" | "invalid" | "unknown">`CASE
+            WHEN ${emails.validity} = 'unknown' AND EXISTS (
+              SELECT 1 FROM email_messages m
+              WHERE m.direction = 'received'
+                AND lower(m.from_email) = lower(${emails.email})
+            ) THEN 'valid'
+            ELSE ${emails.validity}
+          END`.as("validity"),
+        })
         .from(emails)
         .where(where)
         .orderBy(desc(emails.createdAt))
@@ -112,6 +138,10 @@ router.post(
           .insert(emails)
           .values({ id: newId(), ...body })
           .returning();
+        if (created.isPreferred) {
+          await tx.update(emails).set({ isPreferred: false, updatedAt: new Date() })
+            .where(preferredSiblingWhere(created));
+        }
         // Re-attribute HISTORY: synced messages store matched_person_ids at
         // sync time, so messages that predate this link would never surface on
         // the person's activity feed. Keep this in the same transaction as the
@@ -170,6 +200,10 @@ router.patch(
           .set({ ...body, updatedAt: new Date() })
           .where(eq(emails.id, id))
           .returning();
+        if (updated?.isPreferred) {
+          await tx.update(emails).set({ isPreferred: false, updatedAt: new Date() })
+            .where(preferredSiblingWhere(updated));
+        }
         if (updated?.personId && updated.email) {
           const changed =
             previous?.personId !== updated.personId ||

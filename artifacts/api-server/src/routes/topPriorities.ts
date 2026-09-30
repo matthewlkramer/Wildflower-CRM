@@ -13,6 +13,39 @@ router.use(requireAuth);
 const ORGS_ID = sql.raw(`"organizations"."id"`);
 const PEOPLE_ID = sql.raw(`"people"."id"`);
 
+// Private mail still determines the latest thread date and reply state for
+// everyone, but its subject is visible only to the mailbox owner.
+function recentThreadsExpr(
+  matchColumn: "matched_organization_ids" | "matched_person_ids",
+  entityId: typeof ORGS_ID,
+  viewerId: string,
+) {
+  const column = sql.raw(`m.${matchColumn}`);
+  return sql`(
+    SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT(
+      'subject', latest.subject,
+      'sentAt', latest.sent_at,
+      'awaitingReply', latest.direction = 'received'
+    ) ORDER BY latest.sent_at DESC), '[]'::json)
+    FROM (
+      SELECT distinct_threads.subject, distinct_threads.sent_at, distinct_threads.direction
+      FROM (
+        SELECT DISTINCT ON (COALESCE(m.gmail_thread_id, m.gmail_message_id))
+          CASE WHEN NOT m.is_private OR m.mailbox_user_id = ${viewerId}
+            THEN COALESCE(NULLIF(BTRIM(m.subject), ''), '(no subject)')
+            ELSE 'Private email thread' END AS subject,
+          m.sent_at,
+          m.direction
+        FROM email_messages m
+        WHERE ${column} @> ARRAY[${entityId}]::text[]
+        ORDER BY COALESCE(m.gmail_thread_id, m.gmail_message_id), m.sent_at DESC, m.id DESC
+      ) distinct_threads
+      ORDER BY distinct_threads.sent_at DESC
+      LIMIT 3
+    ) latest
+  )`;
+}
+
 // ─── Correlated subquery fragments scoped to organizations.id ──────────────
 
 const orgOpenOppCountExpr = sql`(
@@ -281,6 +314,11 @@ router.get(
           openTaskCount: sql<number>`${orgOpenTaskCountExpr}`.as(
             "open_task_count",
           ),
+          recentEmailThreads: sql<
+            Array<{ subject: string; sentAt: string; awaitingReply: boolean }>
+          >`${recentThreadsExpr("matched_organization_ids", ORGS_ID, viewerId)}`.as(
+            "recent_email_threads",
+          ),
           openAsks: sql<
             Array<{
               opportunityId: string;
@@ -326,6 +364,11 @@ router.get(
           openTaskCount: sql<number>`${personOpenTaskCountExpr}`.as(
             "open_task_count",
           ),
+          recentEmailThreads: sql<
+            Array<{ subject: string; sentAt: string; awaitingReply: boolean }>
+          >`${recentThreadsExpr("matched_person_ids", PEOPLE_ID, viewerId)}`.as(
+            "recent_email_threads",
+          ),
           openAsks: sql<
             Array<{
               opportunityId: string;
@@ -341,9 +384,10 @@ router.get(
           lastGiftAmount: sql<string | null>`${personLastGiftAmountExpr}`.as(
             "last_gift_amount",
           ),
-          giftOrPledgeSummary: sql<unknown>`${personGiftOrPledgeSummaryExpr}`.as(
-            "gift_or_pledge_summary",
-          ),
+          giftOrPledgeSummary:
+            sql<unknown>`${personGiftOrPledgeSummaryExpr}`.as(
+              "gift_or_pledge_summary",
+            ),
         })
         .from(people)
         .where(
@@ -385,6 +429,12 @@ router.get(
               ...a,
               opportunityName: ANON_LABEL,
             })),
+        recentEmailThreads: orgVisible
+          ? f.recentEmailThreads
+          : (f.recentEmailThreads ?? []).map((thread) => ({
+              ...thread,
+              subject: "Private donor correspondence",
+            })),
         affiliatedPeople: (f.affiliatedPeople ?? []).map((p) => ({
           ...p,
           personName: canSeeIdentity(
@@ -415,7 +465,17 @@ router.get(
             ...a,
             opportunityName: ANON_LABEL,
           }));
-      return { ...p, ...names, openAsks };
+      return {
+        ...p,
+        ...names,
+        openAsks,
+        recentEmailThreads: personVisible
+          ? p.recentEmailThreads
+          : (p.recentEmailThreads ?? []).map((thread) => ({
+              ...thread,
+              subject: "Private donor correspondence",
+            })),
+      };
     });
 
     res.json({ organizations: maskedOrgs, individuals: maskedPeople });

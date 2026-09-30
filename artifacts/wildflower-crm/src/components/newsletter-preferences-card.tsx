@@ -230,6 +230,11 @@ export function NewsletterPreferencesCard({ personId }: { personId: string }) {
                     : "Event date unknown"}{" "}
                   · {event.source}
                 </p>
+                {event.sourceEmail ? (
+                  <p className="text-xs">Address in evidence: {event.sourceEmail}</p>
+                ) : event.eventType === "opted_out" || event.eventType === "legacy_opted_out" ? (
+                  <p className="text-xs text-muted-foreground">Address not recorded in this evidence</p>
+                ) : null}
                 <p className="whitespace-pre-wrap text-xs">{event.evidence}</p>
                 {event.sourceUrl && /^https?:\/\//i.test(event.sourceUrl) ? (
                   <a

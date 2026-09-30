@@ -167,6 +167,32 @@ async function primaryHouseholdIsAvailable(id: string): Promise<boolean> {
 // (people_entity_roles, opportunities_and_pledges, funders, …).
 const PEOPLE_ID = sql.raw(`"people"."id"`);
 
+// The imported last_contacted date is historical baseline evidence. New
+// Gmail, Calendar, and logged interactions do not write back to that column,
+// so derive the visible date here instead of adding sync-time write paths.
+// Private communication contributes to the date for everyone, while its
+// message/event details remain protected by their normal read permissions.
+function peopleLastContactedExpr(): SQL {
+  return sql`(
+    SELECT MAX(contact_date) FROM (
+      SELECT "people"."last_contacted" AS contact_date
+      UNION ALL
+      SELECT MAX(i.occurred_at::date) FROM interactions i
+        WHERE i.person_ids @> ARRAY[${PEOPLE_ID}]::text[]
+          AND i.occurred_at <= NOW()
+      UNION ALL
+      SELECT MAX(m.sent_at::date) FROM email_messages m
+        WHERE m.matched_person_ids @> ARRAY[${PEOPLE_ID}]::text[]
+          AND m.sent_at <= NOW()
+      UNION ALL
+      SELECT MAX(c.start_at::date) FROM calendar_events c
+        WHERE c.matched_person_ids @> ARRAY[${PEOPLE_ID}]::text[]
+          AND c.start_at <= NOW()
+          AND c.status IS DISTINCT FROM 'cancelled'
+    ) contact_dates
+  )`;
+}
+
 // Rollup expressions are defined once and reused by both the SELECT
 // (cast/aliased) and the presence WHERE filters so the two can never
 // drift. Each is a correlated fragment scoped to `people.id`.
@@ -262,6 +288,7 @@ const peopleDisplayNameOrder = sql`lower(coalesce(
 
 const peopleListSelect = {
   ...getTableColumns(people),
+  lastContacted: sql<string | null>`${peopleLastContactedExpr()}`.as("last_contacted"),
   lifetimeGiving: sql<string | null>`${peopleLifetimeGivingExpr}::text`.as(
     "lifetime_giving",
   ),
@@ -468,9 +495,9 @@ async function buildPeopleListWhere(
   else if (q.activeAffiliationPresence === "blank")
     filters.push(sql`NOT ${peopleActiveAffiliationExists}`);
   if (q.lastContactedPresence === "has")
-    filters.push(sql`people.last_contacted IS NOT NULL`);
+    filters.push(sql`${peopleLastContactedExpr()} IS NOT NULL`);
   else if (q.lastContactedPresence === "blank")
-    filters.push(sql`people.last_contacted IS NULL`);
+    filters.push(sql`${peopleLastContactedExpr()} IS NULL`);
   // Derived newsletter status — OR the selected statuses together.
   {
     const statuses = (q.newsletterStatus as string[] | undefined) ?? [];

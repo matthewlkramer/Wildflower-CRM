@@ -73,7 +73,7 @@ export async function loadPersonRelevanceTargets(
     db
       .select({ personId: addresses.personId, cityName: addresses.cityName })
       .from(addresses)
-      .where(inArray(addresses.personId, ids)),
+      .where(and(inArray(addresses.personId, ids), eq(addresses.isCurrent, true))),
     homeRegionIds.length
       ? db
           .select({

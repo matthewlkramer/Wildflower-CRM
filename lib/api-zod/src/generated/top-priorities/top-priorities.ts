@@ -25,6 +25,11 @@ export const GetTopPrioritiesResponse = zod.object({
   "ownerUserId": zod.string().nullable(),
   "openOpportunityCount": zod.number(),
   "openTaskCount": zod.number(),
+  "recentEmailThreads": zod.array(zod.object({
+  "subject": zod.string(),
+  "sentAt": zod.string().datetime({}),
+  "awaitingReply": zod.boolean()
+})).optional(),
   "openAsks": zod.array(zod.object({
   "opportunityId": zod.string(),
   "opportunityName": zod.string(),
@@ -57,6 +62,11 @@ export const GetTopPrioritiesResponse = zod.object({
   "ownerUserId": zod.string().nullable(),
   "openOpportunityCount": zod.number(),
   "openTaskCount": zod.number(),
+  "recentEmailThreads": zod.array(zod.object({
+  "subject": zod.string(),
+  "sentAt": zod.string().datetime({}),
+  "awaitingReply": zod.boolean()
+})).optional(),
   "openAsks": zod.array(zod.object({
   "opportunityId": zod.string(),
   "opportunityName": zod.string(),

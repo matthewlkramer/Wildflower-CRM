@@ -247,6 +247,7 @@ export const GetOrganizationResponse = zod.object({
   "stateCode": zod.string().nullish(),
   "postalCode": zod.string().nullish(),
   "country": zod.string().nullish(),
+  "isCurrent": zod.boolean(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
   "paymentIntermediaryId": zod.string().nullish(),

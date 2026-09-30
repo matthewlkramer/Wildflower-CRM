@@ -1157,6 +1157,7 @@ function RoleRow({ role: r }: { role: PeopleEntityRole }) {
         <EditPeopleEntityRoleDialog
           role={r}
           contextLabel={entityLabel ?? undefined}
+          quickMarkPast={r.current === "current" && r.entityType !== "household"}
         />
       </span>
     </li>

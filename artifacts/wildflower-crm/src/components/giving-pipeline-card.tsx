@@ -16,7 +16,7 @@ import {
   type LinkedRecordsScope,
 } from "@/components/linked-records";
 import { RelatedCard, RelatedRow } from "@/components/record-layout";
-import { groupGiving, type GivingThread } from "@/lib/giving-groups";
+import { groupGiving, hasRecordedPayments, type GivingThread } from "@/lib/giving-groups";
 import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 import { opportunityStatusLabel } from "@/lib/opportunity-status";
 import {
@@ -115,6 +115,9 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
         <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div data-testid="giving-pipeline">
+          <p className="px-2 pb-2 text-xs text-muted-foreground">
+            Linked payments appear beneath their pledge. When payments exist, only the payment rows show amounts here so the same money is not presented twice.
+          </p>
           {isEmpty ? (
             <p className="px-2 py-2 text-sm text-muted-foreground">
               No giving or pipeline records yet.
@@ -211,7 +214,8 @@ function OppThread({
   const href = o.writtenPledge ? `/pledges/${o.id}` : `/opportunities/${o.id}`;
   const statusLabel = opportunityStatusLabel(o.status);
   const fy = o.fiscalYear?.toUpperCase();
-  const sub = [formatEnum(o.stage), statusLabel, fy]
+  const hasPayments = hasRecordedPayments(o.paidAmount, thread.gifts.length);
+  const sub = [formatEnum(o.stage), statusLabel, fy, hasPayments ? "Payments recorded" : null]
     .filter(Boolean)
     .join(" · ");
 
@@ -226,7 +230,7 @@ function OppThread({
         href={href}
         tone="primary"
         sub={sub}
-        amount={formatCurrency(
+        amount={hasPayments ? undefined : formatCurrency(
           amountField === "awarded" ? o.awardedAmount : o.askAmount,
         )}
         badge={

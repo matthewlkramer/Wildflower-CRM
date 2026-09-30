@@ -85,6 +85,19 @@ describe("newsletter preference evidence form", () => {
       "Affirmative consent: evidence recorded",
     );
   });
+  it("identifies the address when opt-out evidence recorded it", () => {
+    api.data.data = [{
+      id: "optout",
+      eventType: "opted_out",
+      occurredAt: null,
+      source: "Flodesk",
+      sourceEmail: "philip@blackrock.com",
+      evidence: "Flodesk reports unsubscribed",
+      recordedAt: "2026-09-30T12:00:00Z",
+    }];
+    render();
+    expect(container.textContent).toContain("Address in evidence: philip@blackrock.com");
+  });
   it("shows a load error rather than an empty preference history", () => {
     api.failed = true;
     render();

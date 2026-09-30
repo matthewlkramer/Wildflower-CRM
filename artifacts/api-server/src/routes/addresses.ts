@@ -27,7 +27,7 @@ router.get(
     if (q.householdId) filters.push(eq(addresses.householdId, q.householdId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(addresses).where(where).orderBy(desc(addresses.createdAt)).limit(limit).offset(offset),
+      db.select().from(addresses).where(where).orderBy(desc(addresses.isCurrent), desc(addresses.createdAt)).limit(limit).offset(offset),
       db.select({ value: count() }).from(addresses).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });

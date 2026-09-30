@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { db } from "@workspace/db";
 import { newsletterPreferenceEvents, people } from "@workspace/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { newId } from "./helpers";
 
 type PreferenceEvent = typeof newsletterPreferenceEvents.$inferInsert;
@@ -63,6 +63,7 @@ export async function recordFlodeskUnsubscribe(
   personId: string,
   email: string,
 ): Promise<boolean> {
+  const normalizedEmail = email.toLowerCase();
   return db.transaction(async (tx) => {
     const person = await tx
       .select()
@@ -70,7 +71,22 @@ export async function recordFlodeskUnsubscribe(
       .where(eq(people.id, personId))
       .for("update")
       .then((r) => r[0]);
-    if (!person || person.unsubscribedToNewsletter) return false;
+    if (!person) return false;
+    if (person.unsubscribedToNewsletter) {
+      // Person-level suppression may have come from another address. Retain
+      // this address's own provider evidence once, without minting a new
+      // observation on every reconcile run.
+      const recordedForAddress = await tx
+        .select({ id: newsletterPreferenceEvents.id })
+        .from(newsletterPreferenceEvents)
+        .where(and(
+          eq(newsletterPreferenceEvents.personId, personId),
+          eq(newsletterPreferenceEvents.eventType, "opted_out"),
+          sql`${newsletterPreferenceEvents.metadata}->>'normalizedEmail' = ${normalizedEmail}`,
+        ))
+        .limit(1);
+      if (recordedForAddress.length > 0) return false;
+    }
     const latest = await tx
       .select({ id: newsletterPreferenceEvents.id })
       .from(newsletterPreferenceEvents)
@@ -81,7 +97,7 @@ export async function recordFlodeskUnsubscribe(
       )
       .limit(1);
     const key = createHash("sha256")
-      .update(`${email.toLowerCase()}:${latest[0]?.id ?? "initial"}`)
+      .update(`${normalizedEmail}:${latest[0]?.id ?? "initial"}`)
       .digest("hex");
     await recordNewsletterPreference(tx, {
       personId,
@@ -92,7 +108,7 @@ export async function recordFlodeskUnsubscribe(
       evidence:
         "Flodesk reports this address as unsubscribed. The original unsubscribe time and initiator are not supplied by the subscriber API.",
       metadata: {
-        normalizedEmail: email.toLowerCase(),
+        normalizedEmail,
         providerStatus: "unsubscribed",
       },
     });

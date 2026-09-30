@@ -1,5 +1,6 @@
 import type { Organization, Person } from "@workspace/api-client-react";
 import { personDisplayName } from "@/lib/person";
+import { formatOrganizationNameShort } from "@/lib/format";
 
 /**
  * The current viewer, as returned by `useGetCurrentUser()` (`GET /users/me`).
@@ -8,6 +9,14 @@ import { personDisplayName } from "@/lib/person";
 export type Viewer = { id?: string | null; role?: string | null } | null | undefined;
 
 export const ANONYMOUS_LABEL = "Anonymous";
+
+/** Shared list rows mask anonymous identities even for admins and owners;
+ * an authorized user may choose to open the named detail record afterward. */
+export function sharedListOrganizationName(
+  org: Pick<Organization, "name" | "anonymous">,
+): string {
+  return org.anonymous ? ANONYMOUS_LABEL : formatOrganizationNameShort(org.name);
+}
 
 /**
  * Whether `viewer` is allowed to see the real name of an anonymous record.
