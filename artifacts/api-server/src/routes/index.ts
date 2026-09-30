@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import flodeskChatgptMcpRouter from "./flodeskChatgptMcp";
+import conferenceResearchIntegrationRouter from "./conferenceResearchIntegration";
 import usersRouter from "./users";
 import regionsRouter from "./regions";
 import schoolsRouter from "./schools";
@@ -82,6 +83,7 @@ router.use(healthRouter);
 // must be mounted before the first sub-router that applies session auth at its
 // module root.
 router.use(flodeskChatgptMcpRouter);
+router.use(conferenceResearchIntegrationRouter);
 // emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
 // sub-routers below — usersRouter, regionsRouter, schoolsRouter, etc. —
 // apply `router.use(requireAuth)` at module top, and Express runs that

@@ -610,7 +610,7 @@ export function startConferenceResearchScheduler(): void {
   setInterval(() => void runConferenceResearchWorkerTick(), WORK_INTERVAL_MS);
 }
 
-/** Production runs conference research only through the separate scheduled CLI. */
+/** Production runs bounded research through the external n8n integration or CLI. */
 export function shouldStartConferenceResearchScheduler(nodeEnv = process.env.NODE_ENV): boolean {
   return nodeEnv !== "production";
 }

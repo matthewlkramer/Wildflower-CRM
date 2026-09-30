@@ -4,6 +4,7 @@ export const MAX_CONFERENCE_JOBS_PER_RUN = 20;
 export const MAX_CONFERENCE_RUN_MS = 12 * 60_000;
 // The CLI parent kills a still-running child before the deployment's 20m timeout.
 export const HARD_CONFERENCE_RUN_MS = 15 * 60_000;
+export const CONFERENCE_RESEARCH_ADVISORY_LOCK_KEY = [13079, 267] as const;
 
 export interface ConferenceRunSummary {
   eventsScanned: number;

@@ -5,36 +5,70 @@
  * Wildflower Fundraising CRM API (Airtable-aligned schema)
  * OpenAPI spec version: 0.2.0
  */
-import * as zod from 'zod';
-
+import * as zod from "zod";
 
 /**
  * @summary Stateless MCP endpoint used by the scheduled ChatGPT Flodesk engagement bridge. Authenticates with the dedicated FLODESK_CHATGPT_MCP_AUTH_TOKEN bearer secret rather than a user session.
  */
 
+export const FlodeskChatgptMcpBody = zod.union([
+  zod.object({
+    jsonrpc: zod.literal("2.0"),
+    id: zod.union([zod.string(), zod.number(), zod.null()]).optional(),
+    method: zod.string(),
+    params: zod.record(zod.string(), zod.unknown()).optional(),
+  }),
+  zod
+    .array(
+      zod.object({
+        jsonrpc: zod.literal("2.0"),
+        id: zod.union([zod.string(), zod.number(), zod.null()]).optional(),
+        method: zod.string(),
+        params: zod.record(zod.string(), zod.unknown()).optional(),
+      }),
+    )
+    .min(1),
+]);
 
+export const FlodeskChatgptMcpResponse = zod.union([
+  zod.object({
+    jsonrpc: zod.literal("2.0"),
+    id: zod.union([zod.string(), zod.number(), zod.null()]),
+    result: zod.record(zod.string(), zod.unknown()).optional(),
+    error: zod.record(zod.string(), zod.unknown()).optional(),
+  }),
+  zod.array(
+    zod.object({
+      jsonrpc: zod.literal("2.0"),
+      id: zod.union([zod.string(), zod.number(), zod.null()]),
+      result: zod.record(zod.string(), zod.unknown()).optional(),
+      error: zod.record(zod.string(), zod.unknown()).optional(),
+    }),
+  ),
+]);
 
-export const FlodeskChatgptMcpBody = zod.union([zod.object({
-  "jsonrpc": zod.literal("2.0"),
-  "id": zod.union([zod.string(),zod.number(),zod.null()]).optional(),
-  "method": zod.string(),
-  "params": zod.record(zod.string(), zod.unknown()).optional()
-}),zod.array(zod.object({
-  "jsonrpc": zod.literal("2.0"),
-  "id": zod.union([zod.string(),zod.number(),zod.null()]).optional(),
-  "method": zod.string(),
-  "params": zod.record(zod.string(), zod.unknown()).optional()
-})).min(1)])
-
-export const FlodeskChatgptMcpResponse = zod.union([zod.object({
-  "jsonrpc": zod.literal("2.0"),
-  "id": zod.union([zod.string(),zod.number(),zod.null()]),
-  "result": zod.record(zod.string(), zod.unknown()).optional(),
-  "error": zod.record(zod.string(), zod.unknown()).optional()
-}),zod.array(zod.object({
-  "jsonrpc": zod.literal("2.0"),
-  "id": zod.union([zod.string(),zod.number(),zod.null()]),
-  "result": zod.record(zod.string(), zod.unknown()).optional(),
-  "error": zod.record(zod.string(), zod.unknown()).optional()
-}))])
-
+/**
+ * @summary Runs one bounded conference-research queue step for the existing n8n scheduler. Authenticates with the dedicated CONFERENCE_RESEARCH_N8N_AUTH_TOKEN bearer secret rather than a user session. Database and AI credentials remain inside WFCRM.
+ */
+export const RunConferenceResearchIntegrationTickResponse = zod.object({
+  status: zod.enum(["idle", "processed", "busy"]),
+  hasMore: zod
+    .boolean()
+    .describe("Call the endpoint again after a short delay when true."),
+  alertRequired: zod
+    .boolean()
+    .describe(
+      "The run encountered a durable enqueue, lease, or job failure that requires review.",
+    ),
+  eventsScanned: zod.number(),
+  windowsDue: zod.number(),
+  enqueueFailures: zod.number(),
+  contextInvalidated: zod.number(),
+  staleRequeued: zod.number(),
+  staleExhausted: zod.number(),
+  jobsAttempted: zod.number(),
+  completed: zod.number(),
+  retrying: zod.number(),
+  failed: zod.number(),
+  skipped: zod.number(),
+});

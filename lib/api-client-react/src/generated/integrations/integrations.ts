@@ -5,100 +5,200 @@
  * Wildflower Fundraising CRM API (Airtable-aligned schema)
  * OpenAPI spec version: 0.2.0
  */
-import {
-  useMutation
-} from '@tanstack/react-query';
+import { useMutation } from "@tanstack/react-query";
 import type {
   MutationFunction,
   UseMutationOptions,
-  UseMutationResult
-} from '@tanstack/react-query';
+  UseMutationResult,
+} from "@tanstack/react-query";
 
 import type {
+  ConferenceResearchIntegrationTickResult,
   McpJsonRpcRequest,
-  McpJsonRpcResponse
-} from '../api.schemas';
+  McpJsonRpcResponse,
+} from "../api.schemas";
 
-import { customFetch } from '../../custom-fetch';
-import type { ErrorType , BodyType } from '../../custom-fetch';
+import { customFetch } from "../../custom-fetch";
+import type { ErrorType, BodyType } from "../../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
-      type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
-
+type Awaited<O> = O extends AwaitedInput<infer T> ? T : never;
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
-
-
 
 /**
  * @summary Stateless MCP endpoint used by the scheduled ChatGPT Flodesk engagement bridge. Authenticates with the dedicated FLODESK_CHATGPT_MCP_AUTH_TOKEN bearer secret rather than a user session.
  */
 export const getFlodeskChatgptMcpUrl = () => {
+  return `/api/integrations/flodesk-chatgpt/mcp`;
+};
 
+export const flodeskChatgptMcp = async (
+  mcpJsonRpcRequestMcpJsonRpcRequest: McpJsonRpcRequest | McpJsonRpcRequest[],
+  options?: RequestInit,
+): Promise<McpJsonRpcResponse | McpJsonRpcResponse[] | void> => {
+  return customFetch<McpJsonRpcResponse | McpJsonRpcResponse[] | void>(
+    getFlodeskChatgptMcpUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(mcpJsonRpcRequestMcpJsonRpcRequest),
+    },
+  );
+};
 
-  
+export const getFlodeskChatgptMcpMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flodeskChatgptMcp>>,
+    TError,
+    { data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof flodeskChatgptMcp>>,
+  TError,
+  { data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]> },
+  TContext
+> => {
+  const mutationKey = ["flodeskChatgptMcp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
 
-  return `/api/integrations/flodesk-chatgpt/mcp`
-}
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof flodeskChatgptMcp>>,
+    { data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]> }
+  > = (props) => {
+    const { data } = props ?? {};
 
-export const flodeskChatgptMcp = async (mcpJsonRpcRequestMcpJsonRpcRequest: McpJsonRpcRequest | McpJsonRpcRequest[], options?: RequestInit): Promise<McpJsonRpcResponse | McpJsonRpcResponse[] | void> => {
-  
-  return customFetch<McpJsonRpcResponse | McpJsonRpcResponse[] | void>(getFlodeskChatgptMcpUrl(),
-  {      
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(
-      mcpJsonRpcRequestMcpJsonRpcRequest,)
-  }
-);}
-  
+    return flodeskChatgptMcp(data, requestOptions);
+  };
 
+  return { mutationFn, ...mutationOptions };
+};
 
+export type FlodeskChatgptMcpMutationResult = NonNullable<
+  Awaited<ReturnType<typeof flodeskChatgptMcp>>
+>;
+export type FlodeskChatgptMcpMutationBody = BodyType<
+  McpJsonRpcRequest | McpJsonRpcRequest[]
+>;
+export type FlodeskChatgptMcpMutationError = ErrorType<void>;
 
-export const getFlodeskChatgptMcpMutationOptions = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flodeskChatgptMcp>>, TError,{data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof flodeskChatgptMcp>>, TError,{data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>}, TContext> => {
-
-const mutationKey = ['flodeskChatgptMcp'];
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-      
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof flodeskChatgptMcp>>, {data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>}> = (props) => {
-          const {data} = props ?? {};
-
-          return  flodeskChatgptMcp(data,requestOptions)
-        }
-
-
-
-        
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type FlodeskChatgptMcpMutationResult = NonNullable<Awaited<ReturnType<typeof flodeskChatgptMcp>>>
-    export type FlodeskChatgptMcpMutationBody = BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>
-    export type FlodeskChatgptMcpMutationError = ErrorType<void>
-
-    /**
+/**
  * @summary Stateless MCP endpoint used by the scheduled ChatGPT Flodesk engagement bridge. Authenticates with the dedicated FLODESK_CHATGPT_MCP_AUTH_TOKEN bearer secret rather than a user session.
  */
-export const useFlodeskChatgptMcp = <TError = ErrorType<void>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof flodeskChatgptMcp>>, TError,{data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>}, TContext>, request?: SecondParameter<typeof customFetch>}
- ): UseMutationResult<
-        Awaited<ReturnType<typeof flodeskChatgptMcp>>,
-        TError,
-        {data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]>},
-        TContext
-      > => {
-      return useMutation(getFlodeskChatgptMcpMutationOptions(options));
-    }
-    
+export const useFlodeskChatgptMcp = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof flodeskChatgptMcp>>,
+    TError,
+    { data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof flodeskChatgptMcp>>,
+  TError,
+  { data: BodyType<McpJsonRpcRequest | McpJsonRpcRequest[]> },
+  TContext
+> => {
+  return useMutation(getFlodeskChatgptMcpMutationOptions(options));
+};
+/**
+ * @summary Runs one bounded conference-research queue step for the existing n8n scheduler. Authenticates with the dedicated CONFERENCE_RESEARCH_N8N_AUTH_TOKEN bearer secret rather than a user session. Database and AI credentials remain inside WFCRM.
+ */
+export const getRunConferenceResearchIntegrationTickUrl = () => {
+  return `/api/integrations/conference-research/tick`;
+};
+
+export const runConferenceResearchIntegrationTick = async (
+  options?: RequestInit,
+): Promise<ConferenceResearchIntegrationTickResult> => {
+  return customFetch<ConferenceResearchIntegrationTickResult>(
+    getRunConferenceResearchIntegrationTickUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRunConferenceResearchIntegrationTickMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runConferenceResearchIntegrationTick"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>,
+    void
+  > = () => {
+    return runConferenceResearchIntegrationTick(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunConferenceResearchIntegrationTickMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>
+>;
+
+export type RunConferenceResearchIntegrationTickMutationError = ErrorType<void>;
+
+/**
+ * @summary Runs one bounded conference-research queue step for the existing n8n scheduler. Authenticates with the dedicated CONFERENCE_RESEARCH_N8N_AUTH_TOKEN bearer secret rather than a user session. Database and AI credentials remain inside WFCRM.
+ */
+export const useRunConferenceResearchIntegrationTick = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runConferenceResearchIntegrationTick>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getRunConferenceResearchIntegrationTickMutationOptions(options),
+  );
+};

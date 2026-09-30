@@ -11,11 +11,15 @@ import {
   recoverExpiredConferenceResearchLeases,
   runOneResearchJob,
 } from "../lib/conferenceResearchWorker";
-import { HARD_CONFERENCE_RUN_MS, runConferenceResearchOnce } from "../lib/conferenceResearchOnce";
+import {
+  CONFERENCE_RESEARCH_ADVISORY_LOCK_KEY,
+  HARD_CONFERENCE_RUN_MS,
+  runConferenceResearchOnce,
+} from "../lib/conferenceResearchOnce";
 
 // The worker child owns the session lock. If its supervisor is terminated, the
 // child retains the lock until it finishes or its own hard watchdog exits.
-const ADVISORY_LOCK_KEY = [13079, 267] as const;
+const ADVISORY_LOCK_KEY = CONFERENCE_RESEARCH_ADVISORY_LOCK_KEY;
 
 async function runChild(): Promise<void> {
   let client: PoolClient | undefined;

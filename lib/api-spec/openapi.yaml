@@ -96,6 +96,30 @@ paths:
         "202": { description: MCP notification accepted }
         "401": { description: Missing or invalid integration bearer token }
         "503": { description: Integration bearer token is not configured }
+  /integrations/conference-research/tick:
+    post:
+      operationId: runConferenceResearchIntegrationTick
+      tags: [integrations]
+      summary: >-
+        Runs one bounded conference-research queue step for the existing n8n
+        scheduler. Authenticates with the dedicated
+        CONFERENCE_RESEARCH_N8N_AUTH_TOKEN bearer secret rather than a user
+        session. Database and AI credentials remain inside WFCRM.
+      responses:
+        "200":
+          description: One queue step completed or the queue is idle
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/ConferenceResearchIntegrationTickResult" }
+        "202":
+          description: Another conference-research worker currently owns the run lock
+          content:
+            application/json:
+              schema:
+                { $ref: "#/components/schemas/ConferenceResearchIntegrationTickResult" }
+        "401": { description: Missing or invalid integration bearer token }
+        "503": { description: Integration bearer token is not configured }
   # ─── Global search ─────────────────────────────────────────────────────────
   /search:
     get:
@@ -13587,6 +13611,48 @@ components:
         dateRunsQueued: { type: integer }
         agendaRunsQueued: { type: integer }
         requestIds: { type: array, items: { type: string } }
+    ConferenceResearchIntegrationTickResult:
+      type: object
+      required:
+        [
+          status,
+          hasMore,
+          alertRequired,
+          eventsScanned,
+          windowsDue,
+          enqueueFailures,
+          contextInvalidated,
+          staleRequeued,
+          staleExhausted,
+          jobsAttempted,
+          completed,
+          retrying,
+          failed,
+          skipped,
+        ]
+      properties:
+        status: { type: string, enum: [idle, processed, busy] }
+        hasMore:
+          {
+            type: boolean,
+            description: Call the endpoint again after a short delay when true.
+          }
+        alertRequired:
+          type: boolean
+          description: >-
+            The run encountered a durable enqueue, lease, or job failure that
+            requires review.
+        eventsScanned: { type: integer }
+        windowsDue: { type: integer }
+        enqueueFailures: { type: integer }
+        contextInvalidated: { type: integer }
+        staleRequeued: { type: integer }
+        staleExhausted: { type: integer }
+        jobsAttempted: { type: integer }
+        completed: { type: integer }
+        retrying: { type: integer }
+        failed: { type: integer }
+        skipped: { type: integer }
     ConferenceAttendanceSuggestion:
       type: object
       required:

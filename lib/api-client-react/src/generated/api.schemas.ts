@@ -600,6 +600,34 @@ export interface ConferenceResearchBackfillResult {
   requestIds: string[];
 }
 
+export type ConferenceResearchIntegrationTickResultStatus = typeof ConferenceResearchIntegrationTickResultStatus[keyof typeof ConferenceResearchIntegrationTickResultStatus];
+
+
+export const ConferenceResearchIntegrationTickResultStatus = {
+  idle: 'idle',
+  processed: 'processed',
+  busy: 'busy',
+} as const;
+
+export interface ConferenceResearchIntegrationTickResult {
+  status: ConferenceResearchIntegrationTickResultStatus;
+  /** Call the endpoint again after a short delay when true. */
+  hasMore: boolean;
+  /** The run encountered a durable enqueue, lease, or job failure that requires review. */
+  alertRequired: boolean;
+  eventsScanned: number;
+  windowsDue: number;
+  enqueueFailures: number;
+  contextInvalidated: number;
+  staleRequeued: number;
+  staleExhausted: number;
+  jobsAttempted: number;
+  completed: number;
+  retrying: number;
+  failed: number;
+  skipped: number;
+}
+
 export type ConferenceAttendanceSuggestionConfidence = typeof ConferenceAttendanceSuggestionConfidence[keyof typeof ConferenceAttendanceSuggestionConfidence];
 
 
