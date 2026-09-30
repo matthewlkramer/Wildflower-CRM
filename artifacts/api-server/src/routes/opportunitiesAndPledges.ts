@@ -282,6 +282,8 @@ const OPP_ARRAY_PARAMS = [
   "type",
   "ownerUserId",
   "entityId",
+  "allocationEntityId",
+  "intendedUsage",
   "fundableProjectId",
 ] as const;
 
@@ -498,6 +500,49 @@ async function buildOppListWhere(
                 opportunitiesAndPledges.id,
               ),
               inArray(pledgeAllocations.entityId, entitySelected),
+            ),
+          ),
+      ),
+    );
+  }
+  // The Opportunities page exposes Fund/Entity and Purpose as independent
+  // allocation filters. Keep each in its own EXISTS clause: an opportunity
+  // qualifies when any allocation matches the selected entity and any
+  // allocation matches the selected purpose, even when those are different
+  // rows. The global entity scope above remains an additional constraint.
+  const allocationEntitySelected = q.allocationEntityId ?? [];
+  if (allocationEntitySelected.length > 0) {
+    filters.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(pledgeAllocations)
+          .where(
+            and(
+              eq(
+                pledgeAllocations.pledgeOrOpportunityId,
+                opportunitiesAndPledges.id,
+              ),
+              inArray(pledgeAllocations.entityId, allocationEntitySelected),
+            ),
+          ),
+      ),
+    );
+  }
+  const intendedUsageSelected = q.intendedUsage ?? [];
+  if (intendedUsageSelected.length > 0) {
+    filters.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(pledgeAllocations)
+          .where(
+            and(
+              eq(
+                pledgeAllocations.pledgeOrOpportunityId,
+                opportunitiesAndPledges.id,
+              ),
+              inArray(pledgeAllocations.intendedUsage, intendedUsageSelected),
             ),
           ),
       ),
@@ -892,10 +937,7 @@ router.get(
       };
     });
     const conditionalRollup = rollupConditional(allocations);
-    const restrictionRollup = await loadGrantRestrictionRollup(
-      allocations,
-      id,
-    );
+    const restrictionRollup = await loadGrantRestrictionRollup(allocations, id);
     res.json({
       ...maskOppDonorRow(row, getViewer(req)),
       allocations: allocationsWithActuals,

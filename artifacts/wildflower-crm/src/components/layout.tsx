@@ -34,6 +34,7 @@ import {
   Plane,
   GalleryVerticalEnd,
   WandSparkles,
+  Rss,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { Button } from "@/components/ui/button";
@@ -91,6 +92,7 @@ const navItems: NavEntry[] = [
   { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
 
   { section: "Engagement" },
+  { href: "/feed", label: "Feed", icon: Rss },
   { href: "/moves", label: "Moves", icon: Activity },
   { href: "/meetings", label: "Meetings", icon: CalendarCheck2 },
   { href: "/trips", label: "Trip Planner", icon: Plane },

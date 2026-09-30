@@ -4114,6 +4114,30 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: allocationEntityId
+          in: query
+          required: false
+          description: |
+            Page-level Entity/Fund filter. Matches opportunities that have at
+            least one pledge_allocation whose entity_id is in the selected set.
+            This is independent of the global entity scope (`entityId`), so both
+            constraints can be true on different allocation rows.
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - name: intendedUsage
+          in: query
+          required: false
+          description: |
+            Page-level Purpose filter. Matches opportunities that have at least
+            one pledge_allocation whose intended_usage is in the selected set.
+            When combined with allocationEntityId, the two conditions may be
+            satisfied by different allocation rows on the same opportunity.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/IntendedUsage" }
         - name: fiscalYear
           in: query
           required: false

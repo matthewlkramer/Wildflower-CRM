@@ -105,6 +105,8 @@ interface NotesContext {
 }
 
 interface Props {
+  /** Show a cross-CRM feed instead of requiring a relationship record scope. */
+  global?: boolean;
   // Relationship scope for interactions / emails / calendar / meetings /
   // intel — these sources only link to a person, funder, or household.
   personId?: string;
@@ -281,6 +283,7 @@ export function shouldOfferAddSender(
 }
 
 export function UnifiedActivityFeed({
+  global = false,
   personId,
   organizationId,
   householdId,
@@ -303,7 +306,7 @@ export function UnifiedActivityFeed({
   // Interactions / emails / calendar / meetings are only linkable to a
   // person, funder, or household — never to an opportunity or gift. Gate
   // those queries so opportunity/gift pages don't fetch global lists.
-  const relationScoped = !!(personId || organizationId || householdId);
+  const relationScoped = global || !!(personId || organizationId || householdId);
   const relParams = {
     personId,
     organizationId,
@@ -338,7 +341,7 @@ export function UnifiedActivityFeed({
   });
 
   // Email-intelligence proposals target a single person or funder.
-  const proposalsEnabled = !!(personId || organizationId);
+  const proposalsEnabled = global || !!(personId || organizationId);
   const proposalParams = {
     personId,
     organizationId,
@@ -373,7 +376,7 @@ export function UnifiedActivityFeed({
   });
 
   // Media mentions only ever link to a person or funder.
-  const mediaEnabled = !!(personId || organizationId);
+  const mediaEnabled = global || !!(personId || organizationId);
   const mediaParams = {
     personId,
     organizationId,
@@ -666,12 +669,12 @@ export function UnifiedActivityFeed({
     <Card data-testid="activity-timeline">
       <CardHeader className="space-y-3">
         <div className="flex flex-row items-center justify-between">
-          <CardTitle className="text-lg">Activity</CardTitle>
+          <CardTitle className="text-lg">{global ? "Recent activity" : "Activity"}</CardTitle>
         </div>
 
         {/* Pinned composer — quick note box plus quick-action triggers
             that reuse the existing dialogs (no functionality dropped). */}
-        <div
+        {global ? null : <div
           className="rounded-lg border bg-background p-3"
           data-testid="activity-composer"
         >
@@ -722,7 +725,7 @@ export function UnifiedActivityFeed({
               {createNote.isPending ? "Saving…" : "Save note"}
             </Button>
           </div>
-        </div>
+        </div>}
 
         {/* Full-text search across every in-scope activity source. */}
         <div className="relative">
@@ -1091,9 +1094,9 @@ export function UnifiedActivityFeed({
                         ? ` → ${r.toEmails.join(", ")}`
                         : ""}
                     </div>
-                    {r.snippet ? (
+                    {r.aiSummary || r.snippet ? (
                       <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {decodeHtmlEntities(r.snippet)}
+                        {decodeHtmlEntities(r.aiSummary ?? r.snippet ?? "")}
                       </p>
                     ) : null}
                   </li>

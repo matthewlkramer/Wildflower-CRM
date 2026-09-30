@@ -24,6 +24,7 @@ import {
   invalidateStaffDefaultSuppressionCache,
   loadInternalDomains,
 } from "../lib/emailMatcher";
+import { queueContactHistoryBackfill } from "../lib/contactHistoryBackfill";
 
 /**
  * "People you've been emailing who aren't in the CRM yet" dashboard
@@ -310,21 +311,17 @@ router.post(
     if (!body) return;
     const emailAddress = body.emailAddress.trim();
     if (!emailAddress || !emailAddress.includes("@")) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "emailAddress must look like an email",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "emailAddress must look like an email",
+      });
       return;
     }
     if (!body.personId && !body.createPerson) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "Choose an existing person or provide createPerson.",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "Choose an existing person or provide createPerson.",
+      });
       return;
     }
 
@@ -468,25 +465,25 @@ router.post(
         return { personId, emailId, proposalId: body.proposalId ?? null };
       });
       invalidateStaffDefaultSuppressionCache();
+      queueContactHistoryBackfill({
+        personId: result.personId,
+        emailAddress,
+      });
       res.json(result);
     } catch (error) {
       const status = (error as { statusCode?: number }).statusCode;
       if (status) {
-        res
-          .status(status)
-          .json({
-            error: status === 404 ? "not_found" : "validation_error",
-            message: (error as Error).message,
-          });
+        res.status(status).json({
+          error: status === 404 ? "not_found" : "validation_error",
+          message: (error as Error).message,
+        });
         return;
       }
       if ((error as { code?: string }).code === "23505") {
-        res
-          .status(409)
-          .json({
-            error: "conflict",
-            message: "That email is already attached to another record.",
-          });
+        res.status(409).json({
+          error: "conflict",
+          message: "That email is already attached to another record.",
+        });
         return;
       }
       throw error;

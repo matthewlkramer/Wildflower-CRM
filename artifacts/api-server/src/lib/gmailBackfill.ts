@@ -28,6 +28,7 @@ import {
   processIntelForUnmatched,
   shouldFetchFullForIntel,
 } from "./emailIntelligence";
+import { isBounceSender, parseBounce } from "./intelDetectors";
 import { emailProposals, users } from "@workspace/db/schema";
 import { summarizeEmail } from "./summarizeEmail";
 import { proposeActionsForProposal } from "./proposeActions";
@@ -88,6 +89,16 @@ export interface BackfillOutcome {
   notConnected?: boolean;
   error?: string;
   report?: BackfillReport;
+}
+
+export interface EmailAddressBackfillOutcome {
+  ok: boolean;
+  notConnected?: boolean;
+  locked?: boolean;
+  matchedMessages: number;
+  promotedMessages: number;
+  bounceMessages: number;
+  errors: number;
 }
 
 export async function backfillIntelForUser(
@@ -173,6 +184,209 @@ export async function backfillIntelForUser(
   return lockOutcome.result!;
 }
 
+/**
+ * Rebuild the complete Gmail history for one address after it is attached to
+ * a CRM person. Unlike the broad admin backfill, this is safe to run after
+ * every address-link operation: participant matches are scoped to the exact
+ * address, while delivery-failure rows are reparsed only when their body names
+ * that same recipient. The ordinary Gmail cursor is never moved.
+ */
+export async function backfillEmailAddressForUser(
+  userId: string,
+  emailAddress: string,
+): Promise<EmailAddressBackfillOutcome> {
+  const normalized = emailAddress.trim().toLowerCase();
+  const lock = await withSyncLock(
+    userId,
+    "gmail",
+    async () => {
+      const grant = await getValidGoogleAccessTokenForUser(userId);
+      if (!grant) {
+        return {
+          ok: false,
+          notConnected: true,
+          matchedMessages: 0,
+          promotedMessages: 0,
+          bounceMessages: 0,
+          errors: 0,
+        };
+      }
+      const report: EmailAddressBackfillOutcome = {
+        ok: true,
+        matchedMessages: 0,
+        promotedMessages: 0,
+        bounceMessages: 0,
+        errors: 0,
+      };
+      const owner = await db
+        .select({ mode: users.emailSyncMode })
+        .from(users)
+        .where(eq(users.id, userId))
+        .then((rows) => rows[0]);
+      const summaryOnly = owner?.mode === "summary_only";
+      const addressMatches = sql`exists (
+      select 1
+      from unnest(
+        coalesce(${emailSyncSkip.fromAddrs}, '{}'::text[]) ||
+        coalesce(${emailSyncSkip.toAddrs}, '{}'::text[]) ||
+        coalesce(${emailSyncSkip.ccAddrs}, '{}'::text[]) ||
+        coalesce(${emailSyncSkip.bccAddrs}, '{}'::text[])
+      ) as address(value)
+      where lower(address.value) = ${normalized}
+    )`;
+      const skippedMatches = await db
+        .select({ gmailMessageId: emailSyncSkip.gmailMessageId })
+        .from(emailSyncSkip)
+        .where(and(eq(emailSyncSkip.mailboxUserId, userId), addressMatches));
+      for (const row of skippedMatches) {
+        try {
+          if (
+            await promoteSkipToMatched(grant, row.gmailMessageId, summaryOnly)
+          ) {
+            report.promotedMessages++;
+          }
+        } catch (err) {
+          report.errors++;
+          logger.warn(
+            {
+              err,
+              userId,
+              gmailId: row.gmailMessageId,
+              emailAddress: normalized,
+            },
+            "Contact Gmail history promotion failed",
+          );
+        }
+      }
+
+      const retainedMatches = await db
+        .select({
+          id: emailMessages.id,
+          gmailMessageId: emailMessages.gmailMessageId,
+          fromEmail: emailMessages.fromEmail,
+          subject: emailMessages.subject,
+          bodyText: emailMessages.bodyText,
+          bodyHtml: emailMessages.bodyHtml,
+          direction: emailMessages.direction,
+          matchedPersonIds: emailMessages.matchedPersonIds,
+          sentAt: emailMessages.sentAt,
+        })
+        .from(emailMessages)
+        .where(
+          and(
+            eq(emailMessages.mailboxUserId, userId),
+            sql`(
+            lower(coalesce(${emailMessages.fromEmail}, '')) = ${normalized}
+            or exists (
+              select 1 from unnest(
+                coalesce(${emailMessages.toEmails}, '{}'::text[]) ||
+                coalesce(${emailMessages.ccEmails}, '{}'::text[]) ||
+                coalesce(${emailMessages.bccEmails}, '{}'::text[])
+              ) as address(value)
+              where lower(address.value) = ${normalized}
+            )
+          )`,
+          ),
+        );
+      if (!summaryOnly) {
+        for (const row of retainedMatches) {
+          if (!row.bodyText && !row.bodyHtml) continue;
+          try {
+            await processIntelForMatched({
+              mailboxUserId: userId,
+              messageRowId: row.id,
+              gmailMessageId: row.gmailMessageId,
+              fromEmail: row.fromEmail,
+              subject: row.subject,
+              bodyText: row.bodyText,
+              bodyHtml: row.bodyHtml,
+              direction: row.direction,
+              matchedPersonIds: row.matchedPersonIds,
+              ownerEmail: grant.googleEmail,
+              emailSentAt: row.sentAt,
+            });
+            report.matchedMessages++;
+          } catch (err) {
+            report.errors++;
+            logger.warn(
+              { err, userId, messageRowId: row.id, emailAddress: normalized },
+              "Contact Gmail intelligence replay failed",
+            );
+          }
+        }
+
+        // Delivery failures are from mailer-daemon/postmaster, so the failed
+        // recipient normally appears only inside the body—not in participant
+        // headers. Reparse historical bounce-shaped skip rows and keep only the
+        // exact newly-linked recipient.
+        const bounceCandidates = await db
+          .select({
+            gmailMessageId: emailSyncSkip.gmailMessageId,
+            fromAddrs: emailSyncSkip.fromAddrs,
+            subject: emailSyncSkip.subject,
+          })
+          .from(emailSyncSkip)
+          .where(eq(emailSyncSkip.mailboxUserId, userId));
+        for (const row of bounceCandidates) {
+          const fromEmail = row.fromAddrs[0] ?? null;
+          if (!isBounceSender(fromEmail)) continue;
+          try {
+            const full = await getMessage(
+              grant.accessToken,
+              row.gmailMessageId,
+              "full",
+            );
+            const parts = extractMessageParts(full.payload);
+            const parsed = parseBounce(
+              row.subject,
+              parts.bodyText,
+              parts.bodyHtml,
+            );
+            if (parsed?.recipient.trim().toLowerCase() !== normalized) continue;
+            await processIntelForUnmatched({
+              mailboxUserId: userId,
+              gmailMessageId: row.gmailMessageId,
+              fromEmail,
+              subject: row.subject,
+              bodyText: parts.bodyText,
+              bodyHtml: parts.bodyHtml,
+              emailSentAt: full.internalDate
+                ? new Date(Number(full.internalDate))
+                : null,
+            });
+            report.bounceMessages++;
+          } catch (err) {
+            report.errors++;
+            logger.warn(
+              {
+                err,
+                userId,
+                gmailId: row.gmailMessageId,
+                emailAddress: normalized,
+              },
+              "Contact Gmail bounce replay failed",
+            );
+          }
+        }
+      }
+      report.ok = report.errors === 0;
+      return report;
+    },
+    { wait: true },
+  );
+  if (!lock.ran) {
+    return {
+      ok: false,
+      locked: true,
+      matchedMessages: 0,
+      promotedMessages: 0,
+      bounceMessages: 0,
+      errors: 0,
+    };
+  }
+  return lock.result!;
+}
+
 // ---------------------------------------------------------------------------
 // Phase A: re-match skips, promote to matched
 // ---------------------------------------------------------------------------
@@ -228,7 +442,11 @@ async function phaseA(
         if (isMatchEmpty(match)) {
           stillUnmatched = true;
         } else {
-          const ok = await promoteSkipToMatched(grant, row.gmailMessageId, summaryOnly);
+          const ok = await promoteSkipToMatched(
+            grant,
+            row.gmailMessageId,
+            summaryOnly,
+          );
           if (ok) report.phaseA.promoted++;
           else report.phaseA.errors++;
         }
@@ -244,7 +462,10 @@ async function phaseA(
       void stillUnmatched;
     }
     if (report.phaseA.scanned % 1000 === 0) {
-      logger.info({ userId: grant.userId, phaseA: report.phaseA }, "Backfill phase A progress");
+      logger.info(
+        { userId: grant.userId, phaseA: report.phaseA },
+        "Backfill phase A progress",
+      );
     }
   }
 }
@@ -528,7 +749,10 @@ async function phaseB(
       }
     }
     if (report.phaseB.scanned % 2000 === 0) {
-      logger.info({ userId, phaseB: report.phaseB }, "Backfill phase B progress");
+      logger.info(
+        { userId, phaseB: report.phaseB },
+        "Backfill phase B progress",
+      );
     }
   }
 }
@@ -600,7 +824,10 @@ async function phaseC(
       }
     }
     if (report.phaseC.scanned % 2000 === 0) {
-      logger.info({ userId: grant.userId, phaseC: report.phaseC }, "Backfill phase C progress");
+      logger.info(
+        { userId: grant.userId, phaseC: report.phaseC },
+        "Backfill phase C progress",
+      );
     }
   }
 }
@@ -665,7 +892,10 @@ async function phaseD(userId: string, report: BackfillReport): Promise<void> {
           );
         }
       }
-      logger.info({ userId, phase, phaseD: report.phaseD }, "Backfill phase D progress");
+      logger.info(
+        { userId, phase, phaseD: report.phaseD },
+        "Backfill phase D progress",
+      );
     }
   }
 }

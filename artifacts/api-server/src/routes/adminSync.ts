@@ -48,8 +48,11 @@ router.get(
   "/admin/google-sync",
   asyncHandler(async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    // One row per connected user. Archived users are excluded — once
-    // archived they can't log in, so their sync state is academic.
+    // One row per active staff user, including people who have never connected
+    // Google. Starting from users (rather than google_oauth_tokens) makes a
+    // missing grant visible instead of silently omitting that person from the
+    // health panel. Archived users are excluded — once archived they can't log
+    // in, so their sync state is academic.
     const rows = await db
       .select({
         userId: users.id,
@@ -70,8 +73,11 @@ router.get(
         calendarBootstrapPageToken: calendarSyncState.bootstrapPageToken,
         calendarUpdatedAt: calendarSyncState.updatedAt,
       })
-      .from(googleOauthTokens)
-      .innerJoin(users, eq(users.id, googleOauthTokens.userId))
+      .from(users)
+      .leftJoin(
+        googleOauthTokens,
+        eq(users.id, googleOauthTokens.userId),
+      )
       .leftJoin(
         emailSyncState,
         eq(emailSyncState.mailboxUserId, googleOauthTokens.userId),

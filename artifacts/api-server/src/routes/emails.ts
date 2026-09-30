@@ -8,8 +8,16 @@ import {
   UpdateEmailBody,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
-import { asyncHandler, newId, notFound, parseOrBadRequest, parsePagination, paramId } from "../lib/helpers";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  parseOrBadRequest,
+  parsePagination,
+  paramId,
+} from "../lib/helpers";
 import { invalidateStaffDefaultSuppressionCache } from "../lib/emailMatcher";
+import { queueContactHistoryBackfill } from "../lib/contactHistoryBackfill";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -26,6 +34,39 @@ function isUniqueViolation(err: unknown): boolean {
   );
 }
 
+function historicalAttributionQueries(personId: string, emailAddress: string) {
+  return [
+    sql`
+      UPDATE email_messages
+      SET matched_person_ids =
+        COALESCE(matched_person_ids, '{}') || ARRAY[${personId}]::text[]
+      WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${personId}]::text[])
+        AND (
+          lower(COALESCE(from_email, '')) = lower(${emailAddress})
+          OR EXISTS (
+            SELECT 1 FROM unnest(
+              COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
+            ) AS addr WHERE lower(addr) = lower(${emailAddress})
+          )
+        )
+    `,
+    sql`
+      UPDATE calendar_events
+      SET matched_person_ids =
+        COALESCE(matched_person_ids, '{}') || ARRAY[${personId}]::text[],
+        updated_at = NOW()
+      WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${personId}]::text[])
+        AND (
+          lower(COALESCE(organizer_email, '')) = lower(${emailAddress})
+          OR EXISTS (
+            SELECT 1 FROM unnest(COALESCE(attendee_emails, '{}')) AS addr
+            WHERE lower(addr) = lower(${emailAddress})
+          )
+        )
+    `,
+  ];
+}
+
 router.get(
   "/emails",
   asyncHandler(async (req, res) => {
@@ -33,15 +74,24 @@ router.get(
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
-    if (q.email) filters.push(sql`lower(${emails.email}) = lower(${q.email.trim()})`);
+    if (q.email)
+      filters.push(sql`lower(${emails.email}) = lower(${q.email.trim()})`);
     if (q.personId) filters.push(eq(emails.personId, q.personId));
-    
-    if (q.organizationId) filters.push(eq(emails.organizationId, q.organizationId));
-    if (q.paymentIntermediaryId) filters.push(eq(emails.paymentIntermediaryId, q.paymentIntermediaryId));
+
+    if (q.organizationId)
+      filters.push(eq(emails.organizationId, q.organizationId));
+    if (q.paymentIntermediaryId)
+      filters.push(eq(emails.paymentIntermediaryId, q.paymentIntermediaryId));
     if (q.householdId) filters.push(eq(emails.householdId, q.householdId));
     const where = filters.length ? and(...filters) : undefined;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
-      db.select().from(emails).where(where).orderBy(desc(emails.createdAt)).limit(limit).offset(offset),
+      db
+        .select()
+        .from(emails)
+        .where(where)
+        .orderBy(desc(emails.createdAt))
+        .limit(limit)
+        .offset(offset),
       db.select({ value: count() }).from(emails).where(where),
     ]);
     res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
@@ -68,20 +118,12 @@ router.post(
         // email row so a failed history update cannot leave an un-linkable
         // partial record behind.
         if (created.personId && created.email) {
-          await tx.execute(sql`
-            UPDATE email_messages
-            SET matched_person_ids =
-              COALESCE(matched_person_ids, '{}') || ARRAY[${created.personId}]::text[]
-            WHERE NOT (COALESCE(matched_person_ids, '{}') @> ARRAY[${created.personId}]::text[])
-              AND (
-                lower(COALESCE(from_email, '')) = lower(${created.email})
-                OR EXISTS (
-                  SELECT 1 FROM unnest(
-                    COALESCE(to_emails, '{}') || COALESCE(cc_emails, '{}') || COALESCE(bcc_emails, '{}')
-                  ) AS addr WHERE lower(addr) = lower(${created.email})
-                )
-              )
-          `);
+          for (const query of historicalAttributionQueries(
+            created.personId,
+            created.email,
+          )) {
+            await tx.execute(query);
+          }
         }
         return created;
       });
@@ -89,6 +131,12 @@ router.post(
       // suppression set (an internal-domain address makes them staff). Bust
       // the cache only after the transaction commits.
       invalidateStaffDefaultSuppressionCache();
+      if (row.personId && row.email) {
+        queueContactHistoryBackfill({
+          personId: row.personId,
+          emailAddress: row.email,
+        });
+      }
       res.status(201).json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {
@@ -110,13 +158,47 @@ router.patch(
     if (!body) return;
     if (typeof body.email === "string") body.email = body.email.trim();
     try {
-      const [row] = await db
-        .update(emails)
-        .set({ ...body, updatedAt: new Date() })
-        .where(eq(emails.id, paramId(req)))
-        .returning();
+      const id = paramId(req);
+      const previous = await db
+        .select({ email: emails.email, personId: emails.personId })
+        .from(emails)
+        .where(eq(emails.id, id))
+        .then((rows) => rows[0]);
+      const row = await db.transaction(async (tx) => {
+        const [updated] = await tx
+          .update(emails)
+          .set({ ...body, updatedAt: new Date() })
+          .where(eq(emails.id, id))
+          .returning();
+        if (updated?.personId && updated.email) {
+          const changed =
+            previous?.personId !== updated.personId ||
+            previous?.email.trim().toLowerCase() !==
+              updated.email.trim().toLowerCase();
+          if (changed) {
+            for (const query of historicalAttributionQueries(
+              updated.personId,
+              updated.email,
+            )) {
+              await tx.execute(query);
+            }
+          }
+        }
+        return updated;
+      });
       if (!row) return notFound(res, "email");
       invalidateStaffDefaultSuppressionCache();
+      const historyChanged =
+        !!row.personId &&
+        (previous?.personId !== row.personId ||
+          previous?.email.trim().toLowerCase() !==
+            row.email.trim().toLowerCase());
+      if (historyChanged && row.personId) {
+        queueContactHistoryBackfill({
+          personId: row.personId,
+          emailAddress: row.email,
+        });
+      }
       res.json(row);
     } catch (err) {
       if (isUniqueViolation(err)) {

@@ -114,8 +114,9 @@ a matching "kind":
    the CRM.
 2. **Bounces** (`bounce_invalid` for hard bounces, `bounce_soft` for
    temporary ones) — "mailer-daemon" failure messages tell us an address
-   is dead or temporarily failing. Only acted on for addresses already on
-   file.
+   is dead or temporarily failing. Unknown recipients remain reviewable but
+   produce no CRM mutation; attaching the address later links the proposal to
+   its person and reruns action analysis with full CRM context.
 3. **Grant opportunities** (`grant_opportunity`) — grant/RFP newsletters
    and digests are mined for individual funding opportunities (title,
    funder, deadline, amount, link).
@@ -194,6 +195,17 @@ chatter shouldn't pollute donor timelines), then looks up the rest:
 
 If anything matches, the message takes the **matched path**; if nothing
 matches, it takes the **unmatched path**.
+
+Adding an email address to a new or existing person starts an address-scoped
+historical rebuild across every connected Google account. Retained Gmail and
+Calendar rows are attributed immediately. Previously skipped Gmail messages
+whose participant headers contain the address are fetched and promoted, their
+email-intelligence detectors run again, and historical mailer-daemon messages
+are reparsed when the failed recipient appears only inside the bounce body.
+Google Calendar runs a separate all-history search for the exact attendee or
+organizer address without resetting its incremental sync token. The rebuild
+uses the same per-user source locks as normal sync, so it waits behind an active
+sync instead of racing it.
 
 The inbox sync and the Email Tracking action queue intentionally have
 different thresholds. Gmail excludes Spam and Trash before sync. Other

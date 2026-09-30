@@ -16,15 +16,23 @@ import {
   CalendarSyncTokenGoneError,
   type GCalEvent,
 } from "./gcal";
-import { getValidGoogleAccessTokenForUser, type ActiveGoogleGrant } from "./googleTokenStore";
+import {
+  getValidGoogleAccessTokenForUser,
+  type ActiveGoogleGrant,
+} from "./googleTokenStore";
 import { matchEmails, isMatchEmpty } from "./emailMatcher";
-import { shouldSuppressMeeting, loadMeetingFilterConfig, type MeetingFilterConfig } from "./calendarMeetingFilter";
+import {
+  shouldSuppressMeeting,
+  loadMeetingFilterConfig,
+  type MeetingFilterConfig,
+} from "./calendarMeetingFilter";
 import {
   eventOverlapsTripWindows,
   mergeTripWindows,
   shouldAutoPrivateCalendarEvent,
   type TripWindow,
 } from "./tripCalendarWindows";
+import { withSyncLock } from "./syncLock";
 
 /**
  * Per-user Google Calendar sync orchestrator.
@@ -94,7 +102,128 @@ export interface CalendarSyncOutcome {
   report?: CalendarSyncReport;
 }
 
-export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutcome> {
+export interface CalendarAddressBackfillOutcome {
+  ok: boolean;
+  notConnected?: boolean;
+  locked?: boolean;
+  scanned: number;
+  matched: number;
+  errors: number;
+}
+
+/**
+ * Search the complete primary-calendar history for one newly linked contact
+ * address. This does not disturb the incremental sync token: Google performs a
+ * separate `q=<address>` sweep, and exact attendee/organizer equality is
+ * checked before the ordinary event matcher persists anything.
+ */
+export async function backfillCalendarAddressForUser(
+  userId: string,
+  emailAddress: string,
+): Promise<CalendarAddressBackfillOutcome> {
+  const normalized = emailAddress.trim().toLowerCase();
+  const lock = await withSyncLock(
+    userId,
+    "calendar",
+    async () => {
+      const grant = await getValidGoogleAccessTokenForUser(userId);
+      if (!grant) {
+        return {
+          ok: false,
+          notConnected: true,
+          scanned: 0,
+          matched: 0,
+          errors: 0,
+        };
+      }
+      const state = await db
+        .select({ calendarId: calendarSyncState.gcalCalendarId })
+        .from(calendarSyncState)
+        .where(eq(calendarSyncState.calendarUserId, userId))
+        .then((rows) => rows[0]);
+      const calendarId = state?.calendarId ?? "primary";
+      const meetingFilterConfig = await loadMeetingFilterConfig().catch(
+        (err) => {
+          logger.warn(
+            { err, userId },
+            "Contact calendar backfill could not load meeting filters; using defaults",
+          );
+          return {
+            titlePatterns: [
+              "all hands",
+              "governance mtg",
+              "finance meeting",
+              "tactical mtg",
+              "partner training",
+              "board meeting",
+              "staff meeting",
+              "all-staff",
+              "all staff",
+            ],
+            attendeeCountCutoff: 20,
+          } satisfies MeetingFilterConfig;
+        },
+      );
+      const report: CalendarSyncReport = {
+        mode: "bootstrap",
+        candidates: 0,
+        matched: 0,
+        updated: 0,
+        skipped: 0,
+        errors: 0,
+        tripWindows: 0,
+        tripWindowEvents: 0,
+        bootstrapCompleted: !!state,
+        hasSyncToken: false,
+      };
+      let pageToken: string | null = null;
+      do {
+        const page = await listEvents(grant.accessToken, calendarId, {
+          timeMin: "1970-01-01T00:00:00Z",
+          query: normalized,
+          pageToken,
+          maxResults: BOOTSTRAP_PAGE_SIZE,
+        });
+        report.candidates += page.items.length;
+        for (const event of page.items) {
+          const exact = extractAttendeeEmails(event).includes(normalized);
+          if (!exact) continue;
+          const ok = await processOneEvent(
+            grant,
+            calendarId,
+            event,
+            report,
+            meetingFilterConfig,
+            [],
+          );
+          if (!ok) report.errors++;
+        }
+        pageToken = page.nextPageToken ?? null;
+      } while (pageToken);
+      return {
+        ok: report.errors === 0,
+        scanned: report.candidates,
+        matched: report.matched + report.updated,
+        errors: report.errors,
+      };
+    },
+    { wait: true },
+  );
+  if (!lock.ran) {
+    return {
+      ok: false,
+      locked: true,
+      scanned: 0,
+      matched: 0,
+      errors: 0,
+    };
+  }
+  return lock.result!;
+}
+
+export async function syncUserCalendar(
+  userId: string,
+): Promise<CalendarSyncOutcome> {
   const grant = await getValidGoogleAccessTokenForUser(userId);
   if (!grant) {
     return { ok: false, notConnected: true };
@@ -134,9 +263,22 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
     try {
       meetingFilterConfig = await loadMeetingFilterConfig();
     } catch (e) {
-      logger.warn({ err: e, userId }, "Failed to load meeting filter config; using defaults");
+      logger.warn(
+        { err: e, userId },
+        "Failed to load meeting filter config; using defaults",
+      );
       meetingFilterConfig = {
-        titlePatterns: ["all hands", "governance mtg", "finance meeting", "tactical mtg", "partner training", "board meeting", "staff meeting", "all-staff", "all staff"],
+        titlePatterns: [
+          "all hands",
+          "governance mtg",
+          "finance meeting",
+          "tactical mtg",
+          "partner training",
+          "board meeting",
+          "staff meeting",
+          "all-staff",
+          "all staff",
+        ],
         attendeeCountCutoff: 20,
       };
     }
@@ -174,7 +316,8 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
               bootstrapCompletedAt: null,
               bootstrapPageToken: null,
               incrementalPageToken: null,
-              lastError: "Calendar sync token expired; re-bootstrapping on next run",
+              lastError:
+                "Calendar sync token expired; re-bootstrapping on next run",
               lastSyncedAt: new Date(),
               updatedAt: new Date(),
             })
@@ -222,9 +365,10 @@ export async function syncUserCalendar(userId: string): Promise<CalendarSyncOutc
       .update(calendarSyncState)
       .set({
         lastSyncedAt: new Date(),
-        lastError: report.errors > 0
-          ? `${report.errors} event(s) failed; will retry next run`
-          : null,
+        lastError:
+          report.errors > 0
+            ? `${report.errors} event(s) failed; will retry next run`
+            : null,
         updatedAt: new Date(),
       })
       .where(eq(calendarSyncState.calendarUserId, userId));
@@ -450,10 +594,7 @@ async function loadTripWindows(
     })
     .from(tripPlans)
     .where(
-      and(
-        eq(tripPlans.travelerUserId, userId),
-        isNull(tripPlans.archivedAt),
-      ),
+      and(eq(tripPlans.travelerUserId, userId), isNull(tripPlans.archivedAt)),
     );
   const allTripWindows = rows.map(({ startAt, endAt }) => ({ startAt, endAt }));
   const recentCutoff = Date.now() - 86_400_000;
@@ -567,11 +708,7 @@ async function processOneEvent(
     report.skipped++;
     return true;
   }
-  const inTripWindow = eventOverlapsTripWindows(
-    startAt,
-    endAt,
-    tripWindows,
-  );
+  const inTripWindow = eventOverlapsTripWindows(startAt, endAt, tripWindows);
 
   // Group-meeting suppression: skip large internal meetings
   // (by title keyword or attendee count) before any CRM matching.
@@ -714,4 +851,3 @@ async function processOneEvent(
     return false;
   }
 }
-

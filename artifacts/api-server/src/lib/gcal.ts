@@ -42,7 +42,9 @@ async function gcalFetch(
   return r;
 }
 
-export async function getPrimaryCalendarId(accessToken: string): Promise<string> {
+export async function getPrimaryCalendarId(
+  accessToken: string,
+): Promise<string> {
   // Per Google docs, the literal string "primary" resolves to the
   // calling user's primary calendar in every events.list URL — we
   // don't actually need to look it up. Kept as a function so the
@@ -83,6 +85,7 @@ export interface ListEventsOpts {
   pageToken?: string | null;
   timeMin?: string | null; // ISO; ignored if syncToken provided
   timeMax?: string | null; // ISO; ignored if syncToken provided
+  query?: string | null; // free-text Google Calendar search (`q`)
   maxResults?: number;
 }
 
@@ -112,6 +115,7 @@ export async function listEvents(
     params.set("orderBy", "startTime");
   }
   if (opts.pageToken) params.set("pageToken", opts.pageToken);
+  if (opts.query) params.set("q", opts.query);
 
   const path = `/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`;
   const r = await fetch(`${GCAL_BASE}${path}`, {
@@ -159,7 +163,10 @@ export function extractAttendeeEmails(event: GCalEvent): string[] {
  * for the timeline ordering use case; the UI formats per-locale
  * anyway.
  */
-export function eventTimes(event: GCalEvent): { startAt: Date | null; endAt: Date | null } {
+export function eventTimes(event: GCalEvent): {
+  startAt: Date | null;
+  endAt: Date | null;
+} {
   const s = event.start?.dateTime ?? event.start?.date ?? null;
   const e = event.end?.dateTime ?? event.end?.date ?? null;
   return {

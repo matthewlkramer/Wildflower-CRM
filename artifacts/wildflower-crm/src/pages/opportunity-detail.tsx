@@ -1509,6 +1509,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                 />
                 <UnifiedActivityFeed
                   organizationId={opp.organizationId ?? undefined}
+                  includeLinkedPeople={!!opp.organizationId}
                   personId={opp.individualGiverPersonId ?? undefined}
                   householdId={opp.householdId ?? undefined}
                   notesContext={{

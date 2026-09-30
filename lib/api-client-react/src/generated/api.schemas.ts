@@ -12012,6 +12012,22 @@ with `entity_id` in the given set. Comma-separated form supported.
  */
 entityId?: string[];
 /**
+ * Page-level Entity/Fund filter. Matches opportunities that have at
+least one pledge_allocation whose entity_id is in the selected set.
+This is independent of the global entity scope (`entityId`), so both
+constraints can be true on different allocation rows.
+
+ */
+allocationEntityId?: string[];
+/**
+ * Page-level Purpose filter. Matches opportunities that have at least
+one pledge_allocation whose intended_usage is in the selected set.
+When combined with allocationEntityId, the two conditions may be
+satisfied by different allocation rows on the same opportunity.
+
+ */
+intendedUsage?: IntendedUsage[];
+/**
  * Filter to opportunities that have at least one pledge_allocation
 with `grant_year` in the given set (e.g. `fy2026`). Multi-value:
 repeat the param or comma-separate. Omit to include all fiscal

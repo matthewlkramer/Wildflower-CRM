@@ -9,6 +9,7 @@ import NotFound from "@/pages/not-found";
 
 // Page imports
 import Dashboard from "@/pages/dashboard";
+import ActivityFeed from "@/pages/activity-feed";
 import Individuals from "@/pages/individuals";
 import IndividualDetail from "@/pages/individual-detail";
 import HouseholdDetail from "@/pages/household-detail";
@@ -202,6 +203,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/sign-up/*?" component={SignUpPage} />
           
           <Route path="/dashboard"><ProtectedRoute component={Dashboard} /></Route>
+          <Route path="/feed"><ProtectedRoute component={ActivityFeed} /></Route>
           <Route path="/admin/users"><Redirect to="/admin?tab=users" /></Route>
           <Route path="/top-priorities"><ProtectedRoute component={TopPriorities} /></Route>
           

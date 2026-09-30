@@ -38,6 +38,12 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
   mailer-daemon bounces. Its cached `evidence_*` interpretation is hidden as
   soon as a newer matched message or Calendar update arrives, so source-derived
   status remains the fallback.
+- Adding or assigning a person email is a history-changing operation, not only
+  an `emails` insert. Attribute retained Gmail/Calendar rows synchronously,
+  then run an address-scoped source backfill under the Gmail/Calendar advisory
+  locks: promote `email_sync_skip`, rerun matched intelligence, reparse bounce
+  bodies whose failed address is not in headers, and query all Calendar history
+  by exact attendee/organizer address without resetting sync tokens.
 
 - [AI proposal call resilience](wildflower-ai-proposal-resilience.md) — per-proposal Anthropic call must use withRateLimitRetry + shared aiProposalLimit; SDK maxRetries:0; sweep retry phase drains error backlog w/o 24h cooldown.
 - [email-intel AI failure recovery](email-intel-failure-recovery.md) — errored-pending self-heal via analyzePendingForUser retry (cooldown-gated under per-user gmail lock; manual retry resets actionsError+actionsAnalyzedAt); BUT pending+analyzed_at NULL+no-error has NO auto path — only manual owner /retry unsticks ([stuck-analyzing](email-intel-stuck-analyzing.md)).

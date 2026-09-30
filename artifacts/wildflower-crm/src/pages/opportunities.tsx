@@ -23,6 +23,7 @@ import {
   type OpportunityStatus,
   type OpportunityStage,
   type OpportunityType,
+  type IntendedUsage,
   type OpportunityOrPledge,
   type OpportunityOrPledgeDetail,
 } from "@workspace/api-client-react";
@@ -115,6 +116,13 @@ const STAGES: OpportunityStage[] = [
   "complete",
 ];
 const TYPES: OpportunityType[] = ["solicitation", "renewal", "open_application"];
+const PURPOSE_OPTIONS: ReadonlyArray<{ value: IntendedUsage; label: string }> = [
+  { value: "gen_ops", label: "General operations" },
+  { value: "growth", label: "Growth" },
+  { value: "school_startup", label: "School startup" },
+  { value: "teacher_training", label: "Teacher training" },
+  { value: "project", label: "Project" },
+];
 
 const PAGE_SIZE = 50;
 
@@ -413,6 +421,8 @@ export default function Opportunities({
   const [types, setTypes] = usePersistedState<string[]>(`${persistNs}.types`, []);
   const [fiscalYears, setFiscalYears] = usePersistedState<string[]>(`${persistNs}.fiscalYears`, []);
   const [owners, setOwners] = usePersistedState<string[]>(`${persistNs}.owners`, []);
+  const [allocationEntityIds, setAllocationEntityIds] = usePersistedState<string[]>(`${persistNs}.allocationEntityIds`, []);
+  const [intendedUsages, setIntendedUsages] = usePersistedState<IntendedUsage[]>(`${persistNs}.intendedUsages`, []);
   const [paidPresence, setPaidPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.paid`, undefined);
   const [coveredFysPresence, setCoveredFysPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.coveredFys`, undefined);
   const [entitiesPresence, setEntitiesPresence] = usePersistedState<PresenceValue>(`${persistNs}.f.entities`, undefined);
@@ -520,6 +530,12 @@ export default function Opportunities({
     ...(owners.length > 0 ? { ownerUserId: [...owners].sort() } : {}),
     ...(globalEntityIds.length > 0
       ? { entityId: [...globalEntityIds].sort() }
+      : {}),
+    ...(allocationEntityIds.length > 0
+      ? { allocationEntityId: [...allocationEntityIds].sort() }
+      : {}),
+    ...(intendedUsages.length > 0
+      ? { intendedUsage: [...intendedUsages].sort() }
       : {}),
     ...(paidPresence ? { paidPresence } : {}),
     ...(coveredFysPresence ? { coveredFysPresence } : {}),
@@ -753,6 +769,36 @@ export default function Opportunities({
         ),
       },
       {
+        key: "allocationEntity",
+        label: "Entity / fund",
+        active: allocationEntityIds.length > 0,
+        clear: () => { setAllocationEntityIds([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Entity / fund"
+            selected={allocationEntityIds}
+            onChange={(v) => { setAllocationEntityIds(v); setPage(1); selection.clear(); }}
+            options={(entitiesQ.data ?? []).map((entity) => ({ value: entity.id, label: entity.name }))}
+            testId="select-opp-allocation-entity"
+          />
+        ),
+      },
+      {
+        key: "intendedUsage",
+        label: "Purpose",
+        active: intendedUsages.length > 0,
+        clear: () => { setIntendedUsages([]); setPage(1); selection.clear(); },
+        render: () => (
+          <MultiFilterSelect
+            label="Purpose"
+            selected={intendedUsages}
+            onChange={(v) => { setIntendedUsages(v as IntendedUsage[]); setPage(1); selection.clear(); }}
+            options={PURPOSE_OPTIONS}
+            testId="select-opp-intended-usage"
+          />
+        ),
+      },
+      {
         key: "fiscalYear",
         label: "Fiscal year",
         active: fiscalYears.length > 0,
@@ -896,7 +942,7 @@ export default function Opportunities({
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [statuses, stages, types, fiscalYears, owners, fundableProjects, paidPresence, coveredFysPresence, entitiesPresence, projectedCloseDatePresence, applicationDeadlinePresence, winProbabilityPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode],
+    [statuses, stages, types, fiscalYears, owners, allocationEntityIds, intendedUsages, fundableProjects, paidPresence, coveredFysPresence, entitiesPresence, projectedCloseDatePresence, applicationDeadlinePresence, winProbabilityPresence, sameDefaultStatus, defaultStatusArr, isPledgeView, effectiveViewMode, entitiesQ.data],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -958,6 +1004,8 @@ export default function Opportunities({
     (!isPledgeView && types.length > 0) ||
     fiscalYears.length > 0 ||
     owners.length > 0 ||
+    allocationEntityIds.length > 0 ||
+    intendedUsages.length > 0 ||
     !!paidPresence ||
     !!coveredFysPresence ||
     !!entitiesPresence ||
@@ -976,6 +1024,8 @@ export default function Opportunities({
     types: string[];
     fiscalYears: string[];
     owners: string[];
+    allocationEntityIds: string[];
+    intendedUsages: IntendedUsage[];
     paidPresence: PresenceValue;
     coveredFysPresence: PresenceValue;
     entitiesPresence: PresenceValue;
@@ -995,6 +1045,8 @@ export default function Opportunities({
     types: isPledgeView ? [] : types,
     fiscalYears,
     owners,
+    allocationEntityIds,
+    intendedUsages,
     paidPresence,
     coveredFysPresence,
     entitiesPresence,
@@ -1013,6 +1065,8 @@ export default function Opportunities({
     setTypes([]);
     setFiscalYears([]);
     setOwners([]);
+    setAllocationEntityIds([]);
+    setIntendedUsages([]);
     setPaidPresence(undefined);
     setCoveredFysPresence(undefined);
     setEntitiesPresence(undefined);
@@ -1036,6 +1090,8 @@ export default function Opportunities({
       setTypes(isPledgeView ? [] : (s.types ?? []));
       setFiscalYears(s.fiscalYears ?? []);
       setOwners(s.owners ?? []);
+      setAllocationEntityIds(s.allocationEntityIds ?? []);
+      setIntendedUsages(s.intendedUsages ?? []);
       setPaidPresence(s.paidPresence ?? undefined);
       setCoveredFysPresence(s.coveredFysPresence ?? undefined);
       setEntitiesPresence(s.entitiesPresence ?? undefined);
@@ -1059,6 +1115,8 @@ export default function Opportunities({
         (isPledgeView || (s.types?.length ?? 0) === 0) &&
         (s.fiscalYears?.length ?? 0) === 0 &&
         (s.owners?.length ?? 0) === 0 &&
+        (s.allocationEntityIds?.length ?? 0) === 0 &&
+        (s.intendedUsages?.length ?? 0) === 0 &&
         !s.paidPresence &&
         !s.coveredFysPresence &&
         !s.entitiesPresence &&

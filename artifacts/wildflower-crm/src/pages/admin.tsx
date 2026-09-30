@@ -493,9 +493,13 @@ function AdminSyncSection() {
                   <TableCell>
                     {r.connected ? (
                       <span className="text-emerald-700 text-sm">Connected</span>
-                    ) : (
+                    ) : r.revokedAt ? (
                       <span className="text-muted-foreground text-sm">
                         Revoked {fmtTime(r.revokedAt)}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">
+                        Never connected
                       </span>
                     )}
                   </TableCell>

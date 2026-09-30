@@ -5,6 +5,9 @@
  * 2. POST /emails with a personId re-attributes HISTORY: existing
  *    email_messages involving that address (from/to/cc/bcc, any case) get
  *    the person appended to matched_person_ids, exactly once.
+ * 3. Stored Calendar events involving the newly linked address are also
+ *    re-attributed immediately; the background source sweep handles events
+ *    that were previously discarded as unmatched.
  *
  * Mocks only the Clerk auth gate; uses the real DB. Skips with no DATABASE_URL.
  */
@@ -38,6 +41,7 @@ const MSG_FROM = `${RUN}_msg_from`;
 const MSG_TO = `${RUN}_msg_to`;
 const MSG_UNRELATED = `${RUN}_msg_other`;
 const MSG_ALREADY = `${RUN}_msg_already`;
+const CAL_EVENT = `${RUN}_calendar_event`;
 
 describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
   type Db = typeof import("@workspace/db");
@@ -46,6 +50,7 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
   let people: Db["people"];
   let emails: Db["emails"];
   let emailMessages: Db["emailMessages"];
+  let calendarEvents: Db["calendarEvents"];
   let eqFn: (typeof import("drizzle-orm"))["eq"];
   let inArrayFn: (typeof import("drizzle-orm"))["inArray"];
   let server: Server;
@@ -58,6 +63,7 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
     people = dbMod.people;
     emails = dbMod.emails;
     emailMessages = dbMod.emailMessages;
+    calendarEvents = dbMod.calendarEvents;
     ({ eq: eqFn, inArray: inArrayFn } = await import("drizzle-orm"));
 
     await db.insert(users).values({
@@ -111,6 +117,14 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
         matchedPersonIds: [PERSON_ID],
       },
     ]);
+    await db.insert(calendarEvents).values({
+      id: CAL_EVENT,
+      calendarUserId: TEST_USER_ID,
+      gcalCalendarId: "primary",
+      gcalEventId: `${RUN}_gcal_event`,
+      startAt: new Date("2026-01-09T12:00:00Z"),
+      attendeeEmails: [ADDR.toUpperCase()],
+    });
 
     const { default: app } = await import("../app");
     server = await new Promise<Server>((resolve) => {
@@ -133,6 +147,7 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
           MSG_ALREADY,
         ]),
       );
+    await db.delete(calendarEvents).where(eqFn(calendarEvents.id, CAL_EVENT));
     await db.delete(emails).where(eqFn(emails.personId, PERSON_ID));
     await db.delete(people).where(eqFn(people.id, PERSON_ID));
     await db.delete(users).where(eqFn(users.id, TEST_USER_ID));
@@ -183,5 +198,14 @@ describe.skipIf(!HAS_DB)("emails: sender-linking backend", () => {
     expect(byId[MSG_TO]).toEqual([PERSON_ID]); // recipient match, case-insensitive
     expect(byId[MSG_UNRELATED] ?? []).toEqual([]); // untouched
     expect(byId[MSG_ALREADY]).toEqual([PERSON_ID]); // no duplicate append
+  }, 30_000);
+
+  it("POST /emails re-attributes retained Calendar events for the address", async () => {
+    const row = await db
+      .select({ matched: calendarEvents.matchedPersonIds })
+      .from(calendarEvents)
+      .where(eqFn(calendarEvents.id, CAL_EVENT))
+      .then((rows) => rows[0]);
+    expect(row?.matched).toEqual([PERSON_ID]);
   }, 30_000);
 });

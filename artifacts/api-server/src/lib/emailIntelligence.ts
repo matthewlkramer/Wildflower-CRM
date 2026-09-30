@@ -293,10 +293,11 @@ async function handleBounce(args: {
   const parsed = parseBounce(args.subject, args.bodyText, args.bodyHtml);
   if (!parsed) return;
 
-  // Only act on bounces for addresses that exist in our `emails` table
-  // — bouncing on a random one-off recipient isn't actionable. Match by
-  // normalized equality ('%'/'_' in an address are literal text, not ILIKE
-  // wildcards); order by id so the chosen row is deterministic.
+  // Match by normalized equality ('%'/'_' in an address are literal text, not
+  // ILIKE wildcards); order by id so the chosen row is deterministic. Unknown
+  // recipients are still retained as reviewable evidence: if the address is
+  // attached to a CRM person later, the address-link backfill enriches and
+  // re-analyzes this proposal instead of permanently losing the hard bounce.
   const rows = await db
     .select({ id: emails.id, personId: emails.personId })
     .from(emails)
@@ -304,13 +305,12 @@ async function handleBounce(args: {
       eq(sql`lower(${emails.email})`, parsed.recipient.trim().toLowerCase()),
     )
     .orderBy(emails.id);
-  if (rows.length === 0) return;
   // An address belongs to at most one person, though the same address may also
   // sit on an org/household row (personId null). Link the bounce to that person
   // if present; point targetEmailId at their row so the "mark email invalid"
   // action has a target, else fall back to the first matching row.
   const personRow = rows.find((r) => r.personId);
-  const email = personRow ?? rows[0];
+  const email = personRow ?? rows[0] ?? null;
   const targetPersonId = personRow?.personId ?? null;
 
   const kind = parsed.isHard ? "bounce_invalid" : "bounce_soft";
@@ -327,11 +327,11 @@ async function handleBounce(args: {
     mailboxUserId: args.mailboxUserId,
     kind,
     dedupeKey,
-    targetEmailId: email.id,
+    targetEmailId: email?.id ?? null,
     // Link the bounce to the address's owner so the action-proposal step
     // has their CRM context (roles + perId). Without this, reviewer guidance
     // like "mark the role inactive" has no person/role to act on.
-    targetPersonId: email.personId ?? null,
+    targetPersonId: email?.personId ?? null,
     subjectEmail: parsed.recipient,
     subjectDomain: domainOf(parsed.recipient),
     subjectName: null,
@@ -343,7 +343,43 @@ async function handleBounce(args: {
       reason: parsed.reason,
       gmailMessageId: args.gmailMessageId,
     },
+    // An unknown address has no safe CRM mutation yet. Keep the signal in the
+    // queue without spending an AI call; linking the address later resets and
+    // runs action analysis with the person's actual CRM context.
+    ...(email ? {} : { proposedActions: [] }),
   });
+
+  if (email) {
+    const rowsToAnalyze = await db
+      .update(emailProposals)
+      .set({
+        targetEmailId: email.id,
+        targetPersonId: email.personId ?? null,
+        proposedActions: [],
+        actionsAnalyzedAt: null,
+        actionsModel: null,
+        actionsError: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(emailProposals.mailboxUserId, args.mailboxUserId),
+          eq(emailProposals.dedupeKey, dedupeKey),
+          eq(emailProposals.status, "pending"),
+          sql`${emailProposals.actionsAnalyzedAt} is not null`,
+          sql`${emailProposals.targetEmailId} is null`,
+        ),
+      )
+      .returning({ id: emailProposals.id });
+    for (const proposal of rowsToAnalyze) {
+      void proposeActionsForProposal(proposal.id).catch((err) => {
+        logger.warn(
+          { err, proposalId: proposal.id },
+          "Bounce proposal re-analysis threw after address link",
+        );
+      });
+    }
+  }
 }
 
 async function handleGrants(args: {
@@ -586,10 +622,7 @@ async function handleSignature(
   // owner before the proposal is persisted for somebody else.
   const ownerFacts = await loadMailboxOwnerSignatureFacts(args.ownerEmail);
   if (ownerFacts && ownerFacts.personId !== personId) {
-    if (
-      sig.phone &&
-      ownerFacts.phones.has(comparablePhone(sig.phone))
-    ) {
+    if (sig.phone && ownerFacts.phones.has(comparablePhone(sig.phone))) {
       sig.phone = null;
     }
     if (sig.title && sig.company) {
@@ -680,10 +713,14 @@ async function handleSignature(
 
 function comparablePhone(value: string): string {
   const digits = value.replace(/\D/g, "");
-  return digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits;
+  return digits.length === 11 && digits.startsWith("1")
+    ? digits.slice(1)
+    : digits;
 }
 
-async function loadMailboxOwnerSignatureFacts(ownerEmail: string | null): Promise<{
+async function loadMailboxOwnerSignatureFacts(
+  ownerEmail: string | null,
+): Promise<{
   personId: string;
   phones: Set<string>;
   currentRoles: { title: string | null; organizationName: string | null }[];
@@ -709,7 +746,10 @@ async function loadMailboxOwnerSignatureFacts(ownerEmail: string | null): Promis
         organizationName: organizations.name,
       })
       .from(peopleEntityRoles)
-      .leftJoin(organizations, eq(organizations.id, peopleEntityRoles.organizationId))
+      .leftJoin(
+        organizations,
+        eq(organizations.id, peopleEntityRoles.organizationId),
+      )
       .where(
         and(
           eq(peopleEntityRoles.personId, owner.personId),
