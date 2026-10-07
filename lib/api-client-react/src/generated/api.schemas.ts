@@ -10328,6 +10328,13 @@ export const MeetingArtifactKind = {
   voice_dictation: 'voice_dictation',
 } as const;
 
+export type MeetingArtifactSourcePagesItem = {
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
 export interface MeetingArtifact {
   id: string;
   kind: MeetingArtifactKind;
@@ -10337,6 +10344,8 @@ export interface MeetingArtifact {
   sizeBytes: number;
   transcript: string;
   createdAt: string;
+  /** For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients. */
+  sourcePages?: MeetingArtifactSourcePagesItem[];
 }
 
 export interface ProcessMeetingMediaBody {
@@ -10368,9 +10377,9 @@ export interface MeetingNote {
   actionItems?: MeetingActionItem[] | null;
   artifacts?: MeetingArtifact[];
   creatorUserId: string;
-  personId?: string | null;
-  organizationId?: string | null;
-  householdId?: string | null;
+  personIds: string[];
+  organizationIds: string[];
+  householdIds: string[];
   /** Direct pointer to the synced calendar event this note documents. */
   calendarEventId?: string | null;
   createdAt: string;
@@ -10396,7 +10405,7 @@ export interface MeetingNextStepsResult {
 }
 
 /**
- * Exactly one of personId / organizationId / householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process.
+ * At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process.
  */
 export interface CreateMeetingNoteBody {
   /** Raw pasted transcript. Dropped server-side before insert when the caller's email_sync_mode is summary_only. Runs through AI summarization to produce aiSummary + actionItems. */
@@ -10410,9 +10419,9 @@ export interface CreateMeetingNoteBody {
   /** Defaults to now if omitted. */
   meetingDate?: string;
   attendees?: string[];
-  personId?: string;
-  organizationId?: string;
-  householdId?: string;
+  personIds?: string[];
+  organizationIds?: string[];
+  householdIds?: string[];
   calendarEventId?: string;
 }
 
@@ -10424,9 +10433,9 @@ export interface UpdateMeetingNoteBody {
   aiSummary?: string | null;
   actionItems?: MeetingActionItem[] | null;
   artifacts?: MeetingArtifact[];
-  personId?: string | null;
-  organizationId?: string | null;
-  householdId?: string | null;
+  personIds?: string[];
+  organizationIds?: string[];
+  householdIds?: string[];
 }
 
 export interface PromoteActionItemBody {

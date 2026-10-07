@@ -88,6 +88,7 @@ unverified and confirm against code before relying on it.
 - [`trip-planner.md`](trip-planner.md) — **ratified** travel planning,
   visit-list drafting, and Gmail/Calendar-derived outreach and availability
   rules.
+- [`meeting-notes.md`](meeting-notes.md) — **ratified** multi-record meeting-note links, calendar anchoring, and the legacy-contact migration boundary.
 - The current in-app feedback queue keeps reports, captured context, optional
   private screenshots, status, and admin notes. The retired AI proposal and
   handoff design is recorded in [`feedback-proposals.md`](feedback-proposals.md)

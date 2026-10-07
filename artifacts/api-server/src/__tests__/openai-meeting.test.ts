@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { File } from "@google-cloud/storage";
 import {
+  cleanDictatedMeetingNotes,
   draftMeetingFollowUp,
+  generateMeetingTaskProposals,
   ocrHandwrittenNotes,
   transcribeMeetingAudio,
 } from "../lib/openaiMeeting";
@@ -27,10 +29,13 @@ describe("OpenAI meeting helpers", () => {
 
   it("sends a private note image to the Responses API and returns its transcription", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ output_text: "- Call Jordan\n- Send budget" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ output_text: "- Call Jordan\n- Send budget" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -50,10 +55,13 @@ describe("OpenAI meeting helpers", () => {
 
   it("uploads the recording as multipart audio and returns its transcript", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ text: "We agreed to reconnect in October." }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({ text: "We agreed to reconnect in October." }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
 
@@ -68,6 +76,73 @@ describe("OpenAI meeting helpers", () => {
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.openai.com/v1/audio/transcriptions");
     expect(request.body).toBeInstanceOf(FormData);
+  });
+
+  it("cleans dictated notes while retaining their distinct details", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            output_text:
+              "Introduce Robin to Amy Gipps. Send him the Reno loan information.",
+          }),
+          { status: 200 },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      cleanDictatedMeetingNotes(
+        "Um, introduce Robin to Amy. Amy Gipps. Also send the Reno loan info.",
+      ),
+    ).resolves.toBe(
+      "Introduce Robin to Amy Gipps. Send him the Reno loan information.",
+    );
+    expect(
+      String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body),
+    ).toContain("Do not summarize");
+  });
+
+  it("retains the original dictation if cleanup is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    await expect(
+      cleanDictatedMeetingNotes("Original voice note."),
+    ).resolves.toBe("Original voice note.");
+  });
+
+  it("generates validated editable task proposals through the configured OpenAI endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output_text: JSON.stringify({
+            proposals: [
+              {
+                title: "Introduce Robin to Amy Gipps",
+                dueDate: null,
+                description: "Building Hope follow-up",
+              },
+              { title: "", dueDate: null },
+            ],
+          }),
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(
+      generateMeetingTaskProposals(
+        "Robin asked for an introduction to Amy Gipps.",
+      ),
+    ).resolves.toEqual([
+      {
+        title: "Introduce Robin to Amy Gipps",
+        dueDate: null,
+        description: "Building Hope follow-up",
+      },
+    ]);
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[0]).toBe(
+      "https://api.openai.com/v1/responses",
+    );
   });
 
   it("parses a structured follow-up draft without inventing transport behavior", async () => {

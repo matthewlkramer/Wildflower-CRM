@@ -50,12 +50,18 @@ export const ListMeetingNotesResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -79,16 +85,22 @@ export const CreateMeetingNoteBody = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "title": zod.string().optional(),
   "meetingDate": zod.string().datetime({}).optional().describe('Defaults to now if omitted.'),
   "attendees": zod.array(zod.string()).optional(),
-  "personId": zod.string().optional(),
-  "organizationId": zod.string().optional(),
-  "householdId": zod.string().optional(),
+  "personIds": zod.array(zod.string()).optional(),
+  "organizationIds": zod.array(zod.string()).optional(),
+  "householdIds": zod.array(zod.string()).optional(),
   "calendarEventId": zod.string().optional()
-}).describe('Exactly one of personId \/ organizationId \/ householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through \/meeting-media\/process.')
+}).describe('At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through \/meeting-media\/process.')
 
 export const GetMeetingNoteParams = zod.object({
   "id": zod.coerce.string()
@@ -117,12 +129,18 @@ export const GetMeetingNoteResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -152,11 +170,17 @@ export const UpdateMeetingNoteBody = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish()
+  "personIds": zod.array(zod.string()).optional(),
+  "organizationIds": zod.array(zod.string()).optional(),
+  "householdIds": zod.array(zod.string()).optional()
 })
 
 export const UpdateMeetingNoteResponse = zod.object({
@@ -182,12 +206,18 @@ export const UpdateMeetingNoteResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -257,6 +287,12 @@ export const ProcessMeetingMediaResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })
 

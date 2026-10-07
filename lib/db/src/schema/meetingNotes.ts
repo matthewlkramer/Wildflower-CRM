@@ -30,10 +30,10 @@ import { calendarEvents } from "./calendarEvents";
  * to `full` mode. The mirror of the email-sync privacy split — the
  * creator owns the privacy decision and it's irreversible per-record.
  *
- * Contact xor: a meeting note is always about exactly ONE primary
- * contact — a person, a household, or an organization. DB-enforced via
- * the `meeting_notes_contact_xor` CHECK constraint. Routes pre-validate
- * the same invariant to return 400 instead of 500.
+ * Links use the same multi-entity array pattern as free-form notes and
+ * interactions. A calendar event can anchor a note with no CRM match yet.
+ * The old scalar contact columns remain only for migration compatibility;
+ * new writes and reads use the arrays exclusively.
  */
 export const meetingNotes = pgTable(
   "meeting_notes",
@@ -62,18 +62,27 @@ export const meetingNotes = pgTable(
     creatorUserId: text("creator_user_id")
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
-    // FKs are RESTRICT, not SET NULL — the contact_xor CHECK requires
-    // exactly one non-null contact, so an ON DELETE SET NULL would turn
-    // a routine person/org/household delete into a CHECK violation
-    // and refuse the delete (or leave the meeting note in a forbidden
-    // state). Forcing the user to delete the meeting note first keeps
-    // the invariant clean.
+    personIds: text("person_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    organizationIds: text("organization_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    householdIds: text("household_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** @deprecated Migration-only scalar columns; do not read or write. */
     personId: text("person_id").references(() => people.id, {
       onDelete: "restrict",
     }),
+    /** @deprecated Migration-only scalar column; do not read or write. */
     organizationId: text("organization_id").references(() => organizations.id, {
       onDelete: "restrict",
     }),
+    /** @deprecated Migration-only scalar column; do not read or write. */
     householdId: text("household_id").references(() => households.id, {
       onDelete: "restrict",
     }),
@@ -91,6 +100,13 @@ export const meetingNotes = pgTable(
   (t) => [
     index("meeting_notes_creator_user_id_idx").on(t.creatorUserId),
     index("meeting_notes_meeting_date_idx").on(t.meetingDate),
+    index("meeting_notes_person_ids_gin_idx").using("gin", t.personIds),
+    index("meeting_notes_organization_ids_gin_idx").using(
+      "gin",
+      t.organizationIds,
+    ),
+    index("meeting_notes_household_ids_gin_idx").using("gin", t.householdIds),
+    // Retained with the legacy scalar columns until a later cleanup release.
     index("meeting_notes_person_id_idx").on(t.personId),
     index("meeting_notes_organization_id_idx").on(t.organizationId),
     index("meeting_notes_household_id_idx").on(t.householdId),
@@ -98,8 +114,8 @@ export const meetingNotes = pgTable(
       .on(t.calendarEventId)
       .where(sql`${t.calendarEventId} is not null`),
     check(
-      "meeting_notes_contact_xor",
-      sql`num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) = 1`,
+      "meeting_notes_link_or_event",
+      sql`cardinality(${t.personIds}) + cardinality(${t.organizationIds}) + cardinality(${t.householdIds}) > 0 OR ${t.calendarEventId} IS NOT NULL OR num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) > 0`,
     ),
   ],
 );
@@ -133,4 +149,11 @@ export interface MeetingArtifact {
   sizeBytes: number;
   transcript: string;
   createdAt: string;
+  /** Original images for a multi-page handwritten note, in reading order. */
+  sourcePages?: Array<{
+    objectPath: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
 }

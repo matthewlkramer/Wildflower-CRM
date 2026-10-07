@@ -6335,6 +6335,7 @@ paths:
                 schema: { $ref: "#/components/schemas/MeetingNextStepsResult" },
               }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { description: Task proposal generation is unavailable. }
   /meeting-notes/{id}/draft-follow-up:
     post:
       operationId: draftMeetingFollowUp
@@ -27295,6 +27296,17 @@ components:
         sizeBytes: { type: integer }
         transcript: { type: string }
         createdAt: { type: string, format: date-time }
+        sourcePages:
+          type: array
+          description: "For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients."
+          items:
+            type: object
+            required: [objectPath, fileName, mimeType, sizeBytes]
+            properties:
+              objectPath: { type: string }
+              fileName: { type: string }
+              mimeType: { type: string }
+              sizeBytes: { type: integer }
     ProcessMeetingMediaBody:
       type: object
       required: [kind, objectPath, fileName, mimeType, sizeBytes]
@@ -27318,7 +27330,7 @@ components:
     MeetingNote:
       type: object
       required:
-        [id, meetingDate, summaryOnly, creatorUserId, createdAt, updatedAt]
+        [id, meetingDate, summaryOnly, creatorUserId, personIds, organizationIds, householdIds, createdAt, updatedAt]
       properties:
         id: { type: string }
         title: { type: string, nullable: true }
@@ -27345,9 +27357,9 @@ components:
           type: array
           items: { $ref: "#/components/schemas/MeetingArtifact" }
         creatorUserId: { type: string }
-        personId: { type: string, nullable: true }
-        organizationId: { type: string, nullable: true }
-        householdId: { type: string, nullable: true }
+        personIds: { type: array, items: { type: string } }
+        organizationIds: { type: array, items: { type: string } }
+        householdIds: { type: array, items: { type: string } }
         calendarEventId:
           {
             type: string,
@@ -27382,7 +27394,7 @@ components:
           items: { $ref: "#/components/schemas/MeetingNextStepProposal" }
     CreateMeetingNoteBody:
       type: object
-      description: "Exactly one of personId / organizationId / householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process."
+      description: "At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process."
       properties:
         transcript:
           {
@@ -27410,9 +27422,9 @@ components:
             description: "Defaults to now if omitted.",
           }
         attendees: { type: array, items: { type: string } }
-        personId: { type: string }
-        organizationId: { type: string }
-        householdId: { type: string }
+        personIds: { type: array, items: { type: string } }
+        organizationIds: { type: array, items: { type: string } }
+        householdIds: { type: array, items: { type: string } }
         calendarEventId: { type: string }
     UpdateMeetingNoteBody:
       type: object
@@ -27429,9 +27441,9 @@ components:
         artifacts:
           type: array
           items: { $ref: "#/components/schemas/MeetingArtifact" }
-        personId: { type: string, nullable: true }
-        organizationId: { type: string, nullable: true }
-        householdId: { type: string, nullable: true }
+        personIds: { type: array, items: { type: string } }
+        organizationIds: { type: array, items: { type: string } }
+        householdIds: { type: array, items: { type: string } }
     PromoteActionItemBody:
       type: object
       required: [index]
