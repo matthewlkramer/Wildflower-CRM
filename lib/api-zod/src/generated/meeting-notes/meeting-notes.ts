@@ -50,7 +50,13 @@ export const ListMeetingNotesResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
@@ -79,7 +85,13 @@ export const CreateMeetingNoteBody = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "title": zod.string().optional(),
   "meetingDate": zod.string().datetime({}).optional().describe('Defaults to now if omitted.'),
@@ -117,7 +129,13 @@ export const GetMeetingNoteResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
@@ -152,7 +170,13 @@ export const UpdateMeetingNoteBody = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "personId": zod.string().nullish(),
   "organizationId": zod.string().nullish(),
@@ -182,7 +206,13 @@ export const UpdateMeetingNoteResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
   "personId": zod.string().nullish(),
@@ -257,6 +287,12 @@ export const ProcessMeetingMediaResponse = zod.object({
   "mimeType": zod.string(),
   "sizeBytes": zod.number(),
   "transcript": zod.string(),
-  "createdAt": zod.string().datetime({})
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })
 

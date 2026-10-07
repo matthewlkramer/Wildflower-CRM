@@ -130,6 +130,14 @@ export function MeetingNotesPanel(ctx: MeetingContext) {
  */
 export function MeetingNoteRow({ note }: { note: MeetingNote }) {
   const [showTranscript, setShowTranscript] = useState(false);
+  const visibleTranscript = (note.artifacts ?? []).some(
+    (artifact) => artifact.transcript,
+  )
+    ? (note.artifacts ?? [])
+        .filter((artifact) => artifact.transcript)
+        .map((artifact) => `${artifact.fileName}\n${artifact.transcript}`)
+        .join("\n\n")
+    : note.rawTranscript;
   const [editing, setEditing] = useState(false);
   const userMap = useUserNameMap();
   const queryClient = useQueryClient();
@@ -295,20 +303,32 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
           <div className="text-xs font-medium">Source material</div>
           <ul className="space-y-1">
             {note.artifacts.map((artifact) => (
-              <li key={artifact.id} className="flex items-center gap-2 text-xs">
+              <li
+                key={artifact.id}
+                className="flex flex-wrap items-center gap-2 text-xs"
+              >
                 {artifact.kind === "handwritten_notes" ? (
                   <FileImage className="h-3.5 w-3.5" />
                 ) : (
                   <AudioLines className="h-3.5 w-3.5" />
                 )}
-                <a
-                  href={`/api/storage${artifact.objectPath}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-primary hover:underline"
-                >
-                  {artifact.fileName}
-                </a>
+                <span>{artifact.fileName}</span>
+                {(artifact.sourcePages?.length
+                  ? artifact.sourcePages
+                  : [artifact]
+                ).map((page, index) => (
+                  <a
+                    key={`${page.objectPath}-${index}`}
+                    href={`/api/storage${page.objectPath}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary hover:underline"
+                  >
+                    {artifact.sourcePages?.length
+                      ? `Page ${index + 1}`
+                      : "Source file"}
+                  </a>
+                ))}
               </li>
             ))}
           </ul>
@@ -363,7 +383,7 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
           </ul>
         </div>
       ) : null}
-      {note.rawTranscript ? (
+      {visibleTranscript ? (
         <div>
           <button
             type="button"
@@ -380,7 +400,7 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
           </button>
           {showTranscript ? (
             <pre className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground bg-muted/40 rounded p-2 max-h-64 overflow-auto">
-              {note.rawTranscript}
+              {visibleTranscript}
             </pre>
           ) : null}
         </div>

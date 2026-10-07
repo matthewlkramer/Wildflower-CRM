@@ -10328,6 +10328,13 @@ export const MeetingArtifactKind = {
   voice_dictation: 'voice_dictation',
 } as const;
 
+export type MeetingArtifactSourcePagesItem = {
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
 export interface MeetingArtifact {
   id: string;
   kind: MeetingArtifactKind;
@@ -10337,6 +10344,8 @@ export interface MeetingArtifact {
   sizeBytes: number;
   transcript: string;
   createdAt: string;
+  /** For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients. */
+  sourcePages?: MeetingArtifactSourcePagesItem[];
 }
 
 export interface ProcessMeetingMediaBody {

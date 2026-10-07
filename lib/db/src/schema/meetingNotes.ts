@@ -133,4 +133,11 @@ export interface MeetingArtifact {
   sizeBytes: number;
   transcript: string;
   createdAt: string;
+  /** Original images for a multi-page handwritten note, in reading order. */
+  sourcePages?: Array<{
+    objectPath: string;
+    fileName: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>;
 }

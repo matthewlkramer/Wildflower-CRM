@@ -56,6 +56,7 @@ import {
   OrganizationRelationshipSummaryCard,
   PersonRelationshipSummaryCard,
 } from "@/components/relationship-summary-card";
+import { combineMeetingPhotoPages } from "@/lib/meeting-photo-pages";
 
 type ContactKind = "person" | "organization" | "household";
 type ContactRef = { kind: ContactKind; id: string };
@@ -144,10 +145,17 @@ function ContactPreparation({ contact }: { contact: ContactRef | null }) {
     );
   }
   if (contact.kind === "person") {
-    return <PersonRelationshipSummaryCard personId={contact.id} meetingPreparation />;
+    return (
+      <PersonRelationshipSummaryCard personId={contact.id} meetingPreparation />
+    );
   }
   if (contact.kind === "organization") {
-    return <OrganizationRelationshipSummaryCard organizationId={contact.id} meetingPreparation />;
+    return (
+      <OrganizationRelationshipSummaryCard
+        organizationId={contact.id}
+        meetingPreparation
+      />
+    );
   }
   return (
     <p className="text-sm text-muted-foreground">
@@ -213,6 +221,8 @@ export default function MeetingWorkspacePage() {
   });
   const [manualNotes, setManualNotes] = useState("");
   const [artifacts, setArtifacts] = useState<MeetingArtifact[]>([]);
+  const [photoPages, setPhotoPages] = useState<File[]>([]);
+  const [contactRequired, setContactRequired] = useState(false);
   const [selectedContact, setSelectedContact] = useState<ContactRef | null>(
     null,
   );
@@ -230,7 +240,9 @@ export default function MeetingWorkspacePage() {
   const streamsRef = useRef<MediaStream[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const photoLibraryInputRef = useRef<HTMLInputElement | null>(null);
   const startedAtRef = useRef(new Date().toISOString());
+  const draftKey = `wfcrm-meeting-draft:${id}`;
 
   const requestedContact = useMemo<ContactRef | null>(() => {
     if (!isNewMeeting) return null;
@@ -286,7 +298,9 @@ export default function MeetingWorkspacePage() {
 
   useEffect(() => {
     if (note.data) {
-      setManualNotes(note.data.manualNotes ?? "");
+      setManualNotes(
+        sessionStorage.getItem(draftKey) ?? note.data.manualNotes ?? "",
+      );
       setArtifacts(note.data.artifacts ?? []);
       setSelectedContact(
         note.data.personId
@@ -299,6 +313,12 @@ export default function MeetingWorkspacePage() {
       );
     }
   }, [note.data]);
+
+  useEffect(() => {
+    if (!note.data && sessionStorage.getItem(draftKey)) {
+      setManualNotes(sessionStorage.getItem(draftKey) ?? "");
+    }
+  }, [draftKey, note.data]);
 
   useEffect(() => {
     if (!noteId && !selectedContact && contacts.length === 1) {
@@ -357,7 +377,7 @@ export default function MeetingWorkspacePage() {
         ? "Reading handwritten notes…"
         : kind === "voice_dictation"
           ? "Transcribing voice notes…"
-        : "Transcribing recording…",
+          : "Transcribing recording…",
     );
     try {
       const objectPath = await uploadPrivateFile(file);
@@ -377,11 +397,56 @@ export default function MeetingWorkspacePage() {
             ? "Handwritten notes transcribed"
             : kind === "voice_dictation"
               ? "Voice notes transcribed"
-            : "Recording transcribed",
+              : "Recording transcribed",
       });
     } catch (error) {
       toast({
         title: "Source file could not be processed",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingLabel("");
+    }
+  }
+
+  async function processPhotoPages() {
+    if (!photoPages.length) return;
+    if (photoPages.length > 24) {
+      toast({
+        title: "Paper notes can have at most 24 pages",
+        variant: "destructive",
+      });
+      return;
+    }
+    setProcessingLabel(
+      `Reading ${photoPages.length} page${photoPages.length === 1 ? "" : "s"}…`,
+    );
+    try {
+      const processed: MeetingArtifact[] = [];
+      for (const file of photoPages) {
+        const objectPath = await uploadPrivateFile(file);
+        processed.push(
+          await processMedia.mutateAsync({
+            data: {
+              kind: "handwritten_notes",
+              objectPath,
+              fileName: file.name,
+              mimeType: file.type || "image/jpeg",
+              sizeBytes: file.size,
+            },
+          }),
+        );
+      }
+      const combined = combineMeetingPhotoPages(processed);
+      setArtifacts((current) => [...current, combined]);
+      setPhotoPages([]);
+      toast({
+        title: `${processed.length} paper-note page${processed.length === 1 ? "" : "s"} combined into one transcript`,
+      });
+    } catch (error) {
+      toast({
+        title: "Paper notes could not be processed",
         description: error instanceof Error ? error.message : String(error),
         variant: "destructive",
       });
@@ -507,7 +572,15 @@ export default function MeetingWorkspacePage() {
   }
 
   async function saveMeeting() {
-    if (!selectedContact) throw new Error("Choose a primary contact.");
+    if (!selectedContact) {
+      setContactRequired(true);
+      document
+        .getElementById("meeting-primary-contact")
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      throw new Error(
+        "Choose one primary contact in Meeting preparation, then save again. Your typed notes remain here.",
+      );
+    }
     const contact = {
       personId:
         selectedContact.kind === "person" ? selectedContact.id : undefined,
@@ -525,7 +598,12 @@ export default function MeetingWorkspacePage() {
         data: {
           manualNotes: manualNotes.trim() || null,
           artifacts,
-          ...contact,
+          personId:
+            selectedContact.kind === "person" ? selectedContact.id : null,
+          organizationId:
+            selectedContact.kind === "organization" ? selectedContact.id : null,
+          householdId:
+            selectedContact.kind === "household" ? selectedContact.id : null,
         },
       });
     } else {
@@ -564,6 +642,7 @@ export default function MeetingWorkspacePage() {
       }),
     ]);
     toast({ title: "Meeting notes saved" });
+    sessionStorage.removeItem(draftKey);
     return savedId;
   }
 
@@ -625,8 +704,8 @@ export default function MeetingWorkspacePage() {
     );
   }
 
-  const canSave = Boolean(
-    selectedContact && (noteId || manualNotes.trim() || artifacts.length > 0),
+  const hasNotes = Boolean(
+    noteId || manualNotes.trim() || artifacts.length > 0,
   );
   const taskContext = selectedContact
     ? {
@@ -727,7 +806,7 @@ export default function MeetingWorkspacePage() {
               </CardContent>
             </Card>
           )}
-          <Card>
+          <Card id="meeting-primary-contact">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Sparkles className="h-4 w-4 text-primary" /> Meeting
@@ -737,7 +816,13 @@ export default function MeetingWorkspacePage() {
             <CardContent className="space-y-4">
               {contacts.length > 0 ? (
                 <div className="space-y-2">
-                  <Label>Primary contact</Label>
+                  <Label>Primary contact (required to save notes)</Label>
+                  {contactRequired && !selectedContact ? (
+                    <p className="text-sm text-destructive" role="alert">
+                      Select one person, organization, or household here, then
+                      save your notes.
+                    </p>
+                  ) : null}
                   {contacts.map((contact) => (
                     <ContactChoice
                       key={`${contact.kind}-${contact.id}`}
@@ -749,6 +834,7 @@ export default function MeetingWorkspacePage() {
                       onSelect={() => {
                         setManualContact(null);
                         setSelectedContact(contact);
+                        setContactRequired(false);
                       }}
                     />
                   ))}
@@ -767,6 +853,7 @@ export default function MeetingWorkspacePage() {
                     setSelectedContact(
                       contact ? { kind: contact.kind, id: contact.id } : null,
                     );
+                    if (contact) setContactRequired(false);
                   }}
                 />
               </div>
@@ -798,13 +885,17 @@ export default function MeetingWorkspacePage() {
                 <Textarea
                   id="meeting-live-notes"
                   value={manualNotes}
-                  onChange={(item) => setManualNotes(item.target.value)}
+                  onChange={(item) => {
+                    setManualNotes(item.target.value);
+                    sessionStorage.setItem(draftKey, item.target.value);
+                  }}
                   rows={14}
                   placeholder="Take notes while you talk…"
                   data-testid="input-meeting-live-notes"
                 />
                 <p className="text-xs text-muted-foreground">
                   Saved verbatim and kept separate from generated summaries.
+                  Your unsaved typed draft stays in this browser tab.
                 </p>
               </div>
 
@@ -825,7 +916,29 @@ export default function MeetingWorkspacePage() {
                   className="hidden"
                   onChange={(item) => {
                     const file = item.target.files?.[0];
-                    if (file) void processFile(file, "handwritten_notes");
+                    if (file) setPhotoPages((current) => [...current, file]);
+                    item.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => photoLibraryInputRef.current?.click()}
+                  disabled={Boolean(processingLabel)}
+                >
+                  <FileImage className="mr-1 h-4 w-4" /> Choose page images
+                </Button>
+                <input
+                  ref={photoLibraryInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(item) => {
+                    setPhotoPages((current) => [
+                      ...current,
+                      ...Array.from(item.target.files ?? []),
+                    ]);
                     item.target.value = "";
                   }}
                 />
@@ -863,6 +976,40 @@ export default function MeetingWorkspacePage() {
                   </>
                 )}
               </div>
+              {photoPages.length > 0 ? (
+                <div className="space-y-2 rounded-md border p-3">
+                  <p className="text-sm font-medium">
+                    Paper notes: {photoPages.length} page
+                    {photoPages.length === 1 ? "" : "s"} queued in order
+                  </p>
+                  <ol className="list-decimal space-y-1 pl-5 text-sm">
+                    {photoPages.map((file, index) => (
+                      <li key={`${file.name}-${index}`}>
+                        {file.name}{" "}
+                        <button
+                          type="button"
+                          className="text-destructive underline"
+                          onClick={() =>
+                            setPhotoPages((current) =>
+                              current.filter((_, i) => i !== index),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                  <Button
+                    type="button"
+                    disabled={Boolean(processingLabel)}
+                    onClick={() => void processPhotoPages()}
+                  >
+                    Transcribe {photoPages.length} page
+                    {photoPages.length === 1 ? "" : "s"} as one note
+                  </Button>
+                </div>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 Recording asks you to choose the meeting window with system
                 audio and then enables your microphone. The CRM does not join
@@ -885,20 +1032,15 @@ export default function MeetingWorkspacePage() {
                       ) : (
                         <AudioLines className="h-4 w-4 shrink-0" />
                       )}
-                      <a
-                        href={`/api/storage${artifact.objectPath}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="truncate text-sm font-medium text-primary hover:underline"
-                      >
+                      <span className="truncate text-sm font-medium">
                         {artifact.fileName}
-                      </a>
+                      </span>
                       <Badge variant="secondary">
                         {artifact.kind === "handwritten_notes"
                           ? "Photo"
                           : artifact.kind === "voice_dictation"
                             ? "Voice notes"
-                          : "Recording"}
+                            : "Recording"}
                       </Badge>
                     </div>
                     <Button
@@ -915,6 +1057,24 @@ export default function MeetingWorkspacePage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    {(artifact.sourcePages?.length
+                      ? artifact.sourcePages
+                      : [artifact]
+                    ).map((page, pageIndex) => (
+                      <a
+                        key={`${page.objectPath}-${pageIndex}`}
+                        href={`/api/storage${page.objectPath}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-primary underline"
+                      >
+                        {artifact.sourcePages?.length
+                          ? `Source page ${pageIndex + 1}`
+                          : "Source file"}
+                      </a>
+                    ))}
+                  </div>
                   <Label htmlFor={`artifact-transcript-${index}`}>
                     Transcript
                   </Label>
@@ -926,6 +1086,9 @@ export default function MeetingWorkspacePage() {
                     }
                     rows={7}
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Edits here are included when you click Save notes below.
+                  </p>
                 </div>
               ))}
 
@@ -941,7 +1104,12 @@ export default function MeetingWorkspacePage() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!canSave || create.isPending || update.isPending}
+                  disabled={
+                    !hasNotes ||
+                    Boolean(processingLabel) ||
+                    create.isPending ||
+                    update.isPending
+                  }
                   onClick={() => void saveMeetingAndReport()}
                 >
                   <Save className="mr-1 h-4 w-4" /> Save notes
@@ -949,19 +1117,31 @@ export default function MeetingWorkspacePage() {
                 <Button
                   type="button"
                   variant="secondary"
-                  disabled={!canSave || generate.isPending}
+                  disabled={
+                    !hasNotes || Boolean(processingLabel) || generate.isPending
+                  }
                   onClick={() => void saveAndGenerateTasks()}
                 >
                   <Sparkles className="mr-1 h-4 w-4" /> Generate next tasks
                 </Button>
                 <Button
                   type="button"
-                  disabled={!canSave || draftFollowUp.isPending}
+                  disabled={
+                    !hasNotes ||
+                    Boolean(processingLabel) ||
+                    draftFollowUp.isPending
+                  }
                   onClick={() => void openFollowUpDraft()}
                 >
                   <Mail className="mr-1 h-4 w-4" /> Draft follow-up email
                 </Button>
               </div>
+              {!selectedContact && hasNotes ? (
+                <p className="text-right text-sm text-amber-700">
+                  Select one primary contact to save or generate tasks. If you
+                  try now, your notes will remain here.
+                </p>
+              ) : null}
               <p className="text-right text-xs text-muted-foreground">
                 The email opens in your computer’s mail app. You review and send
                 it yourself.

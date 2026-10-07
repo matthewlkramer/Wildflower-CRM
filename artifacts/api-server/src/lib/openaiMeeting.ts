@@ -138,6 +138,79 @@ export async function transcribeMeetingAudio(args: {
   return text.slice(0, 200_000);
 }
 
+export async function cleanDictatedMeetingNotes(
+  transcript: string,
+): Promise<string> {
+  try {
+    const response = await openAIRequest("/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MEETING_TEXT_MODEL ?? DEFAULT_TEXT_MODEL,
+        input: `Edit this dictated meeting note for readability. Remove filler words, false starts, repeated statements, and speech-recognition noise. Keep every distinct fact, name, number, uncertainty, decision, and action item. Preserve the speaker's meaning and first-person perspective. Do not summarize, infer, add facts, or turn it into a different document. Return only the cleaned note.\n\n${transcript.slice(0, 100_000)}`,
+      }),
+    });
+    return outputText(await response.json()) || transcript;
+  } catch (error) {
+    logger.warn(
+      {
+        errClass:
+          error instanceof Error ? error.constructor.name : typeof error,
+      },
+      "dictation cleanup failed; retaining original transcription",
+    );
+    return transcript;
+  }
+}
+
+export interface MeetingTaskProposal {
+  title: string;
+  dueDate: string | null;
+  description: string | null;
+}
+
+export async function generateMeetingTaskProposals(
+  noteText: string,
+): Promise<MeetingTaskProposal[]> {
+  if (!noteText.trim()) return [];
+  const response = await openAIRequest("/responses", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.OPENAI_MEETING_TEXT_MODEL ?? DEFAULT_TEXT_MODEL,
+      input: `Turn this saved fundraising CRM meeting note into concrete task proposals. Return strict JSON only: {"proposals":[{"title":"imperative task, max 160 chars","dueDate":"YYYY-MM-DD or null","description":"brief useful context"}]}. Only propose work explicitly supported by the note. Do not invent commitments. Return at most 12 proposals.\n\nSaved meeting note:\n${noteText.slice(0, 60_000)}`,
+    }),
+  });
+  const parsed = parseJsonObject(outputText(await response.json()));
+  if (!Array.isArray(parsed.proposals)) {
+    throw new Error(
+      "The task generator returned an invalid response. Please try again.",
+    );
+  }
+  return parsed.proposals
+    .slice(0, 12)
+    .flatMap((item): MeetingTaskProposal[] => {
+      if (!item || typeof item !== "object") return [];
+      const value = item as Record<string, unknown>;
+      const title = typeof value.title === "string" ? value.title.trim() : "";
+      if (!title) return [];
+      return [
+        {
+          title: title.slice(0, 160),
+          dueDate:
+            typeof value.dueDate === "string" &&
+            /^\d{4}-\d{2}-\d{2}$/.test(value.dueDate)
+              ? value.dueDate
+              : null,
+          description:
+            typeof value.description === "string"
+              ? value.description.trim().slice(0, 1000)
+              : null,
+        },
+      ];
+    });
+}
+
 function parseJsonObject(raw: string): Record<string, unknown> {
   const cleaned = raw
     .trim()

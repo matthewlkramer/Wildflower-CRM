@@ -33,11 +33,12 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { summarizeMeeting } from "../lib/summarizeMeeting";
-import { generateMeetingNextSteps } from "../lib/generateMeetingNextSteps";
 import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
 import { ObjectStorageService } from "../lib/objectStorage";
 import {
   draftMeetingFollowUp,
+  cleanDictatedMeetingNotes,
+  generateMeetingTaskProposals,
   ocrHandwrittenNotes,
   transcribeMeetingAudio,
 } from "../lib/openaiMeeting";
@@ -50,10 +51,31 @@ async function validateMeetingArtifacts(artifacts: MeetingArtifact[]) {
   if (artifacts.length > 12)
     throw new Error("A meeting can have at most 12 source files.");
   for (const artifact of artifacts) {
-    if (!artifact.objectPath.startsWith("/objects/uploads/")) {
-      throw new Error("Meeting source files must use private object storage.");
+    if (
+      artifact.sourcePages?.length &&
+      (artifact.kind !== "handwritten_notes" ||
+        artifact.sourcePages[0].objectPath !== artifact.objectPath ||
+        artifact.sourcePages.some(
+          (page) => !page.mimeType.startsWith("image/"),
+        ))
+    ) {
+      throw new Error(
+        "Paper-note pages must be images and begin with the linked source file.",
+      );
     }
-    await objectStorage.getObjectEntityFile(artifact.objectPath);
+    const pages = artifact.sourcePages?.length
+      ? artifact.sourcePages
+      : [{ objectPath: artifact.objectPath }];
+    if (pages.length > 24)
+      throw new Error("Paper notes can have at most 24 pages.");
+    for (const page of pages) {
+      if (!page.objectPath.startsWith("/objects/uploads/")) {
+        throw new Error(
+          "Meeting source files must use private object storage.",
+        );
+      }
+      await objectStorage.getObjectEntityFile(page.objectPath);
+    }
   }
 }
 
@@ -491,8 +513,13 @@ router.post(
     const savedText = [
       note.title ? `Title: ${note.title}` : "",
       note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
-      note.aiSummary ? `Summary:\n${note.aiSummary}` : "",
-      note.rawTranscript ? `Transcript:\n${note.rawTranscript}` : "",
+      note.aiSummary && !sourceArtifacts.some((artifact) => artifact.transcript)
+        ? `Summary:\n${note.aiSummary}`
+        : "",
+      note.rawTranscript &&
+      !sourceArtifacts.some((artifact) => artifact.transcript)
+        ? `Transcript:\n${note.rawTranscript}`
+        : "",
       ...sourceArtifacts.map((artifact) =>
         artifact.transcript
           ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript}`
@@ -504,7 +531,19 @@ router.post(
     ]
       .filter(Boolean)
       .join("\n\n");
-    const proposals = await generateMeetingNextSteps(savedText);
+    let proposals;
+    try {
+      proposals = await generateMeetingTaskProposals(savedText);
+    } catch (error) {
+      res.status(503).json({
+        error: "openai_unavailable",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Task suggestions are unavailable.",
+      });
+      return;
+    }
     const today = new Date().toISOString().slice(0, 10);
     const user = getAppUser(req);
     res.json({
@@ -592,7 +631,7 @@ router.post(
     }
     try {
       const file = await objectStorage.getObjectEntityFile(body.objectPath);
-      const transcript =
+      const rawTranscript =
         body.kind === "handwritten_notes"
           ? await ocrHandwrittenNotes({
               file,
@@ -605,6 +644,10 @@ router.post(
               mimeType: body.mimeType,
               sizeBytes: body.sizeBytes,
             });
+      const transcript =
+        body.kind === "voice_dictation"
+          ? await cleanDictatedMeetingNotes(rawTranscript)
+          : rawTranscript;
       const artifact: MeetingArtifact = {
         id: newId(),
         kind: body.kind,

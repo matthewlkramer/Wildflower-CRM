@@ -6335,6 +6335,7 @@ paths:
                 schema: { $ref: "#/components/schemas/MeetingNextStepsResult" },
               }
         "404": { $ref: "#/components/responses/NotFound" }
+        "503": { description: Task proposal generation is unavailable. }
   /meeting-notes/{id}/draft-follow-up:
     post:
       operationId: draftMeetingFollowUp
@@ -27295,6 +27296,17 @@ components:
         sizeBytes: { type: integer }
         transcript: { type: string }
         createdAt: { type: string, format: date-time }
+        sourcePages:
+          type: array
+          description: "For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients."
+          items:
+            type: object
+            required: [objectPath, fileName, mimeType, sizeBytes]
+            properties:
+              objectPath: { type: string }
+              fileName: { type: string }
+              mimeType: { type: string }
+              sizeBytes: { type: integer }
     ProcessMeetingMediaBody:
       type: object
       required: [kind, objectPath, fileName, mimeType, sizeBytes]
