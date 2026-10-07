@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import {
   useGetDashboardSummary,
+  useGetCurrentUser,
   getGetDashboardSummaryQueryKey,
   type FiscalYearMetrics,
   type DashboardWorklists,
@@ -17,8 +18,18 @@ import UpcomingMeetingsCard from "@/components/upcoming-meetings-card";
 import { DashboardPrioritiesCard } from "@/components/dashboard-priorities-card";
 import { DashboardTasksCard } from "@/components/dashboard-tasks-card";
 import { useEntityFilter } from "@/lib/entity-filter-context";
+import {
+  DashboardCardSettings,
+  useDashboardCards,
+} from "@/components/dashboard-card-settings";
+import {
+  PastMeetingFollowUpsCard,
+  GiftThankYousCard,
+} from "@/components/dashboard-follow-ups";
 
 export default function Dashboard() {
+  const { data: currentUser } = useGetCurrentUser();
+  const { hidden, toggle } = useDashboardCards(currentUser?.id);
   // Entity filter is global now (lives in the header on every page) — read
   // it from context instead of the URL. The "Apply now" button on Settings
   // and the header dropdown are the two write points.
@@ -264,80 +275,91 @@ export default function Dashboard() {
         </div>
       ) : null}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-4">
-            <CardTitle className="text-lg">Progress to goal</CardTitle>
-            <div
-              className="flex items-center gap-2 text-sm"
-              data-testid="dashboard-track-toggle"
-            >
-              <span
-                className={cn(
-                  selectedTrack === "revenue"
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground",
-                )}
+      <DashboardCardSettings
+        userId={currentUser?.id}
+        hidden={hidden}
+        toggle={toggle}
+      />
+
+      {!hidden.includes("goals") && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between gap-4">
+              <CardTitle className="text-lg">Progress to goal</CardTitle>
+              <div
+                className="flex items-center gap-2 text-sm"
+                data-testid="dashboard-track-toggle"
               >
-                Grants
-              </span>
-              <Switch
-                checked={selectedTrack === "loanCapital"}
-                onCheckedChange={(checked) =>
-                  setSelectedTrack(checked ? "loanCapital" : "revenue")
-                }
-                aria-label="Switch between regular fundraising and loans"
-                data-testid="dashboard-track-switch"
-              />
-              <span
-                className={cn(
-                  selectedTrack === "loanCapital"
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
-                Loans
-              </span>
+                <span
+                  className={cn(
+                    selectedTrack === "revenue"
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  Grants
+                </span>
+                <Switch
+                  checked={selectedTrack === "loanCapital"}
+                  onCheckedChange={(checked) =>
+                    setSelectedTrack(checked ? "loanCapital" : "revenue")
+                  }
+                  aria-label="Switch between regular fundraising and loans"
+                  data-testid="dashboard-track-switch"
+                />
+                <span
+                  className={cn(
+                    selectedTrack === "loanCapital"
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground",
+                  )}
+                >
+                  Loans
+                </span>
+              </div>
             </div>
-          </div>
-          {multiEntityFilterActive ? (
-            <p className="text-xs text-muted-foreground">
-              Showing the combined total across {selectedEntityIds.length}{" "}
-              entities (change in the header). Click a segment to see the
-              records behind it.
-            </p>
-          ) : entityFilterActive ? (
-            <p className="text-xs text-muted-foreground">
-              Filtered to 1 entity (change in the header).
-            </p>
-          ) : null}
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {byFy.length === 0 ? (
-            isLoading ? (
-              <DashboardGoalBarSkeleton />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No fiscal-year data available.
+            {multiEntityFilterActive ? (
+              <p className="text-xs text-muted-foreground">
+                Showing the combined total across {selectedEntityIds.length}{" "}
+                entities (change in the header). Click a segment to see the
+                records behind it.
               </p>
-            )
-          ) : (
-            byFy.map((m) => renderGoalBar(m))
-          )}
-        </CardContent>
-      </Card>
+            ) : entityFilterActive ? (
+              <p className="text-xs text-muted-foreground">
+                Filtered to 1 entity (change in the header).
+              </p>
+            ) : null}
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {byFy.length === 0 ? (
+              isLoading ? (
+                <DashboardGoalBarSkeleton />
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No fiscal-year data available.
+                </p>
+              )
+            ) : (
+              byFy.map((m) => renderGoalBar(m))
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {!hidden.includes("cleanup") && (
+        <WorklistsCard worklists={data?.worklists} isLoading={isLoading} />
+      )}
 
-      <WorklistsCard worklists={data?.worklists} isLoading={isLoading} />
+      {!hidden.includes("upcoming") && <UpcomingMeetingsCard />}
+      {!hidden.includes("past") && <PastMeetingFollowUpsCard />}
+      {!hidden.includes("thanks") && <GiftThankYousCard />}
 
-      <UpcomingMeetingsCard />
+      {!hidden.includes("priorities") && <DashboardPrioritiesCard />}
 
-      <DashboardPrioritiesCard />
-
-      <DashboardTasksCard />
+      {!hidden.includes("tasks") && <DashboardTasksCard />}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <EmailProposalsCard />
-        <GrantLeadsCard />
+        {!hidden.includes("email") && <EmailProposalsCard />}
+        {!hidden.includes("grants") && <GrantLeadsCard />}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -470,7 +492,7 @@ function WorklistsCard({
   return (
     <Card data-testid="card-worklists">
       <CardHeader>
-        <CardTitle className="text-lg">Worklists</CardTitle>
+        <CardTitle className="text-lg">Data cleanup and integrity</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

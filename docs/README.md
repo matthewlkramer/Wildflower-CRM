@@ -70,6 +70,8 @@ unverified and confirm against code before relying on it.
 
 ## Other canonical documents
 
+- [`dashboard.md`](dashboard.md) — personal card visibility and meeting/thank-you follow-up cards.
+
 - [`user-management.md`](user-management.md) — admin user directory, Google
   first-sign-in adoption, roles, and deactivation/restoration boundaries.
 
