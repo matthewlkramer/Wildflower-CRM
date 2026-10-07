@@ -229,42 +229,44 @@ export const CreateGiftOrPaymentBodyRefined =
     },
   );
 
-/**
- * Meeting-notes contact-xor: exactly one of personId / funderId / householdId
- * must be set. Mirrors the `meeting_notes_contact_xor` DB CHECK so the API
- * returns 400 instead of 500. PATCH routes must validate against MERGED
- * post-update state (un-refined `UpdateMeetingNoteBody` from generated/api).
- */
-export const MEETING_CONTACT_XOR_MESSAGE =
-  "Exactly one of personId, organizationId, or householdId must be set (contact XOR).";
+/** Mirrors meeting_notes_link_or_event for CREATE and merged PATCH state. */
+export const MEETING_LINK_MESSAGE =
+  "Link at least one CRM record or a calendar event to this meeting note.";
 
-export interface MeetingContactState {
-  personId?: string | null;
-  organizationId?: string | null;
-  householdId?: string | null;
+export interface MeetingLinkState {
+  personIds?: string[];
+  organizationIds?: string[];
+  householdIds?: string[];
+  calendarEventId?: string | null;
 }
 
-function meetingContactCount(s: MeetingContactState): number {
-  return (
-    (s.personId != null ? 1 : 0) +
-    (s.organizationId != null ? 1 : 0) +
-    (s.householdId != null ? 1 : 0)
-  );
-}
-
-export function validateMeetingContactInvariants(
-  state: MeetingContactState,
+export function validateMeetingLinkInvariants(
+  state: MeetingLinkState,
 ): InvariantIssue[] {
   const issues: InvariantIssue[] = [];
-  if (meetingContactCount(state) !== 1) {
-    issues.push({ path: "personId", message: MEETING_CONTACT_XOR_MESSAGE });
+  const links = [
+    state.personIds ?? [],
+    state.organizationIds ?? [],
+    state.householdIds ?? [],
+  ];
+  if (!state.calendarEventId && links.every((ids) => ids.length === 0)) {
+    issues.push({ path: "personIds", message: MEETING_LINK_MESSAGE });
+  }
+  for (const [index, ids] of links.entries()) {
+    if (ids.some((id) => !id.trim()) || new Set(ids).size !== ids.length) {
+      issues.push({
+        path: ["personIds", "organizationIds", "householdIds"][index],
+        message:
+          "Meeting links must be nonempty and unique within each entity type.",
+      });
+    }
   }
   return issues;
 }
 
 export const CreateMeetingNoteBodyRefined = CreateMeetingNoteBody.superRefine(
   (b: z.infer<typeof CreateMeetingNoteBody>, ctx) => {
-    issuesToZodCtx(validateMeetingContactInvariants(b), ctx);
+    issuesToZodCtx(validateMeetingLinkInvariants(b), ctx);
     // `summary` is the legacy hand-note path and remains mutually exclusive
     // with transcript/manualNotes. The meeting workspace may combine typed
     // notes with one or more processed source transcripts.

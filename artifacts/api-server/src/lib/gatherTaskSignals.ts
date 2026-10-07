@@ -165,7 +165,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
           summary: meetingNotes.aiSummary,
         })
         .from(meetingNotes)
-        .where(eq(meetingNotes.personId, personId))
+        .where(sql`${meetingNotes.personIds} @> ARRAY[${personId}]::text[]`)
         .orderBy(desc(meetingNotes.meetingDate))
         .limit(2),
       db
@@ -317,7 +317,7 @@ async function gatherOrganizationSignals(
           summary: meetingNotes.aiSummary,
         })
         .from(meetingNotes)
-        .where(eq(meetingNotes.organizationId, organizationId))
+        .where(sql`${meetingNotes.organizationIds} @> ARRAY[${organizationId}]::text[]`)
         .orderBy(desc(meetingNotes.meetingDate))
         .limit(2),
       db

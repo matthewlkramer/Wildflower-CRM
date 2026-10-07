@@ -42,6 +42,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
@@ -57,9 +58,14 @@ import {
   PersonRelationshipSummaryCard,
 } from "@/components/relationship-summary-card";
 import { combineMeetingPhotoPages } from "@/lib/meeting-photo-pages";
+import {
+  meetingLinkIds,
+  meetingLinksFromIds,
+  uniqueMeetingLinks,
+  type MeetingLink,
+} from "@/lib/meeting-links";
 
-type ContactKind = "person" | "organization" | "household";
-type ContactRef = { kind: ContactKind; id: string };
+type ContactRef = MeetingLink;
 
 function formatMeetingTime(startAt: string, endAt?: string | null) {
   const start = new Date(startAt);
@@ -73,12 +79,16 @@ function formatMeetingTime(startAt: string, endAt?: string | null) {
 
 function ContactChoice({
   contact,
-  selected,
-  onSelect,
+  linked,
+  focused,
+  onToggle,
+  onFocus,
 }: {
   contact: ContactRef;
-  selected: boolean;
-  onSelect: () => void;
+  linked: boolean;
+  focused: boolean;
+  onToggle: () => void;
+  onFocus: () => void;
 }) {
   const person = useGetPerson(contact.kind === "person" ? contact.id : "", {
     query: {
@@ -120,19 +130,29 @@ function ContactChoice({
         ? organization.data?.name
         : household.data?.name;
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full rounded-md border px-3 py-2 text-left text-sm ${
-        selected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
-      }`}
-      aria-pressed={selected}
+    <div
+      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${linked ? "border-primary bg-primary/5" : ""}`}
     >
-      <span className="font-medium">{name || "Loading contact…"}</span>
-      <span className="ml-2 text-xs capitalize text-muted-foreground">
-        {contact.kind}
-      </span>
-    </button>
+      <Checkbox
+        checked={linked}
+        onCheckedChange={onToggle}
+        aria-label={`${linked ? "Unlink" : "Link"} ${name || contact.id}`}
+      />
+      <button
+        type="button"
+        onClick={onFocus}
+        className="min-w-0 flex-1 text-left hover:underline"
+        aria-pressed={focused}
+      >
+        <span className="font-medium">{name || "Loading contact…"}</span>
+        <span className="ml-2 text-xs capitalize text-muted-foreground">
+          {contact.kind}
+        </span>
+      </button>
+      {focused ? (
+        <span className="text-xs text-muted-foreground">Briefing</span>
+      ) : null}
+    </div>
   );
 }
 
@@ -140,7 +160,7 @@ function ContactPreparation({ contact }: { contact: ContactRef | null }) {
   if (!contact) {
     return (
       <p className="text-sm text-muted-foreground">
-        Choose the primary contact to load the relationship briefing.
+        Select a record to view its relationship briefing.
       </p>
     );
   }
@@ -222,7 +242,7 @@ export default function MeetingWorkspacePage() {
   const [manualNotes, setManualNotes] = useState("");
   const [artifacts, setArtifacts] = useState<MeetingArtifact[]>([]);
   const [photoPages, setPhotoPages] = useState<File[]>([]);
-  const [contactRequired, setContactRequired] = useState(false);
+  const [linkedContacts, setLinkedContacts] = useState<ContactRef[]>([]);
   const [selectedContact, setSelectedContact] = useState<ContactRef | null>(
     null,
   );
@@ -241,6 +261,7 @@ export default function MeetingWorkspacePage() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const photoLibraryInputRef = useRef<HTMLInputElement | null>(null);
+  const initializedLinksForRef = useRef<string | null>(null);
   const startedAtRef = useRef(new Date().toISOString());
   const draftKey = `wfcrm-meeting-draft:${id}`;
 
@@ -276,14 +297,11 @@ export default function MeetingWorkspacePage() {
           })),
         ]
       : [];
-    const noteContact: ContactRef | null = note.data?.personId
-      ? { kind: "person", id: note.data.personId }
-      : note.data?.organizationId
-        ? { kind: "organization", id: note.data.organizationId }
-        : note.data?.householdId
-          ? { kind: "household", id: note.data.householdId }
-          : null;
-    for (const contact of [noteContact, requestedContact]) {
+    for (const contact of [
+      ...meetingLinksFromIds(note.data ?? {}),
+      ...linkedContacts,
+      requestedContact,
+    ]) {
       if (
         contact &&
         !linked.some(
@@ -294,7 +312,7 @@ export default function MeetingWorkspacePage() {
       }
     }
     return linked;
-  }, [event.data, note.data, requestedContact]);
+  }, [event.data, note.data, linkedContacts, requestedContact]);
 
   useEffect(() => {
     if (note.data) {
@@ -302,15 +320,9 @@ export default function MeetingWorkspacePage() {
         sessionStorage.getItem(draftKey) ?? note.data.manualNotes ?? "",
       );
       setArtifacts(note.data.artifacts ?? []);
-      setSelectedContact(
-        note.data.personId
-          ? { kind: "person", id: note.data.personId }
-          : note.data.organizationId
-            ? { kind: "organization", id: note.data.organizationId }
-            : note.data.householdId
-              ? { kind: "household", id: note.data.householdId }
-              : null,
-      );
+      const links = meetingLinksFromIds(note.data);
+      setLinkedContacts(links);
+      setSelectedContact(links[0] ?? null);
     }
   }, [note.data]);
 
@@ -321,16 +333,16 @@ export default function MeetingWorkspacePage() {
   }, [draftKey, note.data]);
 
   useEffect(() => {
-    if (!noteId && !selectedContact && contacts.length === 1) {
+    if (
+      !noteId &&
+      contacts.length > 0 &&
+      initializedLinksForRef.current !== id
+    ) {
+      setLinkedContacts(contacts);
       setSelectedContact(contacts[0]);
+      initializedLinksForRef.current = id;
     }
-  }, [contacts, noteId, selectedContact]);
-
-  useEffect(() => {
-    if (isNewMeeting && requestedContact && !selectedContact) {
-      setSelectedContact(requestedContact);
-    }
-  }, [isNewMeeting, requestedContact, selectedContact]);
+  }, [contacts, noteId, id]);
 
   useEffect(
     () => () => {
@@ -572,25 +584,16 @@ export default function MeetingWorkspacePage() {
   }
 
   async function saveMeeting() {
-    if (!selectedContact) {
-      setContactRequired(true);
-      document
-        .getElementById("meeting-primary-contact")
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const links = meetingLinkIds(linkedContacts);
+    if (
+      !event.data?.id &&
+      !note.data?.calendarEventId &&
+      linkedContacts.length === 0
+    ) {
       throw new Error(
-        "Choose one primary contact in Meeting preparation, then save again. Your typed notes remain here.",
+        "Link at least one CRM record to a meeting without a calendar event. Your typed notes remain here.",
       );
     }
-    const contact = {
-      personId:
-        selectedContact.kind === "person" ? selectedContact.id : undefined,
-      organizationId:
-        selectedContact.kind === "organization"
-          ? selectedContact.id
-          : undefined,
-      householdId:
-        selectedContact.kind === "household" ? selectedContact.id : undefined,
-    };
     let savedId = noteId;
     if (savedId) {
       await update.mutateAsync({
@@ -598,12 +601,7 @@ export default function MeetingWorkspacePage() {
         data: {
           manualNotes: manualNotes.trim() || null,
           artifacts,
-          personId:
-            selectedContact.kind === "person" ? selectedContact.id : null,
-          organizationId:
-            selectedContact.kind === "organization" ? selectedContact.id : null,
-          householdId:
-            selectedContact.kind === "household" ? selectedContact.id : null,
+          ...links,
         },
       });
     } else {
@@ -623,7 +621,7 @@ export default function MeetingWorkspacePage() {
           calendarEventId: event.data?.id,
           manualNotes: manualNotes.trim() || undefined,
           artifacts: artifacts.length ? artifacts : undefined,
-          ...contact,
+          ...links,
         },
       });
       savedId = saved.id;
@@ -707,18 +705,7 @@ export default function MeetingWorkspacePage() {
   const hasNotes = Boolean(
     noteId || manualNotes.trim() || artifacts.length > 0,
   );
-  const taskContext = selectedContact
-    ? {
-        personId:
-          selectedContact.kind === "person" ? selectedContact.id : undefined,
-        organizationId:
-          selectedContact.kind === "organization"
-            ? selectedContact.id
-            : undefined,
-        householdId:
-          selectedContact.kind === "household" ? selectedContact.id : undefined,
-      }
-    : {};
+  const taskContext = { defaultLinks: meetingLinkIds(linkedContacts) };
   const meetingTitle =
     event.data?.summary?.trim() ||
     note.data?.title?.trim() ||
@@ -806,7 +793,7 @@ export default function MeetingWorkspacePage() {
               </CardContent>
             </Card>
           )}
-          <Card id="meeting-primary-contact">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Sparkles className="h-4 w-4 text-primary" /> Meeting
@@ -816,44 +803,57 @@ export default function MeetingWorkspacePage() {
             <CardContent className="space-y-4">
               {contacts.length > 0 ? (
                 <div className="space-y-2">
-                  <Label>Primary contact (required to save notes)</Label>
-                  {contactRequired && !selectedContact ? (
-                    <p className="text-sm text-destructive" role="alert">
-                      Select one person, organization, or household here, then
-                      save your notes.
-                    </p>
-                  ) : null}
+                  <Label>Linked CRM records</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Matched records are linked by default. Uncheck any that do
+                    not belong to this meeting; select a name to view its
+                    briefing.
+                  </p>
                   {contacts.map((contact) => (
                     <ContactChoice
                       key={`${contact.kind}-${contact.id}`}
                       contact={contact}
-                      selected={
+                      linked={linkedContacts.some(
+                        (item) =>
+                          item.kind === contact.kind && item.id === contact.id,
+                      )}
+                      focused={
                         selectedContact?.kind === contact.kind &&
                         selectedContact.id === contact.id
                       }
-                      onSelect={() => {
-                        setManualContact(null);
-                        setSelectedContact(contact);
-                        setContactRequired(false);
-                      }}
+                      onToggle={() =>
+                        setLinkedContacts((current) =>
+                          current.some(
+                            (item) =>
+                              item.kind === contact.kind &&
+                              item.id === contact.id,
+                          )
+                            ? current.filter(
+                                (item) =>
+                                  item.kind !== contact.kind ||
+                                  item.id !== contact.id,
+                              )
+                            : uniqueMeetingLinks([...current, contact]),
+                        )
+                      }
+                      onFocus={() => setSelectedContact(contact)}
                     />
                   ))}
                 </div>
               ) : null}
               <div className="space-y-2">
-                <Label>
-                  {contacts.length > 0
-                    ? "Or link another CRM contact"
-                    : "Primary contact"}
-                </Label>
+                <Label>Add another CRM record</Label>
                 <ContactPicker
                   value={manualContact}
                   onChange={(contact) => {
                     setManualContact(contact);
-                    setSelectedContact(
-                      contact ? { kind: contact.kind, id: contact.id } : null,
-                    );
-                    if (contact) setContactRequired(false);
+                    if (contact) {
+                      const link = { kind: contact.kind, id: contact.id };
+                      setLinkedContacts((current) =>
+                        uniqueMeetingLinks([...current, link]),
+                      );
+                      setSelectedContact(link);
+                    }
                   }}
                 />
               </div>
@@ -1095,11 +1095,7 @@ export default function MeetingWorkspacePage() {
               <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
                 <AddTaskDialog
                   ctx={taskContext}
-                  trigger={
-                    <Button variant="outline" disabled={!selectedContact}>
-                      Add task by hand
-                    </Button>
-                  }
+                  trigger={<Button variant="outline">Add task by hand</Button>}
                 />
                 <Button
                   type="button"
@@ -1136,10 +1132,11 @@ export default function MeetingWorkspacePage() {
                   <Mail className="mr-1 h-4 w-4" /> Draft follow-up email
                 </Button>
               </div>
-              {!selectedContact && hasNotes ? (
+              {linkedContacts.length === 0 && hasNotes ? (
                 <p className="text-right text-sm text-amber-700">
-                  Select one primary contact to save or generate tasks. If you
-                  try now, your notes will remain here.
+                  {event.data?.id || note.data?.calendarEventId
+                    ? "This note will be linked to the calendar meeting; you can add CRM records above."
+                    : "Link at least one CRM record above before saving this standalone meeting note."}
                 </p>
               ) : null}
               <p className="text-right text-xs text-muted-foreground">
@@ -1177,14 +1174,15 @@ export default function MeetingWorkspacePage() {
                   description: proposal.description ?? undefined,
                   dueDate: proposal.dueDate ?? undefined,
                   assigneeUserId: proposal.assigneeUserId ?? undefined,
-                  personIds: taskContext.personId
-                    ? [taskContext.personId]
+                  personIds: taskContext.defaultLinks.personIds.length
+                    ? taskContext.defaultLinks.personIds
                     : undefined,
-                  organizationIds: taskContext.organizationId
-                    ? [taskContext.organizationId]
+                  organizationIds: taskContext.defaultLinks.organizationIds
+                    .length
+                    ? taskContext.defaultLinks.organizationIds
                     : undefined,
-                  householdIds: taskContext.householdId
-                    ? [taskContext.householdId]
+                  householdIds: taskContext.defaultLinks.householdIds.length
+                    ? taskContext.defaultLinks.householdIds
                     : undefined,
                 },
               }),

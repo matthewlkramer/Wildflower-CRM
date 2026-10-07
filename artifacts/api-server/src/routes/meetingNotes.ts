@@ -10,6 +10,7 @@ import type {
   MeetingActionItem,
   MeetingArtifact,
   MeetingArtifactKind,
+  MeetingNote,
 } from "@workspace/db/schema";
 import { and, desc, count, eq, or, sql, type SQL } from "drizzle-orm";
 import {
@@ -18,8 +19,8 @@ import {
   UpdateMeetingNoteBody,
   PromoteMeetingActionItemBody,
   ProcessMeetingMediaBody,
-  validateMeetingContactInvariants,
-  MEETING_CONTACT_XOR_MESSAGE,
+  validateMeetingLinkInvariants,
+  MEETING_LINK_MESSAGE,
 } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -33,7 +34,7 @@ import {
   parsePagination,
 } from "../lib/helpers";
 import { summarizeMeeting } from "../lib/summarizeMeeting";
-import { organizationActivityScalarScope } from "../lib/organizationActivityScope";
+import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 import { ObjectStorageService } from "../lib/objectStorage";
 import {
   draftMeetingFollowUp,
@@ -46,6 +47,17 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 const objectStorage = new ObjectStorageService();
+
+function meetingNoteResponse(row: MeetingNote) {
+  // Legacy scalar columns are retained only to backfill old-app writes.
+  const {
+    personId: _personId,
+    organizationId: _organizationId,
+    householdId: _householdId,
+    ...publicNote
+  } = row;
+  return publicNote;
+}
 
 async function validateMeetingArtifacts(artifacts: MeetingArtifact[]) {
   if (artifacts.length > 12)
@@ -92,20 +104,25 @@ router.get(
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [];
-    if (q.personId) filters.push(eq(meetingNotes.personId, q.personId));
+    if (q.personId)
+      filters.push(
+        sql`${meetingNotes.personIds} @> ARRAY[${q.personId}]::text[]`,
+      );
     if (q.organizationId) {
       filters.push(
         parseBoolQuery(req, "includeLinkedPeople") === true
-          ? organizationActivityScalarScope(
+          ? organizationActivityArrayScope(
               q.organizationId,
-              sql`${meetingNotes.organizationId}`,
-              sql`${meetingNotes.personId}`,
+              sql`${meetingNotes.organizationIds}`,
+              sql`${meetingNotes.personIds}`,
             )
-          : eq(meetingNotes.organizationId, q.organizationId),
+          : sql`${meetingNotes.organizationIds} @> ARRAY[${q.organizationId}]::text[]`,
       );
     }
     if (q.householdId)
-      filters.push(eq(meetingNotes.householdId, q.householdId));
+      filters.push(
+        sql`${meetingNotes.householdIds} @> ARRAY[${q.householdId}]::text[]`,
+      );
     if (q.creatorUserId)
       filters.push(eq(meetingNotes.creatorUserId, q.creatorUserId));
     if (q.calendarEventId)
@@ -121,7 +138,10 @@ router.get(
         .offset(offset),
       db.select({ value: count() }).from(meetingNotes).where(where),
     ]);
-    res.json({ data: rows, pagination: { page, limit, total: Number(total) } });
+    res.json({
+      data: rows.map(meetingNoteResponse),
+      pagination: { page, limit, total: Number(total) },
+    });
   }),
 );
 
@@ -134,7 +154,7 @@ router.get(
       .where(eq(meetingNotes.id, paramId(req)))
       .then((r) => r[0]);
     if (!row) return notFound(res, "meeting note");
-    res.json(row);
+    res.json(meetingNoteResponse(row));
   }),
 );
 
@@ -270,13 +290,13 @@ router.post(
           ? artifacts.map((artifact) => ({ ...artifact, transcript: "" }))
           : artifacts,
         creatorUserId: user.id,
-        personId: body.personId ?? null,
-        organizationId: body.organizationId ?? null,
-        householdId: body.householdId ?? null,
+        personIds: body.personIds ?? [],
+        organizationIds: body.organizationIds ?? [],
+        householdIds: body.householdIds ?? [],
         calendarEventId: body.calendarEventId ?? null,
       })
       .returning();
-    res.status(201).json(row);
+    res.status(201).json(meetingNoteResponse(row));
   }),
 );
 
@@ -291,23 +311,18 @@ router.patch(
       .where(eq(meetingNotes.id, paramId(req)))
       .then((r) => r[0]);
     if (!existing) return notFound(res, "meeting note");
-    // Merge-then-validate so a partial PATCH can't bypass the contact xor.
+    // Merge-then-validate so a partial PATCH cannot remove the last anchor.
     const merged = {
-      personId: body.personId !== undefined ? body.personId : existing.personId,
-      organizationId:
-        body.organizationId !== undefined
-          ? body.organizationId
-          : existing.organizationId,
-      householdId:
-        body.householdId !== undefined
-          ? body.householdId
-          : existing.householdId,
+      personIds: body.personIds ?? existing.personIds,
+      organizationIds: body.organizationIds ?? existing.organizationIds,
+      householdIds: body.householdIds ?? existing.householdIds,
+      calendarEventId: existing.calendarEventId,
     };
-    const issues = validateMeetingContactInvariants(merged);
+    const issues = validateMeetingLinkInvariants(merged);
     if (issues.length > 0) {
       res.status(400).json({
         error: "validation_error",
-        message: MEETING_CONTACT_XOR_MESSAGE,
+        message: MEETING_LINK_MESSAGE,
         details: { issues },
       });
       return;
@@ -386,17 +401,26 @@ router.patch(
         ? incomingArtifacts.map((artifact) => ({ ...artifact, transcript: "" }))
         : incomingArtifacts;
     }
-    if (body.personId !== undefined) patch.personId = body.personId;
-    if (body.organizationId !== undefined)
-      patch.organizationId = body.organizationId;
-    if (body.householdId !== undefined) patch.householdId = body.householdId;
+    if (body.personIds !== undefined) patch.personIds = body.personIds;
+    if (body.organizationIds !== undefined)
+      patch.organizationIds = body.organizationIds;
+    if (body.householdIds !== undefined) patch.householdIds = body.householdIds;
+    if (
+      body.personIds !== undefined ||
+      body.organizationIds !== undefined ||
+      body.householdIds !== undefined
+    ) {
+      patch.personId = null;
+      patch.organizationId = null;
+      patch.householdId = null;
+    }
     const [row] = await db
       .update(meetingNotes)
       .set(patch)
       .where(eq(meetingNotes.id, paramId(req)))
       .returning();
     if (!row) return notFound(res, "meeting note");
-    res.json(row);
+    res.json(meetingNoteResponse(row));
   }),
 );
 
@@ -468,11 +492,13 @@ router.post(
           dueDate: dueDate,
           assigneeUserId: body.assigneeUserId ?? null,
           createdByUserId: user.id,
-          personIds: existing.personId ? [existing.personId] : null,
-          organizationIds: existing.organizationId
-            ? [existing.organizationId]
+          personIds: existing.personIds.length ? existing.personIds : null,
+          organizationIds: existing.organizationIds.length
+            ? existing.organizationIds
             : null,
-          householdIds: existing.householdId ? [existing.householdId] : null,
+          householdIds: existing.householdIds.length
+            ? existing.householdIds
+            : null,
         })
         .returning();
       const updatedItems = items.map((it, i) =>

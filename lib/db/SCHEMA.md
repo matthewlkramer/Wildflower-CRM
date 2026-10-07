@@ -465,6 +465,10 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   the notes queue without deleting calendar evidence. Calendar rows also retain
   Google `transparency` and visibility; active trip windows temporarily broaden
   capture to unmatched events, which default private.
+  Meeting-note CRM associations are the `person_ids`, `organization_ids`, and
+  `household_ids` arrays (no primary contact); calendar-anchored notes may have
+  no CRM association yet. Legacy scalar contact columns remain only for the
+  idempotent 0272 release backfill and are not used by the application.
 - `email_proposals` — one actionable AI signal per row (job change, bounce,
   signature update, grant opportunity, thank-you acknowledgment, …).
 - `email_intel_prompts` — versioned, admin-editable review prompts per

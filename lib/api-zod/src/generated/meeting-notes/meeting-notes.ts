@@ -59,9 +59,9 @@ export const ListMeetingNotesResponse = zod.object({
 })).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -96,11 +96,11 @@ export const CreateMeetingNoteBody = zod.object({
   "title": zod.string().optional(),
   "meetingDate": zod.string().datetime({}).optional().describe('Defaults to now if omitted.'),
   "attendees": zod.array(zod.string()).optional(),
-  "personId": zod.string().optional(),
-  "organizationId": zod.string().optional(),
-  "householdId": zod.string().optional(),
+  "personIds": zod.array(zod.string()).optional(),
+  "organizationIds": zod.array(zod.string()).optional(),
+  "householdIds": zod.array(zod.string()).optional(),
   "calendarEventId": zod.string().optional()
-}).describe('Exactly one of personId \/ organizationId \/ householdId must be set. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through \/meeting-media\/process.')
+}).describe('At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through \/meeting-media\/process.')
 
 export const GetMeetingNoteParams = zod.object({
   "id": zod.coerce.string()
@@ -138,9 +138,9 @@ export const GetMeetingNoteResponse = zod.object({
 })).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -178,9 +178,9 @@ export const UpdateMeetingNoteBody = zod.object({
   "sizeBytes": zod.number()
 })).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish()
+  "personIds": zod.array(zod.string()).optional(),
+  "organizationIds": zod.array(zod.string()).optional(),
+  "householdIds": zod.array(zod.string()).optional()
 })
 
 export const UpdateMeetingNoteResponse = zod.object({
@@ -215,9 +215,9 @@ export const UpdateMeetingNoteResponse = zod.object({
 })).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
 })).optional(),
   "creatorUserId": zod.string(),
-  "personId": zod.string().nullish(),
-  "organizationId": zod.string().nullish(),
-  "householdId": zod.string().nullish(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

@@ -23,6 +23,7 @@ import {
   type MeetingNextStepProposal,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +61,7 @@ import {
   Users as UsersIcon,
 } from "lucide-react";
 import { useUserNameMap } from "@/components/user-picker";
+import { meetingLinkIds, uniqueMeetingLinks } from "@/lib/meeting-links";
 
 export interface MeetingContext {
   personId?: string;
@@ -247,6 +249,12 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
           <div className="font-medium truncate mt-1">
             {note.title || "(untitled meeting)"}
           </div>
+          <Link
+            href={`/meetings/notes/${note.id}`}
+            className="text-xs text-primary hover:underline"
+          >
+            Open workspace to edit linked records and source notes
+          </Link>
           <div className="text-xs text-muted-foreground">
             by {userMap.get(note.creatorUserId) ?? note.creatorUserId}
           </div>
@@ -595,10 +603,8 @@ function MeetingNoteEditor({
 }
 
 /**
- * Paste-or-upload-transcript dialog. Self-contained — `ctx` pins the
- * contact xor. When `unpinned` (global "+ New meeting"), the user picks
- * the contact via a searchable picker that spans people, funders, and
- * households.
+ * Paste-or-upload-transcript dialog. Pinned context seeds an explicit link;
+ * the global launcher can attach multiple CRM records or a calendar event.
  */
 export function AddMeetingNoteDialog({
   ctx,
@@ -642,7 +648,7 @@ export function AddMeetingNoteDialog({
   // a transcript and let the model summarize. We default to "notes" because
   // that's what people will use until the transcript flow is figured out.
   const [mode, setMode] = useState<"notes" | "transcript">("notes");
-  const [picked, setPicked] = useState<PickedContact | null>(null);
+  const [pickedContacts, setPickedContacts] = useState<PickedContact[]>([]);
   const [generateAfterSave, setGenerateAfterSave] = useState(false);
   const [proposals, setProposals] = useState<MeetingNextStepProposal[]>([]);
   const [proposalOpen, setProposalOpen] = useState(false);
@@ -709,7 +715,7 @@ export function AddMeetingNoteDialog({
         setNotes("");
         setTranscript("");
         setMode("notes");
-        setPicked(null);
+        setPickedContacts([]);
       },
       onError: (err: unknown) => {
         toast({
@@ -721,21 +727,26 @@ export function AddMeetingNoteDialog({
     },
   });
 
-  // Pinned ctx wins over the in-dialog picker. The picker is only shown
-  // (and only matters) in unpinned mode.
-  const effectivePerson =
-    ctx?.personId ??
-    (!attendees.trim() && picked?.kind === "person" ? picked.id : undefined);
-  const effectiveFunder =
-    ctx?.organizationId ??
-    (!attendees.trim() && picked?.kind === "organization"
-      ? picked.id
-      : undefined);
-  const effectiveHousehold =
-    ctx?.householdId ??
-    (!attendees.trim() && picked?.kind === "household" ? picked.id : undefined);
+  const linkedIds = meetingLinkIds(
+    uniqueMeetingLinks([
+      ...(ctx?.personId ? [{ kind: "person" as const, id: ctx.personId }] : []),
+      ...(ctx?.organizationId
+        ? [{ kind: "organization" as const, id: ctx.organizationId }]
+        : []),
+      ...(ctx?.householdId
+        ? [{ kind: "household" as const, id: ctx.householdId }]
+        : []),
+      ...pickedContacts,
+    ]),
+  );
   const bodyText = mode === "notes" ? notes : transcript;
-  const canSubmit = bodyText.trim().length > 0;
+  const canSubmit =
+    bodyText.trim().length > 0 &&
+    (Boolean(prefill?.calendarEventId) ||
+      linkedIds.personIds.length +
+        linkedIds.organizationIds.length +
+        linkedIds.householdIds.length >
+        0);
 
   // File upload: accept text-shaped transcript files and read them
   // client-side into the textarea so the user can still tweak before
@@ -833,9 +844,7 @@ export function AddMeetingNoteDialog({
                   ? new Date(meetingDate).toISOString()
                   : undefined,
                 attendees: attendeesList.length ? attendeesList : undefined,
-                personId: effectivePerson,
-                organizationId: effectiveFunder,
-                householdId: effectiveHousehold,
+                ...linkedIds,
                 calendarEventId: prefill?.calendarEventId,
               },
             });
@@ -874,10 +883,60 @@ export function AddMeetingNoteDialog({
               data-testid="input-meeting-attendees"
             />
           </div>
-          {unpinned && !attendees.trim() ? (
+          {unpinned ? (
             <div className="space-y-1.5">
-              <Label>Contact</Label>
-              <ContactPicker value={picked} onChange={setPicked} />
+              <Label>Linked CRM records</Label>
+              {pickedContacts.map((contact) => (
+                <div
+                  key={`${contact.kind}:${contact.id}`}
+                  className="flex items-center justify-between rounded border px-2 py-1 text-sm"
+                >
+                  <span>
+                    {contact.label}{" "}
+                    <span className="text-muted-foreground">
+                      ({contact.kind})
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    aria-label={`Unlink ${contact.label}`}
+                    onClick={() =>
+                      setPickedContacts((current) =>
+                        current.filter(
+                          (item) =>
+                            item.kind !== contact.kind ||
+                            item.id !== contact.id,
+                        ),
+                      )
+                    }
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              <ContactPicker
+                value={null}
+                onChange={(contact) => {
+                  if (contact)
+                    setPickedContacts((current) =>
+                      current.some(
+                        (item) =>
+                          item.kind === contact.kind && item.id === contact.id,
+                      )
+                        ? current
+                        : [...current, contact],
+                    );
+                }}
+              />
+              {!prefill?.calendarEventId && pickedContacts.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Link at least one person, organization, or household to save
+                  this note.
+                </p>
+              ) : null}
             </div>
           ) : null}
           <Tabs
@@ -999,12 +1058,14 @@ export function AddMeetingNoteDialog({
                     description: proposal.description ?? undefined,
                     dueDate: proposal.dueDate ?? undefined,
                     assigneeUserId: proposal.assigneeUserId ?? undefined,
-                    personIds: effectivePerson ? [effectivePerson] : undefined,
-                    organizationIds: effectiveFunder
-                      ? [effectiveFunder]
+                    personIds: linkedIds.personIds.length
+                      ? linkedIds.personIds
                       : undefined,
-                    householdIds: effectiveHousehold
-                      ? [effectiveHousehold]
+                    organizationIds: linkedIds.organizationIds.length
+                      ? linkedIds.organizationIds
+                      : undefined,
+                    householdIds: linkedIds.householdIds.length
+                      ? linkedIds.householdIds
                       : undefined,
                   },
                 }),
@@ -1265,7 +1326,10 @@ export function ContactPicker({
                 <button
                   type="button"
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-muted text-left"
-                  onClick={() => onChange(r)}
+                  onClick={() => {
+                    setQ("");
+                    onChange(r);
+                  }}
                   data-testid={`pick-${r.kind}-${r.id}`}
                 >
                   <ContactKindIcon kind={r.kind} />
