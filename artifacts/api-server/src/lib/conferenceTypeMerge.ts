@@ -62,7 +62,7 @@ function assertSameImportRow(
   a: typeof conferenceImportRows.$inferSelect,
   b: typeof conferenceImportRows.$inferSelect,
 ): void {
-  if (a.rawName !== b.rawName || a.rawEmail !== b.rawEmail || a.rawOrganization !== b.rawOrganization) {
+    if (a.rawName !== b.rawName || a.rawEmail !== b.rawEmail || a.rawOrganization !== b.rawOrganization || a.rawTitle !== b.rawTitle || a.rawCombinedTitleOrganization !== b.rawCombinedTitleOrganization || JSON.stringify(a.rawCells) !== JSON.stringify(b.rawCells)) {
     throw new ConferenceMergeConflict(
       `Import rows ${a.id} and ${b.id} have different source data at row ${a.rowNumber}; resolve this import collision manually.`,
     );
@@ -100,6 +100,7 @@ async function consolidateAttendance(tx: MergeTx, sourceEventId: string, targetE
       .sort((a, b) => (b.reviewedAt?.getTime() ?? 0) - (a.reviewedAt?.getTime() ?? 0))[0];
     await tx.update(conferenceAttendance).set({
       status: strongest.status,
+      registrationListed: group.some((row) => row.registrationListed),
       role: winner.role === "Attendee" ? (group.find((row) => row.role !== "Attendee")?.role ?? winner.role) : winner.role,
       sourceReference: winner.sourceReference ?? group.find((row) => row.sourceReference)?.sourceReference ?? null,
       evidenceNote: duplicates.reduce((note, row) => appendHistory(note, "Merged attendance evidence", {

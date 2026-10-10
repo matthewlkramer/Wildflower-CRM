@@ -70,6 +70,9 @@ unverified and confirm against code before relying on it.
 
 ## Other canonical documents
 
+- [`conference-document-import.md`](conference-document-import.md) - current directory
+  upload, identity review, registration evidence, input limits and verification.
+
 - [`dashboard.md`](dashboard.md) — personal card visibility and meeting/thank-you follow-up cards.
 
 - [`user-management.md`](user-management.md) — admin user directory, Google

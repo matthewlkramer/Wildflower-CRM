@@ -5,6 +5,11 @@ description: Routing index for CRM feature/domain lessons — gifts, pledges, op
 
 # CRM domain notes
 
+- Conference directory imports reuse conference batches/rows and attendee records.
+  Registration listings are independent of physical attendance; review uses row
+  savepoints and acceptance-time identity rechecks. See the current
+  [document import guide](../../docs/conference-document-import.md).
+
 - User management reuses the existing user identity and first-login email adoption. Never add a second invitation/role authority or expose extension tokens in directory responses. See [canonical user-management behavior](../../docs/user-management.md).
 
 One-line routing entries for CRM app-domain lessons. Read only the topic files

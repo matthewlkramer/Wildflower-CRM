@@ -284,6 +284,8 @@ export const ConferenceAttendanceRowSourceType = {
 } as const;
 
 export interface ConferenceAttendanceRow {
+  /** Listed in a conference directory; does not prove physical attendance. */
+  registrationListed?: boolean;
   id: string;
   conferenceEventId: string;
   personId: string;
@@ -345,11 +347,66 @@ export interface ConferenceAttendanceInput {
   evidenceNote?: string | null;
 }
 
+export interface ConferenceImportColumns {
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  name: number;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  organization?: number;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  title?: number;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  email?: number;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  combinedTitleOrganization?: number;
+}
+
+export type ConferenceImportPersonOrganizationsItem = {
+  id: string;
+  name: string;
+};
+
+export interface ConferenceImportPerson {
+  id: string;
+  name: string;
+  emails: string[];
+  organizations: ConferenceImportPersonOrganizationsItem[];
+}
+
 export interface ConferenceImportInput {
-  /** @minLength 1 */
-  csvText: string;
+  /**
+   * @minLength 1
+   * @maxLength 2097152
+   */
+  csvText?: string;
+  /**
+   * @minLength 1
+   * @maxLength 2796204
+   */
+  fileBase64?: string;
   /** @nullable */
   filename?: string | null;
+  sheet?: string;
+  /**
+   * @minimum 1
+   * @maximum 5001
+   */
+  headerRow?: number;
+  columns?: ConferenceImportColumns;
 }
 
 export type ConferenceImportRowMatchStatus = typeof ConferenceImportRowMatchStatus[keyof typeof ConferenceImportRowMatchStatus];
@@ -379,6 +436,33 @@ export interface ConferenceImportRow {
   rawEmail?: string | null;
   /** @nullable */
   rawOrganization?: string | null;
+  /** @nullable */
+  rawTitle?: string | null;
+  /** @nullable */
+  rawCombinedTitleOrganization?: string | null;
+  /** @nullable */
+  proposedTitle?: string | null;
+  /** @nullable */
+  proposedOrganization?: string | null;
+  /** @nullable */
+  splitNeedsReview?: boolean | null;
+  /** @nullable */
+  splitEvidence?: string | null;
+  candidatePeople?: ConferenceImportPerson[];
+  /** @nullable */
+  rawCells?: string[] | null;
+  /** @nullable */
+  category?: string | null;
+  /** @nullable */
+  matchConfidence?: string | null;
+  /** @nullable */
+  matchedOrganizationId?: string | null;
+  /** @nullable */
+  candidatePersonIds?: string[] | null;
+  /** @nullable */
+  reviewError?: string | null;
+  /** @nullable */
+  foundationEvidence?: string | null;
   matchStatus: ConferenceImportRowMatchStatus;
   /** @nullable */
   matchedPersonId?: string | null;
@@ -386,6 +470,8 @@ export interface ConferenceImportRow {
   matchedPersonName?: string | null;
   /** @nullable */
   matchEvidence?: string | null;
+  /** @nullable */
+  reviewedPersonId?: string | null;
   disposition: ConferenceImportRowDisposition;
 }
 
@@ -397,21 +483,52 @@ export const ConferenceImportBatchStatus = {
   confirmed: 'confirmed',
 } as const;
 
+/**
+ * @nullable
+ */
+export type ConferenceImportBatchSourceMapping = { [key: string]: unknown } | null;
+
 export interface ConferenceImportBatch {
   id: string;
   conferenceEventId: string;
   status: ConferenceImportBatchStatus;
   /** @nullable */
   sourceFilename?: string | null;
+  /** @nullable */
+  sourceDocumentHash?: string | null;
+  /** @nullable */
+  sourceMapping?: ConferenceImportBatchSourceMapping;
   rows: ConferenceImportRow[];
   createdAt: string;
 }
 
 export type ConferenceImportConfirmInputPersonOverrides = {[key: string]: string};
 
+export type ConferenceImportConfirmInputNewPeople = {[key: string]: {
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  organization: string;
+  /** @maxLength 300 */
+  title?: string;
+  /**
+   * @minLength 10
+   * @maxLength 2000
+   */
+  foundationEvidence?: string;
+}};
+
 export interface ConferenceImportConfirmInput {
   acceptedRowIds?: string[];
   personOverrides?: ConferenceImportConfirmInputPersonOverrides;
+  rejectedRowIds?: string[];
+  newPeople?: ConferenceImportConfirmInputNewPeople;
 }
 
 export type ConferenceResearchRequestInputKind = typeof ConferenceResearchRequestInputKind[keyof typeof ConferenceResearchRequestInputKind];
@@ -11852,6 +11969,38 @@ page?: number;
  */
 limit?: number;
 search?: string;
+};
+
+export type ListConferenceImportPeopleParams = {
+/**
+ * @maxLength 300
+ */
+search?: string;
+/**
+ * @maxLength 100
+ */
+personId?: string;
+};
+
+export type PreviewConferenceImport200RowsItem = {
+  rowNumber: number;
+  cells: string[];
+  /** @nullable */
+  combinedText?: string | null;
+  /** @nullable */
+  proposedTitle?: string | null;
+  /** @nullable */
+  proposedOrganization?: string | null;
+  splitNeedsReview?: boolean;
+  /** @nullable */
+  splitEvidence?: string | null;
+};
+
+export type PreviewConferenceImport200 = {
+  headers: string[];
+  sheets: string[];
+  rowCount: number;
+  rows: PreviewConferenceImport200RowsItem[];
 };
 
 export type ListConferenceSpeakerProposalsParams = {

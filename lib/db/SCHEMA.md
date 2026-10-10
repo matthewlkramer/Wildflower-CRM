@@ -1,5 +1,12 @@
 # Database Schema Map
 
+Conference directory import extensions (2026-10-10): `conference_import_batches`
+retains source document hash and mapping; `conference_import_rows` retains original
+cells/title, review classification/confidence/candidates, matched organization,
+foundation evidence and retryable errors. `conference_attendance.registration_listed`
+is registration directory evidence, independent of physical attendance status.
+See [the current import guide](../../docs/conference-document-import.md).
+
 **Status:** current-status (implementation map)
 **Last verified:** 2026-07-23
 **Verified against:** landed bank-spine implementation (PRs #34–#42)
