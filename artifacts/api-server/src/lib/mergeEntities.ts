@@ -90,6 +90,7 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donor_routing_preferences", col: "source_organization_id" },
   { table: "donor_routing_preferences", col: "target_organization_id" },
   { table: "conference_speaker_proposals", col: "matched_organization_id" },
+  { table: "conference_import_rows", col: "matched_organization_id" },
 ];
 
 const ORGANIZATION_ARRAY_REFS: ReadonlyArray<MergeRef> = [
@@ -143,6 +144,7 @@ const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
   { table: "email_messages", col: "matched_person_ids" },
   { table: "tracked_emails", col: "recipient_person_ids" },
   { table: "conference_speaker_proposals", col: "candidate_person_ids" },
+  { table: "conference_import_rows", col: "candidate_person_ids" },
 ];
 
 const ORGANIZATION_OVERRIDE_FIELDS: ReadonlyArray<string> = [

@@ -288,6 +288,7 @@ export const listConferenceAttendanceResponseDataItemRoleDefault = `Attendee`;
 
 export const ListConferenceAttendanceResponse = zod.object({
   "data": zod.array(zod.object({
+  "registrationListed": zod.boolean().optional().describe('Listed in a conference directory; does not prove physical attendance.'),
   "id": zod.string(),
   "conferenceEventId": zod.string(),
   "personId": zod.string(),
@@ -323,16 +324,86 @@ export const CreateConferenceAttendanceBody = zod.object({
   "evidenceNote": zod.string().nullish()
 })
 
+export const previewConferenceImportBodyCsvTextMax = 2097152;
+
+export const previewConferenceImportBodyFileBase64Max = 2796204;
+
+export const previewConferenceImportBodyHeaderRowMax = 5001;
+
+export const previewConferenceImportBodyColumnsNameMin = 0;
+export const previewConferenceImportBodyColumnsNameMax = 99;
+
+export const previewConferenceImportBodyColumnsOrganizationMin = 0;
+export const previewConferenceImportBodyColumnsOrganizationMax = 99;
+
+export const previewConferenceImportBodyColumnsTitleMin = 0;
+export const previewConferenceImportBodyColumnsTitleMax = 99;
+
+export const previewConferenceImportBodyColumnsEmailMin = 0;
+export const previewConferenceImportBodyColumnsEmailMax = 99;
+
+
+
+export const PreviewConferenceImportBody = zod.object({
+  "csvText": zod.string().min(1).max(previewConferenceImportBodyCsvTextMax).optional(),
+  "fileBase64": zod.string().min(1).max(previewConferenceImportBodyFileBase64Max).optional(),
+  "filename": zod.string().nullish(),
+  "sheet": zod.string().optional(),
+  "headerRow": zod.number().min(1).max(previewConferenceImportBodyHeaderRowMax).optional(),
+  "columns": zod.object({
+  "name": zod.number().min(previewConferenceImportBodyColumnsNameMin).max(previewConferenceImportBodyColumnsNameMax),
+  "organization": zod.number().min(previewConferenceImportBodyColumnsOrganizationMin).max(previewConferenceImportBodyColumnsOrganizationMax).optional(),
+  "title": zod.number().min(previewConferenceImportBodyColumnsTitleMin).max(previewConferenceImportBodyColumnsTitleMax).optional(),
+  "email": zod.number().min(previewConferenceImportBodyColumnsEmailMin).max(previewConferenceImportBodyColumnsEmailMax).optional()
+}).optional()
+})
+
+export const PreviewConferenceImportResponse = zod.object({
+  "headers": zod.array(zod.string()),
+  "sheets": zod.array(zod.string()),
+  "rowCount": zod.number(),
+  "rows": zod.array(zod.object({
+  "rowNumber": zod.number(),
+  "cells": zod.array(zod.string())
+}))
+})
+
 export const StageConferenceImportParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const stageConferenceImportBodyCsvTextMax = 2097152;
+
+export const stageConferenceImportBodyFileBase64Max = 2796204;
+
+export const stageConferenceImportBodyHeaderRowMax = 5001;
+
+export const stageConferenceImportBodyColumnsNameMin = 0;
+export const stageConferenceImportBodyColumnsNameMax = 99;
+
+export const stageConferenceImportBodyColumnsOrganizationMin = 0;
+export const stageConferenceImportBodyColumnsOrganizationMax = 99;
+
+export const stageConferenceImportBodyColumnsTitleMin = 0;
+export const stageConferenceImportBodyColumnsTitleMax = 99;
+
+export const stageConferenceImportBodyColumnsEmailMin = 0;
+export const stageConferenceImportBodyColumnsEmailMax = 99;
 
 
 
 export const StageConferenceImportBody = zod.object({
-  "csvText": zod.string().min(1),
-  "filename": zod.string().nullish()
+  "csvText": zod.string().min(1).max(stageConferenceImportBodyCsvTextMax).optional(),
+  "fileBase64": zod.string().min(1).max(stageConferenceImportBodyFileBase64Max).optional(),
+  "filename": zod.string().nullish(),
+  "sheet": zod.string().optional(),
+  "headerRow": zod.number().min(1).max(stageConferenceImportBodyHeaderRowMax).optional(),
+  "columns": zod.object({
+  "name": zod.number().min(stageConferenceImportBodyColumnsNameMin).max(stageConferenceImportBodyColumnsNameMax),
+  "organization": zod.number().min(stageConferenceImportBodyColumnsOrganizationMin).max(stageConferenceImportBodyColumnsOrganizationMax).optional(),
+  "title": zod.number().min(stageConferenceImportBodyColumnsTitleMin).max(stageConferenceImportBodyColumnsTitleMax).optional(),
+  "email": zod.number().min(stageConferenceImportBodyColumnsEmailMin).max(stageConferenceImportBodyColumnsEmailMax).optional()
+}).optional()
 })
 
 export const StageConferenceImportResponse = zod.object({
@@ -340,16 +411,27 @@ export const StageConferenceImportResponse = zod.object({
   "conferenceEventId": zod.string(),
   "status": zod.enum(['staged', 'confirmed']),
   "sourceFilename": zod.string().nullish(),
+  "sourceDocumentHash": zod.string().nullish(),
+  "sourceMapping": zod.record(zod.string(), zod.unknown()).nullish(),
   "rows": zod.array(zod.object({
   "id": zod.string(),
   "rowNumber": zod.number(),
   "rawName": zod.string().nullish(),
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
+  "rawTitle": zod.string().nullish(),
+  "rawCells": zod.array(zod.string()).nullish(),
+  "category": zod.string().nullish(),
+  "matchConfidence": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "candidatePersonIds": zod.array(zod.string()).nullish(),
+  "reviewError": zod.string().nullish(),
+  "foundationEvidence": zod.string().nullish(),
   "matchStatus": zod.enum(['exact', 'ambiguous', 'unmatched']),
   "matchedPersonId": zod.string().nullish(),
   "matchedPersonName": zod.string().nullish(),
   "matchEvidence": zod.string().nullish(),
+  "reviewedPersonId": zod.string().nullish(),
   "disposition": zod.enum(['pending', 'accept', 'skip'])
 })),
   "createdAt": zod.string().datetime({})
@@ -364,16 +446,27 @@ export const GetConferenceImportResponse = zod.object({
   "conferenceEventId": zod.string(),
   "status": zod.enum(['staged', 'confirmed']),
   "sourceFilename": zod.string().nullish(),
+  "sourceDocumentHash": zod.string().nullish(),
+  "sourceMapping": zod.record(zod.string(), zod.unknown()).nullish(),
   "rows": zod.array(zod.object({
   "id": zod.string(),
   "rowNumber": zod.number(),
   "rawName": zod.string().nullish(),
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
+  "rawTitle": zod.string().nullish(),
+  "rawCells": zod.array(zod.string()).nullish(),
+  "category": zod.string().nullish(),
+  "matchConfidence": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "candidatePersonIds": zod.array(zod.string()).nullish(),
+  "reviewError": zod.string().nullish(),
+  "foundationEvidence": zod.string().nullish(),
   "matchStatus": zod.enum(['exact', 'ambiguous', 'unmatched']),
   "matchedPersonId": zod.string().nullish(),
   "matchedPersonName": zod.string().nullish(),
   "matchEvidence": zod.string().nullish(),
+  "reviewedPersonId": zod.string().nullish(),
   "disposition": zod.enum(['pending', 'accept', 'skip'])
 })),
   "createdAt": zod.string().datetime({})
@@ -383,9 +476,27 @@ export const ConfirmConferenceImportParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const confirmConferenceImportBodyNewPeopleNameMax = 300;
+
+export const confirmConferenceImportBodyNewPeopleOrganizationMax = 300;
+
+export const confirmConferenceImportBodyNewPeopleTitleMax = 300;
+
+export const confirmConferenceImportBodyNewPeopleFoundationEvidenceMin = 10;
+export const confirmConferenceImportBodyNewPeopleFoundationEvidenceMax = 2000;
+
+
+
 export const ConfirmConferenceImportBody = zod.object({
   "acceptedRowIds": zod.array(zod.string()).optional(),
-  "personOverrides": zod.record(zod.string(), zod.string()).optional()
+  "personOverrides": zod.record(zod.string(), zod.string()).optional(),
+  "rejectedRowIds": zod.array(zod.string()).optional(),
+  "newPeople": zod.record(zod.string(), zod.object({
+  "name": zod.string().min(1).max(confirmConferenceImportBodyNewPeopleNameMax),
+  "organization": zod.string().min(1).max(confirmConferenceImportBodyNewPeopleOrganizationMax),
+  "title": zod.string().max(confirmConferenceImportBodyNewPeopleTitleMax).optional(),
+  "foundationEvidence": zod.string().min(confirmConferenceImportBodyNewPeopleFoundationEvidenceMin).max(confirmConferenceImportBodyNewPeopleFoundationEvidenceMax).optional()
+})).optional()
 })
 
 export const ConfirmConferenceImportResponse = zod.object({
@@ -393,16 +504,27 @@ export const ConfirmConferenceImportResponse = zod.object({
   "conferenceEventId": zod.string(),
   "status": zod.enum(['staged', 'confirmed']),
   "sourceFilename": zod.string().nullish(),
+  "sourceDocumentHash": zod.string().nullish(),
+  "sourceMapping": zod.record(zod.string(), zod.unknown()).nullish(),
   "rows": zod.array(zod.object({
   "id": zod.string(),
   "rowNumber": zod.number(),
   "rawName": zod.string().nullish(),
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
+  "rawTitle": zod.string().nullish(),
+  "rawCells": zod.array(zod.string()).nullish(),
+  "category": zod.string().nullish(),
+  "matchConfidence": zod.string().nullish(),
+  "matchedOrganizationId": zod.string().nullish(),
+  "candidatePersonIds": zod.array(zod.string()).nullish(),
+  "reviewError": zod.string().nullish(),
+  "foundationEvidence": zod.string().nullish(),
   "matchStatus": zod.enum(['exact', 'ambiguous', 'unmatched']),
   "matchedPersonId": zod.string().nullish(),
   "matchedPersonName": zod.string().nullish(),
   "matchEvidence": zod.string().nullish(),
+  "reviewedPersonId": zod.string().nullish(),
   "disposition": zod.enum(['pending', 'accept', 'skip'])
 })),
   "createdAt": zod.string().datetime({})
@@ -707,6 +829,7 @@ export const ListPersonConferenceAttendanceParams = zod.object({
 export const listPersonConferenceAttendanceResponseRoleDefault = `Attendee`;
 
 export const ListPersonConferenceAttendanceResponseItem = zod.object({
+  "registrationListed": zod.boolean().optional().describe('Listed in a conference directory; does not prove physical attendance.'),
   "id": zod.string(),
   "conferenceEventId": zod.string(),
   "personId": zod.string(),

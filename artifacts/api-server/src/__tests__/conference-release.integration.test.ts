@@ -72,7 +72,7 @@ afterAll(async () => {
 
 describe.skipIf(!HAS_DB)("conference release safeguards", () => {
   it("stages exact/unmatched CSV rows once and confirms only reviewed matches once", async () => {
-    const csvText = `Name,Email\nExact,${run}.exact@example.org\nUnknown,unknown@example.org\nNo email,`;
+    const csvText = `Name,Email\nConference Person 0,${run}.exact@example.org\nUnknown,unknown@example.org\nNo email,`;
     const path = `/conference-events/${events[0]}/imports`;
     const staged = await post(path, { csvText, filename: "attendees.csv" });
     expect(staged.status).toBe(200);
@@ -85,7 +85,7 @@ describe.skipIf(!HAS_DB)("conference release safeguards", () => {
     expect((await post(`/conference-imports/${staged.body.id}/confirm`, {})).status).toBe(403);
     auth.current = { id: userId, role: "admin" };
     const confirmPath = `/conference-imports/${staged.body.id}/confirm`;
-    const confirmed = await post(confirmPath, {});
+    const confirmed = await post(confirmPath, { acceptedRowIds: [staged.body.rows[0].id], rejectedRowIds: staged.body.rows.slice(1).map((row: any) => row.id) });
     expect(confirmed.body.rows.map((r: any) => r.disposition)).toEqual(["accept", "skip", "skip"]);
     expect((await post(confirmPath, {})).body.status).toBe("confirmed");
     const imported = await db.select().from(schema.conferenceAttendance).where(eq(schema.conferenceAttendance.conferenceEventId, events[0]));

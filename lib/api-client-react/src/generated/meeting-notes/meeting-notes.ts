@@ -472,7 +472,7 @@ export const generateMeetingNextSteps = async (id: string, options?: RequestInit
 
 
 
-export const getGenerateMeetingNextStepsMutationOptions = <TError = ErrorType<NotFoundResponse>,
+export const getGenerateMeetingNextStepsMutationOptions = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMeetingNextSteps>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof generateMeetingNextSteps>>, TError,{id: string}, TContext> => {
 
@@ -501,12 +501,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type GenerateMeetingNextStepsMutationResult = NonNullable<Awaited<ReturnType<typeof generateMeetingNextSteps>>>
 
-    export type GenerateMeetingNextStepsMutationError = ErrorType<NotFoundResponse>
+    export type GenerateMeetingNextStepsMutationError = ErrorType<NotFoundResponse | void>
 
     /**
  * @summary Generate editable task proposals from a saved meeting note.
  */
-export const useGenerateMeetingNextSteps = <TError = ErrorType<NotFoundResponse>,
+export const useGenerateMeetingNextSteps = <TError = ErrorType<NotFoundResponse | void>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof generateMeetingNextSteps>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof generateMeetingNextSteps>>,

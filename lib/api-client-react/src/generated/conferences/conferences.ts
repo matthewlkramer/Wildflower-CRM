@@ -49,7 +49,8 @@ import type {
   ListConferenceAttendanceParams,
   ListConferenceEventsParams,
   ListConferenceSpeakerProposalsParams,
-  ListConferenceTypesParams
+  ListConferenceTypesParams,
+  PreviewConferenceImport200
 } from '../api.schemas';
 
 import { customFetch } from '../../custom-fetch';
@@ -68,7 +69,7 @@ export const getListConferenceTypesUrl = (params?: ListConferenceTypesParams,) =
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -80,16 +81,16 @@ export const getListConferenceTypesUrl = (params?: ListConferenceTypesParams,) =
 }
 
 export const listConferenceTypes = async (params?: ListConferenceTypesParams, options?: RequestInit): Promise<ConferenceType[]> => {
-  
+
   return customFetch<ConferenceType[]>(getListConferenceTypesUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -100,7 +101,7 @@ export const getListConferenceTypesQueryKey = (params?: ListConferenceTypesParam
     ] as const;
     }
 
-    
+
 export const getListConferenceTypesQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceTypes>>, TError = ErrorType<unknown>>(params?: ListConferenceTypesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceTypes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -108,13 +109,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceTypesQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceTypes>>> = ({ signal }) => listConferenceTypes(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceTypes>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -126,7 +127,7 @@ export type ListConferenceTypesQueryError = ErrorType<unknown>
 
 export function useListConferenceTypes<TData = Awaited<ReturnType<typeof listConferenceTypes>>, TError = ErrorType<unknown>>(
  params?: ListConferenceTypesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceTypes>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceTypesQueryOptions(params,options)
@@ -142,15 +143,15 @@ export function useListConferenceTypes<TData = Awaited<ReturnType<typeof listCon
 export const getCreateConferenceTypeUrl = () => {
 
 
-  
+
 
   return `/api/conference-types`
 }
 
 export const createConferenceType = async (conferenceTypeInput: ConferenceTypeInput, options?: RequestInit): Promise<ConferenceType> => {
-  
+
   return customFetch<ConferenceType>(getCreateConferenceTypeUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -158,7 +159,7 @@ export const createConferenceType = async (conferenceTypeInput: ConferenceTypeIn
       conferenceTypeInput,)
   }
 );}
-  
+
 
 
 
@@ -173,7 +174,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConferenceType>>, {data: BodyType<ConferenceTypeInput>}> = (props) => {
@@ -184,7 +185,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -206,16 +207,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getUpdateConferenceTypeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-types/${id}`
 }
 
 export const updateConferenceType = async (id: string,
     conferenceTypeUpdate: ConferenceTypeUpdate, options?: RequestInit): Promise<ConferenceType> => {
-  
+
   return customFetch<ConferenceType>(getUpdateConferenceTypeUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -223,7 +224,7 @@ export const updateConferenceType = async (id: string,
       conferenceTypeUpdate,)
   }
 );}
-  
+
 
 
 
@@ -238,7 +239,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateConferenceType>>, {id: string;data: BodyType<ConferenceTypeUpdate>}> = (props) => {
@@ -249,7 +250,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -271,22 +272,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getDeleteConferenceTypeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-types/${id}`
 }
 
 export const deleteConferenceType = async (id: string, options?: RequestInit): Promise<void> => {
-  
+
   return customFetch<void>(getDeleteConferenceTypeUrl(id),
-  {      
+  {
     ...options,
     method: 'DELETE'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -301,7 +302,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteConferenceType>>, {id: string}> = (props) => {
@@ -312,13 +313,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteConferenceTypeMutationResult = NonNullable<Awaited<ReturnType<typeof deleteConferenceType>>>
-    
+
     export type DeleteConferenceTypeMutationError = ErrorType<void | ErrorResponse>
 
     export const useDeleteConferenceType = <TError = ErrorType<void | ErrorResponse>,
@@ -334,16 +335,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getMergeConferenceTypeUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-types/${id}/merge`
 }
 
 export const mergeConferenceType = async (id: string,
     conferenceTypeMergeInput: ConferenceTypeMergeInput, options?: RequestInit): Promise<ConferenceTypeMergeResult> => {
-  
+
   return customFetch<ConferenceTypeMergeResult>(getMergeConferenceTypeUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -351,7 +352,7 @@ export const mergeConferenceType = async (id: string,
       conferenceTypeMergeInput,)
   }
 );}
-  
+
 
 
 
@@ -366,7 +367,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof mergeConferenceType>>, {id: string;data: BodyType<ConferenceTypeMergeInput>}> = (props) => {
@@ -377,7 +378,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -400,7 +401,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -412,16 +413,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 }
 
 export const listConferenceEvents = async (params?: ListConferenceEventsParams, options?: RequestInit): Promise<ConferenceEventSummary[]> => {
-  
+
   return customFetch<ConferenceEventSummary[]>(getListConferenceEventsUrl(params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -432,7 +433,7 @@ export const getListConferenceEventsQueryKey = (params?: ListConferenceEventsPar
     ] as const;
     }
 
-    
+
 export const getListConferenceEventsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceEvents>>, TError = ErrorType<unknown>>(params?: ListConferenceEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -440,13 +441,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceEventsQueryKey(params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceEvents>>> = ({ signal }) => listConferenceEvents(params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceEvents>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -458,7 +459,7 @@ export type ListConferenceEventsQueryError = ErrorType<unknown>
 
 export function useListConferenceEvents<TData = Awaited<ReturnType<typeof listConferenceEvents>>, TError = ErrorType<unknown>>(
  params?: ListConferenceEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceEventsQueryOptions(params,options)
@@ -474,15 +475,15 @@ export function useListConferenceEvents<TData = Awaited<ReturnType<typeof listCo
 export const getCreateConferenceEventUrl = () => {
 
 
-  
+
 
   return `/api/conference-events`
 }
 
 export const createConferenceEvent = async (conferenceEventInput: ConferenceEventInput, options?: RequestInit): Promise<ConferenceEvent> => {
-  
+
   return customFetch<ConferenceEvent>(getCreateConferenceEventUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -490,7 +491,7 @@ export const createConferenceEvent = async (conferenceEventInput: ConferenceEven
       conferenceEventInput,)
   }
 );}
-  
+
 
 
 
@@ -505,7 +506,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConferenceEvent>>, {data: BodyType<ConferenceEventInput>}> = (props) => {
@@ -516,7 +517,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -538,22 +539,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetConferenceEventUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}`
 }
 
 export const getConferenceEvent = async (id: string, options?: RequestInit): Promise<ConferenceEvent> => {
-  
+
   return customFetch<ConferenceEvent>(getGetConferenceEventUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -564,7 +565,7 @@ export const getGetConferenceEventQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetConferenceEventQueryOptions = <TData = Awaited<ReturnType<typeof getConferenceEvent>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConferenceEvent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -572,13 +573,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetConferenceEventQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getConferenceEvent>>> = ({ signal }) => getConferenceEvent(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConferenceEvent>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -590,7 +591,7 @@ export type GetConferenceEventQueryError = ErrorType<unknown>
 
 export function useGetConferenceEvent<TData = Awaited<ReturnType<typeof getConferenceEvent>>, TError = ErrorType<unknown>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConferenceEvent>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetConferenceEventQueryOptions(id,options)
@@ -606,16 +607,16 @@ export function useGetConferenceEvent<TData = Awaited<ReturnType<typeof getConfe
 export const getUpdateConferenceEventUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}`
 }
 
 export const updateConferenceEvent = async (id: string,
     conferenceEventUpdate: ConferenceEventUpdate, options?: RequestInit): Promise<ConferenceEvent> => {
-  
+
   return customFetch<ConferenceEvent>(getUpdateConferenceEventUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -623,7 +624,7 @@ export const updateConferenceEvent = async (id: string,
       conferenceEventUpdate,)
   }
 );}
-  
+
 
 
 
@@ -638,7 +639,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateConferenceEvent>>, {id: string;data: BodyType<ConferenceEventUpdate>}> = (props) => {
@@ -649,7 +650,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -671,16 +672,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getConfirmConferenceEventDatesUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/confirm-dates`
 }
 
 export const confirmConferenceEventDates = async (id: string,
     conferenceEventDateConfirmation: ConferenceEventDateConfirmation, options?: RequestInit): Promise<ConferenceEvent> => {
-  
+
   return customFetch<ConferenceEvent>(getConfirmConferenceEventDatesUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -688,7 +689,7 @@ export const confirmConferenceEventDates = async (id: string,
       conferenceEventDateConfirmation,)
   }
 );}
-  
+
 
 
 
@@ -703,7 +704,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmConferenceEventDates>>, {id: string;data: BodyType<ConferenceEventDateConfirmation>}> = (props) => {
@@ -714,7 +715,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -738,7 +739,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -751,16 +752,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 export const listConferenceAttendance = async (id: string,
     params?: ListConferenceAttendanceParams, options?: RequestInit): Promise<ConferenceAttendanceList> => {
-  
+
   return customFetch<ConferenceAttendanceList>(getListConferenceAttendanceUrl(id,params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -772,7 +773,7 @@ export const getListConferenceAttendanceQueryKey = (id: string,
     ] as const;
     }
 
-    
+
 export const getListConferenceAttendanceQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceAttendance>>, TError = ErrorType<unknown>>(id: string,
     params?: ListConferenceAttendanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceAttendance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -781,13 +782,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceAttendanceQueryKey(id,params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceAttendance>>> = ({ signal }) => listConferenceAttendance(id,params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceAttendance>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -800,7 +801,7 @@ export type ListConferenceAttendanceQueryError = ErrorType<unknown>
 export function useListConferenceAttendance<TData = Awaited<ReturnType<typeof listConferenceAttendance>>, TError = ErrorType<unknown>>(
  id: string,
     params?: ListConferenceAttendanceParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceAttendance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceAttendanceQueryOptions(id,params,options)
@@ -816,16 +817,16 @@ export function useListConferenceAttendance<TData = Awaited<ReturnType<typeof li
 export const getCreateConferenceAttendanceUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/attendance`
 }
 
 export const createConferenceAttendance = async (id: string,
     conferenceAttendanceInput: ConferenceAttendanceInput, options?: RequestInit): Promise<ConferenceAttendanceRow> => {
-  
+
   return customFetch<ConferenceAttendanceRow>(getCreateConferenceAttendanceUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -833,7 +834,7 @@ export const createConferenceAttendance = async (id: string,
       conferenceAttendanceInput,)
   }
 );}
-  
+
 
 
 
@@ -848,7 +849,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConferenceAttendance>>, {id: string;data: BodyType<ConferenceAttendanceInput>}> = (props) => {
@@ -859,7 +860,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -878,19 +879,18 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getCreateConferenceAttendanceMutationOptions(options));
     }
-    export const getStageConferenceImportUrl = (id: string,) => {
+    export const getPreviewConferenceImportUrl = () => {
 
 
-  
 
-  return `/api/conference-events/${id}/imports`
+
+  return `/api/conference-import-preview`
 }
 
-export const stageConferenceImport = async (id: string,
-    conferenceImportInput: ConferenceImportInput, options?: RequestInit): Promise<ConferenceImportBatch> => {
-  
-  return customFetch<ConferenceImportBatch>(getStageConferenceImportUrl(id),
-  {      
+export const previewConferenceImport = async (conferenceImportInput: ConferenceImportInput, options?: RequestInit): Promise<PreviewConferenceImport200> => {
+
+  return customFetch<PreviewConferenceImport200>(getPreviewConferenceImportUrl(),
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -898,7 +898,72 @@ export const stageConferenceImport = async (id: string,
       conferenceImportInput,)
   }
 );}
-  
+
+
+
+
+export const getPreviewConferenceImportMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewConferenceImport>>, TError,{data: BodyType<ConferenceImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof previewConferenceImport>>, TError,{data: BodyType<ConferenceImportInput>}, TContext> => {
+
+const mutationKey = ['previewConferenceImport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof previewConferenceImport>>, {data: BodyType<ConferenceImportInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  previewConferenceImport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PreviewConferenceImportMutationResult = NonNullable<Awaited<ReturnType<typeof previewConferenceImport>>>
+    export type PreviewConferenceImportMutationBody = BodyType<ConferenceImportInput>
+    export type PreviewConferenceImportMutationError = ErrorType<unknown>
+
+    export const usePreviewConferenceImport = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof previewConferenceImport>>, TError,{data: BodyType<ConferenceImportInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof previewConferenceImport>>,
+        TError,
+        {data: BodyType<ConferenceImportInput>},
+        TContext
+      > => {
+      return useMutation(getPreviewConferenceImportMutationOptions(options));
+    }
+    export const getStageConferenceImportUrl = (id: string,) => {
+
+
+
+
+  return `/api/conference-events/${id}/imports`
+}
+
+export const stageConferenceImport = async (id: string,
+    conferenceImportInput: ConferenceImportInput, options?: RequestInit): Promise<ConferenceImportBatch> => {
+
+  return customFetch<ConferenceImportBatch>(getStageConferenceImportUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      conferenceImportInput,)
+  }
+);}
+
 
 
 
@@ -913,7 +978,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof stageConferenceImport>>, {id: string;data: BodyType<ConferenceImportInput>}> = (props) => {
@@ -924,7 +989,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -946,22 +1011,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getGetConferenceImportUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-imports/${id}`
 }
 
 export const getConferenceImport = async (id: string, options?: RequestInit): Promise<ConferenceImportBatch> => {
-  
+
   return customFetch<ConferenceImportBatch>(getGetConferenceImportUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -972,7 +1037,7 @@ export const getGetConferenceImportQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getGetConferenceImportQueryOptions = <TData = Awaited<ReturnType<typeof getConferenceImport>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConferenceImport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -980,13 +1045,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetConferenceImportQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getConferenceImport>>> = ({ signal }) => getConferenceImport(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConferenceImport>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -998,7 +1063,7 @@ export type GetConferenceImportQueryError = ErrorType<unknown>
 
 export function useGetConferenceImport<TData = Awaited<ReturnType<typeof getConferenceImport>>, TError = ErrorType<unknown>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConferenceImport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetConferenceImportQueryOptions(id,options)
@@ -1014,16 +1079,16 @@ export function useGetConferenceImport<TData = Awaited<ReturnType<typeof getConf
 export const getConfirmConferenceImportUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-imports/${id}/confirm`
 }
 
 export const confirmConferenceImport = async (id: string,
     conferenceImportConfirmInput: ConferenceImportConfirmInput, options?: RequestInit): Promise<ConferenceImportBatch> => {
-  
+
   return customFetch<ConferenceImportBatch>(getConfirmConferenceImportUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1031,7 +1096,7 @@ export const confirmConferenceImport = async (id: string,
       conferenceImportConfirmInput,)
   }
 );}
-  
+
 
 
 
@@ -1046,7 +1111,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof confirmConferenceImport>>, {id: string;data: BodyType<ConferenceImportConfirmInput>}> = (props) => {
@@ -1057,7 +1122,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1079,22 +1144,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getListConferenceResearchRequestsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/research-requests`
 }
 
 export const listConferenceResearchRequests = async (id: string, options?: RequestInit): Promise<ConferenceResearchRequest[]> => {
-  
+
   return customFetch<ConferenceResearchRequest[]>(getListConferenceResearchRequestsUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1105,7 +1170,7 @@ export const getListConferenceResearchRequestsQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getListConferenceResearchRequestsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1113,13 +1178,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceResearchRequestsQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceResearchRequests>>> = ({ signal }) => listConferenceResearchRequests(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1131,7 +1196,7 @@ export type ListConferenceResearchRequestsQueryError = ErrorType<unknown>
 
 export function useListConferenceResearchRequests<TData = Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError = ErrorType<unknown>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceResearchRequests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceResearchRequestsQueryOptions(id,options)
@@ -1147,16 +1212,16 @@ export function useListConferenceResearchRequests<TData = Awaited<ReturnType<typ
 export const getCreateConferenceResearchRequestUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/research-requests`
 }
 
 export const createConferenceResearchRequest = async (id: string,
     conferenceResearchRequestInput: ConferenceResearchRequestInput, options?: RequestInit): Promise<ConferenceResearchRequest> => {
-  
+
   return customFetch<ConferenceResearchRequest>(getCreateConferenceResearchRequestUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1164,7 +1229,7 @@ export const createConferenceResearchRequest = async (id: string,
       conferenceResearchRequestInput,)
   }
 );}
-  
+
 
 
 
@@ -1179,7 +1244,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConferenceResearchRequest>>, {id: string;data: BodyType<ConferenceResearchRequestInput>}> = (props) => {
@@ -1190,7 +1255,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1212,22 +1277,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getRetryConferenceResearchRequestUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-research-requests/${id}/retry`
 }
 
 export const retryConferenceResearchRequest = async (id: string, options?: RequestInit): Promise<ConferenceResearchRequest> => {
-  
+
   return customFetch<ConferenceResearchRequest>(getRetryConferenceResearchRequestUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1242,7 +1307,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryConferenceResearchRequest>>, {id: string}> = (props) => {
@@ -1253,13 +1318,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type RetryConferenceResearchRequestMutationResult = NonNullable<Awaited<ReturnType<typeof retryConferenceResearchRequest>>>
-    
+
     export type RetryConferenceResearchRequestMutationError = ErrorType<void | ErrorResponse>
 
     export const useRetryConferenceResearchRequest = <TError = ErrorType<void | ErrorResponse>,
@@ -1277,7 +1342,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   const normalizedParams = new URLSearchParams();
 
   Object.entries(params || {}).forEach(([key, value]) => {
-    
+
     if (value !== undefined) {
       normalizedParams.append(key, value === null ? 'null' : value.toString())
     }
@@ -1290,16 +1355,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 export const listConferenceSpeakerProposals = async (id: string,
     params?: ListConferenceSpeakerProposalsParams, options?: RequestInit): Promise<ConferenceSpeakerProposal[]> => {
-  
+
   return customFetch<ConferenceSpeakerProposal[]>(getListConferenceSpeakerProposalsUrl(id,params),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1311,7 +1376,7 @@ export const getListConferenceSpeakerProposalsQueryKey = (id: string,
     ] as const;
     }
 
-    
+
 export const getListConferenceSpeakerProposalsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError = ErrorType<unknown>>(id: string,
     params?: ListConferenceSpeakerProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
@@ -1320,13 +1385,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceSpeakerProposalsQueryKey(id,params);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>> = ({ signal }) => listConferenceSpeakerProposals(id,params, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1339,7 +1404,7 @@ export type ListConferenceSpeakerProposalsQueryError = ErrorType<unknown>
 export function useListConferenceSpeakerProposals<TData = Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError = ErrorType<unknown>>(
  id: string,
     params?: ListConferenceSpeakerProposalsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceSpeakerProposals>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceSpeakerProposalsQueryOptions(id,params,options)
@@ -1355,16 +1420,16 @@ export function useListConferenceSpeakerProposals<TData = Awaited<ReturnType<typ
 export const getBulkAddConferenceSpeakerProposalsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/speaker-proposals/bulk-add`
 }
 
 export const bulkAddConferenceSpeakerProposals = async (id: string,
     conferenceSpeakerProposalBulkInput: ConferenceSpeakerProposalBulkInput, options?: RequestInit): Promise<ConferenceSpeakerProposalBulkResult> => {
-  
+
   return customFetch<ConferenceSpeakerProposalBulkResult>(getBulkAddConferenceSpeakerProposalsUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1372,7 +1437,7 @@ export const bulkAddConferenceSpeakerProposals = async (id: string,
       conferenceSpeakerProposalBulkInput,)
   }
 );}
-  
+
 
 
 
@@ -1387,7 +1452,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkAddConferenceSpeakerProposals>>, {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}> = (props) => {
@@ -1398,7 +1463,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1420,16 +1485,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getBulkIgnoreConferenceSpeakerProposalsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/speaker-proposals/bulk-ignore`
 }
 
 export const bulkIgnoreConferenceSpeakerProposals = async (id: string,
     conferenceSpeakerProposalBulkInput: ConferenceSpeakerProposalBulkInput, options?: RequestInit): Promise<ConferenceSpeakerProposalBulkResult> => {
-  
+
   return customFetch<ConferenceSpeakerProposalBulkResult>(getBulkIgnoreConferenceSpeakerProposalsUrl(id),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1437,7 +1502,7 @@ export const bulkIgnoreConferenceSpeakerProposals = async (id: string,
       conferenceSpeakerProposalBulkInput,)
   }
 );}
-  
+
 
 
 
@@ -1452,7 +1517,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof bulkIgnoreConferenceSpeakerProposals>>, {id: string;data: BodyType<ConferenceSpeakerProposalBulkInput>}> = (props) => {
@@ -1463,7 +1528,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1485,22 +1550,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getReopenConferenceSpeakerProposalUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-speaker-proposals/${id}/reopen`
 }
 
 export const reopenConferenceSpeakerProposal = async (id: string, options?: RequestInit): Promise<ConferenceSpeakerProposal> => {
-  
+
   return customFetch<ConferenceSpeakerProposal>(getReopenConferenceSpeakerProposalUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1515,7 +1580,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>, {id: string}> = (props) => {
@@ -1526,13 +1591,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type ReopenConferenceSpeakerProposalMutationResult = NonNullable<Awaited<ReturnType<typeof reopenConferenceSpeakerProposal>>>
-    
+
     export type ReopenConferenceSpeakerProposalMutationError = ErrorType<void | ErrorResponse>
 
     export const useReopenConferenceSpeakerProposal = <TError = ErrorType<void | ErrorResponse>,
@@ -1551,15 +1616,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 export const getEnqueueConferenceResearchBackfillUrl = () => {
 
 
-  
+
 
   return `/api/admin/conference-research/backfill`
 }
 
 export const enqueueConferenceResearchBackfill = async (conferenceResearchBackfillInput: ConferenceResearchBackfillInput, options?: RequestInit): Promise<ConferenceResearchBackfillResult> => {
-  
+
   return customFetch<ConferenceResearchBackfillResult>(getEnqueueConferenceResearchBackfillUrl(),
-  {      
+  {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1567,7 +1632,7 @@ export const enqueueConferenceResearchBackfill = async (conferenceResearchBackfi
       conferenceResearchBackfillInput,)
   }
 );}
-  
+
 
 
 
@@ -1582,7 +1647,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof enqueueConferenceResearchBackfill>>, {data: BodyType<ConferenceResearchBackfillInput>}> = (props) => {
@@ -1593,7 +1658,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1615,22 +1680,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getListConferenceEmailSuggestionsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/email-suggestions`
 }
 
 export const listConferenceEmailSuggestions = async (id: string, options?: RequestInit): Promise<ConferenceAttendanceSuggestion[]> => {
-  
+
   return customFetch<ConferenceAttendanceSuggestion[]>(getListConferenceEmailSuggestionsUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1641,7 +1706,7 @@ export const getListConferenceEmailSuggestionsQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getListConferenceEmailSuggestionsQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceEmailSuggestions>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceEmailSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1649,13 +1714,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListConferenceEmailSuggestionsQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceEmailSuggestions>>> = ({ signal }) => listConferenceEmailSuggestions(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceEmailSuggestions>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1667,7 +1732,7 @@ export type ListConferenceEmailSuggestionsQueryError = ErrorType<unknown>
 
 export function useListConferenceEmailSuggestions<TData = Awaited<ReturnType<typeof listConferenceEmailSuggestions>>, TError = ErrorType<unknown>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceEmailSuggestions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListConferenceEmailSuggestionsQueryOptions(id,options)
@@ -1683,22 +1748,22 @@ export function useListConferenceEmailSuggestions<TData = Awaited<ReturnType<typ
 export const getGenerateConferenceEmailSuggestionsUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-events/${id}/email-suggestions`
 }
 
 export const generateConferenceEmailSuggestions = async (id: string, options?: RequestInit): Promise<ConferenceAttendanceSuggestion[]> => {
-  
+
   return customFetch<ConferenceAttendanceSuggestion[]>(getGenerateConferenceEmailSuggestionsUrl(id),
-  {      
+  {
     ...options,
     method: 'POST'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1713,7 +1778,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof generateConferenceEmailSuggestions>>, {id: string}> = (props) => {
@@ -1724,13 +1789,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type GenerateConferenceEmailSuggestionsMutationResult = NonNullable<Awaited<ReturnType<typeof generateConferenceEmailSuggestions>>>
-    
+
     export type GenerateConferenceEmailSuggestionsMutationError = ErrorType<unknown>
 
     export const useGenerateConferenceEmailSuggestions = <TError = ErrorType<unknown>,
@@ -1746,16 +1811,16 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getReviewConferenceAttendanceSuggestionUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/conference-attendance-suggestions/${id}`
 }
 
 export const reviewConferenceAttendanceSuggestion = async (id: string,
     conferenceAttendanceSuggestionReview: ConferenceAttendanceSuggestionReview, options?: RequestInit): Promise<ConferenceAttendanceSuggestion> => {
-  
+
   return customFetch<ConferenceAttendanceSuggestion>(getReviewConferenceAttendanceSuggestionUrl(id),
-  {      
+  {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1763,7 +1828,7 @@ export const reviewConferenceAttendanceSuggestion = async (id: string,
       conferenceAttendanceSuggestionReview,)
   }
 );}
-  
+
 
 
 
@@ -1778,7 +1843,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-      
+
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewConferenceAttendanceSuggestion>>, {id: string;data: BodyType<ConferenceAttendanceSuggestionReview>}> = (props) => {
@@ -1789,7 +1854,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1811,22 +1876,22 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export const getListPersonConferenceAttendanceUrl = (id: string,) => {
 
 
-  
+
 
   return `/api/people/${id}/conference-attendance`
 }
 
 export const listPersonConferenceAttendance = async (id: string, options?: RequestInit): Promise<ConferenceAttendanceRow[]> => {
-  
+
   return customFetch<ConferenceAttendanceRow[]>(getListPersonConferenceAttendanceUrl(id),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
-  
+
 
 
 
@@ -1837,7 +1902,7 @@ export const getListPersonConferenceAttendanceQueryKey = (id: string,) => {
     ] as const;
     }
 
-    
+
 export const getListPersonConferenceAttendanceQueryOptions = <TData = Awaited<ReturnType<typeof listPersonConferenceAttendance>>, TError = ErrorType<unknown>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonConferenceAttendance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -1845,13 +1910,13 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPersonConferenceAttendanceQueryKey(id);
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof listPersonConferenceAttendance>>> = ({ signal }) => listPersonConferenceAttendance(id, { signal, ...requestOptions });
 
-      
 
-      
+
+
 
    return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPersonConferenceAttendance>>, TError, TData> & { queryKey: QueryKey }
 }
@@ -1863,7 +1928,7 @@ export type ListPersonConferenceAttendanceQueryError = ErrorType<unknown>
 
 export function useListPersonConferenceAttendance<TData = Awaited<ReturnType<typeof listPersonConferenceAttendance>>, TError = ErrorType<unknown>>(
  id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPersonConferenceAttendance>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
-  
+
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListPersonConferenceAttendanceQueryOptions(id,options)
@@ -1872,7 +1937,3 @@ export function useListPersonConferenceAttendance<TData = Awaited<ReturnType<typ
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
-
-
-
-

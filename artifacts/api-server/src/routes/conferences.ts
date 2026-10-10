@@ -42,6 +42,8 @@ import {
   mergeConferenceTypeEvents,
 } from "../lib/conferenceTypeMerge";
 import { enqueueConferenceResearch } from "../lib/conferenceResearchWorker";
+import { classifyImportRow, mapDocument, readImportDocument } from "../lib/conferenceImportDocument";
+import { importDirectory, reviewConferenceImport } from "../lib/conferenceImportReview";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -99,44 +101,6 @@ function requireAdminActor(req: Request, res: Response): string | null {
   return getAppUser(req)?.id ?? null;
 }
 
-function csvParse(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    if (quoted && char === '"' && text[i + 1] === '"') { cell += '"'; i += 1; continue; }
-    if (char === '"') { quoted = !quoted; continue; }
-    if (!quoted && char === ",") { row.push(cell.trim()); cell = ""; continue; }
-    if (!quoted && (char === "\n" || char === "\r")) {
-      if (char === "\r" && text[i + 1] === "\n") i += 1;
-      row.push(cell.trim());
-      if (row.some(Boolean)) rows.push(row);
-      row = []; cell = ""; continue;
-    }
-    cell += char;
-  }
-  row.push(cell.trim());
-  if (row.some(Boolean)) rows.push(row);
-  return rows;
-}
-
-function parseCsv(text: string) {
-  const rows = csvParse(text);
-  const headers = rows.shift()?.map((v) => v.toLowerCase().replace(/[\s_-]/g, "")) ?? [];
-  const emailIndex = headers.indexOf("email");
-  const nameIndex = headers.findIndex((h) => h === "name" || h === "fullname");
-  const organizationIndex = headers.findIndex((h) => h === "organization" || h === "org" || h === "company");
-  if (emailIndex < 0 && nameIndex < 0) throw new Error("CSV must include an Email or Name column.");
-  return rows.map((cells, index) => ({
-    rowNumber: index + 2,
-    rawEmail: emailIndex >= 0 ? cells[emailIndex] || null : null,
-    rawName: nameIndex >= 0 ? cells[nameIndex] || null : null,
-    rawOrganization: organizationIndex >= 0 ? cells[organizationIndex] || null : null,
-  }));
-}
-
 function eventDisplay(event: { year: number; nameOverride: string | null }, typeName: string) {
   return event.nameOverride?.trim() || `${typeName} ${event.year}`;
 }
@@ -150,6 +114,7 @@ function attendanceSelect() {
     organizationId: sql<string | null>`NULL`,
     organizationName: sql<string | null>`NULL`,
     status: conferenceAttendance.status,
+    registrationListed: conferenceAttendance.registrationListed,
     role: conferenceAttendance.role,
     sourceType: conferenceAttendance.sourceType,
     sourceReference: conferenceAttendance.sourceReference,
@@ -168,9 +133,18 @@ async function batchResponse(id: string) {
       rawName: conferenceImportRows.rawName,
       rawEmail: conferenceImportRows.rawEmail,
       rawOrganization: conferenceImportRows.rawOrganization,
+      rawTitle: conferenceImportRows.rawTitle,
+      rawCells: conferenceImportRows.rawCells,
+      category: conferenceImportRows.category,
+      matchConfidence: conferenceImportRows.matchConfidence,
+      matchedOrganizationId: conferenceImportRows.matchedOrganizationId,
+      candidatePersonIds: conferenceImportRows.candidatePersonIds,
+      reviewError: conferenceImportRows.reviewError,
+      foundationEvidence: conferenceImportRows.foundationEvidence,
       matchStatus: conferenceImportRows.matchStatus,
       matchedPersonId: conferenceImportRows.matchedPersonId,
       matchedPersonName: people.fullName,
+      reviewedPersonId: conferenceImportRows.reviewedPersonId,
       matchEvidence: conferenceImportRows.matchEvidence,
       disposition: conferenceImportRows.disposition,
     })
@@ -532,28 +506,37 @@ router.post("/conference-events/:id/attendance", asyncHandler(async (req, res) =
   res.status(201).json(result);
 }));
 
+router.post("/conference-import-preview", asyncHandler(async (req, res) => {
+  if (!requireWrite(req, res)) return;
+  const body = parseOrBadRequest(StageConferenceImportBody, req.body, res); if (!body) return;
+  try {
+    const document = readImportDocument(body);
+    res.json({ headers: document.headers, sheets: document.sheets, rows: document.rows.slice(0, 20), rowCount: document.rows.length });
+  } catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid document" }); }
+}));
+
 router.post("/conference-events/:id/imports", asyncHandler(async (req, res) => {
   const userId = requireWrite(req, res); if (!userId) return;
   const body = parseOrBadRequest(StageConferenceImportBody, req.body, res); if (!body) return;
   const eventId = paramId(req);
   const [event] = await db.select({ id: conferenceEvents.id }).from(conferenceEvents).where(eq(conferenceEvents.id, eventId));
   if (!event) return notFound(res, "conference event");
-  let parsed: ReturnType<typeof parseCsv>;
-  try { parsed = parseCsv(body.csvText); } catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid CSV" }); return; }
-  const hash = createHash("sha256").update(body.csvText).digest("hex");
-  const [existing] = await db.select().from(conferenceImportBatches).where(and(eq(conferenceImportBatches.conferenceEventId, eventId), eq(conferenceImportBatches.sourceHash, hash)));
-  if (existing) { res.json(await batchResponse(existing.id)); return; }
-  const batchId = newId();
+  let parsed: ReturnType<typeof mapDocument>; let hash: string; let sourceDocumentHash: string;
+  try {
+    const document = readImportDocument(body); parsed = mapDocument(document, body.columns); sourceDocumentHash = document.hash;
+    hash = createHash("sha256").update(JSON.stringify(parsed)).digest("hex");
+  } catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid document" }); return; }
+  let batchId = newId();
   await db.transaction(async (tx) => {
-    await tx.insert(conferenceImportBatches).values({ id: batchId, conferenceEventId: eventId, sourceHash: hash, sourceFilename: body.filename ?? null, createdByUserId: userId });
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${eventId + hash}))`);
+    const [existing] = await tx.select().from(conferenceImportBatches).where(and(eq(conferenceImportBatches.conferenceEventId, eventId), eq(conferenceImportBatches.sourceHash, hash)));
+    if (existing) { batchId = existing.id; return; }
+    await tx.insert(conferenceImportBatches).values({ id: batchId, conferenceEventId: eventId, sourceHash: hash, sourceFilename: body.filename ?? null, sourceDocumentHash, sourceMapping: { columns: body.columns ?? "auto", sheet: body.sheet ?? null, headerRow: body.headerRow ?? 1 }, createdByUserId: userId });
+    const directory = await importDirectory(tx);
     for (const candidate of parsed) {
-      const normalized = candidate.rawEmail?.trim().toLowerCase();
-      const matches = normalized ? await tx.select({ id: people.id }).from(emails).innerJoin(people, eq(people.id, emails.personId)).where(and(sql`lower(${emails.email}) = ${normalized}`, sql`${people.archivedAt} IS NULL`)) : [];
-      const exact = matches.length === 1;
+      const match = classifyImportRow(candidate, directory.people, directory.organizations);
       await tx.insert(conferenceImportRows).values({
-        id: newId(), conferenceImportBatchId: batchId, ...candidate,
-        rawEmail: normalized ?? null, matchStatus: exact ? "exact" : matches.length > 1 ? "ambiguous" : "unmatched",
-        matchedPersonId: exact ? matches[0].id : null, matchEvidence: exact ? "Exact CRM email match" : normalized ? "No unique CRM email match" : "No email supplied",
+        id: newId(), conferenceImportBatchId: batchId, ...candidate, ...match,
       });
     }
     await recordAudit(tx, req, { action: "create", entityType: "conference_import", entityId: batchId, summary: `Staged ${parsed.length} attendance rows`, metadata: { conferenceEventId: eventId } });
@@ -573,23 +556,8 @@ router.post("/conference-imports/:id/confirm", asyncHandler(async (req, res) => 
   const batchId = paramId(req);
   const batch = await batchResponse(batchId); if (!batch) return notFound(res, "conference import");
   if (batch.status === "confirmed") { res.json(batch); return; }
-  const accepted = new Set(body.acceptedRowIds ?? batch.rows.filter((r) => r.matchStatus === "exact").map((r) => r.id));
-  await db.transaction(async (tx) => {
-    for (const row of batch.rows) {
-      const personId = body.personOverrides?.[row.id] ?? row.matchedPersonId;
-      if (!accepted.has(row.id) || !personId) {
-        await tx.update(conferenceImportRows).set({ disposition: "skip", updatedAt: new Date() }).where(eq(conferenceImportRows.id, row.id));
-        continue;
-      }
-      await tx.insert(conferenceAttendance).values({
-        id: newId(), conferenceEventId: batch.conferenceEventId, personId, status: "confirmed", sourceType: "uploaded_list",
-        sourceReference: batch.sourceFilename, evidenceNote: row.matchEvidence, importedByUserId: userId, reviewedByUserId: userId, reviewedAt: new Date(),
-      }).onConflictDoNothing({ target: [conferenceAttendance.conferenceEventId, conferenceAttendance.personId] });
-      await tx.update(conferenceImportRows).set({ reviewedPersonId: personId, disposition: "accept", updatedAt: new Date() }).where(eq(conferenceImportRows.id, row.id));
-    }
-    await tx.update(conferenceImportBatches).set({ status: "confirmed", confirmedByUserId: userId, confirmedAt: new Date(), updatedAt: new Date() }).where(eq(conferenceImportBatches.id, batchId));
-    await recordAudit(tx, req, { action: "conference_attendance_reviewed", entityType: "conference_import", entityId: batchId, summary: `Confirmed staged conference attendance`, metadata: { acceptedRows: accepted.size } });
-  });
+  try { await reviewConferenceImport(batchId, body, userId, req); }
+  catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid review" }); return; }
   res.json(await batchResponse(batchId));
 }));
 

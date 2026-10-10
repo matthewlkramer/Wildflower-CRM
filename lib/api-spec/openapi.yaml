@@ -2447,6 +2447,35 @@ paths:
                   },
               },
           }
+  /conference-import-preview:
+    post:
+      operationId: previewConferenceImport
+      tags: [conferences]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConferenceImportInput" }
+      responses:
+        "200":
+          description: Document headers and original row preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [headers, rows, sheets, rowCount]
+                properties:
+                  headers: { type: array, items: { type: string } }
+                  sheets: { type: array, items: { type: string } }
+                  rowCount: { type: integer }
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      required: [rowNumber, cells]
+                      properties:
+                        rowNumber: { type: integer }
+                        cells: { type: array, items: { type: string } }
   /conference-events/{id}/imports:
     post:
       operationId: stageConferenceImport
@@ -13420,6 +13449,7 @@ components:
           createdAt,
         ]
       properties:
+        registrationListed: { type: boolean, description: Listed in a conference directory; does not prove physical attendance. }
         id: { type: string }
         conferenceEventId: { type: string }
         personId: { type: string }
@@ -13460,12 +13490,23 @@ components:
         role: { type: string, default: Attendee }
         sourceReference: { type: [string, "null"] }
         evidenceNote: { type: [string, "null"] }
+    ConferenceImportColumns:
+      type: object
+      required: [name]
+      properties:
+        name: { type: integer, minimum: 0, maximum: 99 }
+        organization: { type: integer, minimum: 0, maximum: 99 }
+        title: { type: integer, minimum: 0, maximum: 99 }
+        email: { type: integer, minimum: 0, maximum: 99 }
     ConferenceImportInput:
       type: object
-      required: [csvText]
       properties:
-        csvText: { type: string, minLength: 1 }
+        csvText: { type: string, minLength: 1, maxLength: 2097152 }
+        fileBase64: { type: string, minLength: 1, maxLength: 2796204 }
         filename: { type: [string, "null"] }
+        sheet: { type: string }
+        headerRow: { type: integer, minimum: 1, maximum: 5001 }
+        columns: { $ref: "#/components/schemas/ConferenceImportColumns" }
     ConferenceImportRow:
       type: object
       required: [id, rowNumber, matchStatus, disposition]
@@ -13475,10 +13516,19 @@ components:
         rawName: { type: [string, "null"] }
         rawEmail: { type: [string, "null"] }
         rawOrganization: { type: [string, "null"] }
+        rawTitle: { type: [string, "null"] }
+        rawCells: { type: [array, "null"], items: { type: string } }
+        category: { type: [string, "null"] }
+        matchConfidence: { type: [string, "null"] }
+        matchedOrganizationId: { type: [string, "null"] }
+        candidatePersonIds: { type: [array, "null"], items: { type: string } }
+        reviewError: { type: [string, "null"] }
+        foundationEvidence: { type: [string, "null"] }
         matchStatus: { type: string, enum: [exact, ambiguous, unmatched] }
         matchedPersonId: { type: [string, "null"] }
         matchedPersonName: { type: [string, "null"] }
         matchEvidence: { type: [string, "null"] }
+        reviewedPersonId: { type: [string, "null"] }
         disposition: { type: string, enum: [pending, accept, skip] }
     ConferenceImportBatch:
       type: object
@@ -13488,6 +13538,8 @@ components:
         conferenceEventId: { type: string }
         status: { type: string, enum: [staged, confirmed] }
         sourceFilename: { type: [string, "null"] }
+        sourceDocumentHash: { type: [string, "null"] }
+        sourceMapping: { type: [object, "null"], additionalProperties: true }
         rows:
           {
             type: array,
@@ -13500,6 +13552,17 @@ components:
         acceptedRowIds: { type: array, items: { type: string } }
         personOverrides:
           { type: object, additionalProperties: { type: string } }
+        rejectedRowIds: { type: array, items: { type: string } }
+        newPeople:
+          type: object
+          additionalProperties:
+            type: object
+            required: [name, organization]
+            properties:
+              name: { type: string, minLength: 1, maxLength: 300 }
+              organization: { type: string, minLength: 1, maxLength: 300 }
+              title: { type: string, maxLength: 300 }
+              foundationEvidence: { type: string, minLength: 10, maxLength: 2000 }
     ConferenceResearchRequestInput:
       type: object
       properties:
