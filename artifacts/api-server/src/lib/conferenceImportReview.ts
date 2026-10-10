@@ -13,6 +13,7 @@ import { newId } from "./helpers";
 import {
   classifyImportRow,
   normalizePersonName,
+  resolveCombinedRow,
   type DirectoryPerson,
 } from "./conferenceImportDocument";
 import { organizationNamesEquivalent } from "./organizationNameMatching";
@@ -155,8 +156,9 @@ export async function reviewConferenceImport(
         // Each row is a savepoint: one failure does not roll back successful rows.
         await tx.transaction(async (rowTx) => {
           const directory = await importDirectory(rowTx);
+          const currentRow = resolveCombinedRow(row, directory.organizations);
           const fresh = classifyImportRow(
-            row,
+            currentRow,
             directory.people,
             directory.organizations,
           );
@@ -272,6 +274,19 @@ export async function reviewConferenceImport(
               });
             }
           } else if (!personId) {
+            // Saved splits are evidence from staging, not authority to approve
+            // against organization names/aliases that have since changed.
+            if (
+              row.rawCombinedTitleOrganization !== null &&
+              (currentRow.splitNeedsReview ||
+                row.splitNeedsReview ||
+                currentRow.rawOrganization !== row.rawOrganization ||
+                currentRow.rawTitle !== row.rawTitle ||
+                fresh.matchedOrganizationId !== row.matchedOrganizationId)
+            )
+              throw new Error(
+                "Combined title/organization split changed or requires review. Select an existing person explicitly or review a new-person proposal.",
+              );
             if (fresh.reviewError) throw new Error(fresh.reviewError);
             if (!fresh.matchedPersonId)
               throw new Error(

@@ -72,13 +72,11 @@ beforeAll(async () => {
     entityType: "organization",
     organizationId: orgId,
   });
-  await schema.db
-    .insert(schema.organizations)
-    .values({
-      id: `${run}_other_org`,
-      name: `${run} Education Foundation`,
-      ownerUserId: userId,
-    });
+  await schema.db.insert(schema.organizations).values({
+    id: `${run}_other_org`,
+    name: `${run} Education Foundation`,
+    ownerUserId: userId,
+  });
   await schema.db.insert(schema.peopleEntityRoles).values([
     {
       id: `${run}_role_p2`,
@@ -567,5 +565,97 @@ describe.skipIf(!HAS_DB || process.env.CONFERENCE_IMPORT_BROWSER_TEST !== "1")(
         vite.kill();
       }
     }, 60000);
+  },
+);
+
+describe.skipIf(!HAS_DB)(
+  "approval rechecks combined affiliation boundaries",
+  () => {
+    it.each(["ambiguous", "changed"])(
+      "requires explicit review when a staged split becomes %s",
+      async (scenario) => {
+        const organizationId = `${run}_stale_${scenario}_org`;
+        const personId = `${run}_stale_${scenario}_person`;
+        const organizationName = `${run} ${scenario} Harbor Foundation`;
+        const personName = `${run} ${scenario} Casey Reed`;
+        await schema.db
+          .insert(schema.organizations)
+          .values({
+            id: organizationId,
+            name: organizationName,
+            ownerUserId: userId,
+          });
+        await schema.db
+          .insert(schema.people)
+          .values({ id: personId, fullName: personName, ownerUserId: userId });
+        await schema.db
+          .insert(schema.peopleEntityRoles)
+          .values({
+            id: `${personId}_role`,
+            personId,
+            entityType: "organization",
+            organizationId,
+          });
+        const originalLine = `Director, Programs, ${organizationName}`;
+        const staged = await post(`/conference-events/${eventId}/imports`, {
+          csvText: `Name,Displayed line\n${personName},"${originalLine}"`,
+          columns: { name: 0, combinedTitleOrganization: 1 },
+        });
+        expect(staged.status).toBe(200);
+        const row = staged.body.rows[0];
+        expect(row).toMatchObject({
+          category: "reliable",
+          matchedPersonId: personId,
+          rawTitle: "Director, Programs",
+          rawOrganization: organizationName,
+          splitNeedsReview: false,
+        });
+        if (scenario === "changed")
+          await schema.db
+            .update(schema.organizations)
+            .set({ name: `Programs, ${organizationName}` })
+            .where(eq(schema.organizations.id, organizationId));
+        else
+          await schema.db
+            .insert(schema.organizations)
+            .values({
+              id: `${organizationId}_conflict`,
+              name: `Programs, ${organizationName}`,
+              ownerUserId: userId,
+            });
+        const confirm = `/conference-imports/${staged.body.id}/confirm`;
+        const blocked = await post(confirm, { acceptedRowIds: [row.id] });
+        expect(blocked.status).toBe(200);
+        expect(blocked.body.rows[0].disposition).toBe("pending");
+        expect(blocked.body.rows[0].reviewError).toMatch(
+          /Combined title\/organization.*review/i,
+        );
+        expect(
+          await schema.db
+            .select()
+            .from(schema.conferenceAttendance)
+            .where(eq(schema.conferenceAttendance.personId, personId)),
+        ).toHaveLength(0);
+        expect(blocked.body.rows[0].rawCombinedTitleOrganization).toBe(
+          originalLine,
+        );
+        const explicit = await post(confirm, {
+          acceptedRowIds: [row.id],
+          personOverrides: { [row.id]: personId },
+        });
+        expect(explicit.body.rows[0]).toMatchObject({
+          disposition: "accept",
+          reviewedPersonId: personId,
+          reviewError: null,
+          rawCombinedTitleOrganization: originalLine,
+        });
+        expect(
+          await schema.db
+            .select()
+            .from(schema.conferenceAttendance)
+            .where(eq(schema.conferenceAttendance.personId, personId)),
+        ).toHaveLength(1);
+      },
+    );
   },
 );
