@@ -364,6 +364,7 @@ async function consolidateConferenceRefs(tx: MergeTx, primaryId: string, ids: st
     const evidence = duplicates.map((row) =>
       `Merged attendance (${row.status}, ${row.sourceType}${row.sourceReference ? `, ${row.sourceReference}` : ""}${row.reviewedByUserId ? `, reviewed by ${row.reviewedByUserId}` : ""}): ${row.evidenceNote ?? "No note"}`);
     await tx.update(conferenceAttendance).set({
+      registrationListed: group.some((row) => row.registrationListed),
       evidenceNote: [winner.evidenceNote, ...evidence].filter(Boolean).join("\n\n"),
       updatedAt: new Date(),
     }).where(eq(conferenceAttendance.id, winner.id));

@@ -33,6 +33,7 @@ import type {
   ConferenceImportBatch,
   ConferenceImportConfirmInput,
   ConferenceImportInput,
+  ConferenceImportPerson,
   ConferenceResearchBackfillInput,
   ConferenceResearchBackfillResult,
   ConferenceResearchRequest,
@@ -48,6 +49,7 @@ import type {
   ErrorResponse,
   ListConferenceAttendanceParams,
   ListConferenceEventsParams,
+  ListConferenceImportPeopleParams,
   ListConferenceSpeakerProposalsParams,
   ListConferenceTypesParams,
   PreviewConferenceImport200
@@ -879,7 +881,82 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getCreateConferenceAttendanceMutationOptions(options));
     }
-    export const getPreviewConferenceImportUrl = () => {
+    export const getListConferenceImportPeopleUrl = (params?: ListConferenceImportPeopleParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/conference-import-people?${stringifiedParams}` : `/api/conference-import-people`
+}
+
+export const listConferenceImportPeople = async (params?: ListConferenceImportPeopleParams, options?: RequestInit): Promise<ConferenceImportPerson[]> => {
+
+  return customFetch<ConferenceImportPerson[]>(getListConferenceImportPeopleUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListConferenceImportPeopleQueryKey = (params?: ListConferenceImportPeopleParams,) => {
+    return [
+    `/api/conference-import-people`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListConferenceImportPeopleQueryOptions = <TData = Awaited<ReturnType<typeof listConferenceImportPeople>>, TError = ErrorType<unknown>>(params?: ListConferenceImportPeopleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceImportPeople>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConferenceImportPeopleQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConferenceImportPeople>>> = ({ signal }) => listConferenceImportPeople(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConferenceImportPeople>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListConferenceImportPeopleQueryResult = NonNullable<Awaited<ReturnType<typeof listConferenceImportPeople>>>
+export type ListConferenceImportPeopleQueryError = ErrorType<unknown>
+
+
+
+export function useListConferenceImportPeople<TData = Awaited<ReturnType<typeof listConferenceImportPeople>>, TError = ErrorType<unknown>>(
+ params?: ListConferenceImportPeopleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConferenceImportPeople>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListConferenceImportPeopleQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+export const getPreviewConferenceImportUrl = () => {
 
 
 

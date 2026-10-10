@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import express from "express";
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { eq, inArray } from "drizzle-orm";
@@ -47,51 +50,64 @@ beforeAll(async () => {
   if (!HAS_DB) return;
   schema = await import("@workspace/db");
   auth.id = userId;
-  await schema.db
-    .insert(schema.users)
-    .values({
-      id: userId,
-      clerkId: userId,
-      email: `${run}@example.org`,
-      role: "admin",
-    });
-  await schema.db
-    .insert(schema.organizations)
-    .values({
-      id: orgId,
-      name: `${run} Civic Alliance`,
-      historicalNames: [`${run} Old Alliance`],
-    });
+  await schema.db.insert(schema.users).values({
+    id: userId,
+    clerkId: userId,
+    email: `${run}@example.org`,
+    role: "admin",
+  });
+  await schema.db.insert(schema.organizations).values({
+    id: orgId,
+    name: `${run} Civic Alliance`,
+    historicalNames: [`${run} Old Alliance`],
+  });
   await schema.db.insert(schema.people).values([
     { id: p1, fullName: names.known },
     { id: `${run}_p2`, fullName: names.duplicate },
     { id: `${run}_p3`, fullName: names.duplicate },
   ]);
+  await schema.db.insert(schema.peopleEntityRoles).values({
+    id: `${run}_role`,
+    personId: p1,
+    entityType: "organization",
+    organizationId: orgId,
+  });
   await schema.db
-    .insert(schema.peopleEntityRoles)
+    .insert(schema.organizations)
     .values({
-      id: `${run}_role`,
-      personId: p1,
+      id: `${run}_other_org`,
+      name: `${run} Education Foundation`,
+      ownerUserId: userId,
+    });
+  await schema.db.insert(schema.peopleEntityRoles).values([
+    {
+      id: `${run}_role_p2`,
+      personId: `${run}_p2`,
       entityType: "organization",
       organizationId: orgId,
-    });
+    },
+    {
+      id: `${run}_role_p3`,
+      personId: `${run}_p3`,
+      entityType: "organization",
+      organizationId: `${run}_other_org`,
+    },
+  ]);
   await schema.db
     .insert(schema.conferenceTypes)
     .values({ id: `${run}_type`, displayName: run });
   await schema.db
     .insert(schema.conferenceEvents)
     .values({ id: eventId, conferenceTypeId: `${run}_type`, year: 2090 });
-  await schema.db
-    .insert(schema.conferenceAttendance)
-    .values({
-      id: `${run}_attendance`,
-      conferenceEventId: eventId,
-      personId: p1,
-      status: "confirmed",
-      role: "Speaker",
-      sourceType: "manual",
-      evidenceNote: "Richer verified speaker evidence",
-    });
+  await schema.db.insert(schema.conferenceAttendance).values({
+    id: `${run}_attendance`,
+    conferenceEventId: eventId,
+    personId: p1,
+    status: "confirmed",
+    role: "Speaker",
+    sourceType: "manual",
+    evidenceNote: "Richer verified speaker evidence",
+  });
   const { default: router } = await import("../routes/conferences");
   const app = express();
   app.use(express.json({ limit: "10mb" }));
@@ -326,6 +342,230 @@ describe.skipIf(!HAS_DB)(
           .from(schema.conferenceAttendance)
           .where(eq(schema.conferenceAttendance.conferenceEventId, eventId)),
       ).toHaveLength(4);
+    }, 60000);
+  },
+);
+
+describe.skipIf(!HAS_DB)(
+  "combined affiliation and contextual candidates",
+  () => {
+    it("corroborates complete known suffixes and requires an explicit ambiguous person choice", async () => {
+      const csvText = `Name,Displayed line\n${names.known},"Senior Director, Programs, ${run} Civic Alliance"\n${names.duplicate},"Program Officer, Unknown Foundation"`;
+      const columns = { name: 0, combinedTitleOrganization: 1 };
+      const preview = await post("/conference-import-preview", {
+        csvText,
+        columns,
+      });
+      expect(preview.status).toBe(200);
+      expect(preview.body.rows[0]).toMatchObject({
+        proposedTitle: "Senior Director, Programs",
+        proposedOrganization: `${run} Civic Alliance`,
+        splitNeedsReview: false,
+      });
+      expect(preview.body.rows[1]).toMatchObject({
+        proposedOrganization: "Unknown Foundation",
+        splitNeedsReview: true,
+      });
+      const staged = await post(`/conference-events/${eventId}/imports`, {
+        csvText,
+        columns,
+      });
+      expect(staged.status).toBe(200);
+      expect(staged.body.rows[0]).toMatchObject({
+        category: "reliable",
+        matchedPersonId: p1,
+        rawCombinedTitleOrganization: `Senior Director, Programs, ${run} Civic Alliance`,
+      });
+      const ambiguous = staged.body.rows[1];
+      expect(ambiguous).toMatchObject({
+        category: "ambiguous",
+        matchedPersonId: null,
+        rawOrganization: null,
+        splitNeedsReview: true,
+      });
+      expect(ambiguous.candidatePeople.map((p: any) => p.id).sort()).toEqual([
+        `${run}_p2`,
+        `${run}_p3`,
+      ]);
+      expect(
+        new Set(
+          ambiguous.candidatePeople.map((p: any) => p.organizations[0].name),
+        ).size,
+      ).toBe(2);
+      expect(
+        ambiguous.candidatePeople.every(
+          (p: any) => Array.isArray(p.organizations) && Array.isArray(p.emails),
+        ),
+      ).toBe(true);
+      const chosen = ambiguous.candidatePeople[1].id;
+      const lookup = await fetch(
+        `${base}/conference-import-people?personId=${chosen}`,
+      ).then((r) => r.json());
+      expect(lookup[0].id).toBe(chosen);
+      const reviewed = await post(
+        `/conference-imports/${staged.body.id}/confirm`,
+        {
+          acceptedRowIds: [ambiguous.id],
+          personOverrides: { [ambiguous.id]: chosen },
+        },
+      );
+      expect(reviewed.body.rows[1]).toMatchObject({
+        disposition: "accept",
+        reviewedPersonId: chosen,
+      });
+      const records = await schema.db
+        .select()
+        .from(schema.conferenceAttendance)
+        .where(eq(schema.conferenceAttendance.personId, chosen));
+      expect(records).toHaveLength(1);
+      expect(records[0].registrationListed).toBe(true);
+      expect(
+        await schema.db
+          .select()
+          .from(schema.organizations)
+          .where(eq(schema.organizations.name, "Unknown Foundation")),
+      ).toHaveLength(0);
+      expect(
+        (
+          await post(`/conference-events/${eventId}/imports`, {
+            csvText,
+            columns,
+          })
+        ).body.id,
+      ).toBe(staged.body.id);
+    });
+  },
+);
+
+describe.skipIf(!HAS_DB || process.env.CONFERENCE_IMPORT_BROWSER_TEST !== "1")(
+  "real API browser review",
+  () => {
+    it("shows contextual duplicate identities and approves the selected record", async () => {
+      const requireWeb = createRequire(
+        new URL("../../../wildflower-crm/package.json", import.meta.url),
+      );
+      const { chromium } = requireWeb("@playwright/test");
+      const webRoot = fileURLToPath(
+        new URL("../../../wildflower-crm/", import.meta.url),
+      );
+      const vite = spawn(
+        process.execPath,
+        [
+          fileURLToPath(
+            new URL(
+              "../../../wildflower-crm/node_modules/vite/bin/vite.js",
+              import.meta.url,
+            ),
+          ),
+          "--host",
+          "127.0.0.1",
+        ],
+        {
+          cwd: webRoot,
+          env: { ...process.env, PORT: "54122", BASE_PATH: "/" },
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
+      let browser: any;
+      try {
+        const url = `http://127.0.0.1:54122/e2e/fixtures/conference-import.html?eventId=${eventId}`;
+        for (let i = 0; i < 100; i++) {
+          try {
+            if ((await fetch(url)).ok) break;
+          } catch {}
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        browser = await chromium.launch({
+          headless: true,
+          channel: process.env.PLAYWRIGHT_BROWSER_CHANNEL || undefined,
+        });
+        const page = await browser.newPage();
+        await page.route("**/api/**", async (route: any) => {
+          const incoming = new URL(route.request().url());
+          const response = await route.fetch({
+            url:
+              base + incoming.pathname.replace(/^\/api/, "") + incoming.search,
+          });
+          await route.fulfill({ response });
+        });
+        await page.goto(url);
+        await page
+          .getByLabel("Or paste CSV")
+          .fill(
+            `Name,Displayed line\n${names.duplicate},"Program Officer, Another Unknown Group"`,
+          );
+        await page
+          .getByRole("button", { name: "Preview document", exact: true })
+          .click();
+        await page
+          .getByLabel("Combined title / organization column", { exact: true })
+          .selectOption("1");
+        await page
+          .getByRole("button", { name: "Preview mapped splits", exact: true })
+          .click();
+        await page
+          .getByText(
+            "Title: Program Officer; organization: Another Unknown Group.",
+            { exact: false },
+          )
+          .waitFor();
+        await page
+          .getByRole("button", {
+            name: "Stage mapped rows for review",
+            exact: true,
+          })
+          .click();
+        const candidate = `${run}_p2`;
+        await page
+          .getByText(`${run} Civic Alliance`, { exact: false })
+          .first()
+          .waitFor();
+        await page
+          .getByText(`${run} Education Foundation`, { exact: false })
+          .first()
+          .waitFor();
+        await page
+          .getByRole("link", {
+            name: `Inspect ${names.duplicate} (${candidate})`,
+            exact: true,
+          })
+          .waitFor();
+        await page
+          .getByRole("button", {
+            name: `Select ${names.duplicate} (${candidate})`,
+            exact: true,
+          })
+          .click();
+        expect(
+          await page
+            .getByRole("link", {
+              name: `Inspect selected CRM person (${candidate})`,
+              exact: true,
+            })
+            .getAttribute("href"),
+        ).toBe(`/individuals/${candidate}`);
+        await page.getByLabel("Approve registration", { exact: true }).check();
+        await page
+          .getByRole("button", {
+            name: "Apply 1 approvals and 0 rejections",
+            exact: true,
+          })
+          .click();
+        await page
+          .getByRole("status")
+          .filter({ hasText: "1 approved" })
+          .waitFor();
+        expect(
+          await schema.db
+            .select()
+            .from(schema.conferenceAttendance)
+            .where(eq(schema.conferenceAttendance.personId, candidate)),
+        ).toHaveLength(1);
+      } finally {
+        await browser?.close();
+        vite.kill();
+      }
     }, 60000);
   },
 );

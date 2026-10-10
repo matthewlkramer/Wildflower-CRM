@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import {
+  getListConferenceImportPeopleQueryKey,
+  useListConferenceImportPeople,
+  type ConferenceImportPerson,
   usePreviewConferenceImport,
   useStageConferenceImport,
   useConfirmConferenceImport,
@@ -21,13 +24,42 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  EntityCombobox,
-  usePersonName,
-  usePersonSearch,
-} from "@/components/entity-picker";
+import { EntityCombobox } from "@/components/entity-picker";
 import { conferenceError } from "./type-manager";
 
+function identityLabel(person: ConferenceImportPerson) {
+  return [
+    person.name,
+    person.organizations.map((o) => o.name).join(" / ") ||
+      "No current organization",
+    person.emails.join(" / "),
+    person.id,
+  ]
+    .filter(Boolean)
+    .join(" � ");
+}
+function useImportPersonSearch(search: string) {
+  const result = useListConferenceImportPeople({ search });
+  return {
+    items: (result.data ?? []).map((p) => ({
+      id: p.id,
+      label: identityLabel(p),
+    })),
+    isLoading: result.isLoading,
+  };
+}
+function useImportPersonName(id: string | null) {
+  const result = useListConferenceImportPeople(
+    { personId: id ?? "" },
+    {
+      query: {
+        queryKey: getListConferenceImportPeopleQueryKey({ personId: id ?? "" }),
+        enabled: !!id,
+      },
+    },
+  );
+  return result.data?.[0] ? identityLabel(result.data[0]) : id;
+}
 const labels: Record<string, string> = {
   reliable: "Reliable match",
   ambiguous: "Ambiguous — choose a person",
@@ -203,39 +235,70 @@ export function DocumentImport({
                 </select>
               </label>
             )}
-            {(["name", "organization", "title", "email"] as const).map(
-              (field) => (
-                <label key={field} className="block text-sm capitalize">
-                  {field} column
-                  <select
-                    aria-label={`${field} column`}
-                    className="block w-full rounded border bg-background p-2"
-                    value={columns[field] ?? ""}
-                    onChange={(e) =>
-                      setColumns((old) => {
-                        const next = { ...old };
-                        if (!e.target.value) delete next[field];
-                        else next[field] = Number(e.target.value);
-                        return next;
-                      })
-                    }
-                  >
-                    {field !== "name" && (
-                      <option value="">Not supplied / combined text</option>
-                    )}
-                    {preview.data.headers.map((h, i) => (
-                      <option key={i} value={i}>
-                        {i + 1}: {h || "Unnamed column"}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ),
-            )}
+            {(
+              [
+                "name",
+                "organization",
+                "title",
+                "combinedTitleOrganization",
+                "email",
+              ] as const
+            ).map((field) => (
+              <label key={field} className="block text-sm capitalize">
+                {field === "combinedTitleOrganization"
+                  ? "Combined title / organization"
+                  : field}{" "}
+                column
+                <select
+                  aria-label={
+                    field === "combinedTitleOrganization"
+                      ? "Combined title / organization column"
+                      : `${field} column`
+                  }
+                  className="block w-full rounded border bg-background p-2"
+                  value={columns[field] ?? ""}
+                  onChange={(e) =>
+                    setColumns((old) => {
+                      const next = { ...old };
+                      if (!e.target.value) delete next[field];
+                      else {
+                        next[field] = Number(e.target.value);
+                        if (field === "combinedTitleOrganization") {
+                          delete next.title;
+                          delete next.organization;
+                        } else if (
+                          field === "title" ||
+                          field === "organization"
+                        )
+                          delete next.combinedTitleOrganization;
+                      }
+                      return next;
+                    })
+                  }
+                >
+                  {field !== "name" && (
+                    <option value="">Not supplied / combined text</option>
+                  )}
+                  {preview.data.headers.map((h, i) => (
+                    <option key={i} value={i}>
+                      {i + 1}: {h || "Unnamed column"}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
             <p className="text-xs text-muted-foreground">
-              Do not map one combined title/organization line to two fields.
-              Leave it unmapped and review the original cells.
+              Combined lines retain their original text. Only a unique complete
+              CRM organization at the end supports an automatic split; other
+              boundaries require review.
             </p>
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => preview.mutate({ data: { ...document, columns } })}
+            >
+              Preview mapped splits
+            </Button>
             <div className="max-h-56 overflow-auto">
               <table className="w-full text-left text-xs">
                 <thead>
@@ -257,6 +320,14 @@ export function DocumentImport({
                           {c}
                         </td>
                       ))}
+                      {r.combinedText && (
+                        <td className="border-t p-2">
+                          Title: {r.proposedTitle || "Unresolved"};
+                          organization: {r.proposedOrganization || "Unresolved"}
+                          . {r.splitNeedsReview ? "Review required. " : ""}
+                          {r.splitEvidence}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -350,6 +421,62 @@ export function DocumentImport({
                 <p>
                   {r.rawOrganization} {r.rawTitle}
                 </p>
+                {r.rawCombinedTitleOrganization && (
+                  <div className="text-xs">
+                    <p>
+                      Original title / organization:{" "}
+                      {r.rawCombinedTitleOrganization}
+                    </p>
+                    <p>
+                      Split preview: {r.proposedTitle || "Unresolved title"} /{" "}
+                      {r.proposedOrganization || "Unresolved organization"}.{" "}
+                      {r.splitNeedsReview ? "Review required. " : ""}
+                      {r.splitEvidence}
+                    </p>
+                  </div>
+                )}
+                {!!r.candidatePeople?.length && (
+                  <div className="space-y-2">
+                    <p className="text-xs">
+                      Candidate CRM people � inspect identity and current
+                      affiliation before choosing:
+                    </p>
+                    {r.candidatePeople.map((person) => (
+                      <div
+                        key={person.id}
+                        className="rounded border p-2 text-xs"
+                      >
+                        <p>{identityLabel(person)}</p>
+                        <Link
+                          href={`/individuals/${person.id}`}
+                          className="text-primary underline"
+                        >
+                          Inspect {person.name} ({person.id})
+                        </Link>
+                        {r.disposition === "pending" && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={busy}
+                            onClick={() => {
+                              setOverrides((old) => ({
+                                ...old,
+                                [r.id]: person.id,
+                              }));
+                              setProposals((old) => {
+                                const next = { ...old };
+                                delete next[r.id];
+                                return next;
+                              });
+                            }}
+                          >
+                            Select {person.name} ({person.id})
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs">
                   {labels[r.category ?? ""] ?? r.matchStatus} ·{" "}
                   {r.matchConfidence ?? "unassessed"} confidence ·{" "}
@@ -358,14 +485,18 @@ export function DocumentImport({
                 <p className="text-xs text-muted-foreground">
                   {r.matchEvidence}
                 </p>
-                {(r.reviewedPersonId || r.matchedPersonId) && (
+                {(overrides[r.id] ||
+                  r.reviewedPersonId ||
+                  r.matchedPersonId) && (
                   <Link
-                    href={`/individuals/${r.reviewedPersonId || r.matchedPersonId}`}
+                    href={`/individuals/${overrides[r.id] || r.reviewedPersonId || r.matchedPersonId}`}
                     className="text-xs text-primary underline"
                   >
-                    {r.disposition === "accept"
-                      ? "View approved CRM person"
-                      : `Review CRM match: ${r.matchedPersonName || r.rawName}`}
+                    {overrides[r.id]
+                      ? `Inspect selected CRM person (${overrides[r.id]})`
+                      : r.disposition === "accept"
+                        ? "View approved CRM person"
+                        : `Review CRM match: ${r.matchedPersonName || r.rawName}`}
                   </Link>
                 )}
                 <details className="text-xs">
@@ -397,8 +528,8 @@ export function DocumentImport({
                         });
                       }}
                       placeholder="Search existing CRM people"
-                      useSearch={usePersonSearch}
-                      useResolve={usePersonName}
+                      useSearch={useImportPersonSearch}
+                      useResolve={useImportPersonName}
                       allowNull
                     />
                     {r.category !== "reliable" && !overrides[r.id] && (
@@ -411,8 +542,11 @@ export function DocumentImport({
                             ...old,
                             [r.id]: {
                               name: r.rawName ?? "",
-                              organization: r.rawOrganization ?? "",
-                              title: r.rawTitle ?? "",
+                              organization:
+                                r.rawOrganization ??
+                                r.proposedOrganization ??
+                                "",
+                              title: r.rawTitle ?? r.proposedTitle ?? "",
                             },
                           }))
                         }

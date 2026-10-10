@@ -2447,6 +2447,21 @@ paths:
                   },
               },
           }
+  /conference-import-people:
+    get:
+      operationId: listConferenceImportPeople
+      tags: [conferences]
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 300 } }
+        - { name: personId, in: query, schema: { type: string, maxLength: 100 } }
+      responses:
+        "200":
+          description: Active identities with current affiliation, email and record context
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConferenceImportPerson" }
   /conference-import-preview:
     post:
       operationId: previewConferenceImport
@@ -2476,6 +2491,11 @@ paths:
                       properties:
                         rowNumber: { type: integer }
                         cells: { type: array, items: { type: string } }
+                        combinedText: { type: [string, "null"] }
+                        proposedTitle: { type: [string, "null"] }
+                        proposedOrganization: { type: [string, "null"] }
+                        splitNeedsReview: { type: boolean }
+                        splitEvidence: { type: [string, "null"] }
   /conference-events/{id}/imports:
     post:
       operationId: stageConferenceImport
@@ -13498,6 +13518,22 @@ components:
         organization: { type: integer, minimum: 0, maximum: 99 }
         title: { type: integer, minimum: 0, maximum: 99 }
         email: { type: integer, minimum: 0, maximum: 99 }
+        combinedTitleOrganization: { type: integer, minimum: 0, maximum: 99 }
+    ConferenceImportPerson:
+      type: object
+      required: [id, name, emails, organizations]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        emails: { type: array, items: { type: string } }
+        organizations:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id: { type: string }
+              name: { type: string }
     ConferenceImportInput:
       type: object
       properties:
@@ -13517,6 +13553,12 @@ components:
         rawEmail: { type: [string, "null"] }
         rawOrganization: { type: [string, "null"] }
         rawTitle: { type: [string, "null"] }
+        rawCombinedTitleOrganization: { type: [string, "null"] }
+        proposedTitle: { type: [string, "null"] }
+        proposedOrganization: { type: [string, "null"] }
+        splitNeedsReview: { type: [boolean, "null"] }
+        splitEvidence: { type: [string, "null"] }
+        candidatePeople: { type: array, items: { $ref: "#/components/schemas/ConferenceImportPerson" } }
         rawCells: { type: [array, "null"], items: { type: string } }
         category: { type: [string, "null"] }
         matchConfidence: { type: [string, "null"] }

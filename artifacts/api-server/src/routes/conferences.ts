@@ -29,32 +29,63 @@ import {
   StageConferenceImportBody,
   UpdateConferenceTypeBody,
 } from "@workspace/api-zod";
-import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
 import { requireAdmin } from "../lib/archive";
 import { recordAudit } from "../lib/audit";
-import { asyncHandler, newId, notFound, paramId, parseOrBadRequest, parsePagination } from "../lib/helpers";
+import {
+  asyncHandler,
+  newId,
+  notFound,
+  paramId,
+  parseOrBadRequest,
+  parsePagination,
+} from "../lib/helpers";
 import {
   ConferenceMergeConflict,
   ConferenceMergeValidationError,
   mergeConferenceTypeEvents,
 } from "../lib/conferenceTypeMerge";
 import { enqueueConferenceResearch } from "../lib/conferenceResearchWorker";
-import { classifyImportRow, mapDocument, readImportDocument } from "../lib/conferenceImportDocument";
-import { importDirectory, reviewConferenceImport } from "../lib/conferenceImportReview";
+import {
+  classifyImportRow,
+  mapDocument,
+  readImportDocument,
+  resolveCombinedRow,
+} from "../lib/conferenceImportDocument";
+import {
+  importDirectory,
+  importPersonContext,
+  reviewConferenceImport,
+} from "../lib/conferenceImportReview";
 
 const router: IRouter = Router();
 router.use(requireAuth);
 
 const conferenceTypeMergeBody = z.object({
   targetTypeId: z.string().min(1),
-  eventResolutions: z.array(z.object({
-    sourceEventId: z.string().min(1),
-    targetEventId: z.string().min(1),
-    strategy: z.enum(["preserve_all_history"]).optional(),
-  })).optional(),
+  eventResolutions: z
+    .array(
+      z.object({
+        sourceEventId: z.string().min(1),
+        targetEventId: z.string().min(1),
+        strategy: z.enum(["preserve_all_history"]).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const conferenceEventCreateBody = z.object({
@@ -80,7 +111,10 @@ function eventResponse<T extends { startDate: string | null }>(event: T) {
 function isUniqueViolation(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const candidate = error as { code?: unknown; cause?: unknown };
-  return candidate.code === "23505" || candidate.cause !== undefined && isUniqueViolation(candidate.cause);
+  return (
+    candidate.code === "23505" ||
+    (candidate.cause !== undefined && isUniqueViolation(candidate.cause))
+  );
 }
 
 function requireWrite(req: Request, res: Response): string | null {
@@ -101,7 +135,10 @@ function requireAdminActor(req: Request, res: Response): string | null {
   return getAppUser(req)?.id ?? null;
 }
 
-function eventDisplay(event: { year: number; nameOverride: string | null }, typeName: string) {
+function eventDisplay(
+  event: { year: number; nameOverride: string | null },
+  typeName: string,
+) {
   return event.nameOverride?.trim() || `${typeName} ${event.year}`;
 }
 
@@ -124,7 +161,10 @@ function attendanceSelect() {
 }
 
 async function batchResponse(id: string) {
-  const [batch] = await db.select().from(conferenceImportBatches).where(eq(conferenceImportBatches.id, id));
+  const [batch] = await db
+    .select()
+    .from(conferenceImportBatches)
+    .where(eq(conferenceImportBatches.id, id));
   if (!batch) return null;
   const rows = await db
     .select({
@@ -134,6 +174,12 @@ async function batchResponse(id: string) {
       rawEmail: conferenceImportRows.rawEmail,
       rawOrganization: conferenceImportRows.rawOrganization,
       rawTitle: conferenceImportRows.rawTitle,
+      rawCombinedTitleOrganization:
+        conferenceImportRows.rawCombinedTitleOrganization,
+      proposedTitle: conferenceImportRows.proposedTitle,
+      proposedOrganization: conferenceImportRows.proposedOrganization,
+      splitNeedsReview: conferenceImportRows.splitNeedsReview,
+      splitEvidence: conferenceImportRows.splitEvidence,
       rawCells: conferenceImportRows.rawCells,
       category: conferenceImportRows.category,
       matchConfidence: conferenceImportRows.matchConfidence,
@@ -152,7 +198,22 @@ async function batchResponse(id: string) {
     .leftJoin(people, eq(people.id, conferenceImportRows.matchedPersonId))
     .where(eq(conferenceImportRows.conferenceImportBatchId, id))
     .orderBy(asc(conferenceImportRows.rowNumber));
-  return { ...batch, rows };
+  const directory = await importDirectory(db);
+  const contexts = new Map(
+    directory.people.map((person) => [
+      person.id,
+      importPersonContext(directory, person),
+    ]),
+  );
+  return {
+    ...batch,
+    rows: rows.map((row) => ({
+      ...row,
+      candidatePeople: (row.candidatePersonIds ?? [])
+        .map((id) => contexts.get(id))
+        .filter((person) => !!person),
+    })),
+  };
 }
 
 router.get("/conference-types", asyncHandler(async (req, res) => {
@@ -345,42 +406,87 @@ router.get("/conference-events", asyncHandler(async (req, res) => {
   res.json(rows);
 }));
 
-router.post("/conference-events", asyncHandler(async (req, res) => {
-  const userId = requireWrite(req, res); if (!userId) return;
-  const body = parseOrBadRequest(conferenceEventCreateBody, req.body, res); if (!body) return;
-  const hasDates = typeof body.startDate === "string";
-  if ((body.datesUnknown === true && (body.startDate != null || body.endDate != null)) ||
-    (body.datesUnknown !== true && !hasDates) ||
-    (body.endDate && (!body.startDate || body.endDate < body.startDate))) {
-    res.status(400).json({ error: "validation_error", message: "Enter a start date or explicitly mark dates unknown; the end date cannot precede the start date." }); return;
-  }
-  const [type] = await db.select().from(conferenceTypes).where(eq(conferenceTypes.id, body.conferenceTypeId));
-  if (!type) { notFound(res, "conference type"); return; }
-  const now = new Date();
-  let created;
-  try {
-    [created] = await db.insert(conferenceEvents).values({
-      id: newId(), conferenceTypeId: body.conferenceTypeId, year: body.year,
-      nameOverride: body.nameOverride ?? null, startDate: hasDates ? body.startDate! : null,
-      endDate: hasDates ? body.endDate ?? null : null,
-      dateSourceUrl: null, dateEvidence: null, dateConfidence: null, dateResearchedAt: null,
-      dateReviewedByUserId: userId, dateReviewedAt: now,
-      location: body.location ?? null, attendeeSiteUrl: body.attendeeSiteUrl ?? null,
-      source: body.source ?? null, status: body.status ?? "planned", notes: body.notes ?? null,
-    }).returning();
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    res.status(409).json({ error: "conference_event_exists", message: "An event already exists for this conference type and year." }); return;
-  }
-  await recordAudit(db, req, { action: "create", entityType: "conference_event", entityId: created.id, summary: `Created ${eventDisplay(created, type.displayName)}` });
-  await enqueueConferenceResearch(
-    created.id,
-    created.startDate ? "agenda_speakers" : "dates",
-    created.startDate ? "created" : "dates_missing",
-    userId,
-  );
-  res.status(201).json(eventResponse(created));
-}));
+router.post(
+  "/conference-events",
+  asyncHandler(async (req, res) => {
+    const userId = requireWrite(req, res);
+    if (!userId) return;
+    const body = parseOrBadRequest(conferenceEventCreateBody, req.body, res);
+    if (!body) return;
+    const hasDates = typeof body.startDate === "string";
+    if (
+      (body.datesUnknown === true &&
+        (body.startDate != null || body.endDate != null)) ||
+      (body.datesUnknown !== true && !hasDates) ||
+      (body.endDate && (!body.startDate || body.endDate < body.startDate))
+    ) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message:
+            "Enter a start date or explicitly mark dates unknown; the end date cannot precede the start date.",
+        });
+      return;
+    }
+    const [type] = await db
+      .select()
+      .from(conferenceTypes)
+      .where(eq(conferenceTypes.id, body.conferenceTypeId));
+    if (!type) {
+      notFound(res, "conference type");
+      return;
+    }
+    const now = new Date();
+    let created;
+    try {
+      [created] = await db
+        .insert(conferenceEvents)
+        .values({
+          id: newId(),
+          conferenceTypeId: body.conferenceTypeId,
+          year: body.year,
+          nameOverride: body.nameOverride ?? null,
+          startDate: hasDates ? body.startDate! : null,
+          endDate: hasDates ? (body.endDate ?? null) : null,
+          dateSourceUrl: null,
+          dateEvidence: null,
+          dateConfidence: null,
+          dateResearchedAt: null,
+          dateReviewedByUserId: userId,
+          dateReviewedAt: now,
+          location: body.location ?? null,
+          attendeeSiteUrl: body.attendeeSiteUrl ?? null,
+          source: body.source ?? null,
+          status: body.status ?? "planned",
+          notes: body.notes ?? null,
+        })
+        .returning();
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      res
+        .status(409)
+        .json({
+          error: "conference_event_exists",
+          message: "An event already exists for this conference type and year.",
+        });
+      return;
+    }
+    await recordAudit(db, req, {
+      action: "create",
+      entityType: "conference_event",
+      entityId: created.id,
+      summary: `Created ${eventDisplay(created, type.displayName)}`,
+    });
+    await enqueueConferenceResearch(
+      created.id,
+      created.startDate ? "agenda_speakers" : "dates",
+      created.startDate ? "created" : "dates_missing",
+      userId,
+    );
+    res.status(201).json(eventResponse(created));
+  }),
+);
 
 router.get("/conference-events/:id", asyncHandler(async (req, res) => {
   const params = parseOrBadRequest(GetConferenceEventParams, req.params, res); if (!params) return;
@@ -389,88 +495,181 @@ router.get("/conference-events/:id", asyncHandler(async (req, res) => {
   res.json(eventResponse(event));
 }));
 
-router.patch("/conference-events/:id", asyncHandler(async (req, res) => {
-  const userId = requireWrite(req, res); if (!userId) return;
-  const body = parseOrBadRequest(conferenceEventPatchBody, req.body, res); if (!body) return;
-  if (Object.keys(body).length === 0) { res.status(400).json({ error: "validation_error", message: "At least one event field is required." }); return; }
-  const id = paramId(req);
-  let outcome: { kind: "missing" } | { kind: "type_missing" } | { kind: "invalid"; message: string } |
-    { kind: "updated"; event: typeof conferenceEvents.$inferSelect; research: { kind: "dates" | "agenda_speakers"; windowKey: string } | null };
-  try {
-    outcome = await db.transaction(async (tx) => {
-      const [existing] = await tx.select().from(conferenceEvents).where(eq(conferenceEvents.id, id)).for("update");
-      if (!existing) return { kind: "missing" as const };
-      const conferenceTypeId = body.conferenceTypeId ?? existing.conferenceTypeId;
-      const year = body.year ?? existing.year;
-      if (body.conferenceTypeId) {
-        const [type] = await tx.select({ id: conferenceTypes.id }).from(conferenceTypes).where(eq(conferenceTypes.id, conferenceTypeId));
-        if (!type) return { kind: "type_missing" as const };
-      }
-      let startDate = existing.startDate;
-      let endDate = existing.endDate;
-      let datesWereWritten = false;
-      if (body.datesUnknown === true) {
-        if (body.startDate != null || body.endDate != null) {
-          return { kind: "invalid" as const, message: "Dates cannot be entered when datesUnknown is true." };
+router.patch(
+  "/conference-events/:id",
+  asyncHandler(async (req, res) => {
+    const userId = requireWrite(req, res);
+    if (!userId) return;
+    const body = parseOrBadRequest(conferenceEventPatchBody, req.body, res);
+    if (!body) return;
+    if (Object.keys(body).length === 0) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: "At least one event field is required.",
+        });
+      return;
+    }
+    const id = paramId(req);
+    let outcome:
+      | { kind: "missing" }
+      | { kind: "type_missing" }
+      | { kind: "invalid"; message: string }
+      | {
+          kind: "updated";
+          event: typeof conferenceEvents.$inferSelect;
+          research: {
+            kind: "dates" | "agenda_speakers";
+            windowKey: string;
+          } | null;
+        };
+    try {
+      outcome = await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select()
+          .from(conferenceEvents)
+          .where(eq(conferenceEvents.id, id))
+          .for("update");
+        if (!existing) return { kind: "missing" as const };
+        const conferenceTypeId =
+          body.conferenceTypeId ?? existing.conferenceTypeId;
+        const year = body.year ?? existing.year;
+        if (body.conferenceTypeId) {
+          const [type] = await tx
+            .select({ id: conferenceTypes.id })
+            .from(conferenceTypes)
+            .where(eq(conferenceTypes.id, conferenceTypeId));
+          if (!type) return { kind: "type_missing" as const };
         }
-        startDate = null; endDate = null; datesWereWritten = true;
-      } else {
-        if (body.startDate !== undefined) {
-          if (body.startDate === null) {
-            return { kind: "invalid" as const, message: "Use datesUnknown=true to explicitly clear event dates." };
+        let startDate = existing.startDate;
+        let endDate = existing.endDate;
+        let datesWereWritten = false;
+        if (body.datesUnknown === true) {
+          if (body.startDate != null || body.endDate != null) {
+            return {
+              kind: "invalid" as const,
+              message: "Dates cannot be entered when datesUnknown is true.",
+            };
           }
-          startDate = body.startDate;
+          startDate = null;
+          endDate = null;
           datesWereWritten = true;
+        } else {
+          if (body.startDate !== undefined) {
+            if (body.startDate === null) {
+              return {
+                kind: "invalid" as const,
+                message:
+                  "Use datesUnknown=true to explicitly clear event dates.",
+              };
+            }
+            startDate = body.startDate;
+            datesWereWritten = true;
+          }
+          if (body.endDate !== undefined) {
+            endDate = body.endDate;
+            datesWereWritten = true;
+          }
+          if (body.datesUnknown === false && !startDate) {
+            return {
+              kind: "invalid" as const,
+              message: "A start date is required when datesUnknown is false.",
+            };
+          }
         }
-        if (body.endDate !== undefined) {
-          endDate = body.endDate;
-          datesWereWritten = true;
+        if (endDate && (!startDate || endDate < startDate)) {
+          return {
+            kind: "invalid" as const,
+            message: "The end date cannot precede the start date.",
+          };
         }
-        if (body.datesUnknown === false && !startDate) {
-          return { kind: "invalid" as const, message: "A start date is required when datesUnknown is false." };
+        const set: Record<string, unknown> = {
+          conferenceTypeId,
+          year,
+          startDate,
+          endDate,
+          updatedAt: new Date(),
+        };
+        for (const key of [
+          "nameOverride",
+          "location",
+          "attendeeSiteUrl",
+          "source",
+          "status",
+          "notes",
+        ] as const) {
+          if (body[key] !== undefined) set[key] = body[key];
         }
-      }
-      if (endDate && (!startDate || endDate < startDate)) {
-        return { kind: "invalid" as const, message: "The end date cannot precede the start date." };
-      }
-      const set: Record<string, unknown> = {
-        conferenceTypeId, year, startDate, endDate, updatedAt: new Date(),
-      };
-      for (const key of ["nameOverride", "location", "attendeeSiteUrl", "source", "status", "notes"] as const) {
-        if (body[key] !== undefined) set[key] = body[key];
-      }
-      if (datesWereWritten) {
-        set.dateSourceUrl = null;
-        set.dateEvidence = null;
-        set.dateConfidence = null;
-        set.dateResearchedAt = null;
-        set.dateReviewedByUserId = userId;
-        set.dateReviewedAt = new Date();
-      }
-      const [event] = await tx.update(conferenceEvents).set(set).where(eq(conferenceEvents.id, id)).returning();
-      await recordAudit(tx, req, { action: "update", entityType: "conference_event", entityId: event.id, summary: "Updated conference event" });
-      const siteUrlBecameAvailable = !!body.attendeeSiteUrl && body.attendeeSiteUrl !== existing.attendeeSiteUrl;
-      const research = !startDate
-        ? datesWereWritten || siteUrlBecameAvailable
-          ? { kind: "dates" as const, windowKey: "dates_missing" }
-          : null
-        : datesWereWritten || siteUrlBecameAvailable
-          ? { kind: "agenda_speakers" as const, windowKey: `before_21_days:${startDate}` }
-          : null;
-      return { kind: "updated" as const, event, research };
-    });
-  } catch (error) {
-    if (!isUniqueViolation(error)) throw error;
-    res.status(409).json({ error: "conference_event_exists", message: "An event already exists for this conference type and year." }); return;
-  }
-  if (outcome.kind === "missing") { notFound(res, "conference event"); return; }
-  if (outcome.kind === "type_missing") { notFound(res, "conference type"); return; }
-  if (outcome.kind === "invalid") { res.status(400).json({ error: "validation_error", message: outcome.message }); return; }
-  if (outcome.research) {
-    await enqueueConferenceResearch(id, outcome.research.kind, outcome.research.windowKey, userId);
-  }
-  res.json(eventResponse(outcome.event));
-}));
+        if (datesWereWritten) {
+          set.dateSourceUrl = null;
+          set.dateEvidence = null;
+          set.dateConfidence = null;
+          set.dateResearchedAt = null;
+          set.dateReviewedByUserId = userId;
+          set.dateReviewedAt = new Date();
+        }
+        const [event] = await tx
+          .update(conferenceEvents)
+          .set(set)
+          .where(eq(conferenceEvents.id, id))
+          .returning();
+        await recordAudit(tx, req, {
+          action: "update",
+          entityType: "conference_event",
+          entityId: event.id,
+          summary: "Updated conference event",
+        });
+        const siteUrlBecameAvailable =
+          !!body.attendeeSiteUrl &&
+          body.attendeeSiteUrl !== existing.attendeeSiteUrl;
+        const research = !startDate
+          ? datesWereWritten || siteUrlBecameAvailable
+            ? { kind: "dates" as const, windowKey: "dates_missing" }
+            : null
+          : datesWereWritten || siteUrlBecameAvailable
+            ? {
+                kind: "agenda_speakers" as const,
+                windowKey: `before_21_days:${startDate}`,
+              }
+            : null;
+        return { kind: "updated" as const, event, research };
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      res
+        .status(409)
+        .json({
+          error: "conference_event_exists",
+          message: "An event already exists for this conference type and year.",
+        });
+      return;
+    }
+    if (outcome.kind === "missing") {
+      notFound(res, "conference event");
+      return;
+    }
+    if (outcome.kind === "type_missing") {
+      notFound(res, "conference type");
+      return;
+    }
+    if (outcome.kind === "invalid") {
+      res
+        .status(400)
+        .json({ error: "validation_error", message: outcome.message });
+      return;
+    }
+    if (outcome.research) {
+      await enqueueConferenceResearch(
+        id,
+        outcome.research.kind,
+        outcome.research.windowKey,
+        userId,
+      );
+    }
+    res.json(eventResponse(outcome.event));
+  }),
+);
 
 router.get("/conference-events/:id/attendance", asyncHandler(async (req, res) => {
   const params = parseOrBadRequest(ListConferenceAttendanceParams, req.params, res); if (!params) return;
@@ -506,43 +705,188 @@ router.post("/conference-events/:id/attendance", asyncHandler(async (req, res) =
   res.status(201).json(result);
 }));
 
-router.post("/conference-import-preview", asyncHandler(async (req, res) => {
-  if (!requireWrite(req, res)) return;
-  const body = parseOrBadRequest(StageConferenceImportBody, req.body, res); if (!body) return;
-  try {
-    const document = readImportDocument(body);
-    res.json({ headers: document.headers, sheets: document.sheets, rows: document.rows.slice(0, 20), rowCount: document.rows.length });
-  } catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid document" }); }
-}));
-
-router.post("/conference-events/:id/imports", asyncHandler(async (req, res) => {
-  const userId = requireWrite(req, res); if (!userId) return;
-  const body = parseOrBadRequest(StageConferenceImportBody, req.body, res); if (!body) return;
-  const eventId = paramId(req);
-  const [event] = await db.select({ id: conferenceEvents.id }).from(conferenceEvents).where(eq(conferenceEvents.id, eventId));
-  if (!event) return notFound(res, "conference event");
-  let parsed: ReturnType<typeof mapDocument>; let hash: string; let sourceDocumentHash: string;
-  try {
-    const document = readImportDocument(body); parsed = mapDocument(document, body.columns); sourceDocumentHash = document.hash;
-    hash = createHash("sha256").update(JSON.stringify(parsed)).digest("hex");
-  } catch (error) { res.status(400).json({ error: "validation_error", message: error instanceof Error ? error.message : "Invalid document" }); return; }
-  let batchId = newId();
-  await db.transaction(async (tx) => {
-    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${eventId + hash}))`);
-    const [existing] = await tx.select().from(conferenceImportBatches).where(and(eq(conferenceImportBatches.conferenceEventId, eventId), eq(conferenceImportBatches.sourceHash, hash)));
-    if (existing) { batchId = existing.id; return; }
-    await tx.insert(conferenceImportBatches).values({ id: batchId, conferenceEventId: eventId, sourceHash: hash, sourceFilename: body.filename ?? null, sourceDocumentHash, sourceMapping: { columns: body.columns ?? "auto", sheet: body.sheet ?? null, headerRow: body.headerRow ?? 1 }, createdByUserId: userId });
-    const directory = await importDirectory(tx);
-    for (const candidate of parsed) {
-      const match = classifyImportRow(candidate, directory.people, directory.organizations);
-      await tx.insert(conferenceImportRows).values({
-        id: newId(), conferenceImportBatchId: batchId, ...candidate, ...match,
-      });
+router.get(
+  "/conference-import-people",
+  asyncHandler(async (req, res) => {
+    const params = z
+      .object({
+        search: z.string().max(300).optional(),
+        personId: z.string().max(100).optional(),
+      })
+      .safeParse(req.query);
+    if (!params.success) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: "Invalid identity search",
+        });
+      return;
     }
-    await recordAudit(tx, req, { action: "create", entityType: "conference_import", entityId: batchId, summary: `Staged ${parsed.length} attendance rows`, metadata: { conferenceEventId: eventId } });
-  });
-  res.json(await batchResponse(batchId));
-}));
+    const directory = await importDirectory(db);
+    const search = params.data.search?.trim().toLocaleLowerCase("en") ?? "";
+    const contexts = directory.people.map((person) =>
+      importPersonContext(directory, person),
+    );
+    res.json(
+      contexts
+        .filter((person) =>
+          params.data.personId
+            ? person.id === params.data.personId
+            : !search ||
+              [
+                person.name,
+                person.id,
+                ...person.emails,
+                ...person.organizations.map((org) => org.name),
+              ].some((value) => value.toLocaleLowerCase("en").includes(search)),
+        )
+        .slice(0, 50),
+    );
+  }),
+);
+
+router.post(
+  "/conference-import-preview",
+  asyncHandler(async (req, res) => {
+    if (!requireWrite(req, res)) return;
+    const body = parseOrBadRequest(StageConferenceImportBody, req.body, res);
+    if (!body) return;
+    try {
+      const document = readImportDocument(body);
+      const directory = body.columns ? await importDirectory(db) : null;
+      const mapped =
+        body.columns && directory
+          ? mapDocument(document, body.columns).map((row) =>
+              resolveCombinedRow(row, directory.organizations),
+            )
+          : null;
+      res.json({
+        headers: document.headers,
+        sheets: document.sheets,
+        rows: mapped
+          ? mapped
+              .slice(0, 20)
+              .map((row) => ({
+                rowNumber: row.rowNumber,
+                cells: row.rawCells,
+                combinedText: row.rawCombinedTitleOrganization,
+                proposedTitle: row.proposedTitle,
+                proposedOrganization: row.proposedOrganization,
+                splitNeedsReview: row.splitNeedsReview,
+                splitEvidence: row.splitEvidence,
+              }))
+          : document.rows.slice(0, 20),
+        rowCount: document.rows.length,
+      });
+    } catch (error) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: error instanceof Error ? error.message : "Invalid document",
+        });
+    }
+  }),
+);
+
+router.post(
+  "/conference-events/:id/imports",
+  asyncHandler(async (req, res) => {
+    const userId = requireWrite(req, res);
+    if (!userId) return;
+    const body = parseOrBadRequest(StageConferenceImportBody, req.body, res);
+    if (!body) return;
+    const eventId = paramId(req);
+    const [event] = await db
+      .select({ id: conferenceEvents.id })
+      .from(conferenceEvents)
+      .where(eq(conferenceEvents.id, eventId));
+    if (!event) return notFound(res, "conference event");
+    let parsed: ReturnType<typeof mapDocument>;
+    let hash: string;
+    let sourceDocumentHash: string;
+    try {
+      const document = readImportDocument(body);
+      parsed = mapDocument(document, body.columns);
+      sourceDocumentHash = document.hash;
+      hash = createHash("sha256").update(JSON.stringify(parsed)).digest("hex");
+    } catch (error) {
+      res
+        .status(400)
+        .json({
+          error: "validation_error",
+          message: error instanceof Error ? error.message : "Invalid document",
+        });
+      return;
+    }
+    let batchId = newId();
+    await db.transaction(async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${eventId + hash}))`,
+      );
+      const [existing] = await tx
+        .select()
+        .from(conferenceImportBatches)
+        .where(
+          and(
+            eq(conferenceImportBatches.conferenceEventId, eventId),
+            eq(conferenceImportBatches.sourceHash, hash),
+          ),
+        );
+      if (existing) {
+        batchId = existing.id;
+        return;
+      }
+      await tx
+        .insert(conferenceImportBatches)
+        .values({
+          id: batchId,
+          conferenceEventId: eventId,
+          sourceHash: hash,
+          sourceFilename: body.filename ?? null,
+          sourceDocumentHash,
+          sourceMapping: {
+            columns: body.columns ?? "auto",
+            sheet: body.sheet ?? null,
+            headerRow: body.headerRow ?? 1,
+          },
+          createdByUserId: userId,
+        });
+      const directory = await importDirectory(tx);
+      for (const original of parsed) {
+        const candidate = resolveCombinedRow(original, directory.organizations);
+        const match = classifyImportRow(
+          candidate,
+          directory.people,
+          directory.organizations,
+        );
+        if (candidate.splitNeedsReview && !match.reviewError) {
+          match.category = "ambiguous";
+          match.matchStatus = "ambiguous";
+          match.matchedPersonId = null;
+          match.matchConfidence = "low";
+        }
+        if (candidate.splitEvidence)
+          match.matchEvidence = `${candidate.splitEvidence} ${match.matchEvidence}`;
+        await tx.insert(conferenceImportRows).values({
+          id: newId(),
+          conferenceImportBatchId: batchId,
+          ...candidate,
+          ...match,
+        });
+      }
+      await recordAudit(tx, req, {
+        action: "create",
+        entityType: "conference_import",
+        entityId: batchId,
+        summary: `Staged ${parsed.length} attendance rows`,
+        metadata: { conferenceEventId: eventId },
+      });
+    });
+    res.json(await batchResponse(batchId));
+  }),
+);
 
 router.get("/conference-imports/:id", asyncHandler(async (req, res) => {
   const params = parseOrBadRequest(GetConferenceImportParams, req.params, res); if (!params) return;

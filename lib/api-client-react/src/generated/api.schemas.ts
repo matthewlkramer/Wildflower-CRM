@@ -368,6 +368,23 @@ export interface ConferenceImportColumns {
    * @maximum 99
    */
   email?: number;
+  /**
+   * @minimum 0
+   * @maximum 99
+   */
+  combinedTitleOrganization?: number;
+}
+
+export type ConferenceImportPersonOrganizationsItem = {
+  id: string;
+  name: string;
+};
+
+export interface ConferenceImportPerson {
+  id: string;
+  name: string;
+  emails: string[];
+  organizations: ConferenceImportPersonOrganizationsItem[];
 }
 
 export interface ConferenceImportInput {
@@ -421,6 +438,17 @@ export interface ConferenceImportRow {
   rawOrganization?: string | null;
   /** @nullable */
   rawTitle?: string | null;
+  /** @nullable */
+  rawCombinedTitleOrganization?: string | null;
+  /** @nullable */
+  proposedTitle?: string | null;
+  /** @nullable */
+  proposedOrganization?: string | null;
+  /** @nullable */
+  splitNeedsReview?: boolean | null;
+  /** @nullable */
+  splitEvidence?: string | null;
+  candidatePeople?: ConferenceImportPerson[];
   /** @nullable */
   rawCells?: string[] | null;
   /** @nullable */
@@ -11943,9 +11971,29 @@ limit?: number;
 search?: string;
 };
 
+export type ListConferenceImportPeopleParams = {
+/**
+ * @maxLength 300
+ */
+search?: string;
+/**
+ * @maxLength 100
+ */
+personId?: string;
+};
+
 export type PreviewConferenceImport200RowsItem = {
   rowNumber: number;
   cells: string[];
+  /** @nullable */
+  combinedText?: string | null;
+  /** @nullable */
+  proposedTitle?: string | null;
+  /** @nullable */
+  proposedOrganization?: string | null;
+  splitNeedsReview?: boolean;
+  /** @nullable */
+  splitEvidence?: string | null;
 };
 
 export type PreviewConferenceImport200 = {

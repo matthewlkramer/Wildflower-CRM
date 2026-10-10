@@ -73,6 +73,20 @@ export async function importDirectory(executor: Executor) {
   return { people: directory, organizations: orgs };
 }
 
+export function importPersonContext(
+  directory: Awaited<ReturnType<typeof importDirectory>>,
+  person: DirectoryPerson,
+) {
+  return {
+    id: person.id,
+    name: person.name,
+    emails: person.emails,
+    organizations: directory.organizations
+      .filter((org) => person.organizationIds.includes(org.id))
+      .map((org) => ({ id: org.id, name: org.name })),
+  };
+}
+
 export type ImportReview = {
   acceptedRowIds?: string[];
   rejectedRowIds?: string[];

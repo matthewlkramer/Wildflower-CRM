@@ -8,6 +8,7 @@ export type ColumnMapping = {
   organization?: number;
   title?: number;
   email?: number;
+  combinedTitleOrganization?: number;
 };
 export type ImportDocument = {
   csvText?: string;
@@ -212,8 +213,13 @@ export function mapDocument(
       throw new Error("Select valid columns, including a name column.");
   const selected = Object.values(columns).filter((i) => i !== undefined);
   if (new Set(selected).size !== selected.length)
+    throw new Error("Each mapped field must use a different column.");
+  if (
+    columns.combinedTitleOrganization !== undefined &&
+    (columns.title !== undefined || columns.organization !== undefined)
+  )
     throw new Error(
-      "Each mapped field must use a different column. Leave combined title/organization text unmapped until reviewed.",
+      "Choose combined title/organization or separate title and organization columns, not both.",
     );
   return document.rows.map(({ rowNumber, cells }) => ({
     rowNumber,
@@ -227,7 +233,127 @@ export function mapDocument(
       columns.title === undefined ? null : (cells[columns.title] ?? null),
     rawEmail:
       columns.email === undefined ? null : (cells[columns.email] ?? null),
+    rawCombinedTitleOrganization:
+      columns.combinedTitleOrganization === undefined
+        ? null
+        : (cells[columns.combinedTitleOrganization] ?? null),
   }));
+}
+
+/** A complete known organization/alias suffix is corroboration; punctuation alone
+ * never establishes an employer or foundation classification. */
+export function splitCombinedOrganization(
+  text: string,
+  organizations: DirectoryOrganization[],
+) {
+  const line = text.trim();
+  const boundaries = [
+    0,
+    ...Array.from(
+      line.matchAll(/[,\n;]|\s[|–—]\s/g),
+      (m) => m.index! + m[0].length,
+    ),
+  ];
+  const matches: {
+    id: string;
+    title: string | null;
+    organization: string;
+    at: number;
+  }[] = [];
+  for (const at of boundaries) {
+    const organization = line.slice(at).trim();
+    for (const org of organizations) {
+      if (
+        [org.name, ...(org.historicalNames ?? [])].some((n) =>
+          organizationNamesEquivalent(n, organization),
+        )
+      ) {
+        matches.push({
+          id: org.id,
+          title: at
+            ? line
+                .slice(0, at)
+                .replace(/[,\n;|–—\s]+$/, "")
+                .trim() || null
+            : null,
+          organization,
+          at,
+        });
+      }
+    }
+  }
+  const unique = Array.from(
+    new Map(matches.map((m) => [JSON.stringify([m.id, m.at]), m])).values(),
+  );
+  if (unique.length === 1)
+    return {
+      proposedTitle: unique[0].title,
+      proposedOrganization: unique[0].organization,
+      splitNeedsReview: false,
+      splitEvidence:
+        "Complete CRM organization name or historical alias matches a unique suffix; the original line is preserved.",
+    };
+  if (unique.length > 1)
+    return {
+      proposedTitle: null,
+      proposedOrganization: null,
+      splitNeedsReview: true,
+      splitEvidence: `Ambiguous organization boundaries: ${unique.map((m) => `${m.title ?? "(no title)"} → ${m.organization} [${m.id}]`).join("; ")}. Choose the organization explicitly.`,
+    };
+  // Only one plausible role/employer boundary may be previewed for an unknown
+  // organization. It remains tentative and never upgrades matching confidence.
+  const guesses = boundaries
+    .slice(1)
+    .map((at) => ({
+      title: line
+        .slice(0, at)
+        .replace(/[,\n;|–—\s]+$/, "")
+        .trim(),
+      organization: line.slice(at).trim(),
+    }))
+    .filter(
+      (m) =>
+        m.organization &&
+        /\b(officer|director|president|manager|coordinator|trustee|chair|advisor|adviser|specialist|associate|executive|founder|partner|ceo|cfo|chief)\b/i.test(
+          m.title,
+        ),
+    );
+  return {
+    proposedTitle: guesses.length === 1 ? guesses[0].title : null,
+    proposedOrganization: guesses.length === 1 ? guesses[0].organization : null,
+    splitNeedsReview: true,
+    splitEvidence:
+      guesses.length === 1
+        ? "Tentative title/organization split only. No CRM organization corroboration; verify the split and foundation evidence before approving new records."
+        : "No unique CRM organization suffix or reliable split. Preserve the complete line and review its organization explicitly.",
+  };
+}
+
+export function resolveCombinedRow<
+  T extends {
+    rawCombinedTitleOrganization: string | null;
+    rawOrganization: string | null;
+    rawTitle: string | null;
+  },
+>(row: T, organizations: DirectoryOrganization[]) {
+  if (row.rawCombinedTitleOrganization === null)
+    return {
+      ...row,
+      proposedTitle: null,
+      proposedOrganization: null,
+      splitNeedsReview: false,
+      splitEvidence: null,
+    };
+  const split = splitCombinedOrganization(
+    row.rawCombinedTitleOrganization,
+    organizations,
+  );
+  return {
+    ...row,
+    ...split,
+    rawOrganization: split.splitNeedsReview ? null : split.proposedOrganization,
+    rawTitle: split.splitNeedsReview ? null : split.proposedTitle,
+  };
 }
 
 export function normalizePersonName(value: string) {

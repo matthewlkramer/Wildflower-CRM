@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import {
+  splitCombinedOrganization,
   classifyImportRow,
   mapDocument,
   MAX_IMPORT_BYTES,
@@ -186,5 +187,65 @@ describe("conference directory documents", () => {
         orgs,
       ).reviewError,
     ).toBe("Missing name.");
+  });
+});
+
+describe("combined displayed affiliation", () => {
+  it("matches a complete CRM suffix without splitting commas inside title or organization", () => {
+    expect(
+      splitCombinedOrganization(
+        "Senior Director, Programs, North Harbor Foundation",
+        orgs,
+      ),
+    ).toMatchObject({
+      proposedTitle: "Senior Director, Programs",
+      proposedOrganization: "North Harbor Foundation",
+      splitNeedsReview: false,
+    });
+    expect(
+      splitCombinedOrganization("Program Officer, Harbor Trust", orgs),
+    ).toMatchObject({
+      proposedTitle: "Program Officer",
+      proposedOrganization: "Harbor Trust",
+      splitNeedsReview: false,
+    });
+    expect(
+      splitCombinedOrganization("Civic Learning Alliance", orgs),
+    ).toMatchObject({
+      proposedTitle: null,
+      proposedOrganization: "Civic Learning Alliance",
+      splitNeedsReview: false,
+    });
+    expect(
+      splitCombinedOrganization("Director, Community, Inc.", [
+        { id: "comma", name: "Community, Inc.", historicalNames: [] },
+      ]),
+    ).toMatchObject({
+      proposedTitle: "Director",
+      proposedOrganization: "Community, Inc.",
+      splitNeedsReview: false,
+    });
+  });
+  it("leaves uncertain boundaries and foundation eligibility for review", () => {
+    expect(
+      splitCombinedOrganization("Program Officer, Mystery Foundation", orgs),
+    ).toMatchObject({
+      proposedTitle: "Program Officer",
+      proposedOrganization: "Mystery Foundation",
+      splitNeedsReview: true,
+    });
+    expect(
+      splitCombinedOrganization("Director, Programs, Unknown Group", orgs),
+    ).toMatchObject({ proposedOrganization: null, splitNeedsReview: true });
+    expect(
+      splitCombinedOrganization("Director, North Harbor Foundation", [
+        ...orgs,
+        { id: "other", name: "North Harbor Foundation", historicalNames: [] },
+      ]),
+    ).toMatchObject({ proposedOrganization: null, splitNeedsReview: true });
+    expect(splitCombinedOrganization("Unknown Group", orgs)).toMatchObject({
+      proposedOrganization: null,
+      splitNeedsReview: true,
+    });
   });
 });

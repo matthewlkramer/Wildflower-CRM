@@ -324,6 +324,28 @@ export const CreateConferenceAttendanceBody = zod.object({
   "evidenceNote": zod.string().nullish()
 })
 
+export const listConferenceImportPeopleQuerySearchMax = 300;
+
+export const listConferenceImportPeopleQueryPersonIdMax = 100;
+
+
+
+export const ListConferenceImportPeopleQueryParams = zod.object({
+  "search": zod.coerce.string().max(listConferenceImportPeopleQuerySearchMax).optional(),
+  "personId": zod.coerce.string().max(listConferenceImportPeopleQueryPersonIdMax).optional()
+})
+
+export const ListConferenceImportPeopleResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "emails": zod.array(zod.string()),
+  "organizations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}))
+})
+export const ListConferenceImportPeopleResponse = zod.array(ListConferenceImportPeopleResponseItem)
+
 export const previewConferenceImportBodyCsvTextMax = 2097152;
 
 export const previewConferenceImportBodyFileBase64Max = 2796204;
@@ -342,6 +364,9 @@ export const previewConferenceImportBodyColumnsTitleMax = 99;
 export const previewConferenceImportBodyColumnsEmailMin = 0;
 export const previewConferenceImportBodyColumnsEmailMax = 99;
 
+export const previewConferenceImportBodyColumnsCombinedTitleOrganizationMin = 0;
+export const previewConferenceImportBodyColumnsCombinedTitleOrganizationMax = 99;
+
 
 
 export const PreviewConferenceImportBody = zod.object({
@@ -354,7 +379,8 @@ export const PreviewConferenceImportBody = zod.object({
   "name": zod.number().min(previewConferenceImportBodyColumnsNameMin).max(previewConferenceImportBodyColumnsNameMax),
   "organization": zod.number().min(previewConferenceImportBodyColumnsOrganizationMin).max(previewConferenceImportBodyColumnsOrganizationMax).optional(),
   "title": zod.number().min(previewConferenceImportBodyColumnsTitleMin).max(previewConferenceImportBodyColumnsTitleMax).optional(),
-  "email": zod.number().min(previewConferenceImportBodyColumnsEmailMin).max(previewConferenceImportBodyColumnsEmailMax).optional()
+  "email": zod.number().min(previewConferenceImportBodyColumnsEmailMin).max(previewConferenceImportBodyColumnsEmailMax).optional(),
+  "combinedTitleOrganization": zod.number().min(previewConferenceImportBodyColumnsCombinedTitleOrganizationMin).max(previewConferenceImportBodyColumnsCombinedTitleOrganizationMax).optional()
 }).optional()
 })
 
@@ -364,7 +390,12 @@ export const PreviewConferenceImportResponse = zod.object({
   "rowCount": zod.number(),
   "rows": zod.array(zod.object({
   "rowNumber": zod.number(),
-  "cells": zod.array(zod.string())
+  "cells": zod.array(zod.string()),
+  "combinedText": zod.string().nullish(),
+  "proposedTitle": zod.string().nullish(),
+  "proposedOrganization": zod.string().nullish(),
+  "splitNeedsReview": zod.boolean().optional(),
+  "splitEvidence": zod.string().nullish()
 }))
 })
 
@@ -390,6 +421,9 @@ export const stageConferenceImportBodyColumnsTitleMax = 99;
 export const stageConferenceImportBodyColumnsEmailMin = 0;
 export const stageConferenceImportBodyColumnsEmailMax = 99;
 
+export const stageConferenceImportBodyColumnsCombinedTitleOrganizationMin = 0;
+export const stageConferenceImportBodyColumnsCombinedTitleOrganizationMax = 99;
+
 
 
 export const StageConferenceImportBody = zod.object({
@@ -402,7 +436,8 @@ export const StageConferenceImportBody = zod.object({
   "name": zod.number().min(stageConferenceImportBodyColumnsNameMin).max(stageConferenceImportBodyColumnsNameMax),
   "organization": zod.number().min(stageConferenceImportBodyColumnsOrganizationMin).max(stageConferenceImportBodyColumnsOrganizationMax).optional(),
   "title": zod.number().min(stageConferenceImportBodyColumnsTitleMin).max(stageConferenceImportBodyColumnsTitleMax).optional(),
-  "email": zod.number().min(stageConferenceImportBodyColumnsEmailMin).max(stageConferenceImportBodyColumnsEmailMax).optional()
+  "email": zod.number().min(stageConferenceImportBodyColumnsEmailMin).max(stageConferenceImportBodyColumnsEmailMax).optional(),
+  "combinedTitleOrganization": zod.number().min(stageConferenceImportBodyColumnsCombinedTitleOrganizationMin).max(stageConferenceImportBodyColumnsCombinedTitleOrganizationMax).optional()
 }).optional()
 })
 
@@ -420,6 +455,20 @@ export const StageConferenceImportResponse = zod.object({
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
   "rawTitle": zod.string().nullish(),
+  "rawCombinedTitleOrganization": zod.string().nullish(),
+  "proposedTitle": zod.string().nullish(),
+  "proposedOrganization": zod.string().nullish(),
+  "splitNeedsReview": zod.boolean().nullish(),
+  "splitEvidence": zod.string().nullish(),
+  "candidatePeople": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "emails": zod.array(zod.string()),
+  "organizations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}))
+})).optional(),
   "rawCells": zod.array(zod.string()).nullish(),
   "category": zod.string().nullish(),
   "matchConfidence": zod.string().nullish(),
@@ -455,6 +504,20 @@ export const GetConferenceImportResponse = zod.object({
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
   "rawTitle": zod.string().nullish(),
+  "rawCombinedTitleOrganization": zod.string().nullish(),
+  "proposedTitle": zod.string().nullish(),
+  "proposedOrganization": zod.string().nullish(),
+  "splitNeedsReview": zod.boolean().nullish(),
+  "splitEvidence": zod.string().nullish(),
+  "candidatePeople": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "emails": zod.array(zod.string()),
+  "organizations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}))
+})).optional(),
   "rawCells": zod.array(zod.string()).nullish(),
   "category": zod.string().nullish(),
   "matchConfidence": zod.string().nullish(),
@@ -513,6 +576,20 @@ export const ConfirmConferenceImportResponse = zod.object({
   "rawEmail": zod.string().nullish(),
   "rawOrganization": zod.string().nullish(),
   "rawTitle": zod.string().nullish(),
+  "rawCombinedTitleOrganization": zod.string().nullish(),
+  "proposedTitle": zod.string().nullish(),
+  "proposedOrganization": zod.string().nullish(),
+  "splitNeedsReview": zod.boolean().nullish(),
+  "splitEvidence": zod.string().nullish(),
+  "candidatePeople": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "emails": zod.array(zod.string()),
+  "organizations": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string()
+}))
+})).optional(),
   "rawCells": zod.array(zod.string()).nullish(),
   "category": zod.string().nullish(),
   "matchConfidence": zod.string().nullish(),

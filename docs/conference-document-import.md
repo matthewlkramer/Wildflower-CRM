@@ -59,8 +59,9 @@ before parsing (20 MiB expanded maximum); encrypted archives, VBA and external
 workbook links are rejected. Formulas are not evaluated. Malformed documents fail
 with an actionable message; row identity errors remain visible in review.
 
-Migration: `lib/db/migrations/0273_conference_document_import.sql` is additive and
-idempotent. Apply it only through the normal reviewed release process, before using
+Migrations `0273_conference_document_import.sql` and
+`0274_conference_import_combined_fields.sql` in `lib/db/migrations` are additive and
+idempotent. Apply them only through the normal reviewed release process, before using
 the new code. No production migration or import has been run for this change.
 
 ## Verification
@@ -70,8 +71,7 @@ rows, invalid files/mappings, no-email matches, duplicate names, mixed organizat
 and uncertain foundation status. HTTP/PostgreSQL tests cover auth, staging races,
 proposals, explicit evidence, rejection, partial failure/retry, repeated/changed
 uploads, duplicate rows, and richer attendance preservation. The browser fixture
-exercises the real component with mocked HTTP; separate HTTP tests exercise the real
-routes/database. It uses no production Clerk session or data. Run:
+exercises the real component with mocked HTTP. An optional integration-backed Edge/Chromium test also drives that component against the real local HTTP routes and PostgreSQL database, including contextual duplicate-name candidates and the selected-record link. Enable it with `CONFERENCE_IMPORT_BROWSER_TEST=1` (and optionally `PLAYWRIGHT_BROWSER_CHANNEL=msedge`) when running the API integration suite. It uses no production Clerk session or data. Run:
 
 ```sh
 pnpm --filter @workspace/api-server exec vitest run src/__tests__/conference-import-document.test.ts src/__tests__/conference-document-import.integration.test.ts
@@ -84,3 +84,10 @@ helper's Windows metadata incompatibility. XLSX ID
 `libfile_8749f8e40adc819189fe1d5bafeb6c44` were not readable locally. The 755 source
 entries, exact displayed headers and actual GFE layout have not been verified.
 No workaround download or additional transfer retry was attempted.
+
+
+## Combined displayed lines and identity review
+
+Map a single displayed title/organization column with **Combined title / organization**. The original line and cells are always preserved. **Preview mapped splits** shows the proposed boundary before staging. A unique complete CRM organization name or historical alias at the end permits a corroborated split, including commas inside a title or organization. Multiple matches or boundaries require review. An unknown line may show a tentative role/employer split, but it remains ambiguous and never proves foundation eligibility. Verify/correct proposal fields explicitly before approval.
+
+Candidate cards and the import-specific person picker show current organizations, emails when available, and stable record IDs. Each candidate has an inspection link; choosing an override updates the selected-person link immediately. Approval still rechecks the database. Person merges OR registration-listed evidence across duplicate attendee rows while retaining the richer physical attendance status, role, source and provenance.

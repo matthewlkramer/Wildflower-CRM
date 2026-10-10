@@ -10,7 +10,13 @@ createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={client}>
     <main className="mx-auto max-w-4xl p-5">
       <h1 className="mb-4 font-serif text-3xl">Synthetic conference 2090</h1>
-      <DocumentImport eventId="synthetic-event" onComplete={() => undefined} />
+      <DocumentImport
+        eventId={
+          new URLSearchParams(location.search).get("eventId") ||
+          "synthetic-event"
+        }
+        onComplete={() => undefined}
+      />
     </main>
   </QueryClientProvider>,
 );

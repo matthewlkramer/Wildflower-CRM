@@ -35,6 +35,7 @@ test("preview, map, approve/reject, retry a row and resume a directory import", 
   let approvals = 0;
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.pathname.endsWith("/conference-import-people")) { await route.fulfill({json:[]}); return; }
     if (url.pathname.endsWith("/conference-import-preview")) {
       await route.fulfill({
         json: {

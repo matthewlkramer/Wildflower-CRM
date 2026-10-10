@@ -62,7 +62,7 @@ function assertSameImportRow(
   a: typeof conferenceImportRows.$inferSelect,
   b: typeof conferenceImportRows.$inferSelect,
 ): void {
-    if (a.rawName !== b.rawName || a.rawEmail !== b.rawEmail || a.rawOrganization !== b.rawOrganization || a.rawTitle !== b.rawTitle || JSON.stringify(a.rawCells) !== JSON.stringify(b.rawCells)) {
+    if (a.rawName !== b.rawName || a.rawEmail !== b.rawEmail || a.rawOrganization !== b.rawOrganization || a.rawTitle !== b.rawTitle || a.rawCombinedTitleOrganization !== b.rawCombinedTitleOrganization || JSON.stringify(a.rawCells) !== JSON.stringify(b.rawCells)) {
     throw new ConferenceMergeConflict(
       `Import rows ${a.id} and ${b.id} have different source data at row ${a.rowNumber}; resolve this import collision manually.`,
     );
