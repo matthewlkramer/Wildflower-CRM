@@ -539,9 +539,6 @@ router.post(
     const savedText = [
       note.title ? `Title: ${note.title}` : "",
       note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
-      note.aiSummary && !sourceArtifacts.some((artifact) => artifact.transcript)
-        ? `Summary:\n${note.aiSummary}`
-        : "",
       note.rawTranscript &&
       !sourceArtifacts.some((artifact) => artifact.transcript)
         ? `Transcript:\n${note.rawTranscript}`
@@ -551,9 +548,6 @@ router.post(
           ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript}`
           : "",
       ),
-      (note.actionItems as MeetingActionItem[] | null)?.length
-        ? `Existing action items:\n${(note.actionItems as MeetingActionItem[]).map((item) => `- ${item.title}`).join("\n")}`
-        : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -562,7 +556,7 @@ router.post(
       proposals = await generateMeetingTaskProposals(savedText);
     } catch (error) {
       res.status(503).json({
-        error: "openai_unavailable",
+        error: "task_generation_unavailable",
         message:
           error instanceof Error
             ? error.message

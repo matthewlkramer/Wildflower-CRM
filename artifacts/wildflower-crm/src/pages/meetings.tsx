@@ -6,6 +6,7 @@ import {
   getListCalendarEventsQueryKey,
   useListCalendarEvents,
   useListUsers,
+  useGetCurrentUser,
   type CalendarEvent,
 } from "@workspace/api-client-react";
 import { userDisplayName } from "@/components/user-picker";
@@ -29,6 +30,7 @@ import {
   NotebookPen,
   MessageSquareOff,
 } from "lucide-react";
+import { useBrowserPreference } from "@/hooks/use-browser-preference";
 import { useToast } from "@/hooks/use-toast";
 
 export const MEETING_HISTORY_DAYS = 60;
@@ -208,7 +210,12 @@ export default function MeetingsPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState("history");
   const [search, setSearch] = useState("");
-  const [ownerId, setOwnerId] = useState("all");
+  const { data: viewer } = useGetCurrentUser();
+  const [ownerId, setOwnerId] = useBrowserPreference(
+    viewer?.id,
+    "meetings-owner",
+    "all",
+  );
   const now = useMemo(() => new Date(), []);
   const nowIso = now.toISOString();
   const historyStart = meetingHistoryStart(now);

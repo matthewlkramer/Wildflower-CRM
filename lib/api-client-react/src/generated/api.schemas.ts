@@ -9170,6 +9170,7 @@ export interface Interaction {
   personIds?: string[] | null;
   organizationIds?: string[] | null;
   householdIds?: string[] | null;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -9245,6 +9246,7 @@ export const TripOutreachStatus = {
   not_invited: 'not_invited',
   invited: 'invited',
   responded: 'responded',
+  bounced: 'bounced',
 } as const;
 
 export type TripVisitSource = typeof TripVisitSource[keyof typeof TripVisitSource];
@@ -10132,6 +10134,7 @@ export interface Note {
   mentionUserIds?: string[] | null;
   /** Optional synced calendar meeting this free-form note documents. */
   calendarEventId?: string | null;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -12514,6 +12517,10 @@ worklist?: ListOpportunitiesAndPledgesWorklist;
 type?: string[];
 organizationId?: string;
 householdId?: string;
+/**
+ * Include the individual's primary household and current principal organizations; donor of record is unchanged.
+ */
+includeGivingRelationships?: boolean;
 individualGiverPersonId?: string;
 ownerUserId?: string[];
 /**
@@ -12687,6 +12694,10 @@ grantYearsPresence?: ListGiftsAndPaymentsGrantYearsPresence;
 type?: string[];
 organizationId?: string;
 householdId?: string;
+/**
+ * Include the individual's primary household and current principal organizations; donor of record is unchanged.
+ */
+includeGivingRelationships?: boolean;
 individualGiverPersonId?: string;
 opportunityId?: string;
 paymentMethod?: string[];

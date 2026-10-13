@@ -109,3 +109,19 @@ export function looksLikeTripInvitation(
     SCHEDULING_LANGUAGE.test(text)
   );
 }
+
+/** Outreach for this trip starts with its planning, capped to 90 days before travel. */
+export function tripOutreachStart(trip: { createdAt: Date; travelStartsAt: Date }): Date {
+  return new Date(Math.max(trip.createdAt.getTime() - 7 * 86400000, trip.travelStartsAt.getTime() - 90 * 86400000));
+}
+
+export function latestInvitationBounce(
+  invitation: { sentAt: Date; toEmails?: string[] | null } | undefined,
+  replyAt: Date | undefined,
+  evidence: Array<{ recipient: string | null; occurredAt: Date | null }>,
+): Date | null {
+  if (!invitation) return null;
+  const recipients = new Set((invitation.toEmails ?? []).map((email) => email.toLowerCase()));
+  const relevant = evidence.filter((item) => item.occurredAt && item.recipient && recipients.has(item.recipient.toLowerCase()) && item.occurredAt > invitation.sentAt && (!replyAt || item.occurredAt > replyAt));
+  return relevant.reduce<Date | null>((latest, item) => !latest || item.occurredAt! > latest ? item.occurredAt : latest, null);
+}

@@ -98,3 +98,12 @@ who completed it and when. Read-only viewers can inspect but cannot change it.
 The implementation seeds two open projects: historical newsletter evidence
 (including Mailchimp opt-outs), and completion/review of the shared historical
 donation-coding worksheet. Reapplying the seed preserves notes and completion.
+
+## Manual activity corrections
+
+Notes and logged interactions can be edited from the activity column. Edits
+preserve the existing author/owner and linked records unless those fields are
+explicitly changed. Delete logically removes an item using `archived_at`; it
+never physically removes its history. Archived items are excluded from active
+activity, derived last contact, linked meeting-note counts, and AI note signals.
+Apply migrations 0276 and 0277 before the October feedback code release.

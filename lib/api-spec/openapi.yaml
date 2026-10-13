@@ -4329,6 +4329,10 @@ paths:
           schema: { type: array, items: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
+        - name: includeGivingRelationships
+          in: query
+          description: Include the individual's primary household and current principal organizations; donor of record is unchanged.
+          schema: { type: boolean, default: false }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - name: ownerUserId
           in: query
@@ -5078,6 +5082,10 @@ paths:
           schema: { type: array, items: { type: string } }
         - { name: organizationId, in: query, schema: { type: string } }
         - { name: householdId, in: query, schema: { type: string } }
+        - name: includeGivingRelationships
+          in: query
+          description: Include the individual's primary household and current principal organizations; donor of record is unchanged.
+          schema: { type: boolean, default: false }
         - { name: individualGiverPersonId, in: query, schema: { type: string } }
         - { name: opportunityId, in: query, schema: { type: string } }
         - name: paymentMethod
@@ -5867,6 +5875,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
+      summary: Archive this record without removing its history
       operationId: deleteInteraction
       tags: [interactions]
       parameters: [{ $ref: "#/components/parameters/IdPath" }]
@@ -5974,6 +5983,7 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
     delete:
+      summary: Archive this record without removing its history
       operationId: deleteNote
       tags: [notes]
       parameters: [{ $ref: "#/components/parameters/IdPath" }]
@@ -25676,6 +25686,7 @@ components:
         organizationIds:
           { type: array, items: { type: string }, nullable: true }
         householdIds: { type: array, items: { type: string }, nullable: true }
+        archivedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     InteractionList:
@@ -25790,7 +25801,7 @@ components:
           }
     TripOutreachStatus:
       type: string
-      enum: [not_invited, invited, responded]
+      enum: [not_invited, invited, responded, bounced]
     TripVisitSource:
       type: string
       enum: [system_draft, manual]
@@ -26932,6 +26943,7 @@ components:
             nullable: true,
             description: "Optional synced calendar meeting this free-form note documents.",
           }
+        archivedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     NoteList:

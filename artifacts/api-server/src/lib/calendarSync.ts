@@ -14,6 +14,7 @@ import {
   extractAttendeeEmails,
   eventTimes,
   CalendarSyncTokenGoneError,
+  CalendarPageTokenInvalidError,
   type GCalEvent,
 } from "./gcal";
 import {
@@ -39,10 +40,10 @@ import { withSyncLock } from "./syncLock";
  *
  * Modes (gated on `state.bootstrap_completed_at`):
  *
- *   1. Bootstrap — `events.list` over the entire calendar history
- *      (no `timeMin`), paginated. We want every meeting the user has
+ *   1. Bootstrap — `events.list` from the epoch through a fixed one-year
+ *      future horizon, paginated. We want every meeting the user has
  *      ever attended in the CRM interactions log, so the bootstrap
- *      sweep is intentionally unbounded. Capped at
+ *      historical range is complete but recurring expansion is finite. Capped at
  *      BOOTSTRAP_MAX_PAGES_PER_RUN per run; pending
  *      pageToken goes into `bootstrap_page_token`. When fully
  *      drained we write the final response's `nextSyncToken` into
@@ -77,6 +78,12 @@ import { withSyncLock } from "./syncLock";
  * the same page — Calendar's `syncToken` semantics keep replaying
  * the failed deltas until the token is consumed cleanly.
  */
+
+export function calendarBootstrapEnd(anchor: Date): Date {
+  const end = new Date(anchor);
+  end.setUTCFullYear(end.getUTCFullYear() + 1);
+  return end;
+}
 
 const BOOTSTRAP_PAGE_SIZE = 250;
 const BOOTSTRAP_MAX_PAGES_PER_RUN = 4;
@@ -314,6 +321,7 @@ export async function syncUserCalendar(
             .set({
               syncToken: null,
               bootstrapCompletedAt: null,
+              bootstrapTimeMax: null,
               bootstrapPageToken: null,
               noProgressRuns: 0,
               incrementalPageToken: null,
@@ -346,6 +354,7 @@ export async function syncUserCalendar(
         .update(calendarSyncState)
         .set({
           bootstrapCompletedAt: null,
+          bootstrapTimeMax: null,
           bootstrapPageToken: null,
           noProgressRuns: 0,
           incrementalPageToken: null,
@@ -414,18 +423,59 @@ async function runBootstrapPass(
   // drain large calendars over multiple runs without blowing Google
   // quota.
   const BOOTSTRAP_TIME_MIN = "1970-01-01T00:00:00Z";
-  let pageToken: string | null = state.bootstrapPageToken ?? null;
+  // Expanding an unbounded recurring series never drains. Use one fixed
+  // horizon across every resumed page, stored alongside the page cursor.
+  const bootstrapTimeMax =
+    state.bootstrapTimeMax ?? calendarBootstrapEnd(new Date());
+  if (!state.bootstrapTimeMax) {
+    // Persist the query bound with its cursor. Legacy unbounded cursors
+    // cannot be reused; existing imported events remain intact.
+    await db
+      .update(calendarSyncState)
+      .set({
+        bootstrapTimeMax,
+        bootstrapPageToken: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(calendarSyncState.calendarUserId, grant.userId));
+  }
+  let pageToken: string | null = state.bootstrapTimeMax
+    ? (state.bootstrapPageToken ?? null)
+    : null;
   let pagesProcessed = 0;
   let drained = false;
   let finalSyncToken: string | null = null;
 
   while (pagesProcessed < BOOTSTRAP_MAX_PAGES_PER_RUN) {
     const currentPageToken: string | null = pageToken;
-    const page = await listEvents(grant.accessToken, state.gcalCalendarId, {
-      timeMin: BOOTSTRAP_TIME_MIN,
-      pageToken: currentPageToken,
-      maxResults: BOOTSTRAP_PAGE_SIZE,
-    });
+    let page;
+    try {
+      page = await listEvents(grant.accessToken, state.gcalCalendarId, {
+        timeMin: BOOTSTRAP_TIME_MIN,
+        timeMax: bootstrapTimeMax.toISOString(),
+        pageToken: currentPageToken,
+        maxResults: BOOTSTRAP_PAGE_SIZE,
+      });
+    } catch (error) {
+      if (
+        !(error instanceof CalendarPageTokenInvalidError) ||
+        !currentPageToken
+      )
+        throw error;
+      // Existing unbounded cursors (and expired page tokens) cannot resume
+      // a bounded query. Restart safely; upserts preserve manual privacy.
+      await db
+        .update(calendarSyncState)
+        .set({
+          bootstrapPageToken: null,
+          noProgressRuns: 0,
+          updatedAt: new Date(),
+        })
+        .where(eq(calendarSyncState.calendarUserId, grant.userId));
+      pageToken = null;
+      pagesProcessed++;
+      continue;
+    }
     pagesProcessed++;
 
     let pageErrors = 0;
@@ -486,9 +536,8 @@ async function runBootstrapPass(
       .update(calendarSyncState)
       .set({
         bootstrapPageToken: pageToken,
-        noProgressRuns: pageToken === state.bootstrapPageToken
-          ? state.noProgressRuns + 1
-          : 0,
+        noProgressRuns:
+          pageToken === state.bootstrapPageToken ? state.noProgressRuns + 1 : 0,
         updatedAt: new Date(),
       })
       .where(eq(calendarSyncState.calendarUserId, grant.userId));

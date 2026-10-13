@@ -1,6 +1,8 @@
 import { useState } from "react";
 import {
   useCreateInteraction,
+  useUpdateInteraction,
+  type Interaction,
   getListInteractionsQueryKey,
   type InteractionKind,
 } from "@workspace/api-client-react";
@@ -32,6 +34,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { Pencil, MessageSquare } from "lucide-react";
+
 const KIND_OPTIONS: { value: InteractionKind; label: string }[] = [
   { value: "meeting", label: "Meeting" },
   { value: "phone_call", label: "Phone call" },
@@ -41,6 +45,7 @@ const KIND_OPTIONS: { value: InteractionKind; label: string }[] = [
 ];
 
 interface Props {
+  interaction?: Interaction;
   // Pre-fill exactly one of these so the dialog can be triggered from a
   // detail page and the interaction is automatically linked to that
   // entity. A global trigger requires the user to choose at least one link.
@@ -68,6 +73,7 @@ export function LogInteractionDialog({
   prefillHouseholdId,
   triggerLabel,
   compact,
+  interaction,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<InteractionKind>("meeting");
@@ -79,6 +85,7 @@ export function LogInteractionDialog({
   const [links, setLinks] = useState<EntityLinks>({ ...EMPTY_LINKS });
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const update = useUpdateInteraction();
   const create = useCreateInteraction({
     mutation: {
       onSuccess: async () => {
@@ -123,24 +130,61 @@ export function LogInteractionDialog({
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!create.isPending) {
-          if (v) setLinks({ ...EMPTY_LINKS });
+        if (!(create.isPending || update.isPending)) {
+          if (v && interaction) {
+            setKind(interaction.kind);
+            setSummary(interaction.summary);
+            setNotes(interaction.notes ?? "");
+            setLocation(interaction.location ?? "");
+            setDuration(interaction.durationMinutes?.toString() ?? "");
+            const d = new Date(interaction.occurredAt);
+            setOccurredAt(
+              new Date(d.getTime() - d.getTimezoneOffset() * 60000)
+                .toISOString()
+                .slice(0, 16),
+            );
+            setLinks({
+              ...EMPTY_LINKS,
+              personIds: interaction.personIds ?? [],
+              organizationIds: interaction.organizationIds ?? [],
+              householdIds: interaction.householdIds ?? [],
+            });
+          } else if (v) setLinks({ ...EMPTY_LINKS });
           setOpen(v);
         }
       }}
     >
       <DialogTrigger asChild>
         <Button
-          size={compact ? "sm" : "default"}
           variant={compact ? "outline" : "default"}
-          data-testid="button-log-interaction"
+          data-testid={
+            interaction
+              ? `button-edit-interaction-${interaction.id}`
+              : "button-log-interaction"
+          }
+          aria-label={interaction ? "Edit interaction" : "Log interaction"}
+          className={compact ? "px-2 sm:px-3" : undefined}
+          size={interaction ? "icon" : compact ? "sm" : "default"}
         >
-          {triggerLabel ?? "Log interaction"}
+          {interaction ? (
+            <Pencil className="h-3.5 w-3.5" />
+          ) : compact ? (
+            <>
+              <MessageSquare className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">
+                {triggerLabel ?? "Log interaction"}
+              </span>
+            </>
+          ) : (
+            (triggerLabel ?? "Log interaction")
+          )}
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Log interaction</DialogTitle>
+          <DialogTitle>
+            {interaction ? "Edit interaction" : "Log interaction"}
+          </DialogTitle>
           <DialogDescription>
             Record a meeting, call, or other touchpoint. It will show up on
             every linked person, funder, and household.
@@ -154,30 +198,63 @@ export function LogInteractionDialog({
             // server stores a proper timestamptz.
             const isoOccurredAt = new Date(occurredAt).toISOString();
             const trimmedDuration = duration.trim();
-            create.mutate({
-              data: {
-                kind,
-                occurredAt: isoOccurredAt,
-                summary: summary.trim(),
-                notes: notes.trim() || undefined,
-                location: location.trim() || undefined,
-                durationMinutes: trimmedDuration
-                  ? Number(trimmedDuration)
+            const data = {
+              kind,
+              occurredAt: isoOccurredAt,
+              summary: summary.trim(),
+              notes: notes.trim() || (interaction ? null : undefined),
+              location: location.trim() || (interaction ? null : undefined),
+              durationMinutes: trimmedDuration
+                ? Number(trimmedDuration)
+                : interaction
+                  ? null
                   : undefined,
-                personIds: [
-                  ...(prefillPersonId ? [prefillPersonId] : []),
-                  ...links.personIds,
-                ],
-                organizationIds: [
-                  ...(prefillFunderId ? [prefillFunderId] : []),
-                  ...links.organizationIds,
-                ],
-                householdIds: [
-                  ...(prefillHouseholdId ? [prefillHouseholdId] : []),
-                  ...links.householdIds,
-                ],
-              },
-            });
+              personIds: [
+                ...(prefillPersonId ? [prefillPersonId] : []),
+                ...links.personIds,
+              ],
+              organizationIds: [
+                ...(prefillFunderId ? [prefillFunderId] : []),
+                ...links.organizationIds,
+              ],
+              householdIds: [
+                ...(prefillHouseholdId ? [prefillHouseholdId] : []),
+                ...links.householdIds,
+              ],
+            };
+            if (interaction) {
+              update.mutate(
+                { id: interaction.id, data },
+                {
+                  onSuccess: async () => {
+                    await Promise.all([
+                      queryClient.invalidateQueries({
+                        queryKey: getListInteractionsQueryKey(),
+                      }),
+                      queryClient.invalidateQueries({
+                        queryKey: ["/api/people"],
+                      }),
+                    ]);
+                    setOpen(false);
+                    toast({ title: "Interaction updated" });
+                  },
+                  onError: (error) =>
+                    toast({
+                      title: "Save failed",
+                      description: error.message,
+                      variant: "destructive",
+                    }),
+                },
+              );
+            } else
+              create.mutate({
+                data: {
+                  ...data,
+                  notes: data.notes ?? undefined,
+                  location: data.location ?? undefined,
+                  durationMinutes: data.durationMinutes ?? undefined,
+                },
+              });
           }}
           className="space-y-3"
         >
@@ -188,7 +265,10 @@ export function LogInteractionDialog({
                 value={kind}
                 onValueChange={(v) => setKind(v as InteractionKind)}
               >
-                <SelectTrigger id="interaction-kind" data-testid="select-interaction-kind">
+                <SelectTrigger
+                  id="interaction-kind"
+                  data-testid="select-interaction-kind"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -264,7 +344,8 @@ export function LogInteractionDialog({
             />
             {!hasRelationship ? (
               <p className="text-xs text-muted-foreground">
-                Link at least one person, organization, or household so the interaction appears in its activity feed.
+                Link at least one person, organization, or household so the
+                interaction appears in its activity feed.
               </p>
             ) : null}
           </div>
@@ -273,16 +354,16 @@ export function LogInteractionDialog({
               type="button"
               variant="ghost"
               onClick={() => setOpen(false)}
-              disabled={create.isPending}
+              disabled={create.isPending || update.isPending}
             >
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={!canSubmit || create.isPending}
+              disabled={!canSubmit || create.isPending || update.isPending}
               data-testid="button-create-interaction"
             >
-              {create.isPending ? "Saving…" : "Save"}
+              {create.isPending || update.isPending ? "Saving…" : "Save"}
             </Button>
           </DialogFooter>
         </form>

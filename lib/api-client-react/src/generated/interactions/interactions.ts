@@ -313,7 +313,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateInteractionMutationOptions(options));
     }
-    export const getDeleteInteractionUrl = (id: string,) => {
+    /**
+ * @summary Archive this record without removing its history
+ */
+export const getDeleteInteractionUrl = (id: string,) => {
 
 
   
@@ -366,7 +369,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     
     export type DeleteInteractionMutationError = ErrorType<unknown>
 
-    export const useDeleteInteraction = <TError = ErrorType<unknown>,
+    /**
+ * @summary Archive this record without removing its history
+ */
+export const useDeleteInteraction = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteInteraction>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteInteraction>>,

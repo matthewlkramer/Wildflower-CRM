@@ -19,13 +19,7 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { useSearch, getSearchQueryKey } from "@workspace/api-client-react";
-import {
-  Building2,
-  Gift,
-  Home,
-  Target,
-  Users,
-} from "lucide-react";
+import { Building2, Gift, Home, Search, Target, Users } from "lucide-react";
 
 // Global command palette — opens with ⌘K / Ctrl+K from anywhere.
 // We hold the open/close state in a tiny context so the header
@@ -43,7 +37,9 @@ const CommandPaletteContext = createContext<Ctx | null>(null);
 export function useCommandPalette(): Ctx {
   const ctx = useContext(CommandPaletteContext);
   if (!ctx) {
-    throw new Error("useCommandPalette must be used inside CommandPaletteProvider");
+    throw new Error(
+      "useCommandPalette must be used inside CommandPaletteProvider",
+    );
   }
   return ctx;
 }
@@ -104,7 +100,9 @@ function PaletteInner({ onClose }: { onClose: () => void }) {
       />
       <CommandList>
         {!enabled ? (
-          <CommandEmpty>Type at least {SEARCH_MIN_LEN} characters.</CommandEmpty>
+          <CommandEmpty>
+            Type at least {SEARCH_MIN_LEN} characters.
+          </CommandEmpty>
         ) : loading ? (
           <CommandEmpty>Searching…</CommandEmpty>
         ) : (
@@ -276,17 +274,22 @@ export function CommandPaletteTrigger() {
   // cosmetic — the shortcut listener already accepts both modifiers.
   const isMac =
     typeof navigator !== "undefined" &&
-    /mac|iphone|ipad|ipod/i.test(navigator.platform || navigator.userAgent || "");
+    /mac|iphone|ipad|ipod/i.test(
+      navigator.platform || navigator.userAgent || "",
+    );
   return (
     <button
       type="button"
       onClick={toggle}
-      className="hidden md:inline-flex items-center gap-2 rounded-md border border-input bg-background px-2.5 h-9 text-sm text-muted-foreground hover:bg-muted transition-colors"
+      className="inline-flex min-w-0 items-center gap-2 rounded-md border border-input bg-background px-2.5 h-9 text-sm text-muted-foreground hover:bg-muted transition-colors"
       data-testid="command-palette-trigger"
-      aria-label="Open command palette"
+      aria-label="Search all records"
     >
+      <Search className="h-4 w-4 shrink-0" />
       <span className="truncate">Search…</span>
-      <CommandShortcut>{isMac ? "⌘K" : "Ctrl K"}</CommandShortcut>
+      <CommandShortcut className="hidden md:inline">
+        {isMac ? "⌘K" : "Ctrl K"}
+      </CommandShortcut>
     </button>
   );
 }

@@ -1,3 +1,4 @@
+import { RecordConferenceAttendance } from "@/components/conferences/record-attendance";
 import { NewsletterPreferencesCard } from "@/components/newsletter-preferences-card";
 import { useState } from "react";
 import { DetailSkeleton } from "@/components/ui/skeleton";
@@ -1073,6 +1074,7 @@ function ConferenceAttendanceCard({ personId }: { personId: string }) {
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-sm font-medium">Conference attendance</div>
+        <RecordConferenceAttendance personId={personId} />
         <Link
           href="/conferences"
           className="text-xs text-primary hover:underline"

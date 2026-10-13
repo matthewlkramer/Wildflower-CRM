@@ -528,3 +528,11 @@ Standalone cleanup projects use existing `cleanup_queue` rows with
 `target_type=work_item`, a stable target key, and `reason_code=cleanup_project`.
 The first note line is their display title. They share the existing open,
 resolved, and dismissed workflow; no separate task-status table is introduced.
+
+## October 2026 feedback additions
+
+- `notes.archived_at` and `interactions.archived_at`: logical deletion for manual
+  activity; active reads and signals exclude archived rows (migration 0276).
+- `calendar_sync_state.bootstrap_time_max`: provider query bound carried with
+  the bootstrap page cursor so recurring-instance pagination is finite and
+  stable across runs (migration 0277).

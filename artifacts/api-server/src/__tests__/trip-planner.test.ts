@@ -3,6 +3,8 @@ import {
   looksLikeTripInvitation,
   mergedBusyMinutes,
   tripAvailability,
+  tripOutreachStart,
+  latestInvitationBounce,
 } from "../lib/tripPlanner";
 import {
   deriveTripTravelBookings,
@@ -304,4 +306,18 @@ describe("trip travel booking derivations", () => {
     expect(result).toHaveLength(1);
     expect(result[0].source).toBe("calendar");
   });
+});
+
+it("ignores outreach before trip planning rather than including half-year-old messages", () => {
+  expect(tripOutreachStart({ createdAt: new Date("2026-09-20T00:00:00Z"), travelStartsAt: new Date("2026-09-29T00:00:00Z") }).toISOString()).toBe("2026-09-13T00:00:00.000Z");
+  expect(tripOutreachStart({ createdAt: new Date("2026-01-01T00:00:00Z"), travelStartsAt: new Date("2026-09-29T00:00:00Z") }).toISOString()).toBe("2026-07-01T00:00:00.000Z");
+});
+
+it("uses detected recipient-specific hard bounces even when Gmail stored them outside the invitation thread", () => {
+  const invitation = { sentAt: new Date("2026-09-23T17:30:00Z"), toEmails: ["person@example.org"] };
+  const when = new Date("2026-09-23T17:32:00Z");
+  expect(latestInvitationBounce(invitation, undefined, [{ recipient: "person@example.org", occurredAt: when }])).toEqual(when);
+  expect(latestInvitationBounce(invitation, new Date("2026-09-24T12:00:00Z"), [{ recipient: "person@example.org", occurredAt: when }])).toBeNull();
+  expect(latestInvitationBounce(invitation, undefined, [{ recipient: "other@example.org", occurredAt: when }])).toBeNull();
+  expect(latestInvitationBounce(invitation, undefined, [{ recipient: "person@example.org", occurredAt: new Date("2026-09-22T12:00:00Z") }])).toBeNull();
 });

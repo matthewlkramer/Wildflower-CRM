@@ -1,3 +1,4 @@
+import { personGivingScope, personGivingAttribution } from "./personGivingScope";
 import { db } from "@workspace/db";
 import {
   people,
@@ -47,6 +48,7 @@ export interface TaskSignals {
     amount: string | null;
     type: string | null;
     name: string | null;
+    attribution?: string | null;
   }>;
   openOpportunities: Array<{
     name: string | null;
@@ -105,9 +107,10 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
           amount: giftsAndPayments.amount,
           type: deriveGiftTypeExpr(),
           name: giftsAndPayments.name,
+          attribution: personGivingAttribution(personId, giftsAndPayments),
         })
         .from(giftsAndPayments)
-        .where(eq(giftsAndPayments.individualGiverPersonId, personId))
+        .where(and(sql`${giftsAndPayments.archivedAt} IS NULL`, personGivingScope(personId, giftsAndPayments)))
         .orderBy(sql`${giftsAndPayments.dateReceived} DESC NULLS LAST`)
         .limit(5),
       db
@@ -123,7 +126,8 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
         .from(opportunitiesAndPledges)
         .where(
           and(
-            eq(opportunitiesAndPledges.individualGiverPersonId, personId),
+            personGivingScope(personId, opportunitiesAndPledges),
+            sql`${opportunitiesAndPledges.archivedAt} IS NULL`,
             inArray(opportunitiesAndPledges.status, ["open", "pledge", "cash_in"]),
           ),
         )
@@ -132,7 +136,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       db
         .select({ date: notes.createdAt, body: notes.body })
         .from(notes)
-        .where(sql`${notes.personIds} @> ARRAY[${personId}]::text[]`)
+        .where(sql`${notes.archivedAt} IS NULL AND ${notes.personIds} @> ARRAY[${personId}]::text[]`)
         .orderBy(desc(notes.createdAt))
         .limit(3),
       db
@@ -217,6 +221,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
       amount: g.amount,
       type: g.type,
       name: g.name,
+      attribution: g.attribution,
     })),
     openOpportunities: opps.map((o) => ({
       name: o.name,
@@ -307,7 +312,7 @@ async function gatherOrganizationSignals(
       db
         .select({ date: notes.createdAt, body: notes.body })
         .from(notes)
-        .where(sql`${notes.organizationIds} @> ARRAY[${organizationId}]::text[]`)
+        .where(sql`${notes.archivedAt} IS NULL AND ${notes.organizationIds} @> ARRAY[${organizationId}]::text[]`)
         .orderBy(desc(notes.createdAt))
         .limit(3),
       db

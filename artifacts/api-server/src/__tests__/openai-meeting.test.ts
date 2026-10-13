@@ -3,7 +3,6 @@ import type { File } from "@google-cloud/storage";
 import {
   cleanDictatedMeetingNotes,
   draftMeetingFollowUp,
-  generateMeetingTaskProposals,
   ocrHandwrittenNotes,
   transcribeMeetingAudio,
 } from "../lib/openaiMeeting";
@@ -108,41 +107,6 @@ describe("OpenAI meeting helpers", () => {
     await expect(
       cleanDictatedMeetingNotes("Original voice note."),
     ).resolves.toBe("Original voice note.");
-  });
-
-  it("generates validated editable task proposals through the configured OpenAI endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          output_text: JSON.stringify({
-            proposals: [
-              {
-                title: "Introduce Robin to Amy Gipps",
-                dueDate: null,
-                description: "Building Hope follow-up",
-              },
-              { title: "", dueDate: null },
-            ],
-          }),
-        }),
-        { status: 200 },
-      ),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    await expect(
-      generateMeetingTaskProposals(
-        "Robin asked for an introduction to Amy Gipps.",
-      ),
-    ).resolves.toEqual([
-      {
-        title: "Introduce Robin to Amy Gipps",
-        dueDate: null,
-        description: "Building Hope follow-up",
-      },
-    ]);
-    expect((fetchMock.mock.calls[0] as [string, RequestInit])[0]).toBe(
-      "https://api.openai.com/v1/responses",
-    );
   });
 
   it("parses a structured follow-up draft without inventing transport behavior", async () => {

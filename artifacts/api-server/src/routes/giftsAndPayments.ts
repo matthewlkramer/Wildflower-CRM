@@ -1,3 +1,4 @@
+import { personGivingScope } from "../lib/personGivingScope";
 import {
   Router,
   type IRouter,
@@ -235,6 +236,7 @@ import {
   notFound,
   parseOrBadRequest,
   parsePagination,
+  parseBoolQuery,
   paramId,
   splitBlank,
 } from "../lib/helpers";
@@ -460,7 +462,7 @@ async function buildGiftsListWhere(
       filters.push(eq(giftsAndPayments.householdId, q.householdId));
     if (q.individualGiverPersonId)
       filters.push(
-        eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId),
+        parseBoolQuery(req, "includeGivingRelationships") === true ? personGivingScope(q.individualGiverPersonId, giftsAndPayments) : eq(giftsAndPayments.individualGiverPersonId, q.individualGiverPersonId),
       );
     if (q.opportunityId)
       filters.push(eq(giftsAndPayments.opportunityId, q.opportunityId));

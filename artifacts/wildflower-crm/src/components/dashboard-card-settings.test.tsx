@@ -38,6 +38,20 @@ describe("personal dashboard cards", () => {
     }
   });
 
+  it("offers all three navigation cards and persists their visibility", async () => {
+    localStorage.clear();
+    const host = document.createElement("div"); const root = createRoot(host);
+    try {
+      await act(async () => root.render(<Settings userId="owner" />));
+      for (const label of ["Moves", "Application/close deadlines", "Projections"]) {
+        const control = host.querySelector<HTMLButtonElement>(`[aria-label="Show ${label}"]`)!;
+        expect(control).not.toBeNull(); await act(async () => control.click());
+        expect(control.getAttribute("aria-checked")).toBe("false");
+      }
+      expect(JSON.parse(localStorage.getItem("wf-dashboard-cards:owner")!)).toEqual(["moves", "deadlines", "projections"]);
+    } finally { await act(async () => root.unmount());localStorage.clear(); }
+  });
+
   it("keeps cards available when saved browser preferences are corrupt", async () => {
     localStorage.setItem("wf-dashboard-cards:owner", "not json");
     const host = document.createElement("div");

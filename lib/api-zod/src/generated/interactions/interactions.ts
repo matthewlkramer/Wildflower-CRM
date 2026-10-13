@@ -40,6 +40,7 @@ export const ListInteractionsResponse = zod.object({
   "personIds": zod.array(zod.string()).nullish(),
   "organizationIds": zod.array(zod.string()).nullish(),
   "householdIds": zod.array(zod.string()).nullish(),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
@@ -79,6 +80,7 @@ export const GetInteractionResponse = zod.object({
   "personIds": zod.array(zod.string()).nullish(),
   "organizationIds": zod.array(zod.string()).nullish(),
   "householdIds": zod.array(zod.string()).nullish(),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -112,10 +114,14 @@ export const UpdateInteractionResponse = zod.object({
   "personIds": zod.array(zod.string()).nullish(),
   "organizationIds": zod.array(zod.string()).nullish(),
   "householdIds": zod.array(zod.string()).nullish(),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
 
+/**
+ * @summary Archive this record without removing its history
+ */
 export const DeleteInteractionParams = zod.object({
   "id": zod.coerce.string()
 })

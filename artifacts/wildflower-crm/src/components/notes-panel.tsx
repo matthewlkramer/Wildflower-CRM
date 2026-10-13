@@ -37,7 +37,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { CalendarDays, Trash2 } from "lucide-react";
+import { CalendarDays, Pencil, Trash2 } from "lucide-react";
 import {
   EntityLinksEditor,
   EMPTY_LINKS,
@@ -537,4 +537,77 @@ function linksFromDefault(defaultLinks?: Partial<EntityLinks>): EntityLinks {
     giftIds: defaultLinks.giftIds ?? [],
     grantLeadIds: defaultLinks.grantLeadIds ?? [],
   };
+}
+
+export function EditNoteDialog({ note }: { note: Note }) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState(note.body);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const update = useUpdateNote();
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!update.isPending) {
+          setOpen(next);
+          if (next) setBody(note.body);
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
+          aria-label="Edit note"
+          data-testid={`button-edit-note-${note.id}`}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit note</DialogTitle>
+          <DialogDescription>
+            Update this note without changing its author, date, or linked
+            records.
+          </DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          rows={8}
+          aria-label="Note text"
+        />
+        <DialogFooter>
+          <Button
+            disabled={update.isPending || !body.trim()}
+            onClick={async () => {
+              try {
+                await update.mutateAsync({
+                  id: note.id,
+                  data: { body: body.trim() },
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: getListNotesQueryKey(),
+                });
+                setOpen(false);
+                toast({ title: "Note updated" });
+              } catch (error) {
+                toast({
+                  title: "Note could not be saved",
+                  description:
+                    error instanceof Error ? error.message : String(error),
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            Save note
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }

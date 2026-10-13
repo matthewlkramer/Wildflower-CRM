@@ -23,6 +23,13 @@ export class CalendarSyncTokenGoneError extends Error {
   }
 }
 
+export class CalendarPageTokenInvalidError extends Error {
+  constructor() {
+    super("Calendar page token is invalid; restart this sweep");
+    this.name = "CalendarPageTokenInvalidError";
+  }
+}
+
 async function gcalFetch(
   accessToken: string,
   path: string,
@@ -127,7 +134,9 @@ export async function listEvents(
   }
   if (!r.ok) {
     const text = await r.text();
-    throw new Error(`Calendar ${r.status} ${path}: ${text.slice(0, 500)}`);
+    if (r.status === 400 && /invalid page token/i.test(text))
+      throw new CalendarPageTokenInvalidError();
+    throw new Error(`Calendar ${r.status}: ${text.slice(0, 500)}`);
   }
   const data = (await r.json()) as {
     items?: GCalEvent[];

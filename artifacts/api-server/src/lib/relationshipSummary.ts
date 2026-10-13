@@ -69,7 +69,7 @@ function fmtSignals(signals: TaskSignals): string {
   if (signals.recentGifts.length === 0) lines.push("  (none)");
   for (const g of signals.recentGifts)
     lines.push(
-      `  - ${g.date ?? "?"}: ${g.amount ?? "?"} ${g.type ?? ""} ${g.name ? `(${g.name})` : ""}`.trimEnd(),
+      `  - ${g.date ?? "?"}: ${g.amount ?? "?"} ${g.type ?? ""} ${g.name ? `(${g.name})` : ""} ${g.attribution ? `[attribution=${g.attribution}; do not describe organization or household gifts as personally donated]` : ""}`.trimEnd(),
     );
   lines.push("");
 

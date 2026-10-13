@@ -1097,11 +1097,12 @@ export function MeetingNextStepsProposalDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: (proposals: MeetingNextStepProposal[]) => Promise<void>;
 }) {
+  const [submitting, setSubmitting] = useState(false);
   const [draft, setDraft] = useState<MeetingNextStepProposal[]>([]);
   useEffect(() => setDraft(proposals), [proposals]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-5xl max-h-[90dvh] overflow-auto sm:resize">
         <DialogHeader>
           <DialogTitle>Review proposed next steps</DialogTitle>
           <DialogDescription>
@@ -1109,13 +1110,21 @@ export function MeetingNextStepsProposalDialog({
             explicitly confirm.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-2 max-h-[55vh] overflow-y-auto">
+        <div className="space-y-2 max-h-[65vh] overflow-y-auto">
+          {draft.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              No explicit follow-up tasks found. You can add one below.
+            </p>
+          )}
           {draft.map((proposal, index) => (
             <div
               key={index}
-              className="grid grid-cols-[1fr_140px_140px_auto] gap-2 items-start"
+              className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_140px_140px_auto] gap-2 items-start rounded-md border p-3"
             >
-              <Input
+              <Textarea
+                rows={3}
+                maxLength={160}
+                className="min-w-0 break-words"
                 value={proposal.title}
                 onChange={(event) =>
                   setDraft((items) =>
@@ -1167,6 +1176,15 @@ export function MeetingNextStepsProposalDialog({
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
+              <Textarea
+                value={proposal.description ?? ""}
+                rows={2}
+                maxLength={1000}
+                className="min-w-0 sm:col-span-4 break-words"
+                placeholder="Task context (optional)"
+                aria-label={`Context for proposed task ${index + 1}`}
+                onChange={(event) => setDraft((items) => items.map((item, i) => i === index ? { ...item, description: event.target.value || null } : item))}
+              />
             </div>
           ))}
           <Button
@@ -1199,12 +1217,21 @@ export function MeetingNextStepsProposalDialog({
           </Button>
           <Button
             type="button"
-            disabled={draft.some((item) => !item.title.trim())}
-            onClick={() =>
-              void onConfirm(
-                draft.map((item) => ({ ...item, title: item.title.trim() })),
-              )
+            disabled={
+              submitting ||
+              draft.length === 0 ||
+              draft.some((item) => !item.title.trim())
             }
+            onClick={async () => {
+              setSubmitting(true);
+              try {
+                await onConfirm(
+                  draft.map((item) => ({ ...item, title: item.title.trim() })),
+                );
+              } finally {
+                setSubmitting(false);
+              }
+            }}
             data-testid="button-confirm-create-next-steps"
           >
             Confirm and create tasks

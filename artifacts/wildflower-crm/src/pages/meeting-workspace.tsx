@@ -583,7 +583,7 @@ export default function MeetingWorkspacePage() {
     if (recorderRef.current?.state === "recording") recorderRef.current.stop();
   }
 
-  async function saveMeeting() {
+  async function saveMeeting(notify = true) {
     const links = meetingLinkIds(linkedContacts);
     if (
       !event.data?.id &&
@@ -639,14 +639,14 @@ export default function MeetingWorkspacePage() {
         queryKey: getListCalendarEventsQueryKey(),
       }),
     ]);
-    toast({ title: "Meeting notes saved" });
+    if (notify) toast({ title: "Meeting notes saved" });
     sessionStorage.removeItem(draftKey);
     return savedId;
   }
 
   async function saveAndGenerateTasks() {
     try {
-      const savedId = await saveMeeting();
+      const savedId = await saveMeeting(false);
       const result = await generate.mutateAsync({ id: savedId });
       setProposals(result.proposals);
       setProposalOpen(true);

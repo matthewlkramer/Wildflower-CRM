@@ -219,8 +219,14 @@ export async function downloadQuickbooksAttachment(
   accessToken: string,
   tempDownloadUri: string,
 ): Promise<{ bytes: Uint8Array; contentType: string | null }> {
-  const response = await fetch(tempDownloadUri, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+  const downloadUrl = new URL(tempDownloadUri);
+  if (downloadUrl.protocol !== "https:") throw new Error("QuickBooks attachment download URL must use HTTPS");
+  // QBO TempDownloadUri is a signed file URL. A second authorization
+  // mechanism breaks the storage signature (403). Only QBO API origins
+  // receive OAuth headers; signed storage URLs authenticate in their query.
+  const isQboApi = ["quickbooks.api.intuit.com", "sandbox-quickbooks.api.intuit.com"].includes(downloadUrl.hostname);
+  const response = await fetch(downloadUrl.toString(), {
+    headers: isQboApi ? { Authorization: `Bearer ${accessToken}` } : {},
     signal: AbortSignal.timeout(60_000),
   });
   if (!response.ok) {

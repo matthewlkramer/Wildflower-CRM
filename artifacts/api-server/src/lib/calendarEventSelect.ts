@@ -64,7 +64,7 @@ export function calendarEventSelection() {
       select count(*)::int
       from notes n
       join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
-      where ${linkedEventMatchesCurrent}
+      where n.archived_at IS NULL AND ${linkedEventMatchesCurrent}
     )`.as("linkedNoteCount"),
     hasMeetingNotes: sql<boolean>`(
       exists (
@@ -76,7 +76,7 @@ export function calendarEventSelection() {
         select 1
         from notes n
         join calendar_events linked_ce on linked_ce.id = n.calendar_event_id
-        where ${linkedEventMatchesCurrent}
+        where n.archived_at IS NULL AND ${linkedEventMatchesCurrent}
       )
     )`.as("hasMeetingNotes"),
     hasNextSteps: sql<boolean>`exists (

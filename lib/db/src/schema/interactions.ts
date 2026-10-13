@@ -41,6 +41,7 @@ export const interactions = pgTable(
     organizationIds: text("organization_ids").array(),
     householdIds: text("household_ids").array(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (t) => [

@@ -41,6 +41,7 @@ export const ListNotesResponse = zod.object({
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
   "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })),
@@ -77,6 +78,7 @@ export const GetNoteResponse = zod.object({
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
   "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
@@ -107,10 +109,14 @@ export const UpdateNoteResponse = zod.object({
   "giftIds": zod.array(zod.string()).nullish(),
   "mentionUserIds": zod.array(zod.string()).nullish(),
   "calendarEventId": zod.string().nullish().describe('Optional synced calendar meeting this free-form note documents.'),
+  "archivedAt": zod.string().datetime({}).nullish(),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 })
 
+/**
+ * @summary Archive this record without removing its history
+ */
 export const DeleteNoteParams = zod.object({
   "id": zod.coerce.string()
 })

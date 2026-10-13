@@ -15,6 +15,7 @@ export const ExportGiftsAndPaymentsCsvQueryParams = zod.object({
   "fields": zod.coerce.string().optional()
 })
 
+export const listGiftsAndPaymentsQueryIncludeGivingRelationshipsDefault = false;
 export const listGiftsAndPaymentsQueryLimitDefault = 50;
 export const listGiftsAndPaymentsQueryLimitMax = 10000;
 
@@ -31,6 +32,7 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
   "type": zod.array(zod.coerce.string()).optional(),
   "organizationId": zod.coerce.string().optional(),
   "householdId": zod.coerce.string().optional(),
+  "includeGivingRelationships": zod.coerce.boolean().default(listGiftsAndPaymentsQueryIncludeGivingRelationshipsDefault).describe('Include the individual\'s primary household and current principal organizations; donor of record is unchanged.'),
   "individualGiverPersonId": zod.coerce.string().optional(),
   "opportunityId": zod.coerce.string().optional(),
   "paymentMethod": zod.array(zod.coerce.string()).optional(),

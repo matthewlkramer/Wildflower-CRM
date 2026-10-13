@@ -24,3 +24,15 @@ The shared card appears on individual, household, and organization record pages.
 - the resolved preferred donor pathway;
 - attribution breakdown with counts and amounts; and
 - recent gifts labeled by why they are included.
+
+## Individual pipeline and summary
+
+The individual Giving & pipeline card requests `includeGivingRelationships`
+from the existing gift/opportunity list endpoints. It uses the same individual
+attribution predicate as the giving-relationship view and AI relationship
+snapshot: direct donor, primary household, or current principal organization.
+The list endpoints default to direct donor filtering when the option is absent
+or false. Gift identities, donor-of-record fields, and booking are unchanged.
+Archiving a donor organization does not remove its historical gifts; gift archival and current principal roles remain the existing boundaries. AI snapshots
+label attributed gifts so organization/household giving is not described as a
+personal donation.

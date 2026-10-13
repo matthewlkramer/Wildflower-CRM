@@ -1,3 +1,4 @@
+import { isBounceSender, parseBounce } from "../lib/intelDetectors";
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import {
@@ -5,6 +6,7 @@ import {
   calendarEvents,
   calendarSyncState,
   emailMessages,
+  emailProposals,
   emailSyncSkip,
   emails,
   organizations,
@@ -56,7 +58,12 @@ import {
   calendarEventVisibleToCaller,
 } from "../lib/calendarEventSelect";
 import { getViewer, maskName } from "../lib/identityVisibility";
-import { looksLikeTripInvitation, tripAvailability } from "../lib/tripPlanner";
+import {
+  looksLikeTripInvitation,
+  tripAvailability,
+  tripOutreachStart,
+  latestInvitationBounce,
+} from "../lib/tripPlanner";
 import { deriveTripTravelBookings } from "../lib/tripTravelBookings";
 import {
   extractMessageParts,
@@ -540,12 +547,7 @@ async function loadTripDetail(
     .orderBy(asc(tripVisitCandidates.rank), asc(tripVisitCandidates.createdAt));
 
   const personIds = rows.map((row) => row.personId);
-  const outreachStart = new Date(
-    Math.min(
-      trip.createdAt.getTime() - 7 * 86_400_000,
-      trip.travelStartsAt.getTime() - 180 * 86_400_000,
-    ),
-  );
+  const outreachStart = tripOutreachStart(trip);
   const outreachEnd = new Date(trip.travelEndsAt.getTime() + 86_400_000);
   const messages = personIds.length
     ? await db
@@ -553,6 +555,8 @@ async function loadTripDetail(
           id: emailMessages.id,
           gmailThreadId: emailMessages.gmailThreadId,
           direction: emailMessages.direction,
+          fromEmail: emailMessages.fromEmail,
+          toEmails: emailMessages.toEmails,
           sentAt: emailMessages.sentAt,
           subject: emailMessages.subject,
           snippet: emailMessages.snippet,
@@ -571,39 +575,114 @@ async function loadTripDetail(
             ),
             gte(emailMessages.sentAt, outreachStart),
             lte(emailMessages.sentAt, outreachEnd),
-            sql`${emailMessages.matchedPersonIds} && ARRAY[${sql.join(
+            sql`(${emailMessages.matchedPersonIds} && ARRAY[${sql.join(
               personIds.map((id) => sql`${id}`),
               sql`, `,
-            )}]::text[]`,
+            )}]::text[]
+              OR ${emailMessages.gmailThreadId} IN (
+                SELECT trip_thread.gmail_thread_id FROM email_messages trip_thread
+                WHERE trip_thread.mailbox_user_id = ${trip.travelerUserId}
+                  AND trip_thread.sent_at >= ${outreachStart} AND trip_thread.sent_at <= ${outreachEnd}
+                  AND trip_thread.matched_person_ids && ARRAY[${sql.join(
+                    personIds.map((id) => sql`${id}`),
+                    sql`, `,
+                  )}]::text[]
+              ))`,
           ),
         )
         .orderBy(asc(emailMessages.sentAt))
     : [];
 
+  // The canonical bounce detector retains unmatched delivery failures in
+  // the proposal ledger. Its private mailbox evidence is visible only to
+  // the traveler; exact recipient and chronology tie it to this invitation.
+  const bounceEvidence =
+    caller.id === trip.travelerUserId && personIds.length
+      ? await db
+          .select({
+            personId: emailProposals.targetPersonId,
+            recipient: emailProposals.subjectEmail,
+            occurredAt: emailProposals.emailSentAt,
+            updatedAt: emailProposals.updatedAt,
+            createdAt: emailProposals.createdAt,
+          })
+          .from(emailProposals)
+          .where(
+            and(
+              eq(emailProposals.mailboxUserId, trip.travelerUserId),
+              eq(emailProposals.kind, "bounce_invalid"),
+              inArray(emailProposals.status, ["pending", "applied"]),
+              inArray(emailProposals.targetPersonId, personIds),
+              gte(emailProposals.emailSentAt, outreachStart),
+              lte(emailProposals.emailSentAt, outreachEnd),
+            ),
+          )
+      : [];
+
   const visits = rows.map((row) => {
-    const personMessages = messages.filter((message) =>
-      message.matchedPersonIds?.includes(row.personId),
+    const personThreads = new Set(
+      messages
+        .filter((message) => message.matchedPersonIds?.includes(row.personId))
+        .map((message) => message.gmailThreadId)
+        .filter(Boolean),
     );
-    const invitation = personMessages.find(
+    const personMessages = messages.filter(
       (message) =>
-        message.direction === "sent" &&
-        looksLikeTripInvitation(message, trip.destinationCity),
+        message.matchedPersonIds?.includes(row.personId) ||
+        (message.gmailThreadId && personThreads.has(message.gmailThreadId)),
     );
-    const response = invitation?.gmailThreadId
-      ? personMessages.find(
+    const invitation = personMessages
+      .filter(
+        (message) =>
+          message.direction === "sent" &&
+          looksLikeTripInvitation(message, trip.destinationCity),
+      )
+      .at(-1);
+    const replies = invitation?.gmailThreadId
+      ? personMessages.filter(
           (message) =>
             message.direction === "received" &&
             message.gmailThreadId === invitation.gmailThreadId &&
             message.sentAt > invitation.sentAt,
         )
-      : undefined;
+      : [];
+    const bounce = replies
+      .filter(
+        (message) =>
+          isBounceSender(message.fromEmail) &&
+          parseBounce(
+            message.subject,
+            message.bodyText ?? message.snippet,
+            null,
+          )?.isHard,
+      )
+      .at(-1);
+    const response = replies
+      .filter((message) => !isBounceSender(message.fromEmail))
+      .at(-1);
+    const personBounces = bounceEvidence.filter(
+      (item) => item.personId === row.personId,
+    );
+    const detectedBounce = latestInvitationBounce(
+      invitation,
+      response?.sentAt,
+      personBounces,
+    );
+    const bounced = Boolean(
+      detectedBounce ||
+      (bounce && (!response || bounce.sentAt > response.sentAt)),
+    );
     const personEvents = events.filter(
       (event) =>
         event.status !== "cancelled" &&
         event.matchedPersonIds?.includes(row.personId),
     );
     const scheduled = personEvents[0];
-    const latestEvidenceChange = [...personMessages, ...personEvents].reduce(
+    const latestEvidenceChange = [
+      ...personMessages,
+      ...personEvents,
+      ...personBounces,
+    ].reduce(
       (latest, evidence) =>
         Math.max(
           latest,
@@ -656,11 +735,13 @@ async function loadTripDetail(
       evidenceReviewedAt: evidenceReviewIsCurrent
         ? row.evidenceReviewedAt
         : null,
-      outreachStatus: response
-        ? ("responded" as const)
-        : invitation
-          ? ("invited" as const)
-          : ("not_invited" as const),
+      outreachStatus: bounced
+        ? ("bounced" as const)
+        : response
+          ? ("responded" as const)
+          : invitation
+            ? ("invited" as const)
+            : ("not_invited" as const),
       invitationSentAt: invitation?.sentAt ?? null,
       invitationMessageId: invitation?.id ?? null,
       respondedAt: response?.sentAt ?? null,
@@ -1088,12 +1169,7 @@ router.post(
         { anonymous: visit.anonymous, ownerUserId: visit.ownerUserId },
         getViewer(req),
       ) ?? "Unnamed person";
-    const outreachStart = new Date(
-      Math.min(
-        trip.createdAt.getTime() - 7 * 86_400_000,
-        trip.travelStartsAt.getTime() - 180 * 86_400_000,
-      ),
-    );
+    const outreachStart = tripOutreachStart(trip);
     const outreachEnd = new Date(trip.travelEndsAt.getTime() + 86_400_000);
     // Record the evidence snapshot boundary before reading. If a sync inserts
     // or updates anything while the AI call is running, loadTripDetail will

@@ -172,3 +172,22 @@ This is an explicit backfill, not a new scheduled Fillout sync. See the
 Historical Flodesk and Mailchimp consent/opt-out evidence remains an open
 Cleanup Queue project until those source records are located and reviewed.
 Workbook campaign/engagement imports remain a separate evidence model.
+
+### Calendar bootstrap pagination
+
+The primary-calendar bootstrap expands recurring instances only through a fixed
+one-year horizon persisted in `calendar_sync_state.bootstrap_time_max` with its
+page cursor. Legacy unbounded cursors restart once when that bound is absent.
+Every resumed page uses the same range; completion still requires an error-free
+final page. Existing imported events and manually chosen privacy are preserved.
+An expired provider sync token clears the bound before a new bootstrap. Active
+trip-window sweeps retain their existing independent date windows.
+
+### QuickBooks attachment downloads
+
+Deposit attachment temporary URLs authenticate with their storage signature;
+OAuth is sent only to the production/sandbox QBO API hosts, never to signed
+storage hosts. Previously failed extractions are retried on the normal sync with
+fresh temporary URLs. Distinct attachment components must exactly cover the
+deposit before the existing composition writer can use them. Download failures
+remain visible rather than creating guessed components.
