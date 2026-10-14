@@ -108,6 +108,7 @@ beforeAll(async () => {
     id: TRIP_ID,
     travelerUserId: USER_ID,
     createdByUserId: USER_ID,
+    createdAt: new Date("2026-09-20T00:00:00.000Z"),
     destinationCity: "Priorityville",
     destinationState: "MN",
     travelStartsAt: new Date("2026-10-01T14:00:00.000Z"),
@@ -166,4 +167,20 @@ describe.skipIf(!HAS_DB)("trip CRM draft priority gate", () => {
     expect(draftedIds).not.toContain(PERSON_IDS.blank);
     expect(draftedIds).not.toContain(PERSON_IDS.lowOrg);
   }, 30_000);
+  it("uses separate-thread hard-bounce evidence for the owner, excludes old invitations, and respects later replies", async () => {
+    for (const personId of [PERSON_IDS.top, PERSON_IDS.medium]) await schema.db.insert(schema.tripVisitCandidates).values({ id: `${personId}_feedback_visit`, tripId: TRIP_ID, personId, rank: 1, source: "manual" }).onConflictDoNothing();
+    await schema.db.insert(schema.emailMessages).values([
+      { id: `${RUN}_old_invitation`, mailboxUserId: USER_ID, gmailMessageId: `${RUN}_old_gmail`, gmailThreadId: `${RUN}_old_thread`, direction: "sent", sentAt: new Date("2026-04-21T12:00:00Z"), subject: "Meet for coffee", matchedPersonIds: [PERSON_IDS.top] },
+      { id: `${RUN}_invitation`, mailboxUserId: USER_ID, gmailMessageId: `${RUN}_gmail`, gmailThreadId: `${RUN}_thread`, direction: "sent", sentAt: new Date("2026-09-23T17:30:00Z"), subject: "Meet in Priorityville", toEmails: ["synthetic-recipient@example.test"], matchedPersonIds: [PERSON_IDS.medium] },
+    ]);
+    await schema.db.insert(schema.emailProposals).values({ id: `${RUN}_bounce`, mailboxUserId: USER_ID, kind: "bounce_invalid", dedupeKey: `${RUN}_bounce`, targetPersonId: PERSON_IDS.medium, subjectEmail: "synthetic-recipient@example.test", emailSentAt: new Date("2026-09-23T17:32:00Z"), payload: { enhancedCode: "5.1.1" } });
+    async function visits() { const response = await fetch(`${baseUrl}/api/trips/${TRIP_ID}`);expect(response.status).toBe(200);return (await response.json()).visits as Array<{ personId: string; outreachStatus: string }>; }
+    let rows = await visits();expect(rows.find(row => row.personId === PERSON_IDS.medium)?.outreachStatus).toBe("bounced");expect(rows.find(row => row.personId === PERSON_IDS.top)?.outreachStatus).toBe("not_invited");
+    auth.current = { id: `${RUN}_other_viewer`, role: "team_member" };
+    rows = await visits();expect(rows.find(row => row.personId === PERSON_IDS.medium)?.outreachStatus).toBe("invited");
+    auth.current = { id: USER_ID, role: "team_member" };
+    await schema.db.insert(schema.emailMessages).values({ id: `${RUN}_reply`, mailboxUserId: USER_ID, gmailMessageId: `${RUN}_reply_gmail`, gmailThreadId: `${RUN}_thread`, direction: "received", sentAt: new Date("2026-09-24T12:00:00Z"), fromEmail: "synthetic-recipient@example.test", subject: "Re: Meet in Priorityville", matchedPersonIds: [PERSON_IDS.medium] });
+    rows = await visits();expect(rows.find(row => row.personId === PERSON_IDS.medium)?.outreachStatus).toBe("responded");
+  }, 30000);
+
 });

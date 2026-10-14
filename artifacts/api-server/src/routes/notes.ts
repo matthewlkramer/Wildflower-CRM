@@ -37,7 +37,7 @@ router.get(
     const q = parseOrBadRequest(ListNotesQueryParams, req.query, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [];
+    const filters: SQL[] = [sql`${notes.archivedAt} IS NULL`];
     if (q.search) {
       filters.push(ilike(notes.body, `%${q.search}%`));
     }
@@ -149,7 +149,7 @@ router.patch(
 router.delete(
   "/notes/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(notes).where(eq(notes.id, paramId(req)));
+    await db.update(notes).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(notes.id, paramId(req)));
     res.status(204).end();
   }),
 );

@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-30
+last_verified: 2026-10-13
 ---
 
 # Trip planner
@@ -120,3 +120,14 @@ last_verified: 2026-09-30
 - `trip_plans.notes` is the shared, editable trip scratchpad.
 - `trip_plan_comments` is an append-only team discussion with an author and
   timestamp on every comment; it never overwrites the scratchpad.
+
+## Outreach evidence window
+
+Both normal reads and AI evidence review begin no earlier than seven days before
+trip creation and no earlier than ninety days before travel, whichever is later.
+This excludes unrelated historical invitations. Normal reads inspect later
+messages in the selected invitation thread, and the traveler can additionally
+see recipient-specific hard-bounce evidence from the existing email-intelligence
+ledger even when Gmail filed that delivery failure separately. A later human
+reply supersedes an earlier bounce. Mailbox and message privacy rules continue
+to apply; the private bounce ledger is never disclosed to other travelers.

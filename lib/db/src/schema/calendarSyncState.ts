@@ -11,8 +11,8 @@ import { users } from "./users";
  * surfaces that as `CalendarSyncTokenGoneError`, the orchestrator
  * drops the token and re-bootstraps on the next run.
  *
- *  - `bootstrap_completed_at` set once the initial `timeMin=30d ago`
- *    backfill drains. Before that we're in bootstrap mode, paging
+ *  - `bootstrap_completed_at` set once the initial epoch-to-fixed-horizon
+ *    recurring-instance backfill drains. Before that we're in bootstrap mode, paging
  *    through pages with `pageToken` and stashing the next one in
  *    `bootstrap_page_token` if we hit the per-run page cap.
  *  - `sync_token` is Google's incremental cursor, written only when
@@ -40,6 +40,8 @@ export const calendarSyncState = pgTable("calendar_sync_state", {
     withTimezone: true,
   }),
   bootstrapPageToken: text("bootstrap_page_token"),
+  // Fixed upper bound for the current recurring-instance sweep, persisted with its page token.
+  bootstrapTimeMax: timestamp("bootstrap_time_max", { withTimezone: true }),
   incrementalPageToken: text("incremental_page_token"),
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
   lastError: text("last_error"),

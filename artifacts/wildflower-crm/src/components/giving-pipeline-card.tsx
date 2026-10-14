@@ -42,6 +42,7 @@ const PAGE_SIZE = 50;
 export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
   const oppParams: ListOpportunitiesAndPledgesParams = {
     ...buildBaseParams(scope),
+    includeGivingRelationships: "individualGiverPersonId" in scope,
     limit: PAGE_SIZE,
     page: 1,
   };
@@ -50,6 +51,7 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
   });
   const giftParams: ListGiftsAndPaymentsParams = {
     ...buildBaseParams(scope),
+    includeGivingRelationships: "individualGiverPersonId" in scope,
     limit: PAGE_SIZE,
     page: 1,
   };
@@ -115,6 +117,7 @@ export function GivingPipelineCard({ scope }: { scope: LinkedRecordsScope }) {
         <p className="px-2 py-2 text-sm text-muted-foreground">Loading…</p>
       ) : (
         <div data-testid="giving-pipeline">
+          {"individualGiverPersonId" in scope && <p className="mb-2 text-xs text-muted-foreground">Includes the primary household and organizations where this person is a current principal. Each record retains its donor of record.</p>}
           <p className="px-2 pb-2 text-xs text-muted-foreground">
             Linked payments appear beneath their pledge. When payments exist, only the payment rows show amounts here so the same money is not presented twice.
           </p>

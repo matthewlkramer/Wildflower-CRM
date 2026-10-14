@@ -15,6 +15,7 @@ export const ExportOpportunitiesAndPledgesCsvQueryParams = zod.object({
   "fields": zod.coerce.string().optional()
 })
 
+export const listOpportunitiesAndPledgesQueryIncludeGivingRelationshipsDefault = false;
 export const listOpportunitiesAndPledgesQueryLimitDefault = 50;
 export const listOpportunitiesAndPledgesQueryLimitMax = 10000;
 
@@ -39,6 +40,7 @@ export const ListOpportunitiesAndPledgesQueryParams = zod.object({
   "type": zod.array(zod.coerce.string()).optional(),
   "organizationId": zod.coerce.string().optional(),
   "householdId": zod.coerce.string().optional(),
+  "includeGivingRelationships": zod.coerce.boolean().default(listOpportunitiesAndPledgesQueryIncludeGivingRelationshipsDefault).describe('Include the individual\'s primary household and current principal organizations; donor of record is unchanged.'),
   "individualGiverPersonId": zod.coerce.string().optional(),
   "ownerUserId": zod.array(zod.coerce.string()).optional(),
   "entityId": zod.array(zod.coerce.string()).optional().describe('Filter to opportunities that have at least one pledge_allocation\nwith `entity_id` in the given set. Comma-separated form supported.\n'),

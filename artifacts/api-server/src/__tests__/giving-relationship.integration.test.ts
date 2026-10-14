@@ -228,6 +228,30 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("giving relationship", () => {
+  it("preserves historical principal giving when only the donor organization is archived", async () => {
+    await db.update(schema.organizations).set({ archivedAt: new Date() }).where(eq(schema.organizations.id, ORG_ID));
+    try {
+      const result = await get(`/api/giving-relationships/individual/${PERSON_ID}`);
+      expect(result.status).toBe(200); expect(result.json.relationshipTotal).toBe("600.00");
+      const related = await get(`/api/gifts-and-payments?individualGiverPersonId=${PERSON_ID}&includeGivingRelationships=true`);
+      expect(related.json.data.some((gift: { id: string }) => gift.id === ORG_GIFT_ID)).toBe(true);
+    } finally { await db.update(schema.organizations).set({ archivedAt: null }).where(eq(schema.organizations.id, ORG_ID)); }
+  });
+
+  it("includes household and principal gifts only when requested, with no duplicates", async () => {
+    const direct = await get(`/api/gifts-and-payments?individualGiverPersonId=${PERSON_ID}&includeGivingRelationships=false`);
+    expect(direct.status).toBe(200);
+    expect(direct.json.data.map((g: { id: string }) => g.id)).toEqual([DIRECT_GIFT_ID]);
+    const related = await get(`/api/gifts-and-payments?individualGiverPersonId=${PERSON_ID}&includeGivingRelationships=true`);
+    expect(related.status).toBe(200);
+    const ids = related.json.data.map((g: { id: string }) => g.id);
+    expect(ids.sort()).toEqual([DIRECT_GIFT_ID, HOUSEHOLD_GIFT_ID, ORG_GIFT_ID].sort());
+    expect(new Set(ids).size).toBe(ids.length);
+    const { gatherTaskSignals } = await import("../lib/gatherTaskSignals");
+    const signals = await gatherTaskSignals({ personId: PERSON_ID });
+    expect(signals?.recentGifts.some((g) => g.attribution === "principal_organization")).toBe(true);
+  });
+
   it("separates direct, household, and principal-organization giving for a person", async () => {
     const result = await get(
       `/api/giving-relationships/individual/${PERSON_ID}`,

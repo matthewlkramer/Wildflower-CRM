@@ -363,38 +363,44 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Link href="/projections">
-          <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-            <CardHeader>
-              <CardTitle className="text-lg">Projections</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Open-pipeline allocations by fiscal year and fund entity.
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/grants-calendar">
-          <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-            <CardHeader>
-              <CardTitle className="text-lg">
-                Application/close deadlines
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              Upcoming application deadlines and projected close dates.
-            </CardContent>
-          </Card>
-        </Link>
-        <Link href="/moves">
-          <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-            <CardHeader>
-              <CardTitle className="text-lg">Moves</CardTitle>
-            </CardHeader>
-            <CardContent className="text-sm text-muted-foreground">
-              People who haven't been contacted recently.
-            </CardContent>
-          </Card>
-        </Link>
+        {!hidden.includes("projections") && (
+          <Link href="/projections">
+            <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
+              <CardHeader>
+                <CardTitle className="text-lg">Projections</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Open-pipeline allocations by fiscal year and fund entity.
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+        {!hidden.includes("deadlines") && (
+          <Link href="/grants-calendar">
+            <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
+              <CardHeader>
+                <CardTitle className="text-lg">
+                  Application/close deadlines
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                Upcoming application deadlines and projected close dates.
+              </CardContent>
+            </Card>
+          </Link>
+        )}
+        {!hidden.includes("moves") && (
+          <Link href="/moves">
+            <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
+              <CardHeader>
+                <CardTitle className="text-lg">Moves</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm text-muted-foreground">
+                People who haven't been contacted recently.
+              </CardContent>
+            </Card>
+          </Link>
+        )}
       </div>
     </div>
   );

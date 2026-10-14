@@ -1,3 +1,4 @@
+import { personGivingAttribution } from "../lib/personGivingScope";
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
@@ -184,32 +185,11 @@ const giftProjection = sql.raw(`
 async function giftRows(source: DonorRef): Promise<GiftRow[]> {
   if (source.kind === "individual") {
     const result = await db.execute(sql`
-      WITH source AS (
-        SELECT id, primary_household_id
-        FROM people
-        WHERE id = ${source.id} AND archived_at IS NULL
-      ), candidates AS (
-        SELECT g.id AS gift_id, 'direct'::text AS attribution_kind
+      WITH grouped AS (
+        SELECT g.id AS gift_id, ARRAY[${personGivingAttribution(source.id, { individualGiverPersonId: sql`g.individual_giver_person_id`, householdId: sql`g.household_id`, organizationId: sql`g.organization_id` })}]::text[] AS attribution_kinds
         FROM gifts_and_payments g
-        JOIN source s ON g.individual_giver_person_id = s.id
         WHERE g.archived_at IS NULL
-        UNION ALL
-        SELECT g.id, 'household'::text
-        FROM gifts_and_payments g
-        JOIN source s ON g.household_id = s.primary_household_id
-        WHERE g.archived_at IS NULL AND s.primary_household_id IS NOT NULL
-        UNION ALL
-        SELECT g.id, 'principal_organization'::text
-        FROM gifts_and_payments g
-        JOIN people_entity_roles per ON per.organization_id = g.organization_id
-        JOIN source s ON s.id = per.person_id
-        WHERE g.archived_at IS NULL
-          AND per.connection = 'principal'
-          AND per.current = 'current'
-      ), grouped AS (
-        SELECT gift_id, array_agg(DISTINCT attribution_kind ORDER BY attribution_kind) AS attribution_kinds
-        FROM candidates
-        GROUP BY gift_id
+          AND ${personGivingAttribution(source.id, { individualGiverPersonId: sql`g.individual_giver_person_id`, householdId: sql`g.household_id`, organizationId: sql`g.organization_id` })} IS NOT NULL
       )
       ${giftProjection}
     `);

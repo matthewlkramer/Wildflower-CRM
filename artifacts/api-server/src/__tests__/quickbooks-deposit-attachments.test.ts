@@ -83,7 +83,7 @@ describe("QuickBooks deposit attachments", () => {
     });
   });
 
-  it("downloads attachment bytes with the QuickBooks token", async () => {
+  it("downloads signed attachment bytes without adding a second authorization mechanism", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(new Uint8Array([1, 2, 3]), {
         status: 200,
@@ -100,7 +100,7 @@ describe("QuickBooks deposit attachments", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://files.example.test/att-1",
       expect.objectContaining({
-        headers: { Authorization: "Bearer token" },
+        headers: {},
       }),
     );
   });

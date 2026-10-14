@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListInteractions,
+  useDeleteInteraction,
   useListEmailMessages,
   useListCalendarEvents,
   useListEmailProposals,
@@ -56,6 +57,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { EditNoteDialog } from "@/components/notes-panel";
+import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
 import { EmailDetailDialog } from "@/components/email-detail-dialog";
 import { useUserNameMap } from "@/components/user-picker";
@@ -445,6 +448,25 @@ export function UnifiedActivityFeed({
   };
 
   // ---- Note / task row mutations ----------------------------------
+  const deleteInteraction = useDeleteInteraction({
+    mutation: {
+      onSuccess: async () => {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: getListInteractionsQueryKey(),
+          }),
+          queryClient.invalidateQueries({ queryKey: ["/api/people"] }),
+        ]);
+        toast({ title: "Interaction deleted" });
+      },
+      onError: (error) =>
+        toast({
+          title: "Interaction could not be deleted",
+          description: error.message,
+          variant: "destructive",
+        }),
+    },
+  });
   const deleteNote = useDeleteNote({
     mutation: {
       onSuccess: async () => {
@@ -869,6 +891,7 @@ export function UnifiedActivityFeed({
                         </span>
                       </div>
                       <div className="flex items-center gap-0.5">
+                        <EditNoteDialog note={r} />
                         <NoteMeetingLinkDialog note={r} ctx={nt} />
                         <Button
                           type="button"
@@ -1021,6 +1044,27 @@ export function UnifiedActivityFeed({
                           · {r.durationMinutes} min
                         </span>
                       ) : null}
+                    </div>
+                    <div className="flex justify-end gap-1">
+                      <LogInteractionDialog interaction={r} compact />
+                      <ConfirmDeleteDialog
+                        title="Delete this interaction?"
+                        description="This removes it from active activity while preserving its history."
+                        disabled={deleteInteraction.isPending}
+                        trigger={
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            aria-label="Delete interaction"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        }
+                        onConfirm={() =>
+                          deleteInteraction.mutateAsync({ id: r.id })
+                        }
+                      />
                     </div>
                     <div className="font-medium">
                       {decodeHtmlEntities(r.summary)}

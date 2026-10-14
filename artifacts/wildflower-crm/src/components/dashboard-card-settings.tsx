@@ -11,6 +11,9 @@ export const DASHBOARD_CARDS = {
   tasks: "Open tasks",
   email: "Email proposals",
   grants: "Grant leads",
+  projections: "Projections",
+  deadlines: "Application/close deadlines",
+  moves: "Moves",
 } as const;
 export type DashboardCardId = keyof typeof DASHBOARD_CARDS;
 

@@ -194,13 +194,15 @@ export function FeedbackDialog() {
         disabled={preparing}
         data-feedback-ignore
         data-testid="button-feedback"
+        aria-label="Send feedback"
+        className="px-2 sm:px-3"
       >
         {preparing ? (
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          <Loader2 className="sm:mr-2 h-4 w-4 animate-spin" />
         ) : (
-          <MessageSquare className="mr-2 h-4 w-4" />
+          <MessageSquare className="sm:mr-2 h-4 w-4" />
         )}
-        Feedback
+        <span className="hidden sm:inline">Feedback</span>
       </Button>
       <Dialog
         open={open}
@@ -306,7 +308,7 @@ export function FeedbackDialog() {
                       setScreenshotError(null);
                     }}
                   >
-                    <Trash2 className="mr-2 h-4 w-4" />
+                    <Trash2 className="sm:mr-2 h-4 w-4" />
                     Remove
                   </Button>
                 ) : (
@@ -315,7 +317,7 @@ export function FeedbackDialog() {
                     size="sm"
                     onClick={() => void capture()}
                   >
-                    <RefreshCw className="mr-2 h-4 w-4" />
+                    <RefreshCw className="sm:mr-2 h-4 w-4" />
                     Try capture
                   </Button>
                 )}
@@ -360,7 +362,7 @@ export function FeedbackDialog() {
               data-testid="button-submit-feedback"
             >
               {submitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="sm:mr-2 h-4 w-4 animate-spin" />
               ) : null}
               Submit feedback
             </Button>

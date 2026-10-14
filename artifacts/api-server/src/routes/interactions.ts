@@ -36,7 +36,7 @@ router.get(
     const q = parseOrBadRequest(ListInteractionsQueryParams, normalizedQuery, res);
     if (!q) return;
     const { limit, page, offset } = parsePagination(q);
-    const filters: SQL[] = [];
+    const filters: SQL[] = [sql`${interactions.archivedAt} IS NULL`];
     if (q.search) {
       const term = `%${q.search}%`;
       const orClause = or(
@@ -144,7 +144,7 @@ router.patch(
 router.delete(
   "/interactions/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(interactions).where(eq(interactions.id, paramId(req)));
+    await db.update(interactions).set({ archivedAt: new Date(), updatedAt: new Date() }).where(eq(interactions.id, paramId(req)));
     res.status(204).end();
   }),
 );

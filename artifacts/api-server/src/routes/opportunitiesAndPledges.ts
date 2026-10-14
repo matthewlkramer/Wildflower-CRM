@@ -1,3 +1,4 @@
+import { personGivingScope } from "../lib/personGivingScope";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { enqueueDonorSignal } from "../lib/taskSuggestionQueue";
@@ -176,6 +177,7 @@ import {
   notFound,
   parseOrBadRequest,
   parsePagination,
+  parseBoolQuery,
   paramId,
   splitBlank,
 } from "../lib/helpers";
@@ -404,10 +406,7 @@ async function buildOppListWhere(
     filters.push(eq(opportunitiesAndPledges.householdId, q.householdId));
   if (q.individualGiverPersonId)
     filters.push(
-      eq(
-        opportunitiesAndPledges.individualGiverPersonId,
-        q.individualGiverPersonId,
-      ),
+      parseBoolQuery(req, "includeGivingRelationships") === true ? personGivingScope(q.individualGiverPersonId, opportunitiesAndPledges) : eq(opportunitiesAndPledges.individualGiverPersonId, q.individualGiverPersonId),
     );
   {
     const f = splitBlank(q.ownerUserId as string[] | undefined);

@@ -64,3 +64,7 @@ relevant to the task.
 ## Donor fields and cleanup
 
 - [Field definitions](../../docs/field-definitions.md) — organization regions are funding interests; organization emails live only in Contact info; newsletter events are authoritative, with dated renewed consent required to lift opt-out. Cleanup projects reuse `cleanup_queue` work_item rows.
+
+- Individual pipeline/AI giving scope is shared in `personGivingScope.ts`: direct, primary-household, and current-principal organization membership. Use that helper rather than another role lookup; attribution does not change the donor of record.
+- Meeting task proposals use source notes/transcripts, not generated summaries, and require grounded quote evidence. The editable review dialog must wrap task titles/context and remain usable on mobile.
+- Signed QuickBooks temporary storage URLs must not receive the OAuth bearer header; only QBO API hosts need it. See `quickbooks-attachment-download.test.ts`.

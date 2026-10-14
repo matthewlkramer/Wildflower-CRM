@@ -1,3 +1,4 @@
+import { personGivingScope } from "../lib/personGivingScope";
 import { recordNewsletterPreference } from "../lib/newsletterPreferences";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
@@ -178,7 +179,7 @@ function peopleLastContactedExpr(): SQL {
       SELECT "people"."last_contacted" AS contact_date
       UNION ALL
       SELECT MAX(i.occurred_at::date) FROM interactions i
-        WHERE i.person_ids @> ARRAY[${PEOPLE_ID}]::text[]
+        WHERE i.archived_at IS NULL AND i.person_ids @> ARRAY[${PEOPLE_ID}]::text[]
           AND i.occurred_at <= NOW()
       UNION ALL
       SELECT MAX(m.sent_at::date) FROM email_messages m
@@ -196,26 +197,12 @@ function peopleLastContactedExpr(): SQL {
 // Rollup expressions are defined once and reused by both the SELECT
 // (cast/aliased) and the presence WHERE filters so the two can never
 // drift. Each is a correlated fragment scoped to `people.id`.
-// Soft-credit fragment: an organization-donor gift (organization_id IS NOT NULL)
-// that this person should be credited for, because they are its primary contact,
-// its advisor, OR a *current principal* of the donor organization (the
-// owner/controller, even when someone else is the primary contact — the
-// Katherine Bradley → Bradley Holdings case). Scoping to organization-donor gifts
-// keeps this set disjoint from the direct + household sums (donor XOR guarantees
-// those gifts have a NULL organization_id), so no gift is ever double-counted, and
-// the three signals are OR-combined inside one subquery so a gift matching several
-// of them is still counted once. Aliased `g` so the inner principal lookup's
-// `organization_id` can't collide. archived_at IS NULL aligns with the app-wide
-// "archived gifts are excluded from financial totals" invariant.
+// Organization attribution uses the shared person-giving boundary. Donor
+// XOR keeps it disjoint from direct and household sums, and EXISTS prevents
+// multiple current roles from counting an organization gift more than once.
 const peopleOrgCreditGiftWhere = sql`(
   g.organization_id IS NOT NULL AND g.archived_at IS NULL
-  AND g.organization_id IN (
-    SELECT organization_id FROM people_entity_roles
-    WHERE person_id = ${PEOPLE_ID}
-      AND connection = 'principal'
-      AND current = 'current'
-      AND organization_id IS NOT NULL
-  )
+  AND ${personGivingScope(PEOPLE_ID, { individualGiverPersonId: sql`g.individual_giver_person_id`, householdId: sql`g.household_id`, organizationId: sql`g.organization_id` })}
 )`;
 const peopleLifetimeGivingExpr = sql`(
   COALESCE(

@@ -313,7 +313,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateNoteMutationOptions(options));
     }
-    export const getDeleteNoteUrl = (id: string,) => {
+    /**
+ * @summary Archive this record without removing its history
+ */
+export const getDeleteNoteUrl = (id: string,) => {
 
 
   
@@ -366,7 +369,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     
     export type DeleteNoteMutationError = ErrorType<unknown>
 
-    export const useDeleteNote = <TError = ErrorType<unknown>,
+    /**
+ * @summary Archive this record without removing its history
+ */
+export const useDeleteNote = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteNote>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteNote>>,

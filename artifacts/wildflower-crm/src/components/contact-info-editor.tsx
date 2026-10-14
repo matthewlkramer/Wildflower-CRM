@@ -262,16 +262,22 @@ export function EmailsEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-end mb-1">
+      <div className="flex items-center justify-between gap-2">
+        {list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No emails.</p>
+        ) : (
+          <span />
+        )}
         <Button
           variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
+          size="icon"
+          className="h-6 w-6"
           onClick={openAdd}
+          aria-label="Add email"
+          title="Add email"
           data-testid="btn-add-email"
         >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Add email
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
       {list.length > 0 ? (
@@ -361,9 +367,7 @@ export function EmailsEditor({
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No emails.</p>
-      )}
+      ) : null}
 
       <Dialog
         open={dialogOpen}
@@ -609,16 +613,22 @@ export function PhoneNumbersEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-end mb-1">
+      <div className="flex items-center justify-between gap-2">
+        {list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No phone numbers.</p>
+        ) : (
+          <span />
+        )}
         <Button
           variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
+          size="icon"
+          className="h-6 w-6"
           onClick={openAdd}
+          aria-label="Add phone"
+          title="Add phone"
           data-testid="btn-add-phone"
         >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Add phone
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
       {list.length > 0 ? (
@@ -666,9 +676,7 @@ export function PhoneNumbersEditor({
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No phone numbers.</p>
-      )}
+      ) : null}
 
       <Dialog
         open={dialogOpen}
@@ -933,16 +941,22 @@ export function AddressesEditor({
 
   return (
     <div>
-      <div className="flex items-center justify-end mb-1">
+      <div className="flex items-center justify-between gap-2">
+        {list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No addresses.</p>
+        ) : (
+          <span />
+        )}
         <Button
           variant="ghost"
-          size="sm"
-          className="h-6 px-2 text-xs"
+          size="icon"
+          className="h-6 w-6"
           onClick={openAdd}
+          aria-label="Add address"
+          title="Add address"
           data-testid="btn-add-address"
         >
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          Add address
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
       {list.length > 0 ? (
@@ -1009,9 +1023,7 @@ export function AddressesEditor({
             </li>
           ))}
         </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No addresses.</p>
-      )}
+      ) : null}
 
       <Dialog
         open={dialogOpen}

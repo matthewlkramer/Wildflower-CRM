@@ -5,6 +5,9 @@ description: Grouped index of email/calendar-sync lessons — Gmail/Calendar syn
 
 ## Gmail/Calendar sync & storage
 
+- Calendar recurring-instance bootstraps need a finite, persisted `bootstrap_time_max` beside the page cursor. Unbounded future recurrence never drains; do not recompute the horizon on each resumed page. See `calendarSync.ts` and `calendar-bootstrap-progress.integration.test.ts`.
+
+
 - [email-messages cross-mailbox dedup](email-messages-cross-mailbox-dedup.md) — same Gmail message stored once per mailbox; list endpoint uses DISTINCT ON (gmail_message_id) to deduplicate.
 - [wildflower email/calendar HTML entities](wildflower-html-entities.md) — Gmail/Calendar/Airtable text is HTML-escaped; decode at render via decodeHtmlEntities, not user-authored content.
 - [internal email domains config](internal-email-domains-config.md) — staff domains moved from hardcoded Set to internal_email_domains singleton; matcher loads via cached loadInternalDomains; defaults seed/fallback keep sync unchanged on rollout.

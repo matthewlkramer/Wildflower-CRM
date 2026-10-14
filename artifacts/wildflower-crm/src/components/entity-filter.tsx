@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { SlidersHorizontal, Check, ChevronsUpDown, X } from "lucide-react";
 import {
   useListEntities,
   getListEntitiesQueryKey,
@@ -44,6 +44,7 @@ export function HeaderEntityFilter() {
       onChange={setSelected}
       align="end"
       showChips={false}
+      responsive
     />
   );
 }
@@ -60,7 +61,9 @@ export function EntityMultiSelect({
   showChips = true,
   triggerLabelPrefix = "Entities:",
   placeholder = "All entities",
+  responsive = false,
 }: {
+  responsive?: boolean;
   options: ReadonlyArray<{ id: string; name: string; active: boolean }>;
   value: string[];
   onChange: (next: string[]) => void;
@@ -71,8 +74,7 @@ export function EntityMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const selectedSet = new Set(value);
-  const labelFor = (id: string) =>
-    options.find((o) => o.id === id)?.name ?? id;
+  const labelFor = (id: string) => options.find((o) => o.id === id)?.name ?? id;
   const triggerLabel =
     value.length === 0
       ? placeholder
@@ -91,7 +93,9 @@ export function EntityMultiSelect({
   const selectionIncludesRetired = value.some((id) => retiredIds.has(id));
   const [showRetired, setShowRetired] = useState(false);
   const effectiveShowRetired = showRetired || selectionIncludesRetired;
-  const visibleOptions = effectiveShowRetired ? [...active, ...retired] : active;
+  const visibleOptions = effectiveShowRetired
+    ? [...active, ...retired]
+    : active;
 
   const toggle = (id: string) => {
     onChange(
@@ -113,10 +117,17 @@ export function EntityMultiSelect({
             variant="outline"
             role="combobox"
             size="sm"
-            className="h-8 min-w-[12rem] justify-between font-normal"
+            className={cn(
+              "h-8 justify-between font-normal",
+              responsive ? "min-w-0 px-2 sm:min-w-[12rem]" : "min-w-[12rem]",
+            )}
+            aria-label={`Filter entities: ${triggerLabel}`}
             data-testid="filter-entities"
           >
-            <span className="truncate">
+            {responsive && <SlidersHorizontal className="h-4 w-4 sm:hidden" />}
+            <span
+              className={responsive ? "hidden sm:inline truncate" : "truncate"}
+            >
               {triggerLabelPrefix ? (
                 <span className="text-muted-foreground mr-1">
                   {triggerLabelPrefix}
@@ -124,7 +135,12 @@ export function EntityMultiSelect({
               ) : null}
               {triggerLabel}
             </span>
-            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            <ChevronsUpDown
+              className={cn(
+                "ml-2 h-4 w-4 shrink-0 opacity-50",
+                responsive && "hidden sm:block",
+              )}
+            />
           </Button>
         </PopoverTrigger>
         <PopoverContent

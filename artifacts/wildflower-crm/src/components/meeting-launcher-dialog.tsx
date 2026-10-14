@@ -77,8 +77,15 @@ export function MeetingLauncherDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" data-testid="button-new-meeting">
-          <NotebookPen className="mr-1 h-3.5 w-3.5" /> New meeting
+        <Button
+          size="sm"
+          variant="outline"
+          className="px-2 sm:px-3"
+          aria-label="New meeting"
+          data-testid="button-new-meeting"
+        >
+          <NotebookPen className="sm:mr-1 h-3.5 w-3.5" />{" "}
+          <span className="hidden sm:inline">New meeting</span>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl">

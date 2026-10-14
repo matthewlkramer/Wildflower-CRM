@@ -305,7 +305,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               </SheetContent>
             </Sheet>
 
-            <div className="flex items-center gap-2 md:hidden">
+            <div className="hidden sm:flex items-center gap-2 md:hidden">
               <span className="font-serif text-lg font-medium tracking-wide text-primary">
                 Wildflower CRM
               </span>
@@ -316,7 +316,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="hidden md:block" />
 
           {/* Right: action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
             <FeedbackDialog />
             <LogInteractionDialog compact />
             <MeetingLauncherDialog />
