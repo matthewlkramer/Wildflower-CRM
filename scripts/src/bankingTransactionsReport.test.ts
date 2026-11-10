@@ -58,6 +58,50 @@ test("rejects a report for any other account", () => {
   );
 });
 
+test("imports a Wells Fargo check reversal as received with the same identity as a credit", () => {
+  const reversal =
+    "01/08/2026 07:00:00 AM,Check,,100.00,100.00,,,,REVERSAL OF CHECK POSTED 01-06 REFER TO MAKER,BUSINESS CHECKING (XXXXXX 8945),Uncategorized Revenue";
+  const debit =
+    "01/09/2026 07:00:00 AM,Debit,Vendor,25.00,25.00,,,,ONLINE PAYMENT,BUSINESS CHECKING (XXXXXX 8945),Expense";
+  const parsed = parseBankingTransactionsReportCsv(report([reversal, debit]));
+  const asCredit = parseBankingTransactionsReportCsv(
+    report([reversal.replace(",Check,", ",Credit,")]),
+  );
+
+  assert.deepEqual(
+    parsed.rows.map(({ spent, received }) => ({ spent, received })),
+    [
+      { spent: "", received: "100.00" },
+      { spent: "25.00", received: "" },
+    ],
+  );
+  assert.equal(
+    wellsFargoDedupKey(parsed.rows[0]),
+    wellsFargoDedupKey(asCredit.rows[0]),
+  );
+});
+
+test("rejects an ordinary check and a check reversal with a negative amount", () => {
+  assert.throws(
+    () =>
+      parseBankingTransactionsReportCsv(
+        report([
+          "01/08/2026 07:00:00 AM,Check,Vendor,100.00,100.00,,,,CHECK PAYMENT,BUSINESS CHECKING (XXXXXX 8945),Expense",
+        ]),
+      ),
+    /Unexpected transaction type "Check"/,
+  );
+  assert.throws(
+    () =>
+      parseBankingTransactionsReportCsv(
+        report([
+          "01/08/2026 07:00:00 AM,Check,,-100.00,100.00,,,,REVERSAL OF CHECK POSTED 01-06 REFER TO MAKER,BUSINESS CHECKING (XXXXXX 8945),Uncategorized Revenue",
+        ]),
+      ),
+    /Expected a positive amount for a check reversal/,
+  );
+});
+
 test("parses the same scheduled report when QuickBooks emails Excel", () => {
   const csvRows = report([
     "01/08/2026 07:00:00 AM,Credit,ATM Deposit,100.00,100.00,01/13/2026 10:48:50 PM,,01/09/2026 10:48:48 PM,ATM CHECK DEPOSIT,BUSINESS CHECKING (XXXXXX 8945),Transfer",
