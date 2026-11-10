@@ -56,6 +56,7 @@ interface Props {
   // When true, render only a compact "Log interaction" outline button
   // suitable for the detail-page panel header.
   compact?: boolean;
+  showCompactLabel?: boolean;
 }
 
 // `datetime-local` inputs need a value formatted as `YYYY-MM-DDTHH:mm`
@@ -73,6 +74,7 @@ export function LogInteractionDialog({
   prefillHouseholdId,
   triggerLabel,
   compact,
+  showCompactLabel,
   interaction,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -171,7 +173,7 @@ export function LogInteractionDialog({
           ) : compact ? (
             <>
               <MessageSquare className="h-4 w-4 sm:mr-1" />
-              <span className="hidden sm:inline">
+              <span className={showCompactLabel ? "inline" : "hidden sm:inline"}>
                 {triggerLabel ?? "Log interaction"}
               </span>
             </>

@@ -5,6 +5,23 @@ last_verified: 2026-09-21
 
 # CRM-to-accounting workflow
 
+## Where staff start
+
+**Process incoming money** on the Dashboard and **Record received gift** in
+Gifts both open Reconciliation. Start with the individual payment in the
+deposit. For payments that are visible in QuickBooks or Stripe before a deposit
+arrives, expand **Can’t find the payment?** to search those sources. A match to
+an existing gift links the evidence, a match to a pledge records a payment
+against it, and a new gift uses the selected payment as evidence. Development
+can record the donor and purpose in the CRM. Finance handles changes in
+QuickBooks and reviews missing or unclear deposit evidence.
+
+**Gifts** totals the matching portions of active, received, non-loan gifts
+across all pages, using the fiscal year credited on each allocation. Entity,
+intended use, project, and fiscal year must match on that allocation. Campaign
+is a gift-level filter. Use **Wildflower Foundation** for the entity and
+**Fundable project** for a specific project such as Seed Fund.
+
 ## Decision
 
 Donation coding forms are historical source material, not a continuing intake

@@ -197,6 +197,7 @@ import {
   proRataNegativeShares,
 } from "../lib/auditCloseResolution";
 import { computePledgeUncollectedRemainder } from "../lib/pledgeCapacity";
+import { remainingFundingSchedule } from "../lib/fundingSchedule";
 import { auditCreate, auditUpdate } from "../lib/audit";
 import { executeBulkUpdate } from "../lib/bulkUpdate";
 import {
@@ -867,6 +868,12 @@ router.get(
       uncollectedRemainder: Math.max(0, uncollectedRaw).toFixed(2),
       resolvedByWriteOffPledgeId,
     };
+    const nextExpectedPaymentDate =
+      row.pledgeCommittedAt && !row.awardClosedAt && !row.isWriteOff && uncollectedRaw > 0
+        ? remainingFundingSchedule(expectedPayments, Number(row.paidAmount), uncollectedRaw)
+            .find((item) => item.remaining === null || item.remaining > 0)
+            ?.expectedDate ?? null
+        : null;
     // Read-time planning derivations (Task #788) — single authority in
     // lib/pledgePlanning.ts; never persisted.
     const planning = derivePledgePlanning({
@@ -944,6 +951,7 @@ router.get(
       auditClose,
       flaggedForResearch,
       expectedPayments,
+      nextExpectedPaymentDate,
       conditionalRollup: conditionalRollup.conditional,
       conditionsMetRollup: conditionalRollup.conditionsMet,
       ...restrictionRollup,

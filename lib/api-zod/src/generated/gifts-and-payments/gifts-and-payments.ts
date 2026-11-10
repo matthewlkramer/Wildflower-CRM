@@ -44,9 +44,11 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
   "otherRestrictionTypes": zod.array(zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')).optional().describe('Filter to gifts with at least one allocation whose other_restriction_type is in the given set (OR). Repeat or comma-separate.'),
   "timeRestrictionTypes": zod.array(zod.enum(['donor_restricted', 'wf_restricted', 'unrestricted']).describe('Per-axis restriction taxonomy applied independently to the regional \/ fund-use \/ time axes of an allocation. donor_restricted = the funder imposed it (a true GAAP restriction); wf_restricted = Wildflower board-designated (NOT a GAAP restriction — counts as unrestricted for restriction rollups); unrestricted = none.')).optional().describe('Filter to gifts with at least one allocation whose time_restriction_type is in the given set (OR). Repeat or comma-separate.'),
   "ownerUserId": zod.array(zod.coerce.string()).optional(),
-  "entityId": zod.array(zod.coerce.string()).optional().describe('Filter to gifts that have at least one gift_allocation with `entity_id`\nin the given set. Comma-separated form supported.\n'),
+  "entityId": zod.array(zod.coerce.string()).optional().describe('Filter to gifts that have at least one allocation in the selected\nentities. Entity, fiscal year, project, and intended use must match\non the same allocation. Comma-separated form supported.\n'),
   "fiscalYear": zod.array(zod.coerce.string()).optional().describe('Filter to gifts that have at least one gift_allocation with\n`grant_year` in the given set (e.g. `fy2026`). Multi-value:\nrepeat the param or comma-separate. Omit to include all\nfiscal years.\n'),
   "fundableProjectId": zod.array(zod.coerce.string()).optional().describe('Filter to gifts that have at least one gift_allocation with\nfundable_project_id in the given set. Comma-separated form supported.\n'),
+  "intendedUsage": zod.array(zod.enum(['gen_ops', 'growth', 'school_startup', 'teacher_training', 'project'])).optional().describe('Filter to gifts whose matching allocation has one of these intended uses.'),
+  "summarizeGiving": zod.coerce.boolean().optional().describe('Include received giving across all matching allocations, independent of pagination.'),
   "dateAfter": zod.coerce.string().date().optional().describe('Keep gifts with dateReceived on\/after this date (inclusive).'),
   "dateBefore": zod.coerce.string().date().optional().describe('Keep gifts with dateReceived on\/before this date (inclusive).'),
   "amount": zod.coerce.string().optional().describe('Exact gift amount (major units) to filter by, e.g. `480` or `480.00`. Numeric-equality match on the gift\'s `amount`; non-numeric values are ignored.'),
@@ -61,6 +63,10 @@ export const ListGiftsAndPaymentsQueryParams = zod.object({
   "limit": zod.coerce.number().min(1).max(listGiftsAndPaymentsQueryLimitMax).default(listGiftsAndPaymentsQueryLimitDefault),
   "page": zod.coerce.number().min(1).default(listGiftsAndPaymentsQueryPageDefault)
 })
+
+export const listGiftsAndPaymentsResponseGivingSummaryGiftCountMin = 0;
+
+
 
 export const ListGiftsAndPaymentsResponse = zod.object({
   "data": zod.array(zod.object({
@@ -155,7 +161,11 @@ export const ListGiftsAndPaymentsResponse = zod.object({
   "page": zod.number(),
   "limit": zod.number(),
   "total": zod.number()
-})
+}),
+  "givingSummary": zod.object({
+  "giftCount": zod.number().min(listGiftsAndPaymentsResponseGivingSummaryGiftCountMin),
+  "amount": zod.string().describe('Sum of matching allocation amounts in dollars.')
+}).optional().describe('Received, active, non-loan gifts with a credited fiscal year on an allocation matching the current filters.')
 })
 
 export const CreateGiftOrPaymentBody = zod.object({

@@ -46,14 +46,18 @@ export function decodeHtmlEntities(
   );
 }
 
-export function formatCurrency(amount: number | string | null | undefined): string {
+export function formatCurrency(
+  amount: number | string | null | undefined,
+  { cents = false }: { cents?: boolean } = {},
+): string {
   if (amount === null || amount === undefined || amount === "") return "—";
   const num = typeof amount === "string" ? Number(amount) : amount;
   if (Number.isNaN(num)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: cents ? 2 : 0,
   }).format(num);
 }
 

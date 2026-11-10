@@ -73,6 +73,7 @@ import {
 import { donorOf } from "../../lib/quickbooksLink";
 import { applyDerivedOppFieldsMany } from "../../lib/pledgeStage";
 import { mergeUnambiguousQboDepositLines } from "../../lib/bankSpineRecompute";
+import { getActiveQuickbooksConnectionRow } from "../../lib/quickbooksTokenStore";
 
 const router: IRouter = Router();
 
@@ -889,7 +890,7 @@ router.get(
       page: req.query.page ? Number(req.query.page) : undefined,
     });
     const universe = buildUniverse(q);
-    const [countsResult, pageResult, freshnessResult] = await Promise.all([
+    const [countsResult, pageResult, freshnessResult, quickbooks] = await Promise.all([
       db.execute(sql`
         SELECT
           count(*) FILTER (WHERE ${sql.raw(LENS_PREDICATE.all_open)})::int AS all_open,
@@ -918,16 +919,23 @@ router.get(
             ),
             max(bt.created_at)
           ) AS last_imported_at,
+          (
+            SELECT max(processed_at)
+            FROM bank_transaction_imports
+            WHERE source = 'bank_csv_export' AND status = 'rejected'
+          ) AS last_rejected_at,
           max(bt.txn_date)::text AS latest_transaction_date,
           count(DISTINCT bt.source_file)::int AS source_file_count
         FROM bank_transactions bt
         WHERE bt.source = 'bank_csv_export'
       `),
+      getActiveQuickbooksConnectionRow(),
     ]);
     const counts = (countsResult.rows[0] ?? {}) as Record<string, number>;
     const freshness = (
       freshnessResult.rows as Array<{
         last_imported_at: Date | string | null;
+      last_rejected_at: Date | string | null;
         latest_transaction_date: string | null;
         source_file_count: number;
       }>
@@ -937,6 +945,10 @@ router.get(
         ? new Date(freshness.last_imported_at).toISOString()
         : null,
       latestTransactionDate: freshness?.latest_transaction_date ?? null,
+      lastRejectedAt: freshness?.last_rejected_at
+        ? new Date(freshness.last_rejected_at).toISOString()
+        : null,
+      quickbooksLastSyncedAt: quickbooks?.lastSyncedAt?.toISOString() ?? null,
       sourceFileCount: freshness?.source_file_count ?? 0,
     };
     const slim = pageResult.rows as unknown as SlimRow[];

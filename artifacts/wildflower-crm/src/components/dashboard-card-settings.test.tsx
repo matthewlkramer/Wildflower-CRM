@@ -13,6 +13,15 @@ function Settings({ userId }: { userId: string }) {
   return <DashboardCardSettings userId={userId} {...settings} />;
 }
 
+async function openSettings(host: HTMLDivElement) {
+  const button = Array.from(host.querySelectorAll("button")).find(
+    (element) => element.textContent?.trim() === "Customize dashboard",
+  );
+  expect(button?.getAttribute("aria-expanded")).toBe("false");
+  await act(async () => button?.click());
+  expect(button?.getAttribute("aria-expanded")).toBe("true");
+}
+
 describe("personal dashboard cards", () => {
   it("restores hidden cards for one account without affecting another account", async () => {
     localStorage.clear();
@@ -20,6 +29,7 @@ describe("personal dashboard cards", () => {
     const root = createRoot(host);
     try {
       await act(async () => root.render(<Settings userId="owner" />));
+      await openSettings(host);
       const switchForCleanup = () =>
         host.querySelector<HTMLButtonElement>(
           '[aria-label="Show Data cleanup and integrity"]',
@@ -43,6 +53,7 @@ describe("personal dashboard cards", () => {
     const host = document.createElement("div"); const root = createRoot(host);
     try {
       await act(async () => root.render(<Settings userId="owner" />));
+      await openSettings(host);
       for (const label of ["Moves", "Application/close deadlines", "Projections"]) {
         const control = host.querySelector<HTMLButtonElement>(`[aria-label="Show ${label}"]`)!;
         expect(control).not.toBeNull(); await act(async () => control.click());
@@ -58,6 +69,7 @@ describe("personal dashboard cards", () => {
     const root = createRoot(host);
     try {
       await act(async () => root.render(<Settings userId="owner" />));
+      await openSettings(host);
       expect(
         host
           .querySelector('[aria-label="Show Data cleanup and integrity"]')

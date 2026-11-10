@@ -5167,8 +5167,9 @@ paths:
           in: query
           required: false
           description: |
-            Filter to gifts that have at least one gift_allocation with `entity_id`
-            in the given set. Comma-separated form supported.
+            Filter to gifts that have at least one allocation in the selected
+            entities. Entity, fiscal year, project, and intended use must match
+            on the same allocation. Comma-separated form supported.
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
@@ -5192,6 +5193,18 @@ paths:
           style: form
           explode: false
           schema: { type: array, items: { type: string } }
+        - name: intendedUsage
+          in: query
+          description: Filter to gifts whose matching allocation has one of these intended uses.
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/IntendedUsage" }
+        - name: summarizeGiving
+          in: query
+          description: Include received giving across all matching allocations, independent of pagination.
+          schema: { type: boolean }
         - {
             name: dateAfter,
             in: query,
@@ -17668,6 +17681,12 @@ components:
                 items: { $ref: "#/components/schemas/PledgeExpectedPayment" },
                 description: "The pledge's installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges.",
               }
+            nextExpectedPaymentDate:
+              type: string
+              format: date
+              nullable: true
+              readOnly: true
+              description: Earliest planned date with remaining or uncertain payment coverage, after applying received payments to the schedule.
             payments:
               {
                 type: array,
@@ -18824,6 +18843,13 @@ components:
         data:
           { type: array, items: { $ref: "#/components/schemas/GiftOrPayment" } }
         pagination: { $ref: "#/components/schemas/Pagination" }
+        givingSummary:
+          type: object
+          required: [giftCount, amount]
+          description: Received, active, non-loan gifts with a credited fiscal year on an allocation matching the current filters.
+          properties:
+            giftCount: { type: integer, minimum: 0 }
+            amount: { type: string, description: Sum of matching allocation amounts in dollars. }
     GiftAuditReconciliationRecord:
       type: object
       required: [linkType]
@@ -24287,6 +24313,16 @@ components:
         sourceFileCount:
           type: integer
           description: Number of distinct spreadsheet files represented by the stored bank transaction rows.
+        lastRejectedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the most recent rejected bank report was processed.
+        quickbooksLastSyncedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the active QuickBooks connection last completed a successful accounting sync.
     ManualBankReportImportBody:
       type: object
       additionalProperties: false

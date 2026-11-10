@@ -758,6 +758,10 @@ function PersonView({ person }: { person: PersonDetail }) {
             }
           >
             <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Record what this person is interested in funding. Funding regions describe
+                where they want to give. Home region describes where they live.
+              </p>
               <TagEditRow label="Thematic">
                 <InlineEditInterestsThematic
                   testIdBase="person-interests-thematic"

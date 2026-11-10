@@ -154,6 +154,45 @@ describe("deposit workbench rows", () => {
     );
   });
 
+  it("matches the selected payment instead of the first payment in a bundled deposit", () => {
+    const openLinkEvidence = vi.fn();
+    render(
+      makeDeposit({
+        lenses: ["all_open", "needs_gift"],
+        composition: {
+          kind: "components",
+          payoutId: null,
+          explainedAmount: "100.00",
+          unexplainedAmount: "0.00",
+          components: ["first", "second"].map((id) => ({
+            componentId: id,
+            label: id,
+            source: "bank_spine",
+            paymentUnitId: `unit_${id}`,
+            amount: "50.00",
+            kind: "check",
+            needsReview: false,
+            ambiguousDepositMatch: false,
+          })),
+        },
+      }),
+      { openLinkEvidence },
+    );
+    const trigger = container.querySelector(
+      'button[aria-label="Match or record gift for second"]',
+    );
+    expect(trigger).not.toBeNull();
+    act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
+    const menu = document.querySelector<HTMLElement>('[role="menu"]');
+    const item = menu && menuItem(menu, "Find gift, pledge, or opportunity");
+    expect(item).not.toBeNull();
+    act(() => item?.click());
+    expect(openLinkEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "second", paymentUnitId: "unit_second" }),
+      "all",
+    );
+  });
+
   it("shows the finance-only exclusion reason list for an unexcluded deposit", () => {
     render(makeDeposit(), { isFinanceOrAdmin: true });
     const trigger = container.querySelector('button[aria-label$="actions"]');

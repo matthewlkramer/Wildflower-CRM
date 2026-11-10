@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   useCreateOrganization,
+  useListOrganizations,
   getListOrganizationsQueryKey,
   EntityType,
 } from "@workspace/api-client-react";
@@ -28,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatEnum } from "@/lib/format";
+import { useDebounce } from "@/hooks/use-debounce";
 
 export function CreateOrganizationDialog() {
   const [open, setOpen] = useState(false);
@@ -59,6 +61,16 @@ export function CreateOrganizationDialog() {
   });
 
   const trimmed = name.trim();
+  const search = useDebounce(trimmed, 250);
+  const searchParams = { search, limit: 5 };
+  const existing = useListOrganizations(searchParams, {
+    query: {
+      queryKey: getListOrganizationsQueryKey(searchParams),
+      enabled: open && search.length >= 2,
+    },
+  });
+  const checkingMatches =
+    trimmed.length >= 2 && (search !== trimmed || existing.isFetching);
 
   return (
     <Dialog
@@ -77,14 +89,13 @@ export function CreateOrganizationDialog() {
         <DialogHeader>
           <DialogTitle>New organization</DialogTitle>
           <DialogDescription>
-            Set the organization type now. You can fill in the rest of the
-            details after creating it.
+            Check for an existing organization before adding a new one.
           </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!trimmed) return;
+            if (!trimmed || create.isPending || checkingMatches) return;
             create.mutate({
               data: {
                 name: trimmed,
@@ -105,8 +116,33 @@ export function CreateOrganizationDialog() {
               data-testid="input-new-funder-name"
             />
           </div>
+          {checkingMatches ? (
+            <p role="status" className="text-xs text-muted-foreground">
+              Checking for existing organizations…
+            </p>
+          ) : search === trimmed && !!existing.data?.data.length ? (
+            <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
+              <p className="font-medium">Possible existing records</p>
+              <ul className="mt-1 space-y-1">
+                {existing.data.data.map((organization) => (
+                  <li key={organization.id}>
+                    <Link
+                      href={`/organizations/${organization.id}`}
+                      className="text-primary underline underline-offset-2"
+                    >
+                      {organization.name}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label htmlFor="new-funder-type">Organization type</Label>
+            <p className="text-xs text-muted-foreground">
+              Choose the organization’s structure if known. Finance uses it in
+              payment coding.
+            </p>
             <Select
               value={entityType}
               onValueChange={(value) => setEntityType(value as EntityType)}
@@ -137,7 +173,7 @@ export function CreateOrganizationDialog() {
             </Button>
             <Button
               type="submit"
-              disabled={!trimmed || create.isPending}
+              disabled={!trimmed || create.isPending || checkingMatches}
               data-testid="button-create-funder"
             >
               {create.isPending ? "Creating…" : "Create"}

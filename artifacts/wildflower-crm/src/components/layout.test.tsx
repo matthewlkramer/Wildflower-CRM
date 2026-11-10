@@ -77,7 +77,7 @@ describe("application layout", () => {
     expect(host.querySelector("main")?.className).toContain("overflow-y-auto");
   });
 
-  it("uses consolidated admin links and places gifts and pledges with finance", async () => {
+  it("groups commitments with the pipeline and gift processing with reconciliation", async () => {
     await act(async () => root.render(<Layout>Page content</Layout>));
 
     const sidebar = host.querySelector('[data-testid="desktop-sidebar"]')!;
@@ -94,28 +94,28 @@ describe("application layout", () => {
     expect(labels).not.toContain("Top Priorities");
 
     const text = sidebar.textContent ?? "";
-    const fundraisingSections = Array.from(
+    const pipelineSections = Array.from(
       sidebar.querySelectorAll('[data-testid="primary-navigation"] > div'),
-    ).filter((section) => section.textContent?.trim() === "Fundraising");
-    expect(fundraisingSections).toHaveLength(1);
-    expect(text).not.toContain("Records");
+    ).filter((section) => section.textContent?.trim() === "Donors & pipeline");
+    expect(pipelineSections).toHaveLength(1);
     expect(text.indexOf("Individuals")).toBeGreaterThan(
-      text.indexOf("Fundraising"),
+      text.indexOf("Donors & pipeline"),
     );
     expect(text.indexOf("Organizations")).toBeGreaterThan(
-      text.indexOf("Fundraising"),
+      text.indexOf("Donors & pipeline"),
     );
     expect(text.indexOf("Pledges")).toBeGreaterThan(
-      text.indexOf("Finance & Operations"),
+      text.indexOf("Opportunities"),
     );
+    expect(text.indexOf("Pledges")).toBeLessThan(text.indexOf("Gift processing"));
     expect(text.indexOf("Gifts")).toBeGreaterThan(
-      text.indexOf("Finance & Operations"),
+      text.indexOf("Reconciliation"),
     );
     expect(text.indexOf("Payment Intermediaries")).toBeGreaterThan(
-      text.indexOf("Admin"),
+      text.indexOf("Maintenance"),
     );
     expect(text.indexOf("Fundable Projects")).toBeGreaterThan(
-      text.indexOf("Admin"),
+      text.indexOf("Maintenance"),
     );
   });
 

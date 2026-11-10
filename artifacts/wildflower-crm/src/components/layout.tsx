@@ -46,10 +46,17 @@ import { CommandPaletteProvider, CommandPaletteTrigger } from "@/components/comm
 import { MeetingLauncherDialog } from "@/components/meeting-launcher-dialog";
 import { FeedbackDialog } from "@/components/feedback-dialog";
 import { LogInteractionDialog } from "@/components/log-interaction-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type NavLink = {
   href: string;
   label: string;
+  description: string;
   icon: ComponentType<{ className?: string }>;
   adminOnly?: boolean;
   indent?: boolean;
@@ -82,45 +89,281 @@ function BrandLockup({ compact = false }: { compact?: boolean }) {
 }
 
 const navItems: NavEntry[] = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  {
+    href: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    description: "See your priorities, follow-ups, and fundraising progress.",
+  },
 
-  { section: "Fundraising" },
-  { href: "/individuals", label: "Individuals", icon: Users },
-  { href: "/organizations", label: "Organizations", icon: Building2 },
-  { href: "/opportunities", label: "Opportunities", icon: Target },
-  { href: "/grant-leads", label: "Grant Leads", icon: Lightbulb },
-  { href: "/grants-calendar", label: "Application/Close Deadlines", icon: CalendarDays },
+  { section: "Donors & pipeline" },
+  {
+    href: "/individuals",
+    label: "Individuals",
+    icon: Users,
+    description:
+      "Find people, household connections, and relationship history.",
+  },
+  {
+    href: "/organizations",
+    label: "Organizations",
+    icon: Building2,
+    description:
+      "Find institutional donors and the people affiliated with them.",
+  },
+  {
+    href: "/opportunities",
+    label: "Opportunities",
+    icon: Target,
+    description: "Track potential asks, decisions, and next steps.",
+  },
+  {
+    href: "/pledges",
+    label: "Pledges",
+    icon: HandCoins,
+    description: "Track donor commitments, payment plans, and balances due.",
+  },
+  {
+    href: "/grant-leads",
+    label: "Grant Leads",
+    icon: Lightbulb,
+    description: "Review potential grants before adding them to the pipeline.",
+  },
+  {
+    href: "/grants-calendar",
+    label: "Application/Close Deadlines",
+    icon: CalendarDays,
+    description: "Track application deadlines and expected donor decisions.",
+  },
 
   { section: "Engagement" },
-  { href: "/feed", label: "Feed", icon: Rss },
-  { href: "/moves", label: "Moves", icon: Activity },
-  { href: "/meetings", label: "Meetings", icon: CalendarCheck2 },
-  { href: "/trips", label: "Trip Planner", icon: Plane },
-  { href: "/conferences", label: "Conferences", icon: GalleryVerticalEnd },
-  { href: "/newsletter", label: "Newsletter", icon: Newspaper },
-  { href: "/email-tracking", label: "Email Tracking", icon: Eye },
-  { href: "/email-intelligence", label: "Email Intelligence", icon: Inbox },
+  {
+    href: "/feed",
+    label: "Feed",
+    icon: Rss,
+    description: "Scan recent activity and updates across relationships.",
+  },
+  {
+    href: "/moves",
+    label: "Moves",
+    icon: Activity,
+    description: "Review outreach and follow-up across donor portfolios.",
+  },
+  {
+    href: "/meetings",
+    label: "Meetings",
+    icon: CalendarCheck2,
+    description: "Prepare for meetings and find notes and next steps.",
+  },
+  {
+    href: "/trips",
+    label: "Trip Planner",
+    icon: Plane,
+    description: "Plan trips and organize visits with donors and schools.",
+  },
+  {
+    href: "/conferences",
+    label: "Conferences",
+    icon: GalleryVerticalEnd,
+    description: "Find conferences and track attendance.",
+  },
+  {
+    href: "/newsletter",
+    label: "Newsletter",
+    icon: Newspaper,
+    description: "Review newsletter audiences and engagement.",
+  },
+  {
+    href: "/email-tracking",
+    label: "Email Tracking",
+    icon: Eye,
+    description: "Review activity on tracked emails.",
+  },
+  {
+    href: "/email-intelligence",
+    label: "Email Intelligence",
+    icon: Inbox,
+    description: "Review suggested updates from synced email.",
+  },
 
-  { section: "Finance & Operations" },
-  { href: "/pledges", label: "Pledges", icon: HandCoins },
-  { href: "/gifts", label: "Gifts", icon: Gift },
-  { href: "/fiscal-year-report/current", label: "FY Report", icon: FileBarChart },
-  { href: "/reporting-deadlines", label: "Reporting Deadlines", icon: FileClock },
-  { href: "/projections", label: "Projections", icon: LineChart },
-  { href: "/cash-flow", label: "Cash flow", icon: HandCoins },
-  { href: "/reconciliation/deposits", label: "Reconciliation", icon: Scale },
-  { href: "/revenue-extractor", label: "Accounting Data", icon: FileBarChart },
-  { href: "/enrichment-queue", label: "Enrichment Queue", icon: WandSparkles },
-  { href: "/data-cleanup", label: "Data Cleanup", icon: ListChecks },
+  { section: "Gift processing" },
+  {
+    href: "/reconciliation/deposits",
+    label: "Reconciliation",
+    icon: Scale,
+    description:
+      "Start here when money arrives. Identify and match each payment.",
+  },
+  {
+    href: "/gifts",
+    label: "Gifts",
+    icon: Gift,
+    description:
+      "Review received gifts and total giving by credited fiscal year and purpose.",
+  },
+  {
+    href: "/revenue-extractor",
+    label: "Accounting Data",
+    icon: FileBarChart,
+    description: "Review gift coding and prepare the Finance export.",
+  },
 
-  { section: "Admin" },
-  { href: "/admin", label: "Admin", icon: Settings },
-  { href: "/payment-intermediaries", label: "Payment Intermediaries", icon: Landmark },
-  { href: "/fundable-projects", label: "Fundable Projects", icon: FolderKanban },
-  { href: "/admin/app-improvements", label: "App Improvements", icon: MessageSquare, adminOnly: true },
-  { href: "/campaigns", label: "Campaigns", icon: Megaphone, adminOnly: true },
-  { href: "/audit-log", label: "Audit Log", icon: ScrollText, adminOnly: true },
+  { section: "Reporting & planning" },
+  {
+    href: "/fiscal-year-report/current",
+    label: "FY Report",
+    icon: FileBarChart,
+    description: "See received goal credit, unpaid commitments, and open asks.",
+  },
+  {
+    href: "/reporting-deadlines",
+    label: "Reporting Deadlines",
+    icon: FileClock,
+    description: "Track reports Wildflower owes to donors after an award.",
+  },
+  {
+    href: "/projections",
+    label: "Projections",
+    icon: LineChart,
+    description: "Review expected fundraising against goals.",
+  },
+
+  { section: "Maintenance" },
+  {
+    href: "/enrichment-queue",
+    label: "Enrichment Queue",
+    icon: WandSparkles,
+    description: "Review proposed updates to donor and contact information.",
+  },
+  {
+    href: "/data-cleanup",
+    label: "Data Cleanup",
+    icon: ListChecks,
+    description:
+      "Resolve missing fields, possible duplicates, and research items.",
+  },
+  {
+    href: "/payment-intermediaries",
+    label: "Payment Intermediaries",
+    icon: Landmark,
+    description: "Maintain entities that route payments on behalf of donors.",
+  },
+  {
+    href: "/fundable-projects",
+    label: "Fundable Projects",
+    icon: FolderKanban,
+    description:
+      "Maintain project designations, fundraising goals, and progress.",
+  },
+
+  { section: "Administration" },
+  {
+    href: "/admin",
+    label: "Admin",
+    icon: Settings,
+    description: "Manage users, settings, and integration health.",
+  },
+  {
+    href: "/admin/app-improvements",
+    label: "App Improvements",
+    icon: MessageSquare,
+    adminOnly: true,
+    description: "Review staff feedback and proposed improvements.",
+  },
+  {
+    href: "/campaigns",
+    label: "Campaigns",
+    icon: Megaphone,
+    adminOnly: true,
+    description: "Maintain fundraising appeals and campaign attribution.",
+  },
+  {
+    href: "/audit-log",
+    label: "Audit Log",
+    icon: ScrollText,
+    adminOnly: true,
+    description: "See who changed a record and when.",
+  },
 ];
+
+function NavLinks({
+  location,
+  isAdmin,
+  collapsed = false,
+  onNavigate,
+}: {
+  location: string;
+  isAdmin: boolean;
+  collapsed?: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <TooltipProvider>
+      <nav className="space-y-0.5" data-testid="primary-navigation">
+        {navItems
+          .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
+          .map((item) => {
+            if ("section" in item) {
+              return collapsed ? (
+                <div
+                  key={`section-${item.section}`}
+                  role="separator"
+                  className="mx-auto my-2 h-px w-6 bg-sidebar-border"
+                />
+              ) : (
+                <div
+                  key={`section-${item.section}`}
+                  className={`pb-0.5 pt-3 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/50 ${item.indent ? "pl-6 pr-3" : "px-3"}`}
+                >
+                  {item.section}
+                </div>
+              );
+            }
+            const isActive =
+              location === item.href ||
+              (item.href !== "/admin" && location.startsWith(`${item.href}/`));
+            const Icon = item.icon;
+            const indented = !collapsed && "indent" in item && item.indent;
+            const link = (
+              <Link
+                key={item.href}
+                href={item.href}
+                aria-label={item.label}
+                aria-current={isActive ? "page" : undefined}
+                onClick={onNavigate}
+                className={`group flex items-center gap-3 rounded-lg py-1.5 text-sm font-medium transition-all duration-150 ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"}`}
+              >
+                <Icon
+                  className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isActive ? "scale-110" : "group-hover:scale-110"}`}
+                />
+                {!collapsed && (
+                  <span>
+                    {item.label}
+                    {onNavigate && (
+                      <span className="block text-xs font-normal opacity-80">
+                        {item.description}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </Link>
+            );
+            return onNavigate ? (
+              link
+            ) : (
+              <Tooltip key={item.href}>
+                <TooltipTrigger asChild>{link}</TooltipTrigger>
+                <TooltipContent side="right" className="max-w-60">
+                  {collapsed && <strong className="block">{item.label}</strong>}
+                  {item.description}
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+      </nav>
+    </TooltipProvider>
+  );
+}
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";
 
@@ -140,45 +383,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const NavLinks = ({ collapsed = false, onNavigate }: { collapsed?: boolean; onNavigate?: () => void }) => (
-    <nav className="space-y-0.5" data-testid="primary-navigation">
-      {navItems
-        .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
-        .map((item) => {
-        if ("section" in item) {
-          return collapsed ? (
-            <div
-              key={`section-${item.section}`}
-              role="separator"
-              className="mx-auto my-2 h-px w-6 bg-sidebar-border"
-            />
-          ) : (
-            <div
-              key={`section-${item.section}`}
-              className={`pb-0.5 pt-3 text-[10px] font-bold uppercase tracking-widest text-sidebar-foreground/50 ${item.indent ? "pl-6 pr-3" : "px-3"}`}
-            >
-              {item.section}
-            </div>
-          );
-        }
-        const isActive = location === item.href || (item.href !== "/admin" && location.startsWith(`${item.href}/`));
-        const Icon = item.icon;
-        const indented = !collapsed && "indent" in item && item.indent;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            title={collapsed ? item.label : undefined}
-            onClick={onNavigate}
-            className={`group flex items-center gap-3 rounded-lg py-1.5 text-sm font-medium transition-all duration-150 ${collapsed ? "justify-center px-3" : indented ? "pl-7 pr-3" : "px-3"} ${isActive ? 'bg-sidebar-primary text-sidebar-primary-foreground shadow-sm' : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'}`}
-          >
-            <Icon className={`h-4 w-4 shrink-0 transition-transform duration-150 ${isActive ? 'scale-110' : 'group-hover:scale-110'}`} />
-            {collapsed ? null : item.label}
-          </Link>
-        );
-      })}
-    </nav>
-  );
 
   return (
     <CommandPaletteProvider>
@@ -212,7 +416,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
         <div className={`flex-1 overflow-y-auto ${collapsed ? "p-2" : "p-3"}`}>
-          <NavLinks collapsed={collapsed} />
+          <NavLinks location={location} isAdmin={isAdmin} collapsed={collapsed} />
         </div>
         <div className={`border-t border-sidebar-border ${collapsed ? "p-2" : "p-3"}`}>
           {collapsed ? (
@@ -279,7 +483,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <BrandLockup />
                 </div>
                 <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                  <NavLinks onNavigate={() => setMobileOpen(false)} />
+                  <NavLinks location={location} isAdmin={isAdmin} onNavigate={() => setMobileOpen(false)} />
                 </div>
                 <div className="shrink-0 border-t border-sidebar-border p-4">
                   <div className="flex items-center justify-between">
@@ -321,7 +525,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <LogInteractionDialog compact />
             <MeetingLauncherDialog />
             <CommandPaletteTrigger />
-            <HeaderEntityFilter />
+            {location !== "/gifts" && <HeaderEntityFilter />}
           </div>
         </header>
 

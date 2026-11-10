@@ -794,6 +794,10 @@ function OrganizationView({ org }: { org: OrganizationDetail }) {
             }
           >
             <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Record the organization’s stated priorities, age groups, and governance
+                interests. Leave fields blank when you haven’t learned them yet.
+              </p>
               <TagEditRow label="Thematic">
                 <InlineEditInterestsThematic
                   testIdBase="organization-interests-thematic"
