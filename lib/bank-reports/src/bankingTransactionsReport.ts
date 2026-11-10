@@ -133,10 +133,19 @@ function parseBankingTransactionsReportRows(
         `Unexpected bank account "${account}" in ${path.basename(file)}`,
       );
     }
-    const transactionType = get(row, "Transaction type").toLowerCase();
+    const reportedType = get(row, "Transaction type");
+    const description = get(row, "Description");
+    // Wells Fargo lists this specific reversal under Received even when
+    // QuickBooks labels it Check in the scheduled report.
+    const isCheckReversal =
+      reportedType.toLowerCase() === "check" &&
+      /^reversal of check posted\b/i.test(description);
+    const transactionType = isCheckReversal
+      ? "credit"
+      : reportedType.toLowerCase();
     if (transactionType !== "credit" && transactionType !== "debit") {
       throw new Error(
-        `Unexpected transaction type "${get(row, "Transaction type")}" in ${path.basename(file)}`,
+        `Unexpected transaction type "${reportedType}" in ${path.basename(file)}`,
       );
     }
     const numeric = toNumeric(get(row, "Amount"));
@@ -145,8 +154,12 @@ function parseBankingTransactionsReportRows(
         `Missing or zero transaction amount in ${path.basename(file)}`,
       );
     }
+    if (isCheckReversal && Number(numeric) < 0) {
+      throw new Error(
+        `Expected a positive amount for a check reversal in ${path.basename(file)}`,
+      );
+    }
     const amount = Math.abs(Number(numeric)).toFixed(2);
-    const description = get(row, "Description");
     if (!description) {
       throw new Error(`Missing bank description in ${path.basename(file)}`);
     }

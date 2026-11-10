@@ -97,6 +97,15 @@ record count. Never print the token, Authorization header, or school records.
 Reconciliation semantics for these sources are governed by the reconciliation
 document set (see [`../README.md`](../README.md)).
 
+The bank-side deposit feed comes from the emailed QuickBooks Banking
+Transactions report, separately from the accounting API sync. The importer
+accepts `Credit` and `Debit` rows. A positive `Check` with a bank description
+starting with `REVERSAL OF CHECK POSTED` is also treated as received, matching
+how Wells Fargo presents this reversal in the bank feed. Other `Check` rows
+still require review before broadening the importer. Finance can use
+**Reconciliation → Import report** to catch up with the current year-to-date
+report. The import preserves the existing transaction identity.
+
 ## Communications and other syncs
 
 - **Gmail / Calendar** — per-user Google OAuth (`google_oauth_tokens`);
