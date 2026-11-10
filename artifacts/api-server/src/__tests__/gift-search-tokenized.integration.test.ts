@@ -215,6 +215,84 @@ describe.skipIf(!HAS_DB)("tokenized gift search", () => {
   });
 });
 
+describe.skipIf(!HAS_DB)("giving by allocation", () => {
+  it("matches purpose and fiscal year on one allocation and totals all pages", async () => {
+    const { entities, fiscalYears, fundableProjects, giftAllocations } =
+      await import("@workspace/db");
+    const { inArray } = await import("drizzle-orm");
+    const fund = `${RUN}_fund`;
+    const otherFund = `${RUN}_other_fund`;
+    const year = `${RUN}_year`;
+    const otherYear = `${RUN}_other_year`;
+    const project = `${RUN}_project`;
+    const [first, second, crossMatched, undated] = [
+      `${RUN}_first`,
+      `${RUN}_second`,
+      `${RUN}_cross_matched`,
+      `${RUN}_undated`,
+    ];
+    const giftIds = [first, second, crossMatched, undated];
+    try {
+      await db.insert(entities).values([
+        { id: fund, name: fund },
+        { id: otherFund, name: otherFund },
+      ]);
+      await db.insert(fiscalYears).values([
+        { id: year, label: year },
+        { id: otherYear, label: otherYear },
+      ]);
+      await db.insert(fundableProjects).values({ id: project, name: project });
+      await db.insert(schema.giftsAndPayments).values(
+        giftIds.map((id) => ({
+          id,
+          name: id,
+          householdId: HH_ID,
+          amount: "100.00",
+          dateReceived: id === undated ? null : "2099-01-08",
+        })),
+      );
+      await db.insert(giftAllocations).values([
+        { id: `${first}_1`, giftId: first, entityId: fund, grantYear: year, intendedUsage: "project", fundableProjectId: project, subAmount: "25.50" },
+        { id: `${first}_2`, giftId: first, entityId: otherFund, grantYear: year, intendedUsage: "project", fundableProjectId: project, subAmount: "74.50" },
+        { id: `${second}_1`, giftId: second, entityId: fund, grantYear: year, intendedUsage: "project", fundableProjectId: project, subAmount: "100.00" },
+        { id: `${crossMatched}_1`, giftId: crossMatched, entityId: fund, grantYear: year, intendedUsage: "gen_ops", subAmount: "50.00" },
+        { id: `${crossMatched}_2`, giftId: crossMatched, entityId: fund, grantYear: otherYear, intendedUsage: "project", fundableProjectId: project, subAmount: "50.00" },
+        { id: `${undated}_1`, giftId: undated, entityId: fund, grantYear: year, intendedUsage: "project", fundableProjectId: project, subAmount: "100.00" },
+      ]);
+
+      const filters = new URLSearchParams({
+        entityId: fund,
+        fiscalYear: year,
+        fundableProjectId: project,
+        intendedUsage: "project",
+      });
+      const response = await fetch(
+        `${baseUrl}/api/gifts-and-payments?${filters}&limit=1&summarizeGiving=true`,
+      );
+      expect(response.status).toBe(200);
+      const body = await response.json();
+      expect(body.data).toHaveLength(1);
+      expect(body.pagination.total).toBe(3);
+      expect(body.givingSummary).toEqual({ giftCount: 2, amount: "125.50" });
+
+      const csv = await fetch(
+        `${baseUrl}/api/gifts-and-payments/export.csv?${filters}&fields=name`,
+      );
+      expect(csv.status).toBe(200);
+      const names = await csv.text();
+      expect(names).toContain(first);
+      expect(names).toContain(second);
+      expect(names).not.toContain(crossMatched);
+    } finally {
+      await db.delete(giftAllocations).where(inArray(giftAllocations.giftId, giftIds));
+      await db.delete(schema.giftsAndPayments).where(inArray(schema.giftsAndPayments.id, giftIds));
+      await db.delete(fundableProjects).where(eqFn(fundableProjects.id, project));
+      await db.delete(fiscalYears).where(inArray(fiscalYears.id, [year, otherYear]));
+      await db.delete(entities).where(inArray(entities.id, [fund, otherFund]));
+    }
+  });
+});
+
 describe.skipIf(!HAS_DB)("tokenized opportunity/pledge search", () => {
   it("finds a pledge when words skip the intervening first name", async () => {
     // "FY99 Cul<run>" is NOT a contiguous substring of

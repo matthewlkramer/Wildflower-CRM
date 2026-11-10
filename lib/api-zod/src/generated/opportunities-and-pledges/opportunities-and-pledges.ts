@@ -278,6 +278,7 @@ export const GetOpportunityOrPledgeResponse = zod.object({
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
 }).describe('One expected installment on a FIXED-COMMITMENT pledge (\"$250k due\n2026-09-01\"). The sole authority for installment scheduling — replaces\nthe deprecated per-allocation expectedPaymentDate convention. Pure\ncash-timing plan (no scope): purpose\/restriction\/fiscal-year scope\nstays on pledge allocations. Drives overdue detection, cash-timing\nforecasts, and reconciliation match scoring for fixed commitments.\nCost-reimbursement pledges normally have none (optional row allowed\nwhen a payment is known to be imminent).\n')).optional().describe('The pledge\'s installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges.'),
+  "nextExpectedPaymentDate": zod.string().date().nullish().describe('Earliest planned date with remaining or uncertain payment coverage, after applying received payments to the schedule.'),
   "payments": zod.array(zod.object({
   "id": zod.string(),
   "legacyGiftId": zod.string().nullish(),

@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   getListWorkbenchDepositsQueryKey,
   getListWorkbenchRecentChangesQueryKey,
+  getSearchReconciliationQbStagedQueryKey,
   getListDepositCandidatePayoutsQueryKey,
   getListDepositCandidatePaymentUnitsQueryKey,
   getListPayoutCandidateDepositsQueryKey,
@@ -89,6 +90,7 @@ import {
   type DepositActions,
 } from "@/components/reconciliation-deposits/rows";
 import { GiftSearchDialog } from "@/components/gift-search-dialog";
+import { FindReceivedPayment } from "@/components/reconciliation-deposits/find-received-payment";
 import { MergeGiftsDialog } from "@/components/gift-merge-dialogs";
 import {
   ResolveTieDialog,
@@ -243,6 +245,11 @@ export default function ReconciliationDepositsPage() {
     [lens, q, page],
   );
   const { data, isLoading, isError } = useListWorkbenchDeposits(params);
+  const bankImport = data?.bankImport;
+  const lastReportRejected = Boolean(
+    bankImport?.lastRejectedAt &&
+    (!bankImport.lastImportedAt || Date.parse(bankImport.lastRejectedAt) > Date.parse(bankImport.lastImportedAt)),
+  );
   const { data: recentData, isLoading: recentLoading } =
     useListWorkbenchRecentChanges();
   const manualBankImport = useImportManualBankReport();
@@ -587,6 +594,9 @@ export default function ReconciliationDepositsPage() {
     });
     void queryClient.invalidateQueries({
       queryKey: getListWorkbenchRecentChangesQueryKey(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getSearchReconciliationQbStagedQueryKey(),
     });
   };
 
@@ -2221,14 +2231,14 @@ export default function ReconciliationDepositsPage() {
           ) : null}
         </div>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          One row per bank deposit, with the known composition, CRM gifts, and
-          accounting evidence kept together.
+          Find the deposit by payer, bank description, or amount. Identify the
+          payments within it, then match or record the gift for each donation.
         </p>
         {!isLoading && data ? (
-          <div className="mt-2 flex max-w-3xl items-center gap-2">
+          <div className="mt-2 flex max-w-3xl flex-wrap items-start gap-2">
             <p
               className={`min-w-0 flex-1 rounded-md border px-3 py-2 text-xs ${
-                bankDataIsStale(data.bankImport.latestTransactionDate)
+                lastReportRejected || bankDataIsStale(data.bankImport.latestTransactionDate)
                   ? "border-amber-300 bg-amber-50 text-amber-950"
                   : "border-border bg-muted/40 text-muted-foreground"
               }`}
@@ -2236,7 +2246,7 @@ export default function ReconciliationDepositsPage() {
             >
               {data.bankImport.lastImportedAt ? (
                 <>
-                  Bank spreadsheet last imported{" "}
+                  Bank report last imported{" "}
                   {formatBankImportWhen(data.bankImport.lastImportedAt)}
                   {data.bankImport.latestTransactionDate
                     ? `; transactions through ${formatBankDataThrough(data.bankImport.latestTransactionDate)}.`
@@ -2251,6 +2261,17 @@ export default function ReconciliationDepositsPage() {
                   incomplete.
                 </strong>
               )}
+              {lastReportRejected && (
+                <strong className="mt-1 block">
+                  The latest bank report was rejected. Ask Finance to check the import.
+                </strong>
+              )}
+              <span className="mt-1 block">
+                QuickBooks accounting sync{" "}
+                {bankImport?.quickbooksLastSyncedAt
+                  ? formatBankImportWhen(bankImport.quickbooksLastSyncedAt)
+                  : "has no recorded successful run"}.
+              </span>
             </p>
             {canManageAccounting ? (
               <>
@@ -2282,6 +2303,25 @@ export default function ReconciliationDepositsPage() {
             ) : null}
           </div>
         ) : null}
+        <details className="mt-3 max-w-3xl rounded-md border px-3 py-2 text-sm">
+          <summary className="cursor-pointer font-medium">Can’t find the payment?</summary>
+          <div className="mt-2 space-y-2 text-sm text-muted-foreground">
+            <p>
+              Check the report dates above and look in Completed if the gift may
+              already be linked. For a bundled deposit, search for the bank
+              description as well as the individual payer.
+            </p>
+            <p>
+              A payment may be available in QuickBooks or Stripe before its
+              deposit appears. If both searches come up empty, ask Finance to
+              verify when the payment was recorded or included in a deposit.
+            </p>
+            <FindReceivedPayment
+              onMatch={(anchor) => setLinkEvidenceFor({ anchor, mode: "all" })}
+              onCreate={(anchor, preview, prefill) => setCreateFor({ anchor, preview, prefill })}
+            />
+          </div>
+        </details>
       </div>
       <div className="flex items-start gap-4">
         <main className="min-w-0 flex-1 space-y-3">
@@ -3056,6 +3096,7 @@ export default function ReconciliationDepositsPage() {
           if (!open) setLinkEvidenceFor(null);
         }}
         mode={linkEvidenceFor?.mode ?? "all"}
+        paymentLabel={linkEvidenceFor?.anchor.label}
         busy={busy}
         onPickGift={(gift) => void handleLinkEvidenceGift(gift)}
         onPickOpp={(opp) => void handleLinkEvidenceOpp(opp)}

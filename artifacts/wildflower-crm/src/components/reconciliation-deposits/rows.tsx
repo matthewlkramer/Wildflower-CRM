@@ -11,6 +11,7 @@ import type {
 } from "@workspace/api-client-react";
 import { formatCurrency, formatDateShort } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -128,7 +129,7 @@ export const DEPOSIT_LENSES: { id: WorkbenchDepositLens; label: string }[] = [
 ];
 
 function money(value: string | null | undefined): string {
-  return value == null ? "—" : formatCurrency(value);
+  return value == null ? "—" : formatCurrency(value, { cents: true });
 }
 
 function amountNumber(value: string | null | undefined): number {
@@ -148,6 +149,7 @@ function checkTone(
 
 type CardActionMenuItem = {
   label: string;
+  description?: string;
   onSelect: () => void;
   disabled?: boolean;
   /** Shown as a muted second line when the item is disabled (label-not-hide). */
@@ -157,9 +159,11 @@ type CardActionMenuItem = {
 function CardActionsMenu({
   items,
   ariaLabel = "Card actions",
+  triggerLabel,
 }: {
   items: CardActionMenuItem[];
   ariaLabel?: string;
+  triggerLabel?: string;
 }) {
   if (!items.length) return null;
   return (
@@ -168,9 +172,12 @@ function CardActionsMenu({
         <button
           type="button"
           aria-label={ariaLabel}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className={triggerLabel
+            ? "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium hover:bg-muted"
+            : "rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"}
           onClick={(event) => event.stopPropagation()}
         >
+          {triggerLabel}
           <MoreHorizontal className="h-4 w-4" />
         </button>
       </DropdownMenuTrigger>
@@ -184,11 +191,11 @@ function CardActionsMenu({
             disabled={item.disabled}
             onSelect={item.onSelect}
           >
-            {item.disabled && item.disabledReason ? (
+            {(item.disabled ? item.disabledReason : item.description) ? (
               <span className="flex max-w-[260px] flex-col">
                 <span>{item.label}</span>
                 <span className="whitespace-normal text-[10px] leading-snug text-muted-foreground">
-                  {item.disabledReason}
+                  {item.disabled ? item.disabledReason : item.description}
                 </span>
               </span>
             ) : (
@@ -280,11 +287,13 @@ export function DepositGridHeader() {
 function Composition({
   deposit,
   actions,
+  matchIndividualPayments,
   onConfirmProvisional,
   onDismissProvisional,
 }: {
   deposit: WorkbenchDeposit;
   actions: DepositActions;
+  matchIndividualPayments: boolean;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }) {
@@ -303,12 +312,27 @@ function Composition({
     >
       <span className="min-w-0">
         <span className="block text-xs font-medium text-amber-800 dark:text-amber-200">
-          Unresolved
+          Unresolved balance
         </span>
         <span className="block text-[10px] text-muted-foreground">
-          {money(composition.unexplainedAmount)} of the deposit has no known
-          source.
+          {formatCurrency(composition.unexplainedAmount, { cents: true })} still needs a payment source.
         </span>
+        {actions.isFinanceOrAdmin && actions.openCodePartialPayment ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="mt-1 h-auto px-2 py-1 text-xs"
+            onClick={() =>
+              actions.openCodePartialPayment?.(deposit.anchorId, composition.unexplainedAmount)
+            }
+          >
+            Identify part of deposit
+          </Button>
+        ) : (
+          <span className="block text-[10px] text-muted-foreground">
+            Ask Finance to review the bank detail.
+          </span>
+        )}
       </span>
       {actions.isFinanceOrAdmin ? (
         <CardActionsMenu
@@ -428,11 +452,31 @@ function Composition({
             return (
               <div
                 key={charge.chargeId}
-                className="flex items-center justify-between rounded border bg-background/80 px-2 py-1 text-[11px]"
+                className="flex flex-wrap items-center justify-between gap-1 rounded border bg-background/80 px-2 py-1 text-[11px]"
               >
-                <span className="truncate">
+                <span className="min-w-0 truncate">
                   {charge.payerName ?? charge.chargeId}
                 </span>
+                {matchIndividualPayments && !charge.linkedGiftId && !charge.exclusionReason && !charge.refunded && (
+                  <PaymentGiftActions
+                    actions={actions}
+                    anchor={{
+                      kind: "charge",
+                      id: charge.chargeId,
+                      label: charge.payerName ?? charge.chargeId,
+                    }}
+                    preview={{
+                      amount: money(charge.amount),
+                      date: formatDateShort(charge.chargeDate),
+                      method: "Stripe charge",
+                      source: charge.payerName ?? charge.chargeId,
+                    }}
+                    prefill={{
+                      name: charge.payerName ?? null,
+                      dateReceived: charge.chargeDate?.slice(0, 10) ?? null,
+                    }}
+                  />
+                )}
                 <span className="flex shrink-0 items-center gap-1">
                   <span className="tabular-nums">{money(charge.amount)}</span>
                   {laterRefunded ? (
@@ -499,6 +543,16 @@ function Composition({
                     />
                   ) : null}
                 </span>
+                {charge.chargeId.startsWith("ch_") && (
+                  <a
+                    href={`https://dashboard.stripe.com/payments/${encodeURIComponent(charge.chargeId)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[10px] text-primary underline underline-offset-2"
+                  >
+                    View Stripe charge
+                  </a>
+                )}
               </div>
             );
           })}
@@ -561,8 +615,17 @@ function Composition({
       </div>
     );
   }
+  const excluded = composition.components.reduce(
+    (total, item) => total + (item.exclusionReason ? amountNumber(item.amount) : 0),
+    0,
+  );
   return (
     <div className="space-y-1.5">
+      <p className="text-[11px] text-muted-foreground" data-testid="deposit-component-totals">
+        {composition.components.length} identified payment{composition.components.length === 1 ? "" : "s"}
+        {" · "}{formatCurrency(composition.explainedAmount, { cents: true })} identified
+        {excluded > 0 && <> · {formatCurrency(excluded, { cents: true })} marked non-fundraising</>}
+      </p>
       {composition.components.map((component) => (
         <div
           key={component.componentId}
@@ -728,6 +791,7 @@ function Composition({
               .filter(Boolean)
               .join(" · ")}
           </div>
+          <ComponentEvidence deposit={deposit} component={component} actions={actions} />
           {component.sourceInvoiceId ? (
             <div className="mt-0.5 text-[10px] text-muted-foreground">
               Invoice {component.invoiceDocNumber ?? component.sourceInvoiceId}
@@ -736,12 +800,110 @@ function Composition({
                 : ""}
             </div>
           ) : null}
+          {matchIndividualPayments && component.paymentUnitId && !component.exclusionReason &&
+            !component.needsReview && !component.ambiguousDepositMatch && !component.unconfirmed &&
+            !component.countedGiftIds?.length && (
+              <PaymentGiftActions
+                actions={actions}
+                anchor={{
+                  kind: "component",
+                  id: component.componentId,
+                  label: componentTitle(component),
+                  bankDepositId: deposit.anchorId,
+                  amount: component.amount,
+                  paymentUnitId: component.paymentUnitId,
+                }}
+                preview={{
+                  amount: money(component.amount),
+                  date: formatDateShort(component.receivedDate),
+                  method: componentKindLabel(component.kind),
+                  source: componentTitle(component),
+                }}
+                prefill={{
+                  name: component.label ?? null,
+                  dateReceived: component.receivedDate?.slice(0, 10) ?? null,
+                }}
+              />
+            )}
         </div>
       ))}
       {!composition.components.length ? (
         <span className="text-xs text-muted-foreground">No components</span>
       ) : null}
       {remainderStatus}
+    </div>
+  );
+}
+
+function ComponentEvidence({
+  deposit,
+  component,
+  actions,
+}: {
+  deposit: WorkbenchDeposit;
+  component: WorkbenchDepositCompositionComponentsItem;
+  actions: DepositActions;
+}) {
+  const record = component.qboRecords?.[0] ?? deposit.qbRecords.find(
+    (item) => item.stagedPaymentId === component.stagedPaymentId,
+  );
+  if (record && actions.openQbDetail) {
+    return (
+      <button
+        type="button"
+        className="text-[10px] text-primary underline underline-offset-2"
+        onClick={() => actions.openQbDetail(
+          asQbDetailRecord(record),
+          deposit.accountingChecks.some((item) => item.stagedPaymentId === record.stagedPaymentId)
+            ? "matched" : "missing",
+        )}
+      >
+        View QuickBooks evidence
+      </button>
+    );
+  }
+  return (
+    <p className="text-[10px] text-muted-foreground">
+      {component.stagedPaymentId ? "QuickBooks evidence" : component.manual ? "Identified by staff" : "Bank payment evidence"}
+    </p>
+  );
+}
+
+function PaymentGiftActions({
+  actions,
+  anchor,
+  preview,
+  prefill,
+}: {
+  actions: DepositActions;
+  anchor: AnchorRef;
+  preview: EvidencePreview;
+  prefill: CreateGiftPrefill;
+}) {
+  return (
+    <div className="mt-1">
+      <CardActionsMenu
+        ariaLabel={`Match or record gift for ${anchor.label}`}
+        triggerLabel="Match or record gift"
+        items={[
+          {
+            label: "Find gift, pledge, or opportunity…",
+            description: "Apply this payment to a record already in the CRM.",
+            onSelect: () => actions.openLinkEvidence?.(anchor, "all"),
+          },
+          {
+            label: "Create new gift…",
+            description: "Create a gift backed by this payment after checking for an existing record.",
+            onSelect: () => actions.openCreateGift(anchor, preview, prefill),
+          },
+          ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
+            ? [{
+                label: "Search Donorbox records…",
+                onSelect: () => actions.openDonorboxSearch?.(anchor, preview),
+              }]
+            : []),
+        ]}
+      />
     </div>
   );
 }
@@ -1129,6 +1291,11 @@ export function DepositRow({
 }: DepositRowProps) {
   const actions = suppliedActions ?? NOOP_ACTIONS;
   const isNotFundraising = deposit.lenses.includes("not_fundraising");
+  const information = deposit.coverage?.state?.information;
+  const needsComposition = deposit.lenses.includes("unresolved_composition");
+  const needsPairing = deposit.lenses.includes("ambiguous_pairing");
+  const needsGift = deposit.lenses.includes("needs_gift");
+  const needsAccounting = deposit.lenses.includes("accounting_corrections");
   const bankSourceDetails = [deposit.bank.payee, deposit.bank.refNo]
     .filter(Boolean)
     .join(" · ");
@@ -1227,6 +1394,8 @@ export function DepositRow({
       : [];
   const unlinkedGiftEvidenceCount =
     unlinkedCharges.length + unlinkedComponents.length;
+  const matchIndividualPayments = unlinkedGiftEvidenceCount > 1;
+  const showGiftAction = Boolean(giftColumnAnchor) && !matchIndividualPayments;
   const alignGiftsToStripeCharges =
     deposit.composition.kind === "stripe_payout";
   const giftAnchor = (
@@ -1353,25 +1522,37 @@ export function DepositRow({
               {bankSourceDetails}
             </span>
           ) : null}
+          {!isNotFundraising && (
+            <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground" aria-label="Deposit status">
+              <li>{needsComposition ? "Identify the payments in this deposit" : needsPairing ? "Confirm which payments belong here" : "Payment evidence identified"}</li>
+              {needsGift ? <li>Match or record the gift</li> : deposit.gifts.length > 0 ? <li>Gift linked</li> : null}
+              {deposit.gifts.length > 0 && information && !information.crmComplete && <li>Finish donor and gift coding</li>}
+              {needsAccounting ? <li>Finance: review the QuickBooks discrepancy</li> : information?.qbEvidenceComplete === false && deposit.gifts.length > 0 ? <li>QuickBooks evidence pending</li> : null}
+              {deposit.lenses.includes("completed") && <li>Completed</li>}
+            </ul>
+          )}
         </span>
         <span onClick={(event) => event.stopPropagation()}>
           <Composition
             deposit={deposit}
             actions={actions}
+            matchIndividualPayments={matchIndividualPayments}
             onConfirmProvisional={onConfirmProvisional}
             onDismissProvisional={onDismissProvisional}
           />
         </span>
         <span
           onClick={(event) => event.stopPropagation()}
-          className={`relative min-w-0 space-y-1.5 pr-7 ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
+          className={`relative min-w-0 space-y-1.5 ${showGiftAction ? "" : "pr-7"} ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
         >
-          <div className="absolute right-0 top-0 z-10">
+          <div className={showGiftAction && !alignGiftsToStripeCharges ? "mb-2" : "absolute right-0 top-0 z-10"}>
             <CardActionsMenu
               ariaLabel="Gift column actions"
+              triggerLabel={showGiftAction ? "Match or record gift" : undefined}
               items={[
                 {
                   label: "Search CRM gifts…",
+                  description: "Link the payment to a gift that is already recorded.",
                   onSelect: () => {
                     if (giftColumnAnchor)
                       actions.openColumnGiftSearch?.(deposit, "search");
@@ -1383,6 +1564,7 @@ export function DepositRow({
                 },
                 {
                   label: "Search CRM opportunities or pledges…",
+                  description: "Apply the payment to a commitment or choose an outcome for an open opportunity.",
                   onSelect: () => {
                     if (giftColumnAnchor && !giftColumnUnitless)
                       actions.openLinkEvidence?.(
@@ -1390,8 +1572,10 @@ export function DepositRow({
                         "opportunities",
                       );
                   },
-                  disabled: !giftColumnAnchor || giftColumnUnitless,
-                  disabledReason: !giftColumnAnchor
+                  disabled: matchIndividualPayments || !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: matchIndividualPayments
+                    ? "Choose the individual payment in Composition first."
+                    : !giftColumnAnchor
                     ? NO_GIFT_ANCHOR_REASON
                     : giftColumnUnitless
                       ? COMPONENT_NO_UNIT_REASON
@@ -1408,10 +1592,13 @@ export function DepositRow({
                   },
                   disabled:
                     !actions.isFinanceOrAdmin ||
+                    matchIndividualPayments ||
                     !giftColumnAnchor ||
                     giftColumnUnitless,
                   disabledReason: !actions.isFinanceOrAdmin
                     ? "Finance permission is required for Donorbox matching."
+                    : matchIndividualPayments
+                      ? "Choose the individual payment in Composition first."
                     : !giftColumnAnchor
                       ? NO_GIFT_ANCHOR_REASON
                       : giftColumnUnitless
@@ -1434,6 +1621,7 @@ export function DepositRow({
                 },
                 {
                   label: "Create new gift…",
+                  description: "Record this payment as a new gift after checking for an existing gift or pledge.",
                   onSelect: () => {
                     if (giftColumnTarget && !giftColumnUnitless)
                       actions.openCreateGift(
@@ -1442,8 +1630,10 @@ export function DepositRow({
                         giftColumnTarget.prefill,
                       );
                   },
-                  disabled: !giftColumnAnchor || giftColumnUnitless,
-                  disabledReason: !giftColumnAnchor
+                  disabled: matchIndividualPayments || !giftColumnAnchor || giftColumnUnitless,
+                  disabledReason: matchIndividualPayments
+                    ? "Choose the individual payment in Composition first."
+                    : !giftColumnAnchor
                     ? NO_GIFT_ANCHOR_REASON
                     : giftColumnUnitless
                       ? COMPONENT_NO_UNIT_REASON
@@ -1476,6 +1666,11 @@ export function DepositRow({
               ]}
             />
           </div>
+          {matchIndividualPayments && (
+            <p className="text-[11px] text-muted-foreground">
+              Choose a payment in Composition to match it or record its gift.
+            </p>
+          )}
           {deposit.gifts.map((gift) => {
             const anchor = giftAnchor(gift);
             const allocations = gift.allocations ?? [];

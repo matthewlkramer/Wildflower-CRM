@@ -1428,6 +1428,36 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
                 count={(opp.expectedPayments ?? []).length || undefined}
               >
                 <div className="px-2 py-1">
+                  {isPledge && !opp.isWriteOff && (
+                    <dl className="mb-3 grid grid-cols-2 gap-2 rounded-md bg-muted/40 p-2 text-xs">
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {opp.disbursementModel === "cost_reimbursement" ? "Award ceiling" : "Committed"}
+                        </dt>
+                        <dd className="font-medium tabular-nums">{formatCurrency(opp.awardedAmount, { cents: true })}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Received</dt>
+                        <dd className="font-medium tabular-nums">{formatCurrency(opp.paidAmount, { cents: true })}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">
+                          {opp.disbursementModel === "cost_reimbursement" ? "Planned balance" : "Still due on plan"}
+                        </dt>
+                        <dd className="font-medium tabular-nums">
+                          {opp.awardClosedAt
+                            ? "Award closed"
+                            : formatCurrency(allocations.length ? opp.auditClose.uncollectedRemainder : null, { cents: true })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Next expected payment</dt>
+                        <dd className="font-medium">
+                          {opp.nextExpectedPaymentDate ? formatDate(opp.nextExpectedPaymentDate) : "—"}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
                   <InstallmentSchedule opp={opp} />
                 </div>
               </RelatedCard>

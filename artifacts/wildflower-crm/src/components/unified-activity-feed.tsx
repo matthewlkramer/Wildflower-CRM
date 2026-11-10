@@ -732,7 +732,8 @@ export function UnifiedActivityFeed({
             <Textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
-              placeholder="Add a note or log an activity…"
+              placeholder="Write a quick note…"
+              aria-label="Quick note"
               rows={2}
               className="resize-none"
               data-testid="composer-note-input"
@@ -747,6 +748,7 @@ export function UnifiedActivityFeed({
                       prefillPersonId={personId}
                       prefillFunderId={organizationId}
                       prefillHouseholdId={householdId}
+                      showCompactLabel
                       compact
                     />
                     <AddMeetingNoteDialog
@@ -782,6 +784,9 @@ export function UnifiedActivityFeed({
                 {createNote.isPending ? "Saving…" : "Save note"}
               </Button>
             </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Use a note for context, an interaction for outreach that happened, and a task for a future follow-up.
+            </p>
           </div>
         )}
 

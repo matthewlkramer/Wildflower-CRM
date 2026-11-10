@@ -301,6 +301,7 @@ const GIFTS_ARRAY_PARAMS = [
   "entityId",
   "fiscalYear",
   "fundableProjectId",
+  "intendedUsage",
   "quickbooksTie",
   "restrictionLabels",
   "regionalRestrictionTypes",
@@ -335,6 +336,7 @@ async function buildGiftsListWhere(
 ): Promise<{
   q: ReturnType<typeof ListGiftsAndPaymentsQueryParams.parse>;
   where: SQL | undefined;
+  allocationScope: SQL | undefined;
   orderBy: (SQL | ReturnType<typeof desc>)[];
 } | null> {
     const normalizedQuery = normalizeArrayQuery(
@@ -495,38 +497,39 @@ async function buildGiftsListWhere(
       else if (f.values.length > 0)
         filters.push(inArray(giftsAndPayments.ownerUserId, f.values));
     }
-    // Entity filter — EXISTS on gift_allocations so we don't fan rows out
-    // when a single gift has multiple allocations. Driven by the global
-    // entity filter in the header.
-    if (q.entityId && q.entityId.length > 0) {
-      filters.push(
-        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.entityId, q.entityId)})`,
-      );
+    // The list, export, and giving total use the same allocation scope. A
+    // gift with allocations for different funds or years cannot match by
+    // satisfying each dimension on a different row.
+    const purposeScope = and(
+      q.entityId?.length ? inArray(giftAllocations.entityId, q.entityId) : undefined,
+      q.fundableProjectId?.length
+        ? inArray(giftAllocations.fundableProjectId, q.fundableProjectId)
+        : undefined,
+      q.intendedUsage?.length
+        ? inArray(giftAllocations.intendedUsage, q.intendedUsage)
+        : undefined,
+    );
+    const fiscalYears = splitBlank(q.fiscalYear);
+    const allocationScope = and(
+      purposeScope,
+      fiscalYears.values.length
+        ? inArray(giftAllocations.grantYear, fiscalYears.values)
+        : undefined,
+    );
+    const giftAllocationsQuery = sql`SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id}`;
+    const matchingAllocation = allocationScope
+      ? sql`EXISTS (${giftAllocationsQuery} AND ${allocationScope})`
+      : undefined;
+    if (fiscalYears.wantsBlank && !fiscalYears.values.length) {
+      filters.push(sql`NOT EXISTS (${giftAllocationsQuery})`);
     }
-    if (q.fundableProjectId && q.fundableProjectId.length > 0) {
+    if (matchingAllocation) {
+      // Preserve the existing "(Blank)" choice for gifts without allocations.
       filters.push(
-        sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.fundableProjectId, q.fundableProjectId)})`,
+        fiscalYears.wantsBlank && !purposeScope
+          ? sql`(${matchingAllocation} OR NOT EXISTS (${giftAllocationsQuery}))`
+          : matchingAllocation,
       );
-    }
-    // Fiscal-year filter — supports the "(Blank)" sentinel meaning "no
-    // allocations". Real values continue to use EXISTS so gifts with
-    // multiple allocations don't fan out into duplicate rows.
-    {
-      const fyRaw = (q.fiscalYear as string[] | undefined) ?? [];
-      const { wantsBlank, values: fyValues } = splitBlank(fyRaw);
-      if (fyValues.length > 0 && wantsBlank) {
-        filters.push(
-          sql`(EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, fyValues)}) OR NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id}))`,
-        );
-      } else if (fyValues.length > 0) {
-        filters.push(
-          sql`EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id} AND ${inArray(giftAllocations.grantYear, fyValues)})`,
-        );
-      } else if (wantsBlank) {
-        filters.push(
-          sql`NOT EXISTS (SELECT 1 FROM ${giftAllocations} WHERE ${giftAllocations.giftId} = ${giftsAndPayments.id})`,
-        );
-      }
     }
     // Presence filters on computed rollup fields (has value vs blank).
     // Each mirrors the matching column expression in donorJoinSelect.
@@ -635,7 +638,7 @@ async function buildGiftsListWhere(
           : q.sort === "date_asc"
             ? [asc(giftsAndPayments.dateReceived)]
             : [desc(giftsAndPayments.dateReceived)];
-    return { q, where, orderBy };
+    return { q, where, allocationScope, orderBy };
 }
 
 router.get(
@@ -643,9 +646,9 @@ router.get(
   asyncHandler(async (req, res) => {
     const built = await buildGiftsListWhere(req, res);
     if (!built) return;
-    const { q, where, orderBy } = built;
+    const { q, where, allocationScope, orderBy } = built;
     const { limit, page, offset } = parsePagination(q);
-    const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
+    const [rows, [{ value: total } = { value: 0 }], summary] = await Promise.all([
       db
         .select(donorJoinSelect)
         .from(giftsAndPayments)
@@ -675,6 +678,27 @@ router.get(
           eq(people.id, giftsAndPayments.individualGiverPersonId),
         )
         .where(where),
+      parseBoolQuery(req, "summarizeGiving") === true
+        ? db
+            .select({
+              giftCount: sql<number>`count(distinct ${giftsAndPayments.id})`.mapWith(Number),
+              amount: sql<string>`coalesce(sum(${giftAllocations.subAmount}), 0)::text`,
+            })
+            .from(giftsAndPayments)
+            .innerJoin(giftAllocations, eq(giftAllocations.giftId, giftsAndPayments.id))
+            .leftJoin(organizations, eq(organizations.id, giftsAndPayments.organizationId))
+            .leftJoin(households, eq(households.id, giftsAndPayments.householdId))
+            .leftJoin(people, eq(people.id, giftsAndPayments.individualGiverPersonId))
+            .where(and(
+              where,
+              allocationScope,
+              isNotNull(giftAllocations.grantYear),
+              isNotNull(giftAllocations.subAmount),
+              isNotNull(giftsAndPayments.dateReceived),
+              isNull(giftsAndPayments.archivedAt),
+              sql`${giftsAndPayments.loanOrGrant} IS DISTINCT FROM 'loan'`,
+            ))
+        : undefined,
     ]);
     const viewer = getViewer(req);
     const data = rows.map((r) => {
@@ -686,7 +710,11 @@ router.get(
         ),
       };
     });
-    res.json({ data, pagination: { page, limit, total: Number(total) } });
+    res.json({
+      data,
+      pagination: { page, limit, total: Number(total) },
+      givingSummary: summary?.[0],
+    });
   }),
 );
 

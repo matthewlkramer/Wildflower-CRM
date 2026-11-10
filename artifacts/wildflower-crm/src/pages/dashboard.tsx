@@ -8,6 +8,7 @@ import {
   type DashboardWorklists,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
@@ -242,7 +243,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
         <h1 className="text-3xl font-serif font-bold text-foreground">
           Dashboard
         </h1>
@@ -262,6 +264,10 @@ export default function Dashboard() {
             </>
           ) : null}
         </p>
+        </div>
+        <Button asChild size="sm">
+          <Link href="/reconciliation/deposits">Process incoming money</Link>
+        </Button>
       </div>
 
       {isError ? (

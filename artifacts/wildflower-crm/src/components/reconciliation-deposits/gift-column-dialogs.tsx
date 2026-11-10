@@ -366,6 +366,7 @@ export function LinkEvidenceSearchDialog({
   open,
   onOpenChange,
   mode,
+  paymentLabel,
   busy,
   onPickGift,
   onPickOpp,
@@ -374,6 +375,7 @@ export function LinkEvidenceSearchDialog({
   onOpenChange: (open: boolean) => void;
   /** all records, opportunity/pledge-only, or finalized pledge-only. */
   mode: "all" | "opportunities" | "pledges";
+  paymentLabel?: string;
   busy: boolean;
   onPickGift: (gift: GiftOrPayment) => void;
   onPickOpp: (opp: OpportunityOrPledge) => void;
@@ -456,6 +458,11 @@ export function LinkEvidenceSearchDialog({
               : "Link this payment evidence to an existing gift, or book it against an opportunity or pledge."}
           </DialogDescription>
         </DialogHeader>
+        {paymentLabel && (
+          <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
+            Payment: <strong>{paymentLabel}</strong>
+          </p>
+        )}
         <Input
           autoFocus
           value={text}

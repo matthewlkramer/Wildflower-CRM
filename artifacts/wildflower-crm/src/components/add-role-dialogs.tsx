@@ -234,11 +234,17 @@ const ORG_KIND_LABEL: Record<OrgKind, string> = {
   payment_intermediary: "Payment Intermediary",
 };
 
-export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
-  const [open, setOpen] = useState(false);
+export function AddPersonOrgRoleDialog({
+  personId,
+  setup,
+}: {
+  personId: string;
+  setup?: { organizationId?: string; onFinish: () => void };
+}) {
+  const [open, setOpen] = useState(Boolean(setup));
   const [kind, setKind] = useState<OrgKind>("organization");
-  const [entityId, setEntityId] = useState<string | null>(null);
-  const [connection, setConnection] = useState("");
+  const [entityId, setEntityId] = useState<string | null>(setup?.organizationId ?? null);
+  const [connection, setConnection] = useState(setup ? PeopleEntityRoleConnection.employee : "");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
   const [current, setCurrent] = useState<PeopleRoleCurrent>(
@@ -292,6 +298,7 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
         toast({ title: "Organization linked" });
         setOpen(false);
         reset();
+        setup?.onFinish();
       },
       onError: (err: unknown) => {
         toast({
@@ -326,17 +333,24 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
         setOpen(v);
         // Clear the form when closing so a re-open starts fresh rather than
         // showing a leftover entity/role from a cancelled session.
-        if (!v) reset();
+        if (!v) {
+          reset();
+          setup?.onFinish();
+        }
       }}
     >
-      <DialogTrigger asChild>
-        <AddCardButton testId="button-add-person-org" />
-      </DialogTrigger>
+      {!setup && (
+        <DialogTrigger asChild>
+          <AddCardButton testId="button-add-person-org" />
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Link organization</DialogTitle>
           <DialogDescription>
-            Tie this person to an organization or payment intermediary.
+            {setup
+              ? "The person is saved. Select or create the organization and confirm their role. When the organization gives, choose it as the donor and keep this person as its contact."
+              : "Tie this person to an organization or payment intermediary."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -415,10 +429,11 @@ export function AddPersonOrgRoleDialog({ personId }: { personId: string }) {
               onClick={() => {
                 setOpen(false);
                 reset();
+                setup?.onFinish();
               }}
               disabled={create.isPending}
             >
-              Cancel
+              {setup ? "Finish without linking" : "Cancel"}
             </Button>
             <Button
               type="submit"
@@ -1180,8 +1195,14 @@ export function EditPeopleEntityRoleDialog({
 /* Links this person to an existing household, or creates a new one first.    */
 /* ───────────────────────────────────────────────────────────────────────── */
 
-export function AddPersonToHouseholdDialog({ personId }: { personId: string }) {
-  const [open, setOpen] = useState(false);
+export function AddPersonToHouseholdDialog({
+  personId,
+  onSetupFinish,
+}: {
+  personId: string;
+  onSetupFinish?: () => void;
+}) {
+  const [open, setOpen] = useState(Boolean(onSetupFinish));
   const [householdId, setHouseholdId] = useState<string | null>(null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
@@ -1242,6 +1263,7 @@ export function AddPersonToHouseholdDialog({ personId }: { personId: string }) {
         toast({ title: "Added to household" });
         setOpen(false);
         reset();
+        onSetupFinish?.();
       },
       onError: (err: unknown) => {
         toast({
@@ -1272,18 +1294,23 @@ export function AddPersonToHouseholdDialog({ personId }: { personId: string }) {
       onOpenChange={(v) => {
         if (create.isPending) return;
         setOpen(v);
-        if (!v) reset();
+        if (!v) {
+          reset();
+          onSetupFinish?.();
+        }
       }}
     >
-      <DialogTrigger asChild>
-        <AddCardButton testId="button-add-to-household" />
-      </DialogTrigger>
+      {!onSetupFinish && (
+        <DialogTrigger asChild>
+          <AddCardButton testId="button-add-to-household" />
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add to household</DialogTitle>
           <DialogDescription>
             Link this person to a household. Search for an existing one, or type
-            a new name to create it.
+            a new name to create it. {onSetupFinish && "The person is saved. Set their primary household and default donor of record separately on the person’s page if needed."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -1327,10 +1354,11 @@ export function AddPersonToHouseholdDialog({ personId }: { personId: string }) {
               onClick={() => {
                 setOpen(false);
                 reset();
+                onSetupFinish?.();
               }}
               disabled={create.isPending}
             >
-              Cancel
+              {onSetupFinish ? "Finish without linking" : "Cancel"}
             </Button>
             <Button
               type="submit"

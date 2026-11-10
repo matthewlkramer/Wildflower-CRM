@@ -17,6 +17,7 @@ import {
   useUpdateGiftAllocation,
   useDeleteGiftAllocation,
   RestrictionAxis,
+  IntendedUsage,
   type ListGiftsAndPaymentsParams,
   type UpdateGiftAllocationBody,
   type GiftAllocation,
@@ -54,6 +55,7 @@ import {
 } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { useEntityFilter } from "@/lib/entity-filter-context";
+import { EntityMultiSelect } from "@/components/entity-filter";
 import { BulkActionBar } from "@/components/bulk-action-bar";
 import { BulkEditDialog } from "@/components/bulk-edit-dialog";
 import { BulkArchiveDialog } from "@/components/bulk-archive-dialog";
@@ -112,7 +114,6 @@ import {
 } from "@/components/ui/pagination";
 import { PageJumper } from "@/components/page-jumper";
 import { DonorCell } from "@/components/donor-cell";
-import { RecordReceivedGiftDialog } from "@/components/record-received-gift-dialog";
 import { OwnerMultiFilter } from "@/components/owner-multi-filter";
 import { useUserNameMap } from "@/components/user-picker";
 
@@ -503,6 +504,10 @@ export default function Gifts() {
     "wf.list.gifts.fundableProjects",
     [],
   );
+  const [intendedUsages, setIntendedUsages] = usePersistedState<IntendedUsage[]>(
+    "wf.list.gifts.intendedUsages",
+    [],
+  );
   const [campaignSlugs, setCampaignSlugs] = usePersistedState<string[]>(
     "wf.list.gifts.campaignSlugs",
     [],
@@ -546,16 +551,17 @@ export default function Gifts() {
   const updateGiftAllocMut = useUpdateGiftAllocation();
   const deleteGiftAllocMut = useDeleteGiftAllocation();
 
-  // Global entity filter (header dropdown). Forwarded to the server so the
-  // gifts list is scoped to gifts with at least one allocation on the
-  // selected entities. Mirrors the dashboard and opportunities pages.
-  const { selected: globalEntityIds } = useEntityFilter();
+  // Same entity scope as the header on other pages, placed alongside the
+  // remaining giving filters here so the active scope is visible in one row.
+  const { selected: globalEntityIds, setSelected: setGlobalEntityIds } =
+    useEntityFilter();
 
   const ts = useTableState("gifts");
   const sortActive = ts.sort.key !== null;
   const params: ListGiftsAndPaymentsParams = {
     limit: sortActive ? 10000 : PAGE_SIZE,
     page: sortActive ? 1 : page,
+    summarizeGiving: true,
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     ...(worklist ? { worklist } : {}),
@@ -606,6 +612,9 @@ export default function Gifts() {
       : {}),
     ...(fundableProjects.length > 0
       ? { fundableProjectId: [...fundableProjects].sort() }
+      : {}),
+    ...(intendedUsages.length > 0
+      ? { intendedUsage: [...intendedUsages].sort() }
       : {}),
     ...(campaignSlugs.length > 0
       ? { campaignSlugs: [...campaignSlugs].sort() }
@@ -804,6 +813,7 @@ export default function Gifts() {
       {
         key: "fiscalYear",
         label: "Fiscal year",
+        required: true,
         active: fiscalYears.length > 0,
         clear: () => {
           setFiscalYears([]);
@@ -825,7 +835,7 @@ export default function Gifts() {
       {
         key: "campaign",
         label: "Campaign",
-        defaultVisible: false,
+        required: true,
         active: campaignSlugs.length > 0,
         clear: () => {
           setCampaignSlugs([]);
@@ -852,7 +862,7 @@ export default function Gifts() {
       {
         key: "fundableProject",
         label: "Fundable project",
-        defaultVisible: false,
+        required: true,
         active: fundableProjects.length > 0,
         clear: () => {
           setFundableProjects([]);
@@ -877,8 +887,29 @@ export default function Gifts() {
         ),
       },
       {
+        key: "intendedUsage",
+        label: "Intended use",
+        required: true,
+        render: () => (
+          <MultiFilterSelect
+            label="Intended use"
+            selected={intendedUsages}
+            onChange={(values) => {
+              setIntendedUsages(values as IntendedUsage[]);
+              setPage(1);
+              selection.clear();
+            }}
+            options={Object.values(IntendedUsage).map((value) => ({
+              value,
+              label: value === "gen_ops" ? "General operations" : formatEnum(value),
+            }))}
+            testId="select-gift-intended-usage"
+          />
+        ),
+      },
+      {
         key: "entities",
-        label: "Entities",
+        label: "Entity filled in",
         defaultVisible: false,
         active: !!entitiesPresence,
         clear: () => {
@@ -888,7 +919,7 @@ export default function Gifts() {
         },
         render: () => (
           <PresenceFilter
-            label="Entities"
+            label="Entity filled in"
             value={entitiesPresence}
             onChange={(v) => {
               setEntitiesPresence(v);
@@ -901,7 +932,7 @@ export default function Gifts() {
       },
       {
         key: "usages",
-        label: "Usages",
+        label: "Use filled in",
         defaultVisible: false,
         active: !!usagesPresence,
         clear: () => {
@@ -911,7 +942,7 @@ export default function Gifts() {
         },
         render: () => (
           <PresenceFilter
-            label="Usages"
+            label="Use filled in"
             value={usagesPresence}
             onChange={(v) => {
               setUsagesPresence(v);
@@ -1222,7 +1253,10 @@ export default function Gifts() {
       owners,
       fiscalYears,
       fundableProjects,
+      intendedUsages,
       campaignSlugs,
+      fundableProjectsQ.data,
+      campaignsQ.data,
       entitiesPresence,
       usagesPresence,
       grantYearsPresence,
@@ -1390,6 +1424,7 @@ export default function Gifts() {
     otherRestrictionTypes: string[];
     timeRestrictionTypes: string[];
     fundableProjects: string[];
+    intendedUsages?: IntendedUsage[];
     campaignSlugs: string[];
     sort: SortState;
     columns: ColumnsState | null;
@@ -1414,6 +1449,7 @@ export default function Gifts() {
     otherRestrictionTypes,
     timeRestrictionTypes,
     fundableProjects,
+    intendedUsages,
     campaignSlugs,
     sort: ts.sort,
     columns: columnsState,
@@ -1438,6 +1474,7 @@ export default function Gifts() {
     setOtherRestrictionTypes([]);
     setTimeRestrictionTypes([]);
     setFundableProjects([]);
+    setIntendedUsages([]);
     setCampaignSlugs([]);
     ts.setSort({ key: null, dir: "asc" });
     setPage(1);
@@ -1465,6 +1502,7 @@ export default function Gifts() {
       setOtherRestrictionTypes(s.otherRestrictionTypes ?? []);
       setTimeRestrictionTypes(s.timeRestrictionTypes ?? []);
       setFundableProjects(s.fundableProjects ?? []);
+      setIntendedUsages(s.intendedUsages ?? []);
       setCampaignSlugs(s.campaignSlugs ?? []);
       ts.setSort(s.sort ?? { key: null, dir: "asc" });
       setColumnsState(s.columns ?? null);
@@ -1491,6 +1529,7 @@ export default function Gifts() {
       (s.otherRestrictionTypes?.length ?? 0) === 0 &&
       (s.timeRestrictionTypes?.length ?? 0) === 0 &&
       (s.fundableProjects?.length ?? 0) === 0 &&
+      (s.intendedUsages?.length ?? 0) === 0 &&
       (s.campaignSlugs?.length ?? 0) === 0 &&
       (s.sort?.key ?? null) === null &&
       (s.columns ?? null) === null &&
@@ -1515,6 +1554,7 @@ export default function Gifts() {
     otherRestrictionTypes.length > 0 ||
     timeRestrictionTypes.length > 0 ||
     fundableProjects.length > 0 ||
+    intendedUsages.length > 0 ||
     campaignSlugs.length > 0;
 
   return (
@@ -1525,10 +1565,14 @@ export default function Gifts() {
           isLoading ? (
             <Skeleton className="h-4 w-20" />
           ) : (
-            `${total.toLocaleString()} total`
+            `${total.toLocaleString()} matching records`
           )
         }
-        addAction={<RecordReceivedGiftDialog />}
+        addAction={
+          <Button asChild size="sm">
+            <Link href="/reconciliation/deposits">Record received gift</Link>
+          </Button>
+        }
         controls={
           <>
             <ExportCsvDialog
@@ -1628,6 +1672,18 @@ export default function Gifts() {
             )}
           </div>
         </div>
+        <EntityMultiSelect
+          options={entitiesQ.data ?? []}
+          value={globalEntityIds}
+          onChange={(ids) => {
+            setGlobalEntityIds(ids);
+            setPage(1);
+            selection.clear();
+          }}
+          align="start"
+          showChips={false}
+          triggerLabelPrefix="Entity / fund:"
+        />
         {visibleFilters.map((f) => (
           <div key={f.key}>{f.render()}</div>
         ))}
@@ -1657,6 +1713,26 @@ export default function Gifts() {
           </Button>
         )}
       </div>
+
+      {data?.givingSummary && (
+        <div
+          className="rounded-lg border bg-muted/40 px-4 py-3"
+          aria-live="polite"
+          data-testid="gift-giving-summary"
+        >
+          <p className="text-sm font-medium">
+            Giving total <span className="ml-1 tabular-nums">{formatCurrency(data.givingSummary.amount, { cents: true })}</span>
+            <span className="ml-2 font-normal text-muted-foreground">
+              {data.givingSummary.giftCount.toLocaleString()} received gifts
+            </span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Across all pages. Sums the matching portions of received gifts by their
+            credited fiscal year. Excludes archived gifts, loans, and amounts without a credited year.
+            {globalEntityIds.length > 0 && " Your entity selection also applies on other pages."}
+          </p>
+        </div>
+      )}
 
       <div className="rounded-md border bg-card overflow-x-auto">
         <Table>

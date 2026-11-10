@@ -644,11 +644,11 @@ function FundableProjectFormDialog({
               onValueChange={(v) => setLocationCode(v === "__none__" ? "" : v)}
             >
               <SelectTrigger id="fp-location-code" data-testid="fp-location-code">
-                <SelectValue placeholder="Foundation General (default)" />
+                <SelectValue placeholder="Use default accounting location" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="__none__">
-                  Foundation General (default)
+                  Use default accounting location
                 </SelectItem>
                 {LOCATIONS.map((loc) => (
                   <SelectItem key={loc} value={loc}>
@@ -658,9 +658,8 @@ function FundableProjectFormDialog({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              QuickBooks Revenue Location a project-specific grant codes to when
-              no entity rule or regional hub applies. Leave as default to fall
-              back to Foundation General.
+              Finance uses this QuickBooks location for project-specific grants
+              when no entity rule or regional hub applies.
             </p>
           </div>
 

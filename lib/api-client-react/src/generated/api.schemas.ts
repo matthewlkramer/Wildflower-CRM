@@ -3651,6 +3651,8 @@ export type OpportunityOrPledgeDetail = OpportunityOrPledge & ({
   allocations?: PledgeAllocation[];
   /** The pledge's installment schedule (fixed-commitment cash plan), sorted by expectedDate ascending. Normally empty for cost-reimbursement pledges. */
   expectedPayments?: PledgeExpectedPayment[];
+  /** Earliest planned date with remaining or uncertain payment coverage, after applying received payments to the schedule. */
+  readonly nextExpectedPaymentDate?: string | null;
   payments?: GiftOrPayment[];
   /** SUM(sub_amount) across the pledge's allocations — the total the team currently plans to collect. For cost-reimbursement pledges this (not the ceiling) is the forecast. '0' when no allocations. */
   readonly plannedCollectionAmount?: string;
@@ -4215,9 +4217,21 @@ export type GiftOrPaymentDetail = GiftOrPayment & {
   readonly reimbursablePlaceholderWarning?: boolean;
 };
 
+/**
+ * Received, active, non-loan gifts with a credited fiscal year on an allocation matching the current filters.
+ */
+export type GiftOrPaymentListGivingSummary = {
+  /** @minimum 0 */
+  giftCount: number;
+  /** Sum of matching allocation amounts in dollars. */
+  amount: string;
+};
+
 export interface GiftOrPaymentList {
   data: GiftOrPayment[];
   pagination: Pagination;
+  /** Received, active, non-loan gifts with a credited fiscal year on an allocation matching the current filters. */
+  givingSummary?: GiftOrPaymentListGivingSummary;
 }
 
 /**
@@ -8183,6 +8197,10 @@ export interface WorkbenchBankImportFreshness {
   latestTransactionDate: string | null;
   /** Number of distinct spreadsheet files represented by the stored bank transaction rows. */
   sourceFileCount: number;
+  /** When the most recent rejected bank report was processed. */
+  lastRejectedAt?: string | null;
+  /** When the active QuickBooks connection last completed a successful accounting sync. */
+  quickbooksLastSyncedAt?: string | null;
 }
 
 export interface WorkbenchDepositListResponse {
@@ -12731,8 +12749,9 @@ otherRestrictionTypes?: RestrictionAxis[];
 timeRestrictionTypes?: RestrictionAxis[];
 ownerUserId?: string[];
 /**
- * Filter to gifts that have at least one gift_allocation with `entity_id`
-in the given set. Comma-separated form supported.
+ * Filter to gifts that have at least one allocation in the selected
+entities. Entity, fiscal year, project, and intended use must match
+on the same allocation. Comma-separated form supported.
 
  */
 entityId?: string[];
@@ -12750,6 +12769,14 @@ fundable_project_id in the given set. Comma-separated form supported.
 
  */
 fundableProjectId?: string[];
+/**
+ * Filter to gifts whose matching allocation has one of these intended uses.
+ */
+intendedUsage?: IntendedUsage[];
+/**
+ * Include received giving across all matching allocations, independent of pagination.
+ */
+summarizeGiving?: boolean;
 /**
  * Keep gifts with dateReceived on/after this date (inclusive).
  */
