@@ -201,6 +201,7 @@ const navItems: NavEntry[] = [
     description:
       "Review received gifts and total giving by credited fiscal year and purpose.",
   },
+  { section: "Accounting" },
   {
     href: "/revenue-extractor",
     label: "Accounting Data",

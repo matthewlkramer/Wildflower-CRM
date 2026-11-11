@@ -7753,6 +7753,8 @@ export type WorkbenchDepositCompositionComponentsItem = {
   /** Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition. */
   unconfirmed?: boolean;
   source?: WorkbenchDepositCompositionComponentsItemSource;
+  /** Filename of the QuickBooks attachment used to identify this payment, when available. */
+  attachmentFileName?: string | null;
   stagedPaymentId?: string | null;
   /** True when stagedPaymentId is set AND that QBO row's derived status is pending, so the staged-payment flows (identify/mint/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Null only for rows with no stagedPaymentId. */
   stagedActionable?: boolean | null;

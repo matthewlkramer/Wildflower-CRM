@@ -239,7 +239,7 @@ export function AddPersonOrgRoleDialog({
   setup,
 }: {
   personId: string;
-  setup?: { organizationId?: string; onFinish: () => void };
+  setup?: { organizationId?: string; personName: string; onFinish: () => void };
 }) {
   const [open, setOpen] = useState(Boolean(setup));
   const [kind, setKind] = useState<OrgKind>("organization");
@@ -251,6 +251,7 @@ export function AddPersonOrgRoleDialog({
     PeopleRoleCurrent.current,
   );
   const [primary, setPrimary] = useState(false);
+  const organizationName = useOrganizationName(setup ? entityId : null);
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -349,7 +350,7 @@ export function AddPersonOrgRoleDialog({
           <DialogTitle>Link organization</DialogTitle>
           <DialogDescription>
             {setup
-              ? "The person is saved. Select or create the organization and confirm their role. When the organization gives, choose it as the donor and keep this person as its contact."
+              ? "The person is saved. Select or create the organization and confirm their role."
               : "Tie this person to an organization or payment intermediary."}
           </DialogDescription>
         </DialogHeader>
@@ -409,6 +410,11 @@ export function AddPersonOrgRoleDialog({
               )}
             </div>
           </div>
+          {setup && (
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+              <strong>Who gets gift credit?</strong> Choose {organizationName ?? "the organization"} for an organization gift. Choose {setup.personName} for a personal gift. The donor’s saved routing preference applies when recording the gift.
+            </p>
+          )}
           <RoleAttributeFields
             connection={connection}
             setConnection={setConnection}
@@ -1197,13 +1203,16 @@ export function EditPeopleEntityRoleDialog({
 
 export function AddPersonToHouseholdDialog({
   personId,
+  setupPersonName,
   onSetupFinish,
 }: {
   personId: string;
+  setupPersonName?: string;
   onSetupFinish?: () => void;
 }) {
   const [open, setOpen] = useState(Boolean(onSetupFinish));
   const [householdId, setHouseholdId] = useState<string | null>(null);
+  const householdName = useHouseholdName(onSetupFinish ? householdId : null);
   const [connection, setConnection] = useState("");
   const [title, setTitle] = useState("");
   const [notes, setNotes] = useState("");
@@ -1310,7 +1319,7 @@ export function AddPersonToHouseholdDialog({
           <DialogTitle>Add to household</DialogTitle>
           <DialogDescription>
             Link this person to a household. Search for an existing one, or type
-            a new name to create it. {onSetupFinish && "The person is saved. Set their primary household and default donor of record separately on the person’s page if needed."}
+            a new name to create it. {onSetupFinish && "The person is already saved."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -1334,6 +1343,11 @@ export function AddPersonToHouseholdDialog({
               createNoun="household"
             />
           </div>
+          {onSetupFinish && (
+            <p className="rounded-md bg-muted/50 px-3 py-2 text-xs">
+              <strong>Who gets gift credit?</strong> A gift entered for {setupPersonName ?? "this person"} defaults to their individual record. To route their gifts to {householdName ?? "this household"}, set it as their <strong>Primary household</strong> on the person’s page or choose the household as the donor when recording the gift.
+            </p>
+          )}
           <RoleAttributeFields
             connection={connection}
             setConnection={setConnection}
