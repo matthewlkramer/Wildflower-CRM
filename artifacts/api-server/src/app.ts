@@ -97,7 +97,18 @@ app.use(
 );
 
 app.use(cors(corsOptions));
-app.use(express.json({ limit: "10mb" }));
+app.use(
+  express.json({
+    limit: "10mb",
+    // Zoom signs the exact bytes it sent, so the webhook route needs the raw
+    // body to verify the signature. Kept for that one path only.
+    verify(req, _res, buf) {
+      if (req.url?.split("?")[0] === "/api/integrations/zoom/webhook") {
+        (req as express.Request & { rawBody?: Buffer }).rawBody = buf;
+      }
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true }));
 
 app.use(clerkMiddleware());

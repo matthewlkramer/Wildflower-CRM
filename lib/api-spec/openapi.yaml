@@ -290,6 +290,30 @@ paths:
                 { $ref: "#/components/schemas/ConferenceResearchIntegrationTickResult" }
         "401": { description: Missing or invalid integration bearer token }
         "503": { description: Integration bearer token is not configured }
+  # ─── Zoom event subscription (signed by Zoom, no user session) ─────────────
+  /integrations/zoom/webhook:
+    post:
+      operationId: receiveZoomWebhook
+      tags: [integrations]
+      summary: >-
+        Receives event notifications from the WFCRM Zoom Server-to-Server OAuth
+        app. Answers Zoom's endpoint URL validation challenge and verifies the
+        x-zm-signature header on every other event with the event
+        subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a
+        user session. Events are acknowledged and not yet acted on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ZoomWebhookEvent" }
+      responses:
+        "200":
+          description: "Validation challenge answered, or a signed event acknowledged"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ZoomWebhookResponse" }
+        "401": { description: "Missing, stale or invalid Zoom signature" }
+        "503": { description: Zoom event subscription secret is not configured }
   # ─── Global search ─────────────────────────────────────────────────────────
   /search:
     get:
@@ -13910,6 +13934,28 @@ components:
         dateRunsQueued: { type: integer }
         agendaRunsQueued: { type: integer }
         requestIds: { type: array, items: { type: string } }
+    ZoomWebhookEvent:
+      type: object
+      description: >-
+        A Zoom event notification. Only the event name is relied on; the payload
+        shape varies by event.
+      required: [event]
+      properties:
+        event: { type: string }
+        event_ts: { type: integer, format: int64 }
+        payload:
+          type: object
+          additionalProperties: true
+      additionalProperties: true
+    ZoomWebhookResponse:
+      type: object
+      description: >-
+        For the endpoint.url_validation challenge, the plain token and its
+        HMAC-SHA256 with the secret token; for every other event, received=true.
+      properties:
+        received: { type: boolean }
+        plainToken: { type: string }
+        encryptedToken: { type: string }
     ConferenceResearchIntegrationTickResult:
       type: object
       required:

@@ -16,6 +16,8 @@ import type {
   ConferenceResearchIntegrationTickResult,
   McpJsonRpcRequest,
   McpJsonRpcResponse,
+  ZoomWebhookEvent,
+  ZoomWebhookResponse,
 } from "../api.schemas";
 
 import { customFetch } from "../../custom-fetch";
@@ -201,4 +203,89 @@ export const useRunConferenceResearchIntegrationTick = <
   return useMutation(
     getRunConferenceResearchIntegrationTickMutationOptions(options),
   );
+};
+/**
+ * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Events are acknowledged and not yet acted on.
+ */
+export const getReceiveZoomWebhookUrl = () => {
+  return `/api/integrations/zoom/webhook`;
+};
+
+export const receiveZoomWebhook = async (
+  zoomWebhookEvent: ZoomWebhookEvent,
+  options?: RequestInit,
+): Promise<ZoomWebhookResponse> => {
+  return customFetch<ZoomWebhookResponse>(getReceiveZoomWebhookUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(zoomWebhookEvent),
+  });
+};
+
+export const getReceiveZoomWebhookMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof receiveZoomWebhook>>,
+    TError,
+    { data: BodyType<ZoomWebhookEvent> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof receiveZoomWebhook>>,
+  TError,
+  { data: BodyType<ZoomWebhookEvent> },
+  TContext
+> => {
+  const mutationKey = ["receiveZoomWebhook"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof receiveZoomWebhook>>,
+    { data: BodyType<ZoomWebhookEvent> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return receiveZoomWebhook(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ReceiveZoomWebhookMutationResult = NonNullable<
+  Awaited<ReturnType<typeof receiveZoomWebhook>>
+>;
+export type ReceiveZoomWebhookMutationBody = BodyType<ZoomWebhookEvent>;
+export type ReceiveZoomWebhookMutationError = ErrorType<void>;
+
+/**
+ * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Events are acknowledged and not yet acted on.
+ */
+export const useReceiveZoomWebhook = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof receiveZoomWebhook>>,
+    TError,
+    { data: BodyType<ZoomWebhookEvent> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof receiveZoomWebhook>>,
+  TError,
+  { data: BodyType<ZoomWebhookEvent> },
+  TContext
+> => {
+  return useMutation(getReceiveZoomWebhookMutationOptions(options));
 };
