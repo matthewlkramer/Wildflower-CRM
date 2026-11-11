@@ -9,10 +9,11 @@ last_verified: 2026-09-21
 
 **Process incoming money** on the Dashboard and **Record received gift** in
 Gifts both open Reconciliation. Start with the individual payment in the
-deposit. For payments that are visible in QuickBooks or Stripe before a deposit
-arrives, expand **Can’t find the payment?** to search those sources. A match to
-an existing gift links the evidence, a match to a pledge records a payment
-against it, and a new gift uses the selected payment as evidence. Development
+deposit. Open **Match or record gift** on that payment. Choose **Apply to a
+pledge**, **Apply to an opportunity**, **Link an existing gift**, or **Create a
+gift from this payment** and review the outcome before saving. For payments
+visible in QuickBooks or Stripe before a deposit arrives, expand **Can’t find
+the payment?** to search those sources. Development
 can record the donor and purpose in the CRM. Finance handles changes in
 QuickBooks and reviews missing or unclear deposit evidence.
 

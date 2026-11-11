@@ -1362,6 +1362,7 @@ export const ListWorkbenchDepositsResponse = zod.object({
   "countedGiftIds": zod.array(zod.string()).optional(),
   "unconfirmed": zod.boolean().optional().describe('Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition.'),
   "source": zod.enum(['bank_spine']).optional(),
+  "attachmentFileName": zod.string().nullish().describe('Filename of the QuickBooks attachment used to identify this payment, when available.'),
   "stagedPaymentId": zod.string().nullish(),
   "stagedActionable": zod.boolean().nullish().describe('True when stagedPaymentId is set AND that QBO row\'s derived status is pending, so the staged-payment flows (identify\/mint\/link) can act on it. False when the QBO row is already resolved some other way (booked elsewhere, excluded, or derived-excluded by a confirmed charge tie) — act on the payment unit instead. Null only for rows with no stagedPaymentId.'),
   "receivedDate": zod.string().date().nullish().describe('The backing payment unit\'s received date (bank_spine components only).'),

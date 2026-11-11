@@ -184,12 +184,15 @@ describe("deposit workbench rows", () => {
     expect(trigger).not.toBeNull();
     act(() => trigger?.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true })));
     const menu = document.querySelector<HTMLElement>('[role="menu"]');
-    const item = menu && menuItem(menu, "Find gift, pledge, or opportunity");
+    expect(menu?.textContent).toContain("Apply to a pledge");
+    expect(menu?.textContent).toContain("Apply to an opportunity");
+    expect(menu?.textContent).toContain("Create a gift from this payment");
+    const item = menu && menuItem(menu, "Link an existing gift");
     expect(item).not.toBeNull();
     act(() => item?.click());
     expect(openLinkEvidence).toHaveBeenCalledWith(
       expect.objectContaining({ id: "second", paymentUnitId: "unit_second" }),
-      "all",
+      "gifts",
     );
   });
 

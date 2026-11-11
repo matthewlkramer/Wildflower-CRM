@@ -23704,6 +23704,10 @@ components:
                   description: "Compatibility field; false for authoritative bank-spine components. QBO-only evidence is emitted in qbRecords, not composition.",
                 }
               source: { type: string, enum: [bank_spine] }
+              attachmentFileName:
+                type: string
+                nullable: true
+                description: "Filename of the QuickBooks attachment used to identify this payment, when available."
               stagedPaymentId: { type: string, nullable: true }
               stagedActionable:
                 {

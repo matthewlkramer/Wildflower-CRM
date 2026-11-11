@@ -1,4 +1,5 @@
 import { CircleAlert, Landmark, MoreHorizontal } from "lucide-react";
+import { Link } from "wouter";
 import type {
   WorkbenchDeposit,
   WorkbenchDepositAccountingCheck,
@@ -24,6 +25,7 @@ import type {
   CreateGiftPrefill,
 } from "@/components/reconciliation-clusters/actions";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
+import type { PaymentMatchMode } from "./gift-column-dialogs";
 import {
   accountingCorrectionPresentation,
   accountingRecordIdentity,
@@ -62,7 +64,7 @@ export type DepositActions = Omit<
   /** Unified gift/opportunity/pledge search for a specific payment anchor. */
   openLinkEvidence?: (
     anchor: AnchorRef,
-    mode: "all" | "opportunities" | "pledges",
+    mode: PaymentMatchMode,
   ) => void;
   /** Column-level gift search must choose among every open payment on the row. */
   openColumnGiftSearch?: (
@@ -287,13 +289,11 @@ export function DepositGridHeader() {
 function Composition({
   deposit,
   actions,
-  matchIndividualPayments,
   onConfirmProvisional,
   onDismissProvisional,
 }: {
   deposit: WorkbenchDeposit;
   actions: DepositActions;
-  matchIndividualPayments: boolean;
   onConfirmProvisional?: (id: string) => void;
   onDismissProvisional?: (id: string) => void;
 }) {
@@ -457,7 +457,12 @@ function Composition({
                 <span className="min-w-0 truncate">
                   {charge.payerName ?? charge.chargeId}
                 </span>
-                {matchIndividualPayments && !charge.linkedGiftId && !charge.exclusionReason && !charge.refunded && (
+                {charge.linkedGiftId && (
+                  <Link className="text-primary underline" href={`/gifts/${charge.linkedGiftId}`}>
+                    Open linked gift
+                  </Link>
+                )}
+                {!charge.linkedGiftId && !charge.exclusionReason && !charge.refunded && (
                   <PaymentGiftActions
                     actions={actions}
                     anchor={{
@@ -800,18 +805,28 @@ function Composition({
                 : ""}
             </div>
           ) : null}
-          {matchIndividualPayments && component.paymentUnitId && !component.exclusionReason &&
+          {component.countedGiftIds?.map((giftId) => (
+            <Link key={giftId} className="block text-primary underline" href={`/gifts/${giftId}`}>
+              Open linked gift
+            </Link>
+          ))}
+          {!component.exclusionReason &&
             !component.needsReview && !component.ambiguousDepositMatch && !component.unconfirmed &&
-            !component.countedGiftIds?.length && (
+            !component.countedGiftIds?.length &&
+            (component.paymentUnitId || (component.stagedPaymentId && component.stagedActionable)) && (
               <PaymentGiftActions
                 actions={actions}
-                anchor={{
+                anchor={component.paymentUnitId ? {
                   kind: "component",
                   id: component.componentId,
                   label: componentTitle(component),
                   bankDepositId: deposit.anchorId,
                   amount: component.amount,
                   paymentUnitId: component.paymentUnitId,
+                } : {
+                  kind: "staged",
+                  id: component.stagedPaymentId!,
+                  label: componentTitle(component),
                 }}
                 preview={{
                   amount: money(component.amount),
@@ -858,24 +873,38 @@ function ComponentEvidence({
             ? "matched" : "missing",
         )}
       >
-        View QuickBooks evidence
+        {component.attachmentFileName
+          ? `View QuickBooks attachment evidence (${component.attachmentFileName})`
+          : "View QuickBooks evidence"}
       </button>
     );
   }
   return (
-    <p className="text-[10px] text-muted-foreground">
-      {component.stagedPaymentId ? "QuickBooks evidence" : component.manual ? "Identified by staff" : "Bank payment evidence"}
-    </p>
+    <details className="text-[10px] text-muted-foreground">
+      <summary className="cursor-pointer text-primary underline underline-offset-2">
+        {component.attachmentFileName ? "QuickBooks attachment"
+          : component.stagedPaymentId ? "QuickBooks evidence"
+          : component.manual ? "View staff-entered payment details"
+          : "View bank payment details"}
+      </summary>
+      <p className="break-words">{[
+        component.attachmentFileName ?? componentTitle(component),
+        money(component.amount),
+        formatDateShort(component.receivedDate ?? deposit.date),
+        deposit.bank.refNo ?? deposit.bank.reference ?? deposit.bank.memo,
+      ].filter(Boolean).join(" · ")}</p>
+    </details>
   );
 }
 
-function PaymentGiftActions({
+export function PaymentGiftActions({
   actions,
   anchor,
   preview,
   prefill,
 }: {
-  actions: DepositActions;
+  actions: Pick<DepositActions, "openLinkEvidence" | "openCreateGift"> &
+    Partial<Pick<DepositActions, "openDonorboxSearch" | "isFinanceOrAdmin">>;
   anchor: AnchorRef;
   preview: EvidencePreview;
   prefill: CreateGiftPrefill;
@@ -887,13 +916,23 @@ function PaymentGiftActions({
         triggerLabel="Match or record gift"
         items={[
           {
-            label: "Find gift, pledge, or opportunity…",
-            description: "Apply this payment to a record already in the CRM.",
-            onSelect: () => actions.openLinkEvidence?.(anchor, "all"),
+            label: "Apply to a pledge…",
+            description: "Record a gift payment against an existing commitment.",
+            onSelect: () => actions.openLinkEvidence?.(anchor, "pledges"),
           },
           {
-            label: "Create new gift…",
-            description: "Create a gift backed by this payment after checking for an existing record.",
+            label: "Apply to an opportunity…",
+            description: "Record a one-time gift or start a pledge with this payment.",
+            onSelect: () => actions.openLinkEvidence?.(anchor, "open_opportunities"),
+          },
+          {
+            label: "Link an existing gift…",
+            description: "Attach this payment evidence to a gift already in the CRM.",
+            onSelect: () => actions.openLinkEvidence?.(anchor, "gifts"),
+          },
+          {
+            label: "Create a gift from this payment…",
+            description: "Record a new gift backed by this payment. Search for an existing gift first.",
             onSelect: () => actions.openCreateGift(anchor, preview, prefill),
           },
           ...(actions.isFinanceOrAdmin && actions.openDonorboxSearch
@@ -1395,7 +1434,9 @@ export function DepositRow({
   const unlinkedGiftEvidenceCount =
     unlinkedCharges.length + unlinkedComponents.length;
   const matchIndividualPayments = unlinkedGiftEvidenceCount > 1;
-  const showGiftAction = Boolean(giftColumnAnchor) && !matchIndividualPayments;
+  const compositionId = `composition-${deposit.anchorId}`;
+  const giftsId = `gifts-${deposit.anchorId}`;
+  const accountingId = `accounting-${deposit.anchorId}`;
   const alignGiftsToStripeCharges =
     deposit.composition.kind === "stripe_payout";
   const giftAnchor = (
@@ -1524,31 +1565,45 @@ export function DepositRow({
           ) : null}
           {!isNotFundraising && (
             <ul className="mt-2 space-y-0.5 text-[11px] text-muted-foreground" aria-label="Deposit status">
-              <li>{needsComposition ? "Identify the payments in this deposit" : needsPairing ? "Confirm which payments belong here" : "Payment evidence identified"}</li>
-              {needsGift ? <li>Match or record the gift</li> : deposit.gifts.length > 0 ? <li>Gift linked</li> : null}
-              {deposit.gifts.length > 0 && information && !information.crmComplete && <li>Finish donor and gift coding</li>}
-              {needsAccounting ? <li>Finance: review the QuickBooks discrepancy</li> : information?.qbEvidenceComplete === false && deposit.gifts.length > 0 ? <li>QuickBooks evidence pending</li> : null}
+              <li>
+                {needsComposition || needsPairing ? (
+                  <a className="text-primary underline" href={`#${compositionId}`}>
+                    {needsComposition ? "Identify the payments in this deposit" : "Confirm which payments belong here"}
+                  </a>
+                ) : "Payment evidence identified"}
+              </li>
+              {needsGift ? (
+                <li><a className="text-primary underline" href={`#${compositionId}`}>Match or record the gift</a></li>
+              ) : deposit.gifts.length > 0 ? <li>Gift linked</li> : null}
+              {deposit.gifts.length > 0 && information && !information.crmComplete && (
+                <li><a className="text-primary underline" href={`#${giftsId}`}>Finish donor and gift coding</a></li>
+              )}
+              {needsAccounting || (information?.qbEvidenceComplete === false && deposit.gifts.length > 0) ? (
+                <li><a className="text-primary underline" href={`#${accountingId}`}>
+                  {needsAccounting ? "Review QuickBooks discrepancy with Finance" : "View pending QuickBooks evidence"}
+                </a></li>
+              ) : null}
               {deposit.lenses.includes("completed") && <li>Completed</li>}
             </ul>
           )}
         </span>
-        <span onClick={(event) => event.stopPropagation()}>
+        <div id={compositionId} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
           <Composition
             deposit={deposit}
             actions={actions}
-            matchIndividualPayments={matchIndividualPayments}
             onConfirmProvisional={onConfirmProvisional}
             onDismissProvisional={onDismissProvisional}
           />
-        </span>
-        <span
+        </div>
+        <div
+          id={giftsId}
+          tabIndex={-1}
           onClick={(event) => event.stopPropagation()}
-          className={`relative min-w-0 space-y-1.5 ${showGiftAction ? "" : "pr-7"} ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
+          className={`relative min-w-0 space-y-1.5 pr-7 ${alignGiftsToStripeCharges ? "pt-[76px]" : ""}`}
         >
-          <div className={showGiftAction && !alignGiftsToStripeCharges ? "mb-2" : "absolute right-0 top-0 z-10"}>
+          <div className="absolute right-0 top-0 z-10">
             <CardActionsMenu
               ariaLabel="Gift column actions"
-              triggerLabel={showGiftAction ? "Match or record gift" : undefined}
               items={[
                 {
                   label: "Search CRM gifts…",
@@ -1829,15 +1884,15 @@ export function DepositRow({
               linked
             </span>
           ) : null}
-        </span>
-        <span onClick={(event) => event.stopPropagation()}>
+        </div>
+        <div id={accountingId} tabIndex={-1} onClick={(event) => event.stopPropagation()}>
           <Accounting
             deposit={deposit}
             actions={actions}
             onConfirmProvisional={onConfirmProvisional}
             onDismissProvisional={onDismissProvisional}
           />
-        </span>
+        </div>
       </div>
     </section>
   );

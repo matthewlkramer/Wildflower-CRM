@@ -1096,6 +1096,11 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       dateReceived: "2099-12-31",
       amount: "1000.00",
       payerName: "Redundant Payer",
+      qbRawLine: {
+        source: "quickbooks_attachment",
+        fileName: "deposit-slip.pdf",
+        component: { checkNumber: "123" },
+      },
     });
     stagedIds.push(stagedPaymentId);
     await db.insert(schema.paymentUnits).values({
@@ -1134,6 +1139,7 @@ describe.skipIf(!HAS_DB)("Workbench deposit list (integration)", () => {
       source: "bank_spine",
       stagedPaymentId,
       amount: "1000.00",
+      attachmentFileName: "deposit-slip.pdf",
     });
     expect(row?.composition.unexplainedAmount).toBe("0.00");
     const qbForStaged = row?.qbRecords.filter(

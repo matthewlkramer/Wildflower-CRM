@@ -9,17 +9,18 @@ import type {
   CreateGiftPrefill,
 } from "@/components/reconciliation-clusters/actions";
 import type { EvidencePreview } from "@/components/reconciliation-clusters/dialogs";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useDebounce } from "@/hooks/use-debounce";
 import { formatCurrency, formatDateShort } from "@/lib/format";
+import { PaymentGiftActions } from "./rows";
+import type { PaymentMatchMode } from "./gift-column-dialogs";
 
 export function FindReceivedPayment({
   onMatch,
   onCreate,
 }: {
-  onMatch: (anchor: AnchorRef) => void;
+  onMatch: (anchor: AnchorRef, mode: PaymentMatchMode) => void;
   onCreate: (
     anchor: AnchorRef,
     preview: EvidencePreview,
@@ -117,27 +118,18 @@ export function FindReceivedPayment({
                         {item.conflictReason}
                       </p>
                     ) : (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onMatch(anchor)}
-                        >
-                          Match existing record
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            onCreate(anchor, preview, {
-                              name: item.label,
-                              dateReceived: item.date ?? null,
-                            })
-                          }
-                        >
-                          Record new gift
-                        </Button>
-                      </div>
+                      <PaymentGiftActions
+                        actions={{
+                          openLinkEvidence: onMatch,
+                          openCreateGift: onCreate,
+                        }}
+                        anchor={anchor}
+                        preview={preview}
+                        prefill={{
+                          name: item.label,
+                          dateReceived: item.date ?? null,
+                        }}
+                      />
                     )}
                   </li>
                 );

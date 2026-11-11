@@ -109,6 +109,7 @@ import { TieChargeQbDialog } from "@/components/reconciliation-bundles/TieCharge
 import {
   CreateStandaloneGiftDialog,
   LinkEvidenceSearchDialog,
+  type PaymentMatchMode,
   OpportunityPaymentChoiceDialog,
 } from "@/components/reconciliation-deposits/gift-column-dialogs";
 import {
@@ -329,7 +330,7 @@ export default function ReconciliationDepositsPage() {
   } | null>(null);
   const [linkEvidenceFor, setLinkEvidenceFor] = useState<{
     anchor: AnchorRef;
-    mode: "all" | "opportunities" | "pledges";
+    mode: PaymentMatchMode;
   } | null>(null);
   const [opportunityPaymentFor, setOpportunityPaymentFor] = useState<{
     anchor: AnchorRef;
@@ -2317,7 +2318,7 @@ export default function ReconciliationDepositsPage() {
               verify when the payment was recorded or included in a deposit.
             </p>
             <FindReceivedPayment
-              onMatch={(anchor) => setLinkEvidenceFor({ anchor, mode: "all" })}
+              onMatch={(anchor, mode) => setLinkEvidenceFor({ anchor, mode })}
               onCreate={(anchor, preview, prefill) => setCreateFor({ anchor, preview, prefill })}
             />
           </div>

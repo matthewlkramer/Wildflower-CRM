@@ -58,6 +58,37 @@ import { formatCurrency, formatDateShort, formatEnum } from "@/lib/format";
 const EVIDENCE_DEFAULT = "__evidence_default__";
 const NO_ENTITY = "__none__";
 
+export type PaymentMatchMode =
+  | "all"
+  | "opportunities"
+  | "pledges"
+  | "open_opportunities"
+  | "gifts";
+
+const MATCH_TITLES: Record<PaymentMatchMode, string> = {
+  all: "Search and link",
+  opportunities: "Apply to an opportunity or pledge",
+  pledges: "Apply to a pledge",
+  open_opportunities: "Apply to an opportunity",
+  gifts: "Link an existing gift",
+};
+
+const MATCH_DESCRIPTIONS: Record<PaymentMatchMode, string> = {
+  all: "Find the gift, opportunity, or pledge this payment belongs to.",
+  opportunities: "Find the opportunity or pledge this payment belongs to.",
+  pledges: "Record a gift payment against a donor’s existing commitment.",
+  open_opportunities:
+    "Record a one-time gift or start a pledge with this payment.",
+  gifts: "Attach this payment evidence to a gift already in the CRM.",
+};
+
+function isFinalizedPledge(opp: OpportunityOrPledge): boolean {
+  return (
+    opp.pledgeCommittedAt != null ||
+    (opp.commitmentPath == null && opp.writtenPledge === true)
+  );
+}
+
 export function pledgePaymentBlockedReason(
   opp: OpportunityOrPledge,
   pledgeOnly: boolean,
@@ -67,10 +98,7 @@ export function pledgePaymentBlockedReason(
     return "Marked lost — payments can't be recorded on a lost record.";
   if (opp.lossType === "dormant")
     return "Marked dormant — reactivate the pledge to record a payment.";
-  const finalized =
-    opp.pledgeCommittedAt != null ||
-    (opp.commitmentPath == null && opp.writtenPledge === true);
-  if (pledgeOnly && !finalized)
+  if (pledgeOnly && !isFinalizedPledge(opp))
     return "Still an open opportunity — finalize it as a written or verbal pledge before recording a payment.";
   return null;
 }
@@ -218,11 +246,10 @@ export function CreateStandaloneGiftDialog({
         data-testid="dialog-create-standalone-gift"
       >
         <DialogHeader>
-          <DialogTitle>Create standalone gift</DialogTitle>
+          <DialogTitle>Create a gift from this payment</DialogTitle>
           <DialogDescription>
-            Mint a new gift from “{recordLabel}”. The amount is locked to the
-            payment evidence; leave a field untouched to keep its
-            evidence-derived default.
+            Save a new gift linked to “{recordLabel}”. The amount comes from the
+            payment. Review the donor and available defaults before saving.
           </DialogDescription>
         </DialogHeader>
         {contextNote ? (
@@ -373,8 +400,7 @@ export function LinkEvidenceSearchDialog({
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** all records, opportunity/pledge-only, or finalized pledge-only. */
-  mode: "all" | "opportunities" | "pledges";
+  mode: PaymentMatchMode;
   paymentLabel?: string;
   busy: boolean;
   onPickGift: (gift: GiftOrPayment) => void;
@@ -382,11 +408,15 @@ export function LinkEvidenceSearchDialog({
 }) {
   const [text, setText] = useState("");
   const [debounced, setDebounced] = useState("");
+  const [selection, setSelection] = useState<
+    { gift: GiftOrPayment } | { pledge: OpportunityOrPledge } | null
+  >(null);
 
   useEffect(() => {
     if (open) {
       setText("");
       setDebounced("");
+      setSelection(null);
     }
   }, [open]);
 
@@ -403,11 +433,12 @@ export function LinkEvidenceSearchDialog({
     }),
     [debounced],
   );
-  const giftsEnabled = open && mode === "all";
+  const showGifts = mode === "all" || mode === "gifts";
+  const showCommitments = mode !== "gifts";
   const gifts = useListGiftsAndPayments(giftParams, {
     query: {
       queryKey: getListGiftsAndPaymentsQueryKey(giftParams),
-      enabled: giftsEnabled,
+      enabled: open && showGifts,
     },
   });
 
@@ -415,6 +446,9 @@ export function LinkEvidenceSearchDialog({
     () => ({
       ...(debounced.trim() ? { search: debounced.trim() } : {}),
       ...(mode === "pledges" ? { pledgeView: "pledges" as const } : {}),
+      ...(mode === "open_opportunities"
+        ? { pledgeView: "opportunities" as const }
+        : {}),
       limit: 10,
       page: 1,
     }),
@@ -423,7 +457,7 @@ export function LinkEvidenceSearchDialog({
   const opps = useListOpportunitiesAndPledges(oppParams, {
     query: {
       queryKey: getListOpportunitiesAndPledgesQueryKey(oppParams),
-      enabled: open,
+      enabled: open && showCommitments,
     },
   });
 
@@ -431,7 +465,9 @@ export function LinkEvidenceSearchDialog({
   // opportunities; choosing one asks how it resolved before booking money.
   const pledgeOnly = mode === "pledges";
   const oppRowBlockedReason = (opp: OpportunityOrPledge): string | null =>
-    pledgePaymentBlockedReason(opp, pledgeOnly);
+    mode === "open_opportunities" && isFinalizedPledge(opp)
+      ? "This is a pledge. Choose Apply to a pledge."
+      : pledgePaymentBlockedReason(opp, pledgeOnly);
 
   const giftRows = gifts.data?.data ?? [];
   const oppRows = opps.data?.data ?? [];
@@ -443,173 +479,204 @@ export function LinkEvidenceSearchDialog({
         data-testid="dialog-link-evidence-search"
       >
         <DialogHeader>
-          <DialogTitle>
-            {mode === "pledges"
-              ? "Record as payment on pledge"
-              : mode === "opportunities"
-                ? "Apply to an opportunity or pledge"
-              : "Search and link"}
-          </DialogTitle>
-          <DialogDescription>
-            {mode === "pledges"
-              ? "Pick the pledge this payment fulfills — it books a gift/payment under that pledge."
-              : mode === "opportunities"
-                ? "Pick a pledge to record a payment, or an open opportunity to record its gift-or-pledge outcome."
-              : "Link this payment evidence to an existing gift, or book it against an opportunity or pledge."}
-          </DialogDescription>
+          <DialogTitle>{MATCH_TITLES[mode]}</DialogTitle>
+          <DialogDescription>{MATCH_DESCRIPTIONS[mode]}</DialogDescription>
         </DialogHeader>
         {paymentLabel && (
           <p className="rounded-md bg-muted/50 px-3 py-2 text-sm">
             Payment: <strong>{paymentLabel}</strong>
           </p>
         )}
-        <Input
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Search by donor, name or reference…"
-          data-testid="input-link-evidence-search"
-        />
-        <Separator />
-        <div className="max-h-80 space-y-3 overflow-y-auto">
-          {mode === "all" ? (
-            <div className="space-y-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                Gifts
-              </p>
-              {gifts.isFetching && giftRows.length === 0 ? (
-                <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
-                </p>
-              ) : giftRows.length === 0 ? (
-                <p className="py-2 text-xs text-muted-foreground">
-                  No gifts match.
-                </p>
-              ) : (
-                giftRows.map((g) => {
-                  const alreadyLinked = g.hasPaymentEvidence === true;
-                  return (
-                    <button
-                      key={g.id}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => onPickGift(g)}
-                      className={cn(
-                        "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                        alreadyLinked &&
-                          "border-dashed bg-muted/50 text-muted-foreground",
-                        busy
-                          ? "cursor-not-allowed opacity-50"
-                          : alreadyLinked
-                            ? "hover:bg-muted"
-                            : "hover:bg-muted/70",
-                      )}
-                      data-testid={`link-evidence-gift-${g.id}`}
-                      data-already-linked={alreadyLinked ? "true" : "false"}
-                    >
-                      <span className="min-w-0">
-                        <span className="block truncate font-medium">
-                          {giftDonorName(g)}
-                        </span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {[
-                            g.dateReceived
-                              ? formatDateShort(g.dateReceived)
-                              : null,
-                            g.type ? formatEnum(g.type) : null,
-                            g.name && g.name !== giftDonorName(g)
-                              ? g.name
-                              : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ") || "Gift"}
-                        </span>
-                        {alreadyLinked ? (
-                          <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-300">
-                            Already linked — selecting will disconnect and move
-                            it
+        {selection ? (
+          <>
+            <p className="text-sm">
+              {"gift" in selection
+                ? `Attach this payment to “${selection.gift.name ?? giftDonorName(selection.gift)}”. The existing gift will represent the payment.`
+                : `Record a gift payment against “${selection.pledge.name ?? "this pledge"}”. The payment will count toward the commitment.`}
+            </p>
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                onClick={() => setSelection(null)}
+                disabled={busy}
+              >
+                Back to search
+              </Button>
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  "gift" in selection
+                    ? onPickGift(selection.gift)
+                    : onPickOpp(selection.pledge)
+                }
+              >
+                {"gift" in selection ? "Link gift" : "Record pledge payment"}
+              </Button>
+            </DialogFooter>
+          </>
+        ) : (
+          <>
+            <Input
+              autoFocus
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Search by donor, name or reference…"
+              data-testid="input-link-evidence-search"
+            />
+            <Separator />
+            <div className="max-h-80 space-y-3 overflow-y-auto">
+              {showGifts ? (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    Gifts
+                  </p>
+                  {gifts.isFetching && giftRows.length === 0 ? (
+                    <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                      Searching…
+                    </p>
+                  ) : giftRows.length === 0 ? (
+                    <p className="py-2 text-xs text-muted-foreground">
+                      No gifts match.
+                    </p>
+                  ) : (
+                    giftRows.map((g) => {
+                      const alreadyLinked = g.hasPaymentEvidence === true;
+                      return (
+                        <button
+                          key={g.id}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => setSelection({ gift: g })}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                            alreadyLinked &&
+                              "border-dashed bg-muted/50 text-muted-foreground",
+                            busy
+                              ? "cursor-not-allowed opacity-50"
+                              : alreadyLinked
+                                ? "hover:bg-muted"
+                                : "hover:bg-muted/70",
+                          )}
+                          data-testid={`link-evidence-gift-${g.id}`}
+                          data-already-linked={alreadyLinked ? "true" : "false"}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {giftDonorName(g)}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {[
+                                g.dateReceived
+                                  ? formatDateShort(g.dateReceived)
+                                  : null,
+                                g.type ? formatEnum(g.type) : null,
+                                g.name && g.name !== giftDonorName(g)
+                                  ? g.name
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "Gift"}
+                            </span>
+                            {alreadyLinked ? (
+                              <span className="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                                Already linked. Moving it requires confirmation.
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
-                      </span>
-                      <span className="shrink-0 tabular-nums text-muted-foreground">
-                        {formatCurrency(g.amount ?? "0")}
-                      </span>
-                    </button>
-                  );
-                })
+                          <span className="shrink-0 tabular-nums text-muted-foreground">
+                            {formatCurrency(g.amount ?? "0")}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              ) : null}
+              {showCommitments && (
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                    {mode === "pledges"
+                      ? "Pledges"
+                      : mode === "open_opportunities"
+                        ? "Opportunities"
+                        : "Opportunities & pledges"}
+                  </p>
+                  {mode === "all" ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      Pick a pledge to record a payment, or an open opportunity
+                      to record its gift-or-pledge outcome.
+                    </p>
+                  ) : null}
+                  {opps.isFetching && oppRows.length === 0 ? (
+                    <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                      Searching…
+                    </p>
+                  ) : oppRows.length === 0 ? (
+                    <p className="py-2 text-xs text-muted-foreground">
+                      {mode === "pledges"
+                        ? "No pledges match."
+                        : "No opportunities or pledges match."}
+                    </p>
+                  ) : (
+                    oppRows.map((opp) => {
+                      const blockedReason = oppRowBlockedReason(opp);
+                      const blocked = blockedReason != null;
+                      return (
+                        <button
+                          key={opp.id}
+                          type="button"
+                          disabled={busy || blocked}
+                          onClick={() =>
+                            isFinalizedPledge(opp)
+                              ? setSelection({ pledge: opp })
+                              : onPickOpp(opp)
+                          }
+                          className={cn(
+                            "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
+                            busy || blocked
+                              ? "cursor-not-allowed opacity-50"
+                              : "hover:bg-muted",
+                          )}
+                          data-testid={`link-evidence-opp-${opp.id}`}
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {opp.name ?? opp.id}
+                            </span>
+                            <span className="block truncate text-xs text-muted-foreground">
+                              {[
+                                opp.organizationName ??
+                                  opp.householdName ??
+                                  opp.individualGiverPersonName ??
+                                  null,
+                                (opp.awardedAmount ?? opp.askAmount)
+                                  ? formatCurrency(
+                                      (opp.awardedAmount ??
+                                        opp.askAmount) as string,
+                                    )
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || "Opportunity"}
+                            </span>
+                            {blockedReason ? (
+                              <span className="block whitespace-normal text-[11px] text-muted-foreground">
+                                {blockedReason}
+                              </span>
+                            ) : null}
+                          </span>
+                          <OppStatusBadge status={opp.status} />
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
               )}
             </div>
-          ) : null}
-          <div className="space-y-1">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              {mode === "pledges" ? "Pledges" : "Opportunities & pledges"}
-            </p>
-            {mode === "all" ? (
-              <p className="text-[11px] text-muted-foreground">
-                Pick a pledge to record a payment, or an open opportunity to
-                record its gift-or-pledge outcome.
-              </p>
-            ) : null}
-            {opps.isFetching && oppRows.length === 0 ? (
-              <p className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…
-              </p>
-            ) : oppRows.length === 0 ? (
-              <p className="py-2 text-xs text-muted-foreground">
-                {mode === "pledges"
-                  ? "No pledges match."
-                  : "No opportunities or pledges match."}
-              </p>
-            ) : (
-              oppRows.map((opp) => {
-                const blockedReason = oppRowBlockedReason(opp);
-                const blocked = blockedReason != null;
-                return (
-                  <button
-                    key={opp.id}
-                    type="button"
-                    disabled={busy || blocked}
-                    onClick={() => onPickOpp(opp)}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors",
-                      busy || blocked
-                        ? "cursor-not-allowed opacity-50"
-                        : "hover:bg-muted",
-                    )}
-                    data-testid={`link-evidence-opp-${opp.id}`}
-                  >
-                    <span className="min-w-0">
-                      <span className="block truncate font-medium">
-                        {opp.name ?? opp.id}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {[
-                          opp.organizationName ??
-                            opp.householdName ??
-                            opp.individualGiverPersonName ??
-                            null,
-                          (opp.awardedAmount ?? opp.askAmount)
-                            ? formatCurrency(
-                                (opp.awardedAmount ?? opp.askAmount) as string,
-                              )
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ") || "Opportunity"}
-                      </span>
-                      {blockedReason ? (
-                        <span className="block whitespace-normal text-[11px] text-muted-foreground">
-                          {blockedReason}
-                        </span>
-                      ) : null}
-                    </span>
-                    <OppStatusBadge status={opp.status} />
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

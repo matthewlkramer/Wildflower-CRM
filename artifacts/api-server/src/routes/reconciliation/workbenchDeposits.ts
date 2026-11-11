@@ -1032,6 +1032,12 @@ router.get(
             'unconfirmed', false, 'source', 'bank_spine',
             'manual', (c.source = 'manual'),
             'stagedPaymentId', u.source_staged_payment_id,
+            'attachmentFileName', (
+              SELECT lsp.qb_raw_line->>'fileName'
+              FROM staged_payments lsp
+              WHERE lsp.id = u.source_staged_payment_id
+                AND lsp.qb_raw_line->>'source' = 'quickbooks_attachment'
+            ),
             'stagedActionable', (
               SELECT (${sql.raw(qbStatusCaseText("lsp"))}) = 'pending'
               FROM staged_payments lsp WHERE lsp.id = u.source_staged_payment_id

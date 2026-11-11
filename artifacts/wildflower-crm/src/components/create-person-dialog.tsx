@@ -50,6 +50,7 @@ export function CreatePersonDialog() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [created, setCreated] = useState<{
     id: string;
+    name: string;
     path: Exclude<ProspectPath, "individual">;
     organizationId?: string;
   } | null>(null);
@@ -72,6 +73,7 @@ export function CreatePersonDialog() {
         } else {
           setCreated({
             id: created.id,
+            name: fullName,
             path,
             organizationId:
               path === "existing" ? (organizationId ?? undefined) : undefined,
@@ -123,12 +125,17 @@ export function CreatePersonDialog() {
     return created.path === "household" ? (
       <AddPersonToHouseholdDialog
         personId={created.id}
+        setupPersonName={created.name}
         onSetupFinish={finish}
       />
     ) : (
       <AddPersonOrgRoleDialog
         personId={created.id}
-        setup={{ organizationId: created.organizationId, onFinish: finish }}
+        setup={{
+          organizationId: created.organizationId,
+          personName: created.name,
+          onFinish: finish,
+        }}
       />
     );
   }
@@ -245,7 +252,7 @@ export function CreatePersonDialog() {
           )}
           <p className="text-xs text-muted-foreground">
             {path === "individual"
-              ? "Add contact details, funding interests, and a relationship owner on the person’s page."
+              ? `Gift credit defaults to ${fullName || "this person"}. Add contact details, funding interests, and a relationship owner on the person’s page.`
               : "Continue saves the person first, then opens the affiliation step."}
           </p>
           <DialogFooter>
