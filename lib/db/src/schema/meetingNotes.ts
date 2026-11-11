@@ -1,6 +1,7 @@
 import {
   boolean,
   check,
+  date,
   index,
   jsonb,
   pgTable,
@@ -86,6 +87,7 @@ export const meetingNotes = pgTable(
     householdId: text("household_id").references(() => households.id, {
       onDelete: "restrict",
     }),
+    developmentWeek: date("development_week"),
     calendarEventId: text("calendar_event_id").references(
       () => calendarEvents.id,
       { onDelete: "set null" },
@@ -113,9 +115,10 @@ export const meetingNotes = pgTable(
     uniqueIndex("meeting_notes_calendar_event_id_uq")
       .on(t.calendarEventId)
       .where(sql`${t.calendarEventId} is not null`),
+    uniqueIndex("meeting_notes_development_week_uq").on(t.developmentWeek).where(sql`${t.developmentWeek} is not null`),
     check(
       "meeting_notes_link_or_event",
-      sql`cardinality(${t.personIds}) + cardinality(${t.organizationIds}) + cardinality(${t.householdIds}) > 0 OR ${t.calendarEventId} IS NOT NULL OR num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) > 0`,
+      sql`cardinality(${t.personIds}) + cardinality(${t.organizationIds}) + cardinality(${t.householdIds}) > 0 OR ${t.calendarEventId} IS NOT NULL OR ${t.developmentWeek} IS NOT NULL OR num_nonnulls(${t.personId}, ${t.organizationId}, ${t.householdId}) > 0`,
     ),
   ],
 );

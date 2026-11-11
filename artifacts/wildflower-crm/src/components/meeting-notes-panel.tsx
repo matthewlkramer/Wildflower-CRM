@@ -131,6 +131,21 @@ export function MeetingNotesPanel(ctx: MeetingContext) {
  * promote a stale draft).
  */
 export function MeetingNoteRow({ note }: { note: MeetingNote }) {
+  if (note.developmentWeek) {
+    return (
+      <div className="space-y-1 rounded-md border p-3">
+        <Link href={"/meetings/development/" + note.id} className="font-medium text-primary hover:underline">
+          {note.title ?? "Weekly development meeting"}
+        </Link>
+        <p className="text-xs text-muted-foreground">{formatWhen(note.meetingDate)}</p>
+        {note.aiSummary && <p className="line-clamp-3 text-sm">{note.aiSummary}</p>}
+      </div>
+    );
+  }
+  return <EditableMeetingNoteRow note={note} />;
+}
+
+function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
   const [showTranscript, setShowTranscript] = useState(false);
   const visibleTranscript = (note.artifacts ?? []).some(
     (artifact) => artifact.transcript,
@@ -1257,31 +1272,35 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+const ALL_CONTACT_KINDS: readonly PickedContact["kind"][] = ["person", "organization", "household"];
+
 export function ContactPicker({
   value,
   onChange,
+  kinds = ALL_CONTACT_KINDS,
 }: {
   value: PickedContact | null;
   onChange: (v: PickedContact | null) => void;
+  kinds?: readonly PickedContact["kind"][];
 }) {
   const [q, setQ] = useState("");
   const debounced = useDebounced(q.trim(), 180);
   const enabled = !value && debounced.length >= 2;
   const params = { search: debounced, limit: 5 };
   const people = useListPeople(params, {
-    query: { enabled, queryKey: getListPeopleQueryKey(params) },
+    query: { enabled: enabled && kinds.includes("person"), queryKey: getListPeopleQueryKey(params) },
   });
   const funders = useListOrganizations(params, {
-    query: { enabled, queryKey: getListOrganizationsQueryKey(params) },
+    query: { enabled: enabled && kinds.includes("organization"), queryKey: getListOrganizationsQueryKey(params) },
   });
   const households = useListHouseholds(params, {
-    query: { enabled, queryKey: getListHouseholdsQueryKey(params) },
+    query: { enabled: enabled && kinds.includes("household"), queryKey: getListHouseholdsQueryKey(params) },
   });
 
   const results = useMemo<PickedContact[]>(() => {
     if (!enabled) return [];
     const out: PickedContact[] = [];
-    for (const p of people.data?.data ?? []) {
+    for (const p of kinds.includes("person") ? people.data?.data ?? [] : []) {
       out.push({
         kind: "person",
         id: p.id,
@@ -1291,14 +1310,14 @@ export function ContactPicker({
           p.id,
       });
     }
-    for (const f of funders.data?.data ?? []) {
+    for (const f of kinds.includes("organization") ? funders.data?.data ?? [] : []) {
       out.push({ kind: "organization", id: f.id, label: f.name });
     }
-    for (const h of households.data?.data ?? []) {
+    for (const h of kinds.includes("household") ? households.data?.data ?? [] : []) {
       out.push({ kind: "household", id: h.id, label: h.name });
     }
     return out;
-  }, [enabled, people.data, funders.data, households.data]);
+  }, [enabled, kinds, people.data, funders.data, households.data]);
 
   if (value) {
     return (
@@ -1333,7 +1352,8 @@ export function ContactPicker({
       <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}
-        placeholder="Search people, funders, or households…"
+        placeholder={kinds.length === 1 && kinds[0] === "organization" ? "Search funders…" : "Search people, funders, or households…"}
+        aria-label={kinds.length === 1 && kinds[0] === "organization" ? "Search funders" : "Search people, funders, or households"}
         data-testid="input-contact-search"
       />
       {enabled ? (

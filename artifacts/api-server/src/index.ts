@@ -3,6 +3,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
+import { startFunderScanScheduler } from "./lib/funderScan";
 import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
 import { startStripeSyncScheduler } from "./lib/stripeSyncScheduler";
 import { startDonorboxSyncScheduler } from "./lib/donorboxSyncScheduler";
@@ -40,6 +41,7 @@ app.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   startSyncScheduler();
   startMediaIngestScheduler();
+  startFunderScanScheduler();
   startQuickbooksSyncScheduler();
   startStripeSyncScheduler();
   startDonorboxSyncScheduler();

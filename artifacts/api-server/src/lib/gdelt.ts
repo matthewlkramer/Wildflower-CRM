@@ -149,6 +149,7 @@ export interface SearchGdeltOptions {
   timeoutMs?: number;
   /** Extra attempts on transient network failure (connect timeout, etc.). */
   retries?: number;
+  strict?: boolean;
   /** Person searches add fundraising context to reduce namesake matches. */
   targetKind?: "organization" | "person";
 }
@@ -170,6 +171,7 @@ export async function searchGdelt(
     maxRecords = 25,
     timeoutMs = 20_000,
     retries = 2,
+    strict = false,
     targetKind = "organization",
   } = opts;
   const params = new URLSearchParams({
@@ -197,13 +199,19 @@ export async function searchGdelt(
           continue;
         }
         logger.warn({ status: res.status, name }, "GDELT search throttled/5xx");
+        if (strict) throw new Error("GDELT returned HTTP " + res.status);
         return [];
       }
       if (!res.ok) {
         logger.warn({ status: res.status, name }, "GDELT search non-200");
+        if (strict) throw new Error("GDELT returned HTTP " + res.status);
         return [];
       }
-      return parseGdeltArticles(await res.text());
+      const body = await res.text();
+      if (strict && !Array.isArray((JSON.parse(body) as { articles?: unknown }).articles)) {
+        throw new Error("GDELT returned an unreadable article list");
+      }
+      return parseGdeltArticles(body);
     } catch (err) {
       if (attempt < retries) {
         await sleep(1000 * (attempt + 1));
@@ -213,6 +221,7 @@ export async function searchGdelt(
         { errClass: err instanceof Error ? err.name : typeof err, name },
         "GDELT search failed after retries",
       );
+      if (strict) throw err;
       return [];
     } finally {
       clearTimeout(timer);

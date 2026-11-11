@@ -35,7 +35,7 @@ export function canonicalOpportunityUrl(raw: string | null): string | null {
 // funding-program noun.
 export function extractNamedGrantProgram(text: string): string | null {
   const candidates = text.match(
-    /\b(?:[A-Z][\w&'’.-]*|\$?\d[\d,.]*)(?:\s+(?:[A-Z][\w&'’.-]*|and|of|for|the|\$?\d[\d,.]*)){1,9}\s+(?:Grant\s+Program|Grant\s+Fund|Fellowship|Initiative|Challenge|Prize|Fund)\b/g,
+    /\b(?:[A-Z][\w&'’.-]*|\$?\d[\d,.]*)(?:[ \t]+(?:[A-Z][\w&'’.-]*|and|of|for|the|\$?\d[\d,.]*)){1,9}[ \t]+(?:Grant[ \t]+Program|Grant[ \t]+Fund|Fellowship|Initiative|Challenge|Prize|Fund)\b/g,
   );
   if (!candidates?.length) return null;
   return (

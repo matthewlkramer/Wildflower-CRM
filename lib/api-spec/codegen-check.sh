@@ -36,7 +36,9 @@ for file in \
   "$tmp/lib/api-client-react/src/generated/integrations/integrations.ts" \
   "$tmp/lib/api-zod/src/generated/integrations/integrations.ts" \
   "$tmp/lib/api-client-react/src/generated/trip-plans/trip-plans.ts" \
-  "$tmp/lib/api-zod/src/generated/trip-plans/trip-plans.ts"; do
+  "$tmp/lib/api-zod/src/generated/trip-plans/trip-plans.ts" \
+  "$tmp/lib/api-client-react/src/generated/fundraising/fundraising.ts" \
+  "$tmp/lib/api-zod/src/generated/fundraising/fundraising.ts"; do
   [ -f "$file" ] && "$root/node_modules/.bin/prettier" --write "$file" >/dev/null
 done
 

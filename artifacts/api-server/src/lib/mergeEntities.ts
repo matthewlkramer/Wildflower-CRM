@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { db } from "@workspace/db";
-import { organizations, people, bulkOperations, conferenceAttendance, conferenceAttendanceSuggestions } from "@workspace/db/schema";
+import { organizations, people, bulkOperations, conferenceAttendance, conferenceAttendanceSuggestions, funderScanState } from "@workspace/db/schema";
 import { eq, inArray, sql, type SQL } from "drizzle-orm";
 import { newId } from "./helpers";
 import { getAppUser } from "./appRequest";
@@ -87,6 +87,9 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "donorbox_donations", col: "organization_id" },
   { table: "quickbooks_handling_rules", col: "target_organization_id" },
   { table: "grant_leads", col: "target_organization_id" },
+  { table: "development_agenda", col: "organization_id" },
+  { table: "funder_findings", col: "organization_id" },
+  { table: "funder_scan_state", col: "organization_id" },
   { table: "donor_routing_preferences", col: "source_organization_id" },
   { table: "donor_routing_preferences", col: "target_organization_id" },
   { table: "conference_speaker_proposals", col: "matched_organization_id" },
@@ -97,6 +100,7 @@ const ORGANIZATION_ARRAY_REFS: ReadonlyArray<MergeRef> = [
   { table: "notes", col: "organization_ids" },
   { table: "interactions", col: "organization_ids" },
   { table: "tasks", col: "organization_ids" },
+  { table: "meeting_notes", col: "organization_ids" },
   { table: "media_mentions", col: "organization_ids" },
   { table: "calendar_events", col: "matched_organization_ids" },
   { table: "email_messages", col: "matched_organization_ids" },
@@ -115,6 +119,7 @@ const PERSON_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "addresses", col: "person_id" },
   { table: "emails", col: "person_id" },
   { table: "newsletter_preference_events", col: "person_id" },
+  { table: "development_agenda", col: "person_id" },
   { table: "phone_numbers", col: "person_id" },
   { table: "meeting_notes", col: "person_id" },
   { table: "email_proposals", col: "target_person_id" },
@@ -139,6 +144,7 @@ const PERSON_ARRAY_REFS: ReadonlyArray<MergeRef> = [
   { table: "notes", col: "person_ids" },
   { table: "interactions", col: "person_ids" },
   { table: "tasks", col: "person_ids" },
+  { table: "meeting_notes", col: "person_ids" },
   { table: "media_mentions", col: "person_ids" },
   { table: "calendar_events", col: "matched_person_ids" },
   { table: "email_messages", col: "matched_person_ids" },
@@ -397,6 +403,21 @@ async function consolidateConferenceRefs(tx: MergeTx, primaryId: string, ids: st
   }
 }
 
+async function consolidateFunderScanState(tx: MergeTx, ids: string[]) {
+  const rows = await tx.select().from(funderScanState)
+    .where(inArray(funderScanState.organizationId, ids)).for("update");
+  if (rows.length < 2) return;
+  rows.sort((a, b) => (b.lastAttemptAt?.valueOf() ?? 0) - (a.lastAttemptAt?.valueOf() ?? 0));
+  const [newest, ...duplicates] = rows;
+  const lastCheckedAt = rows.flatMap((row) => row.lastCheckedAt ? [row.lastCheckedAt] : [])
+    .sort((a, b) => b.valueOf() - a.valueOf())[0] ?? null;
+  const requestedAt = rows.flatMap((row) => row.requestedAt ? [row.requestedAt] : [])
+    .sort((a, b) => a.valueOf() - b.valueOf())[0] ?? null;
+  await tx.update(funderScanState).set({ lastCheckedAt, requestedAt })
+    .where(eq(funderScanState.organizationId, newest!.organizationId));
+  await tx.delete(funderScanState).where(inArray(funderScanState.organizationId, duplicates.map((row) => row.organizationId)));
+}
+
 /**
  * Execute a merge. Validates the request, then in one transaction:
  * applies the primary updates, re-points every FK + array reference from
@@ -526,6 +547,8 @@ export async function mergeEntity(
 
     if (cfg.kind === "people") {
       await consolidateConferenceRefs(tx, primaryId, allIds);
+    } else {
+      await consolidateFunderScanState(tx, allIds);
     }
 
     // 2. Re-point direct FK references loser -> primary.

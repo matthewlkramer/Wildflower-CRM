@@ -10343,6 +10343,349 @@ export interface GrantLeadSourceEmail {
   emailSentAt: string | null;
 }
 
+export type FundraisingFindingKind = typeof FundraisingFindingKind[keyof typeof FundraisingFindingKind];
+
+
+export const FundraisingFindingKind = {
+  media: 'media',
+  grant_lead: 'grant_lead',
+} as const;
+
+export type FundraisingFindingCategory = typeof FundraisingFindingCategory[keyof typeof FundraisingFindingCategory];
+
+
+export const FundraisingFindingCategory = {
+  funding_opportunity: 'funding_opportunity',
+  strategy_priorities: 'strategy_priorities',
+  leadership_staff: 'leadership_staff',
+  general_news: 'general_news',
+} as const;
+
+export type FundraisingFindingReview = typeof FundraisingFindingReview[keyof typeof FundraisingFindingReview];
+
+
+export const FundraisingFindingReview = {
+  unreviewed: 'unreviewed',
+  useful: 'useful',
+  dismissed: 'dismissed',
+} as const;
+
+export interface FundraisingFinding {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  id: string;
+  kind: FundraisingFindingKind;
+  title: string;
+  category: FundraisingFindingCategory;
+  summary: string | null;
+  source: string;
+  url: string | null;
+  publishedAt: string | null;
+  deadline: string | null;
+  organizationId: string | null;
+  organizationName: string | null;
+  ownerName: string | null;
+  reason: string;
+  review: FundraisingFindingReview;
+}
+
+export type FunderScanCoverageCadence = typeof FunderScanCoverageCadence[keyof typeof FunderScanCoverageCadence];
+
+
+export const FunderScanCoverageCadence = {
+  weekly: 'weekly',
+  biweekly: 'biweekly',
+  monthly: 'monthly',
+  as_needed: 'as_needed',
+} as const;
+
+export type FunderScanCoverageStatus = typeof FunderScanCoverageStatus[keyof typeof FunderScanCoverageStatus];
+
+
+export const FunderScanCoverageStatus = {
+  pending: 'pending',
+  updates: 'updates',
+  no_updates: 'no_updates',
+  failed: 'failed',
+  partial: 'partial',
+} as const;
+
+export interface FunderScanCoverage {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  organizationId: string;
+  organizationName: string;
+  cadence: FunderScanCoverageCadence;
+  reason: string;
+  lastCheckedAt: string | null;
+  lastAttemptAt: string | null;
+  status: FunderScanCoverageStatus;
+  /** @minimum 0 */
+  findingCount: number;
+}
+
+export interface FundraisingBrief {
+  findings: FundraisingFinding[];
+  coverage: FunderScanCoverage[];
+}
+
+export type ReviewFundraisingFindingBodyKind = typeof ReviewFundraisingFindingBodyKind[keyof typeof ReviewFundraisingFindingBodyKind];
+
+
+export const ReviewFundraisingFindingBodyKind = {
+  media: 'media',
+  grant_lead: 'grant_lead',
+} as const;
+
+export type ReviewFundraisingFindingBodyReview = typeof ReviewFundraisingFindingBodyReview[keyof typeof ReviewFundraisingFindingBodyReview];
+
+
+export const ReviewFundraisingFindingBodyReview = {
+  unreviewed: 'unreviewed',
+  useful: 'useful',
+  dismissed: 'dismissed',
+} as const;
+
+export interface ReviewFundraisingFindingBody {
+  kind: ReviewFundraisingFindingBodyKind;
+  review: ReviewFundraisingFindingBodyReview;
+}
+
+export type DevelopmentAgendaItemStatus = typeof DevelopmentAgendaItemStatus[keyof typeof DevelopmentAgendaItemStatus];
+
+
+export const DevelopmentAgendaItemStatus = {
+  pending: 'pending',
+  discussing: 'discussing',
+  done: 'done',
+  deferred: 'deferred',
+} as const;
+
+export type DevelopmentAgendaItemFindingKind = typeof DevelopmentAgendaItemFindingKind[keyof typeof DevelopmentAgendaItemFindingKind] | null;
+
+
+export const DevelopmentAgendaItemFindingKind = {
+  media: 'media',
+  grant_lead: 'grant_lead',
+} as const;
+
+export interface DevelopmentAgendaItem {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  id: string;
+  title: string;
+  notes: string;
+  decision: string;
+  status: DevelopmentAgendaItemStatus;
+  /** @minimum 0 */
+  revision: number;
+  organizationId: string | null;
+  personId: string | null;
+  householdId: string | null;
+  findingKind: DevelopmentAgendaItemFindingKind;
+  findingId: string | null;
+  sourceUrl: string | null;
+  carriedFromId: string | null;
+  tasks: Task[];
+}
+
+export interface MeetingActionItem {
+  title: string;
+  /** Free-text assignee name as extracted from the transcript. */
+  assigneeName?: string | null;
+  dueDate?: string | null;
+  /** Set after this item was promoted into a task via /promote-action-item. */
+  promotedTaskId?: string | null;
+}
+
+export type MeetingArtifactKind = typeof MeetingArtifactKind[keyof typeof MeetingArtifactKind];
+
+
+export const MeetingArtifactKind = {
+  handwritten_notes: 'handwritten_notes',
+  audio_recording: 'audio_recording',
+  voice_dictation: 'voice_dictation',
+} as const;
+
+export type MeetingArtifactSourcePagesItem = {
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+};
+
+export interface MeetingArtifact {
+  id: string;
+  kind: MeetingArtifactKind;
+  objectPath: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  transcript: string;
+  createdAt: string;
+  /** For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients. */
+  sourcePages?: MeetingArtifactSourcePagesItem[];
+}
+
+export interface MeetingNote {
+  id: string;
+  title?: string | null;
+  meetingDate: string;
+  attendees?: string[] | null;
+  manualNotes?: string | null;
+  /** Always null when summaryOnly is true. */
+  rawTranscript?: string | null;
+  /** Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert. */
+  summaryOnly: boolean;
+  aiSummary?: string | null;
+  actionItems?: MeetingActionItem[] | null;
+  artifacts?: MeetingArtifact[];
+  creatorUserId: string;
+  personIds: string[];
+  organizationIds: string[];
+  householdIds: string[];
+  developmentWeek?: string | null;
+  /** Direct pointer to the synced calendar event this note documents. */
+  calendarEventId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DevelopmentMeeting {
+  weekStart: string;
+  note: MeetingNote;
+  agenda: DevelopmentAgendaItem[];
+}
+
+export type DevelopmentDonorSuggestionKind = typeof DevelopmentDonorSuggestionKind[keyof typeof DevelopmentDonorSuggestionKind];
+
+
+export const DevelopmentDonorSuggestionKind = {
+  organization: 'organization',
+  person: 'person',
+  household: 'household',
+} as const;
+
+export interface DevelopmentDonorSuggestion {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  id: string;
+  kind: DevelopmentDonorSuggestionKind;
+  name: string;
+  reason: string;
+  ownerName: string | null;
+}
+
+export interface CreateDevelopmentMeetingBody {
+  date: string;
+}
+
+export type AddDevelopmentAgendaItemBodyFindingKind = typeof AddDevelopmentAgendaItemBodyFindingKind[keyof typeof AddDevelopmentAgendaItemBodyFindingKind];
+
+
+export const AddDevelopmentAgendaItemBodyFindingKind = {
+  media: 'media',
+  grant_lead: 'grant_lead',
+} as const;
+
+export interface AddDevelopmentAgendaItemBody {
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title?: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  organizationId?: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  personId?: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  householdId?: string;
+  findingKind?: AddDevelopmentAgendaItemBodyFindingKind;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  findingId?: string;
+}
+
+export type UpdateDevelopmentAgendaItemBodyStatus = typeof UpdateDevelopmentAgendaItemBodyStatus[keyof typeof UpdateDevelopmentAgendaItemBodyStatus];
+
+
+export const UpdateDevelopmentAgendaItemBodyStatus = {
+  pending: 'pending',
+  discussing: 'discussing',
+  done: 'done',
+  deferred: 'deferred',
+} as const;
+
+export type UpdateDevelopmentAgendaItemBodyMove = typeof UpdateDevelopmentAgendaItemBodyMove[keyof typeof UpdateDevelopmentAgendaItemBodyMove];
+
+
+export const UpdateDevelopmentAgendaItemBodyMove = {
+  up: 'up',
+  down: 'down',
+} as const;
+
+export interface UpdateDevelopmentAgendaItemBody {
+  /** @minimum 0 */
+  revision: number;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title?: string;
+  /** @maxLength 20000 */
+  notes?: string;
+  /** @maxLength 20000 */
+  decision?: string;
+  status?: UpdateDevelopmentAgendaItemBodyStatus;
+  move?: UpdateDevelopmentAgendaItemBodyMove;
+}
+
+export interface AssignDevelopmentActionBody {
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  requestId: string;
+  /**
+   * @minLength 1
+   * @maxLength 300
+   */
+  title: string;
+  /**
+   * @minLength 1
+   * @maxLength 128
+   */
+  assigneeUserId: string;
+  dueDate?: string;
+}
+
+export interface SummarizeDevelopmentTranscriptBody {
+  /**
+   * @minLength 1
+   * @maxLength 180000
+   */
+  transcript: string;
+}
+
 export interface GrantLead {
   id: string;
   dedupeKey: string;
@@ -10375,6 +10718,7 @@ export interface GrantLead {
   sightingCount?: number;
   /** Mailbox user IDs who received this lead (for display). */
   sightingUserIds?: string[];
+  publicSources?: string[];
   /** Source emails that produced this lead, most-recent first, for opening the original message. */
   sourceEmails?: GrantLeadSourceEmail[];
 }
@@ -10450,44 +10794,6 @@ export interface ConvertGrantLeadResponse {
   opportunity: ConvertGrantLeadResponseOpportunity;
 }
 
-export interface MeetingActionItem {
-  title: string;
-  /** Free-text assignee name as extracted from the transcript. */
-  assigneeName?: string | null;
-  dueDate?: string | null;
-  /** Set after this item was promoted into a task via /promote-action-item. */
-  promotedTaskId?: string | null;
-}
-
-export type MeetingArtifactKind = typeof MeetingArtifactKind[keyof typeof MeetingArtifactKind];
-
-
-export const MeetingArtifactKind = {
-  handwritten_notes: 'handwritten_notes',
-  audio_recording: 'audio_recording',
-  voice_dictation: 'voice_dictation',
-} as const;
-
-export type MeetingArtifactSourcePagesItem = {
-  objectPath: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-};
-
-export interface MeetingArtifact {
-  id: string;
-  kind: MeetingArtifactKind;
-  objectPath: string;
-  fileName: string;
-  mimeType: string;
-  sizeBytes: number;
-  transcript: string;
-  createdAt: string;
-  /** For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients. */
-  sourcePages?: MeetingArtifactSourcePagesItem[];
-}
-
 export interface ProcessMeetingMediaBody {
   kind: MeetingArtifactKind;
   /** Normalized /objects/... path in private object storage. */
@@ -10501,29 +10807,6 @@ export interface MeetingFollowUpDraft {
   recipients: string[];
   subject: string;
   body: string;
-}
-
-export interface MeetingNote {
-  id: string;
-  title?: string | null;
-  meetingDate: string;
-  attendees?: string[] | null;
-  manualNotes?: string | null;
-  /** Always null when summaryOnly is true. */
-  rawTranscript?: string | null;
-  /** Snapshot of the creator's email_sync_mode at create time. When true, the raw transcript was dropped pre-insert. */
-  summaryOnly: boolean;
-  aiSummary?: string | null;
-  actionItems?: MeetingActionItem[] | null;
-  artifacts?: MeetingArtifact[];
-  creatorUserId: string;
-  personIds: string[];
-  organizationIds: string[];
-  householdIds: string[];
-  /** Direct pointer to the synced calendar event this note documents. */
-  calendarEventId?: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface MeetingNoteList {
@@ -11709,6 +11992,29 @@ export type PageParameter = number;
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
  */
 export type IncludeArchivedQueryParameter = boolean;
+
+export type GetFundraisingBriefParams = {
+all?: boolean;
+};
+
+export type ListDevelopmentMeetingsParams = {
+/**
+ * @minLength 1
+ * @maxLength 128
+ */
+organizationId?: string;
+/**
+ * @minLength 1
+ * @maxLength 128
+ */
+personId?: string;
+/**
+ * @minLength 1
+ * @maxLength 128
+ */
+householdId?: string;
+before?: string;
+};
 
 export type SearchParams = {
 /**

@@ -1,6 +1,6 @@
 ---
 status: ratified
-last_verified: 2026-09-10
+last_verified: 2026-11-11
 ---
 
 # Grant Leads
@@ -55,3 +55,12 @@ Archiving can apply to only the current
 lead, the named program, or the whole funder. Program/funder choices write a
 durable suppression rule, and later email ingests skip matching items before
 creating a lead or sighting.
+
+## Public funder sources
+
+A public announcement with evidence of an open funding cycle can add a lead
+or attach its source to the existing lead through the same program identity.
+Program and funder suppressions apply to new leads from both sources. The
+Grant Leads page links public sources alongside eligible email sightings.
+The fundraising brief uses the shared lead and public source details.
+Individual email proposals continue to follow mailbox visibility rules.

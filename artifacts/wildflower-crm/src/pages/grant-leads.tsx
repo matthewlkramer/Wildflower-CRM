@@ -1,5 +1,6 @@
+import { getGetGrantLeadQueryKey, useGetGrantLead } from "@workspace/api-client-react";
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListGrantLeads,
@@ -445,6 +446,11 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
                 {lead.sightingCount === 1 ? "1 source email" : `${lead.sightingCount} source emails`}
               </span>
             )}
+            {lead.publicSources?.map((url, index) => (
+              <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                <ExternalLink className="h-3 w-3" /> Public source{lead.publicSources!.length > 1 ? " " + (index + 1) : ""}
+              </a>
+            ))}
             {lead.sourceEmails && lead.sourceEmails.length > 0 && (
               <SourceEmailLink sources={lead.sourceEmails} />
             )}
@@ -492,7 +498,7 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
             <DialogTitle>Archive grant lead</DialogTitle>
             <DialogDescription>
               Choose whether this decision applies only to this lead or to
-              matching opportunities found in future email ingests.
+              matching opportunities found in future scans and email syncs.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-2">
@@ -538,6 +544,8 @@ function GrantLeadRow({ lead, onRefresh }: { lead: GrantLead; onRefresh: () => v
 
 export default function GrantLeadsPage() {
   const qc = useQueryClient();
+  const focusedId = new URLSearchParams(useSearch()).get("lead");
+  const focused = useGetGrantLead(focusedId ?? "", { query: { enabled: Boolean(focusedId), queryKey: getGetGrantLeadQueryKey(focusedId ?? "") } });
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
   const [search, setSearch] = useState("");
 
@@ -550,6 +558,7 @@ export default function GrantLeadsPage() {
   const { data, isLoading, isError } = useListGrantLeads(params, {
     query: {
       queryKey: getListGrantLeadsQueryKey(params),
+      enabled: !focusedId,
       staleTime: 30_000,
       refetchOnWindowFocus: true,
     },
@@ -558,6 +567,17 @@ export default function GrantLeadsPage() {
   const refresh = () => void qc.invalidateQueries({ queryKey: ["/api/grant-leads"] });
 
   const leads = data?.data ?? [];
+  if (focusedId) {
+    return (
+      <div className="space-y-4">
+        <Link href="/grant-leads" className="text-sm text-primary hover:underline">All grant leads</Link>
+        <h1 className="text-2xl font-semibold">Grant lead</h1>
+        {focused.isLoading && <p className="text-sm text-muted-foreground">Loading grant lead…</p>}
+        {focused.isError && <p className="text-sm text-destructive">This grant lead could not be loaded.</p>}
+        {focused.data && <GrantLeadRow lead={focused.data} onRefresh={() => void focused.refetch()} />}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -567,7 +587,7 @@ export default function GrantLeadsPage() {
           Grant Leads
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Team-shared grant opportunity signals detected across all inboxes, deduped.
+          Grant opportunities found in public announcements and team inboxes.
         </p>
       </div>
 
@@ -604,7 +624,7 @@ export default function GrantLeadsPage() {
               <Inbox className="h-8 w-8" />
               <p className="text-sm">
                 {statusFilter === "active"
-                  ? "No active grant leads. Grant signals detected from team inboxes will appear here."
+                  ? "No active grant leads. Grant opportunities from public scans and team inboxes will appear here."
                   : "No grant leads found."}
               </p>
             </div>

@@ -120,6 +120,10 @@ export default function EmailIntelligencePage() {
             aren't in the CRM yet.
           </p>
         </div>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline" size="sm"><Link href="/fundraising-brief">Fundraising brief</Link></Button>
+          <Button asChild variant="outline" size="sm"><Link href="/grant-leads">Grant leads</Link></Button>
+        </div>
         {isAdmin ? (
           <label
             className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm cursor-pointer select-none"
