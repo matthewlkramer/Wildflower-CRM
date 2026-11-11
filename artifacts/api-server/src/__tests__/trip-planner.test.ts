@@ -306,6 +306,23 @@ describe("trip travel booking derivations", () => {
     expect(result).toHaveLength(1);
     expect(result[0].source).toBe("calendar");
   });
+
+  it("excludes booking reminders and confirmed trips with conflicting dates", () => {
+    expect(deriveTripTravelBookings(trip, [
+      {
+        id: "retreat-reminder",
+        source: "gmail",
+        title: "Fwd: [Dialog Retreat] Book your hotel | Retreat app",
+        description: "The booking deadline is October 14, 2026. The retreat is in March.",
+      },
+      {
+        id: "later-new-york-booking",
+        source: "gmail",
+        title: "Your New York hotel booking confirmation",
+        description: "Check-in November 12, 2026. Check-out November 15, 2026. Confirmation number: NYK123.",
+      },
+    ])).toEqual([]);
+  });
 });
 
 it("ignores outreach before trip planning rather than including half-year-old messages", () => {

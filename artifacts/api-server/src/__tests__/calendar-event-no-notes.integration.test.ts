@@ -157,6 +157,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!HAS_DB) return;
+  await db.delete(schema.calendarEventArchives).where(
+    drizzle.eq(schema.calendarEventArchives.physicalEventKey, PHYSICAL_EVENT_ID),
+  );
   await db.delete(schema.calendarEventAttendance).where(drizzle.eq(schema.calendarEventAttendance.physicalEventKey, PHYSICAL_EVENT_ID));
   await db.delete(schema.auditLog).where(drizzle.eq(schema.auditLog.entityId, EVENT_ID));
   const dismissals = await db
@@ -345,4 +348,25 @@ describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
     );
     expect(response.status).toBe(404);
   });
+});
+
+it.skipIf(!HAS_DB)("archives all CRM copies of a meeting and restores them without changing Google evidence", async () => {
+  try {
+    currentUser.role = "read_only";
+    expect((await request(`/api/calendar-events/${EVENT_ID}/archive`, { method: "POST" })).status).toBe(403);
+    currentUser.role = "team_member";
+    expect((await request(`/api/calendar-events/${PRIVATE_EVENT_ID}/archive`, { method: "POST" })).status).toBe(404);
+    expect((await request(`/api/calendar-events/${EVENT_ID}/archive`, { method: "POST" })).status).toBe(204);
+    expect((await request(`/api/calendar-events/${EVENT_ID}/archive`, { method: "POST" })).status).toBe(204);
+    expect((await request(`/api/calendar-events/${EVENT_COPY_ID}`)).status).toBe(404);
+    const list = await request(`/api/calendar-events?search=${RUN}`);
+    expect(list.status).toBe(200);
+    expect(list.json.data.map((event: { id: string }) => event.id)).toContain(CONTROL_EVENT_ID);
+    expect(list.json.data.map((event: { id: string }) => event.id)).not.toContain(EVENT_ID);
+    expect(list.json.data.map((event: { id: string }) => event.id)).not.toContain(EVENT_COPY_ID);
+  } finally {
+    currentUser.role = "team_member";
+    expect((await request(`/api/calendar-events/${EVENT_ID}/archive`, { method: "DELETE" })).status).toBe(204);
+  }
+  expect((await request(`/api/calendar-events/${EVENT_COPY_ID}`)).status).toBe(200);
 });

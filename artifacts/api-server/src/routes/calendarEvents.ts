@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   calendarEvents,
+  calendarEventArchives,
   calendarEventAttendance,
   meetingNoteDismissals,
 } from "@workspace/db/schema";
@@ -53,6 +54,19 @@ import {
 const router: IRouter = Router();
 router.use(requireAuth);
 
+const eventIsActive = () =>
+  notExists(
+    db
+      .select({ key: calendarEventArchives.physicalEventKey })
+      .from(calendarEventArchives)
+      .where(
+        eq(
+          calendarEventArchives.physicalEventKey,
+          calendarEventPhysicalKeySql(),
+        ),
+      ),
+  );
+
 router.patch(
   "/calendar-events/:id/attendance",
   asyncHandler(async (req, res) => {
@@ -70,6 +84,7 @@ router.patch(
     const where = and(
       eq(calendarEvents.id, paramId(req)),
       calendarEventVisibleToCaller(user.id),
+      eventIsActive(),
     );
     const [event] = await db.select().from(calendarEvents).where(where);
     if (!event) return notFound(res, "calendar event");
@@ -79,12 +94,10 @@ router.patch(
         (email) => email.trim().toLowerCase() === emailAddress,
       )
     ) {
-      res
-        .status(400)
-        .json({
-          error: "validation_error",
-          message: "Choose an invitee from this meeting.",
-        });
+      res.status(400).json({
+        error: "validation_error",
+        message: "Choose an invitee from this meeting.",
+      });
       return;
     }
     await db.transaction(async (tx) => {
@@ -136,6 +149,7 @@ router.get(
     const { limit, page, offset } = parsePagination(q);
     const filters: SQL[] = [
       calendarEventVisibleToCaller(user.id),
+      eventIsActive(),
       // Birthdays come from shared calendars but are not meetings and should not
       // appear anywhere that consumes the meeting-list endpoint.
       sql`COALESCE(${calendarEvents.summary}, '') NOT ILIKE '%birthday%'`,
@@ -252,6 +266,7 @@ router.get(
         and(
           eq(calendarEvents.id, paramId(req)),
           calendarEventVisibleToCaller(user.id),
+          eventIsActive(),
         ),
       )
       .then((r) => r[0]);
@@ -312,6 +327,7 @@ router.post(
         and(
           eq(calendarEvents.id, paramId(req)),
           calendarEventVisibleToCaller(user.id),
+          eventIsActive(),
         ),
       )
       .then((rows) => rows[0]);
@@ -352,5 +368,52 @@ router.post(
     res.status(204).end();
   }),
 );
+
+const changeEventArchive = asyncHandler(async (req, res) => {
+  const user = getAppUser(req)!;
+  if (user.role === "read_only") {
+    res.status(403).json({ error: "forbidden" });
+    return;
+  }
+  const [event] = await db
+    .select({ id: calendarEvents.id, gcalEventId: calendarEvents.gcalEventId })
+    .from(calendarEvents)
+    .where(
+      and(
+        eq(calendarEvents.id, paramId(req)),
+        calendarEventVisibleToCaller(user.id),
+      ),
+    );
+  if (!event) return notFound(res, "calendar event");
+  const physicalEventKey = calendarEventDismissalKey(event);
+  const archive = req.method === "POST";
+  await db.transaction(async (tx) => {
+    const changed = archive
+      ? await tx
+          .insert(calendarEventArchives)
+          .values({ physicalEventKey, archivedByUserId: user.id })
+          .onConflictDoNothing()
+          .returning()
+      : await tx
+          .delete(calendarEventArchives)
+          .where(eq(calendarEventArchives.physicalEventKey, physicalEventKey))
+          .returning();
+    if (changed.length) {
+      await recordAudit(tx, req, {
+        action: "update",
+        entityType: "calendar_event",
+        entityId: event.id,
+        summary: archive
+          ? "Archived meeting from CRM"
+          : "Restored meeting to CRM",
+        metadata: { physicalEventKey },
+      });
+    }
+  });
+  res.status(204).end();
+});
+
+router.post("/calendar-events/:id/archive", changeEventArchive);
+router.delete("/calendar-events/:id/archive", changeEventArchive);
 
 export default router;

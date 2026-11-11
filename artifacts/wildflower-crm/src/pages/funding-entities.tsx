@@ -14,8 +14,6 @@ import {
   getGetOrganizationQueryOptions,
   getGetOrganizationQueryKey,
   useUpdateOrganization,
-   useListConferenceTypes,
-   useListConferenceEvents,
   EntityType,
   type ListOrganizationsParams,
   type Organization,
@@ -37,6 +35,7 @@ import { ColumnsMenu } from "@/components/columns-menu";
 import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { ConferenceAttendanceFilter } from "@/components/conference-attendance-filter";
 import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -728,9 +727,6 @@ export default function Organizations() {
     ...(regionIdsSel.length > 0 ? { regionIds: [...regionIdsSel].sort() } : {}),
     ...(conferenceEventId ? { conferenceEventId } : conferenceTypeId ? { conferenceTypeId } : {}),
   };
-  const conferenceTypesQ = useListConferenceTypes({ active: true });
-  const conferenceEventsQ = useListConferenceEvents();
-
   const { data, isLoading, isError, error } = useListOrganizations(params, {
     query: { queryKey: getListOrganizationsQueryKey(params) },
   });
@@ -1187,23 +1183,16 @@ export default function Organizations() {
         active: !!conferenceTypeId || !!conferenceEventId,
         clear: () => { setConferenceTypeId(""); setConferenceEventId(""); setPage(1); selection.clear(); },
         render: () => (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">Conference attendance</label>
-            <select className="h-8 rounded border bg-background px-2 text-sm" value={conferenceEventId || `type:${conferenceTypeId}`} onChange={(e) => {
-              const value = e.target.value;
+          <ConferenceAttendanceFilter
+            eventId={conferenceEventId}
+            typeId={conferenceTypeId}
+            onChange={(value) => {
               setConferenceEventId(value.startsWith("event:") ? value.slice(6) : "");
               setConferenceTypeId(value.startsWith("type:") ? value.slice(5) : "");
               setPage(1); selection.clear();
-            }} data-testid="select-funder-conference">
-              <option value="">Any attendance</option>
-              <optgroup label="Ever attended">
-                {conferenceTypesQ.data?.map((type) => <option key={type.id} value={`type:${type.id}`}>{type.displayName}</option>)}
-              </optgroup>
-              <optgroup label="Specific event">
-                {conferenceEventsQ.data?.map((event) => <option key={event.id} value={`event:${event.id}`}>{event.conferenceTypeName} {event.year}</option>)}
-              </optgroup>
-            </select>
-          </div>
+            }}
+            testId="select-funder-conference"
+          />
         ),
       },
       ];
@@ -1215,7 +1204,7 @@ export default function Organizations() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [organizationType, issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, conferenceTypeId, conferenceEventId, conferenceTypesQ.data, conferenceEventsQ.data, viewMode],
+    [organizationType, issuesGrants, makesPris, subtypes, activeStatuses, connectionStatuses, priorities, owners, lifetimeGivingPresence, openAsksPresence, primaryContactPresence, sameDefaultSubtypes, sameDefaultActiveStatuses, capacityTiers, enthusiasms, strategicAlignments, interestsThematicSel, regionIdsSel, conferenceTypeId, conferenceEventId, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),

@@ -45,8 +45,11 @@ last_verified: 2026-10-13
   underlying authorities. A later synced
   message or Calendar change automatically makes the cached review stale, so
   the normal source-derived status takes over until the next AI review.
-- The trip index can be filtered to one team traveler. Each trip card identifies
-  its traveler, travel dates, and destination city when one has been entered.
+- The trip index opens to Upcoming, which includes trips still in progress.
+  Past lists completed trips. Hide completed trip returns to Upcoming and
+  keeps the trip under Past. Each trip card has an Open action and can be
+  filtered by traveler. The separate Archive action moves the trip out of
+  both views. Administrators can restore it from Archived.
 - Invitation, response, scheduled-meeting, scheduled-time, and availability
   fields are derived at read time. They are never stored as a second status.
 - The trip summary separates detected flights and hotels. It shows each
@@ -69,8 +72,9 @@ last_verified: 2026-10-13
   fetched from Gmail for the traveler without persisting the message body.
   Gmail booking details are available only to the mailbox owner; teammates see
   only Calendar evidence allowed by the existing event privacy rule. Cancelled
-  Calendar events are excluded, and Gmail evidence must match the trip's dates
-  or destination.
+  Calendar events are excluded. Gmail requires booking evidence and compatible
+  travel dates, or a destination match for an undated booking. Booking reminders
+  are excluded and forwarded/replied copies of the same booking are grouped.
 - Google Calendar owns event facts. Every regular calendar sync also performs a
   bounded-date sweep for each of the user's active CRM trip windows, which
   captures complete schedule details even when no attendee matches a CRM

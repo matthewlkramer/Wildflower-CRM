@@ -3659,6 +3659,7 @@ paths:
       parameters:
         - { $ref: "#/components/parameters/IncludeArchivedQuery" }
         - { name: search, in: query, schema: { type: string } }
+        - { name: nameOrder, in: query, schema: { type: string, enum: [asc, desc] } }
         - { name: deceased, in: query, schema: { type: boolean } }
         - {
             name: showFoundationPartners,
@@ -7213,6 +7214,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TripPlanSummary" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /trips/{id}/unarchive:
+    post:
+      operationId: unarchiveTripPlan
+      tags: [trip-plans]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Restored
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripPlanSummary" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /trips/{id}/draft-visits:
     post:
       operationId: draftTripVisits
@@ -7440,6 +7453,21 @@ paths:
               },
           }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /calendar-events/{id}/archive:
+    post:
+      operationId: archiveCalendarEvent
+      tags: [calendar-events]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Archived from CRM meeting views }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: restoreCalendarEvent
+      tags: [calendar-events]
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "204": { description: Restored to CRM meeting views }
         "404": { $ref: "#/components/responses/NotFound" }
   /calendar-events/{id}/no-notes:
     post:

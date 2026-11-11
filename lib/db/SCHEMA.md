@@ -464,6 +464,9 @@ a GIN index. Query with array operators (`@>`, `&&`, `<@`), **never**
   and normalized invitee email. Calendar sync retains the original invitation
   list and never overwrites attendance. Visible meeting viewers can mark or
   undo absence; private meetings retain their existing visibility boundary.
+- `calendar_event_archives` records a team archive keyed by physical event
+  identity. CRM meeting reads exclude matching copies. The synced rows remain
+  the Google Calendar evidence used for travel availability.
 - `calendar_events`, `interactions` (manual touches), `meeting_notes`,
   `meeting_note_dismissals`, `notes`. Structured meeting notes and free-form CRM
   notes can both point to a synced calendar event; the free-form note link is

@@ -14,8 +14,6 @@ import {
   getGetPersonQueryOptions,
   getGetPersonQueryKey,
   useUpdatePerson,
-   useListConferenceTypes,
-   useListConferenceEvents,
   type ListPeopleParams,
   type CapacityRating,
   type ConnectionStatus,
@@ -35,6 +33,7 @@ import { ColumnsMenu } from "@/components/columns-menu";
 import { FiltersMenu } from "@/components/filters-menu";
 import { resolveColumns, type ColumnDef, type ColumnsState } from "@/lib/columns";
 import { resolveFilters, type FilterDef, type FiltersState } from "@/lib/filters";
+import { ConferenceAttendanceFilter } from "@/components/conference-attendance-filter";
 import { PresenceFilter, type PresenceValue } from "@/components/presence-filter";
 import type { SortState } from "@/lib/table-helpers";
 import { BulkActionBar } from "@/components/bulk-action-bar";
@@ -578,10 +577,12 @@ export default function Individuals() {
   );
 
   const ts = useTableState("individuals");
-  const sortActive = ts.sort.key !== null;
+  const nameOrder = viewMode === "list" && ts.sort.key === "name" ? ts.sort.dir : undefined;
+  const sortActive = ts.sort.key !== null && !nameOrder;
   const params: ListPeopleParams = {
     limit: viewMode === "kanban" ? 500 : (sortActive ? 10000 : PAGE_SIZE),
     page: viewMode === "kanban" ? 1 : (sortActive ? 1 : page),
+    ...(nameOrder ? { nameOrder } : {}),
     ...(isAdmin && showArchived ? { includeArchived: true } : {}),
     ...(debouncedSearch.trim() ? { search: debouncedSearch.trim() } : {}),
     // Hide deceased people unless the "Show deceased" toggle is on.
@@ -612,9 +613,6 @@ export default function Individuals() {
       : {}),
     ...(conferenceEventId ? { conferenceEventId } : conferenceTypeId ? { conferenceTypeId } : {}),
   };
-  const conferenceTypesQ = useListConferenceTypes({ active: true });
-  const conferenceEventsQ = useListConferenceEvents();
-
   const { data, isLoading, isError, error } = useListPeople(params, {
     query: { queryKey: getListPeopleQueryKey(params) },
   });
@@ -997,23 +995,16 @@ export default function Individuals() {
         active: !!conferenceTypeId || !!conferenceEventId,
         clear: () => { setConferenceTypeId(""); setConferenceEventId(""); setPage(1); selection.clear(); },
         render: () => (
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-muted-foreground">Conference attendance</label>
-            <select className="h-8 rounded border bg-background px-2 text-sm" value={conferenceEventId || `type:${conferenceTypeId}`} onChange={(e) => {
-              const value = e.target.value;
+          <ConferenceAttendanceFilter
+            eventId={conferenceEventId}
+            typeId={conferenceTypeId}
+            onChange={(value) => {
               setConferenceEventId(value.startsWith("event:") ? value.slice(6) : "");
               setConferenceTypeId(value.startsWith("type:") ? value.slice(5) : "");
               setPage(1); selection.clear();
-            }} data-testid="select-person-conference">
-              <option value="">Any attendance</option>
-              <optgroup label="Ever attended">
-                {conferenceTypesQ.data?.map((type) => <option key={type.id} value={`type:${type.id}`}>{type.displayName}</option>)}
-              </optgroup>
-              <optgroup label="Specific event">
-                {conferenceEventsQ.data?.map((event) => <option key={event.id} value={`event:${event.id}`}>{event.conferenceTypeName} {event.year}</option>)}
-              </optgroup>
-            </select>
-          </div>
+            }}
+            testId="select-person-conference"
+          />
         ),
       },
       ];
@@ -1025,7 +1016,7 @@ export default function Individuals() {
         : defs;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, lastContactedPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, conferenceTypeId, conferenceEventId, conferenceTypesQ.data, conferenceEventsQ.data, viewMode],
+    [capacityTiers, owners, lifetimeGivingPresence, lastGiftPresence, openAsksPresence, activeAffiliationPresence, lastContactedPresence, connectionStatusSel, enthusiasmSel, prioritySel, regionIdsSel, newsletterSel, conferenceTypeId, conferenceEventId, viewMode],
   );
   const visibleFilters = useMemo(
     () => resolveFilters(filterRegistry, filtersState),
@@ -1038,7 +1029,7 @@ export default function Individuals() {
   const PRIORITY_ORDER: Record<string, number> = { top: 4, high: 3, medium: 2, low: 1 };
   const sortedRows = useMemo(
     () =>
-      sortRows(
+      nameOrder ? rows : sortRows(
         rows,
         {
           priority: (r) => (r.priority === "top" ? 1 : 0),
@@ -1068,7 +1059,7 @@ export default function Individuals() {
         },
         ts.sort,
       ),
-    [rows, ts.sort, regionNames, userNames, viewer],
+    [rows, ts.sort, nameOrder, regionNames, userNames, viewer],
   );
   const pagedRows = useMemo(() => {
     if (!sortActive) return sortedRows;

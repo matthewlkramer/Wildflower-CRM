@@ -314,6 +314,132 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateCalendarEventPrivacyMutationOptions(options));
     }
+    export const getArchiveCalendarEventUrl = (id: string,) => {
+
+
+
+
+  return `/api/calendar-events/${id}/archive`
+}
+
+export const archiveCalendarEvent = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getArchiveCalendarEventUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getArchiveCalendarEventMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCalendarEvent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof archiveCalendarEvent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['archiveCalendarEvent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof archiveCalendarEvent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  archiveCalendarEvent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ArchiveCalendarEventMutationResult = NonNullable<Awaited<ReturnType<typeof archiveCalendarEvent>>>
+
+    export type ArchiveCalendarEventMutationError = ErrorType<NotFoundResponse>
+
+    export const useArchiveCalendarEvent = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof archiveCalendarEvent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof archiveCalendarEvent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getArchiveCalendarEventMutationOptions(options));
+    }
+    export const getRestoreCalendarEventUrl = (id: string,) => {
+
+
+
+
+  return `/api/calendar-events/${id}/archive`
+}
+
+export const restoreCalendarEvent = async (id: string, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getRestoreCalendarEventUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getRestoreCalendarEventMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCalendarEvent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof restoreCalendarEvent>>, TError,{id: string}, TContext> => {
+
+const mutationKey = ['restoreCalendarEvent'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof restoreCalendarEvent>>, {id: string}> = (props) => {
+          const {id} = props ?? {};
+
+          return  restoreCalendarEvent(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RestoreCalendarEventMutationResult = NonNullable<Awaited<ReturnType<typeof restoreCalendarEvent>>>
+
+    export type RestoreCalendarEventMutationError = ErrorType<NotFoundResponse>
+
+    export const useRestoreCalendarEvent = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof restoreCalendarEvent>>, TError,{id: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof restoreCalendarEvent>>,
+        TError,
+        {id: string},
+        TContext
+      > => {
+      return useMutation(getRestoreCalendarEventMutationOptions(options));
+    }
     export const getDismissCalendarEventNotesUrl = (id: string,) => {
 
 

@@ -12572,6 +12572,7 @@ export type ListPeopleParams = {
  */
 includeArchived?: IncludeArchivedQueryParameter;
 search?: string;
+nameOrder?: ListPeopleNameOrder;
 deceased?: boolean;
 /**
  * When `false`, exclude people who hold a current role at the Wildflower Foundation organization (internal staff / "foundation partners"). Omit or `true` to include everyone.
@@ -12659,6 +12660,14 @@ limit?: LimitParameter;
  */
 page?: PageParameter;
 };
+
+export type ListPeopleNameOrder = typeof ListPeopleNameOrder[keyof typeof ListPeopleNameOrder];
+
+
+export const ListPeopleNameOrder = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;
 
 export type ListPeopleLifetimeGivingPresence = typeof ListPeopleLifetimeGivingPresence[keyof typeof ListPeopleLifetimeGivingPresence];
 

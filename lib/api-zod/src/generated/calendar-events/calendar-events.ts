@@ -172,6 +172,14 @@ export const UpdateCalendarEventPrivacyResponse = zod.object({
   "hasNextSteps": zod.boolean().describe('True when the linked meeting note contains at least one action item.')
 })
 
+export const ArchiveCalendarEventParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const RestoreCalendarEventParams = zod.object({
+  "id": zod.coerce.string()
+})
+
 export const DismissCalendarEventNotesParams = zod.object({
   "id": zod.coerce.string()
 })

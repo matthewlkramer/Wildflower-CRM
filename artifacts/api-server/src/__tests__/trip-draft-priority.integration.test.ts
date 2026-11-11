@@ -37,6 +37,11 @@ vi.mock("../middlewares/requireAuth", () => ({
   },
 }));
 
+vi.mock("@clerk/express", () => ({
+  clerkMiddleware: () => (_req: unknown, _res: unknown, next: () => void) =>
+    next(),
+}));
+
 type Db = typeof import("@workspace/db");
 
 let schema: Db;
@@ -148,6 +153,26 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("trip CRM draft priority gate", () => {
+  it("lets an administrator restore an archived trip to the active list", async () => {
+    const tripUrl = `${baseUrl}/api/trips/${TRIP_ID}`;
+    const listUrl = `${baseUrl}/api/trips?travelerUserId=${USER_ID}`;
+    const restore = () => fetch(`${tripUrl}/unarchive`, { method: "POST" });
+    try {
+      expect((await fetch(`${tripUrl}/archive`, { method: "POST" })).status).toBe(200);
+      expect((await (await fetch(listUrl)).json()).data).toEqual([]);
+      expect((await restore()).status).toBe(403);
+      auth.current.role = "admin";
+      const archived = await (await fetch(`${listUrl}&includeArchived=true`)).json();
+      expect(archived.data).toMatchObject([{ id: TRIP_ID, archivedAt: expect.any(String) }]);
+    } finally {
+      auth.current.role = "admin";
+      const restored = await restore();
+      auth.current.role = "team_member";
+      expect(restored.status).toBe(200);
+    }
+    expect((await (await fetch(listUrl)).json()).data).toMatchObject([{ id: TRIP_ID, archivedAt: null }]);
+  });
+
   it("drafts only medium-or-higher people or contacts of medium-or-higher organizations", async () => {
     const res = await fetch(`${baseUrl}/api/trips/${TRIP_ID}/draft-visits`, {
       method: "POST",

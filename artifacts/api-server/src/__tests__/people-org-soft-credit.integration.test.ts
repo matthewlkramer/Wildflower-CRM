@@ -267,6 +267,25 @@ beforeEach(() => {
 describe.skipIf(!HAS_DB)(
   "individual org soft-credit — lifetime giving & last gift",
   () => {
+    it("applies name ordering before paginating the Individuals list", async () => {
+      const first = await seedPerson("NameOrderAlpha");
+      const last = await seedPerson("NameOrderZulu");
+      const params = new URLSearchParams({
+        search: "NameOrder",
+        nameOrder: "desc",
+        limit: "1",
+      });
+      for (const [index, id] of [last, first].entries()) {
+        params.set("page", String(index + 1));
+        const response = await fetch(`${baseUrl}/api/people?${params}`);
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({
+          data: [{ id }],
+          pagination: { page: index + 1, limit: 1, total: 2 },
+        });
+      }
+    });
+
     it("does not credit a primary-contact-only person", async () => {
       const person = await seedPerson("PrimaryContact");
       const org = await seedOrg("ARockCo");

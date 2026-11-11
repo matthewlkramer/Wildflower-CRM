@@ -11,8 +11,16 @@ import {
   isBirthdayCalendarEvent,
   showRawOutreachDates,
   tripCalendarEventKey,
+  tripPeriod,
   type TripFormState,
 } from "./trip-planner";
+
+it("keeps ongoing trips upcoming and completed trips available under Past", () => {
+  const now = Date.parse("2026-11-11T18:00:00.000Z");
+  expect(tripPeriod({ archivedAt: null, travelEndsAt: "2026-11-12T01:00:00.000Z" }, now)).toBe("upcoming");
+  expect(tripPeriod({ archivedAt: null, travelEndsAt: "2026-11-10T01:00:00.000Z" }, now)).toBe("past");
+  expect(tripPeriod({ archivedAt: "2026-11-09T01:00:00.000Z", travelEndsAt: "2026-11-10T01:00:00.000Z" }, now)).toBe("archived");
+});
 
 describe("trip planner form", () => {
   it("stores one availability window and clears legacy timing fields", () => {

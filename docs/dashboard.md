@@ -13,6 +13,12 @@ Gifts needing thank-yous lists the viewer's ten most recent active gifts with no
 
 The Moves, Application/close deadlines, and Projections navigation cards are also individually available in Customize dashboard and use the same account/browser preferences.
 
+Upcoming meetings lets CRM editors archive a synced meeting for the team.
+The archive applies to each CRM copy of that physical event, including in
+meeting lists, activity feeds, and the meeting workspace. The dashboard offers
+Undo after archiving. Google Calendar, existing notes, and the Trip Planner
+calendar used for availability remain independently available.
+
 This week in fundraising shows up to five actionable findings from the last
 seven days, ranked by category, application urgency, relationship signals,
 strategic fit, and source quality. The card combines verified public findings

@@ -420,6 +420,55 @@ export const ArchiveTripPlanResponse = zod.object({
   updatedAt: zod.string().datetime({}),
 });
 
+export const UnarchiveTripPlanParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UnarchiveTripPlanResponse = zod.object({
+  id: zod.string(),
+  travelerUserId: zod.string(),
+  createdByUserId: zod.string(),
+  title: zod.string().nullish(),
+  destinationCity: zod.string().nullish(),
+  destinationState: zod.string().nullish(),
+  timeZone: zod
+    .string()
+    .describe(
+      "IANA timezone used to display and interpret the trip's local schedule.",
+    ),
+  travelStartsAt: zod.string().datetime({}),
+  travelEndsAt: zod.string().datetime({}),
+  meetingWindowStartsAt: zod.string().datetime({}).nullish(),
+  meetingWindowEndsAt: zod.string().datetime({}).nullish(),
+  outboundTravelMinutes: zod.number().nullish(),
+  returnTravelMinutes: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  travelMinutes: zod
+    .number()
+    .nullish()
+    .describe(
+      "Sum of entered outbound and return travel minutes; null until either is entered.",
+    ),
+  meetingWindowMinutes: zod
+    .number()
+    .describe(
+      "Minutes in the explicit meeting window, or the whole trip window when none is entered.",
+    ),
+  scheduledMinutes: zod
+    .number()
+    .describe(
+      "Union of overlapping non-cancelled, non-transparent events currently held by the CRM calendar sync.",
+    ),
+  availableMinutes: zod
+    .number()
+    .describe(
+      "Meeting-window minutes minus scheduled minutes. This is an estimate based on synced CRM calendar events.",
+    ),
+  archivedAt: zod.string().datetime({}).nullish(),
+  createdAt: zod.string().datetime({}),
+  updatedAt: zod.string().datetime({}),
+});
+
 /**
  * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
  */
