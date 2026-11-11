@@ -62,6 +62,7 @@ export const ListMeetingNotesResponse = zod.object({
   "personIds": zod.array(zod.string()),
   "organizationIds": zod.array(zod.string()),
   "householdIds": zod.array(zod.string()),
+  "developmentWeek": zod.string().date().nullish(),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -141,6 +142,7 @@ export const GetMeetingNoteResponse = zod.object({
   "personIds": zod.array(zod.string()),
   "organizationIds": zod.array(zod.string()),
   "householdIds": zod.array(zod.string()),
+  "developmentWeek": zod.string().date().nullish(),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})
@@ -218,6 +220,7 @@ export const UpdateMeetingNoteResponse = zod.object({
   "personIds": zod.array(zod.string()),
   "organizationIds": zod.array(zod.string()),
   "householdIds": zod.array(zod.string()),
+  "developmentWeek": zod.string().date().nullish(),
   "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
   "createdAt": zod.string().datetime({}),
   "updatedAt": zod.string().datetime({})

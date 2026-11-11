@@ -16,6 +16,7 @@ import {
   type MediaRelevanceTarget,
 } from "./mediaRelevance";
 import { loadPersonRelevanceTargets } from "./mediaRelevanceTargets";
+import type { Tx } from "./reconciliationCommit";
 
 export {
   canonicalizeMediaUrl,
@@ -64,6 +65,7 @@ export interface IngestOptions {
   maxRecordsPerEntity?: number;
   /** Cap the number of entities processed this run (for verification/testing). */
   maxEntities?: number;
+  includeOrganizations?: boolean;
   /** Delay between GDELT calls to stay friendly with the free API. */
   throttleMs?: number;
 }
@@ -197,16 +199,19 @@ const ENTITY_COLUMN = {
   person: "person_ids",
 } as const;
 
-export async function upsertArticle(
+export async function upsertArticleWithId(
   target: IngestTarget,
   article: Pick<GdeltArticle, "url" | "title" | "domain" | "publicationDate"> &
     Partial<GdeltArticle>,
-): Promise<"created" | "linked" | "noop"> {
+  source: "gdelt" | "funder_scan" = "gdelt",
+  transaction?: Tx,
+): Promise<{ id: string | null; outcome: "created" | "linked" | "noop" }> {
   // Column name comes from a fixed whitelist above — safe for sql.raw.
   const col = sql.raw(ENTITY_COLUMN[target.kind]);
   const canonicalUrl = canonicalizeMediaArticleUrl(article);
   const headlineFingerprint = mediaHeadlineFingerprint(article.title);
-  const relevanceScore = scoreMediaRelevance(target, article);
+  const relevanceScore = source === "funder_scan" ? 1 : scoreMediaRelevance(target, article);
+  const publicSummary = source === "funder_scan" ? article.snippet ?? null : null;
   const relevanceThreshold = mediaRelevanceThreshold();
   const lockKeys = [
     `url:${canonicalUrl}`,
@@ -215,7 +220,7 @@ export async function upsertArticle(
       : []),
   ].sort();
 
-  return db.transaction(async (tx) => {
+  const upsert = async (tx: Tx): Promise<{ id: string | null; outcome: "created" | "linked" | "noop" }> => {
     for (const key of lockKeys) {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${key}))`);
     }
@@ -240,7 +245,7 @@ export async function upsertArticle(
     `);
     const found = existing.rows[0];
     if (found) {
-      if (found.dismissed) return "noop";
+      if (found.dismissed) return { id: null, outcome: "noop" };
       await tx.execute(sql`
         UPDATE media_mentions
         SET ${col} = CASE
@@ -255,19 +260,21 @@ export async function upsertArticle(
               WHEN pinned THEN false
               ELSE greatest(coalesce(relevance_score, 0), ${relevanceScore}) < ${relevanceThreshold}
             END,
+            ai_summary = coalesce(ai_summary, ${publicSummary}),
             updated_at = now()
         WHERE id = ${found.id}
       `);
-      return found.already_linked ? "noop" : "linked";
+      return { id: found.id, outcome: found.already_linked ? "noop" : "linked" };
     }
 
+    const id = newId();
     await tx.execute(sql`
       INSERT INTO media_mentions
         (id, publication_name, title, url, canonical_url, headline_fingerprint,
-         relevance_score, is_filtered, publication_date, source, ${col},
+         relevance_score, is_filtered, publication_date, source, ai_summary, ${col},
          created_at, updated_at)
       VALUES (
-        ${newId()},
+        ${id},
         ${article.domain || "Unknown source"},
         ${article.title || null},
         ${article.url},
@@ -276,13 +283,22 @@ export async function upsertArticle(
         ${relevanceScore},
         ${isMediaMentionFiltered(relevanceScore, false, relevanceThreshold)},
         ${article.publicationDate},
-        'gdelt',
+        ${source},
+        ${publicSummary},
         ARRAY[${target.id}]::text[],
         now(), now()
       )
     `);
-    return "created";
-  });
+    return { id, outcome: "created" };
+  };
+  return transaction ? upsert(transaction) : db.transaction(upsert);
+}
+
+export async function upsertArticle(
+  target: IngestTarget,
+  article: Parameters<typeof upsertArticleWithId>[1],
+): Promise<"created" | "linked" | "noop"> {
+  return (await upsertArticleWithId(target, article)).outcome;
 }
 
 /**
@@ -296,10 +312,11 @@ export async function ingestMediaMentions(
     timespanDays = 2,
     maxRecordsPerEntity = 25,
     maxEntities,
+    includeOrganizations = true,
     throttleMs = 1500,
   } = opts;
 
-  const allTargets = await buildIngestTargets();
+  const allTargets = (await buildIngestTargets()).filter((target) => includeOrganizations || target.kind === "person");
   const targets =
     maxEntities != null ? allTargets.slice(0, maxEntities) : allTargets;
 

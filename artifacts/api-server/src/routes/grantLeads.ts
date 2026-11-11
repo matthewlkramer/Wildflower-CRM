@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
+  funderFindings,
+  mediaMentions,
   grantLeads,
   grantLeadSightings,
   grantLeadSuppressions,
@@ -60,6 +62,7 @@ function grantLeadRow(row: typeof grantLeads.$inferSelect & {
   sightingCount?: number;
   sightingUserIds?: string[];
   sourceEmails?: GrantLeadSourceEmail[];
+  publicSources?: string[];
 }) {
   return {
     id: row.id,
@@ -89,6 +92,7 @@ function grantLeadRow(row: typeof grantLeads.$inferSelect & {
     sightingCount: row.sightingCount ?? 0,
     sightingUserIds: row.sightingUserIds ?? [],
     sourceEmails: row.sourceEmails ?? [],
+    publicSources: row.publicSources ?? [],
   };
 }
 
@@ -101,7 +105,7 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
     ...rows.map((r) => r.assigneeUserId).filter(Boolean) as string[],
   ])];
 
-  const [orgRows, userRows, sightingAgg, sourceRows] = await Promise.all([
+  const [orgRows, userRows, sightingAgg, sourceRows, publicRows] = await Promise.all([
     orgIds.length > 0
       ? db.select({ id: organizations.id, name: organizations.name })
           .from(organizations)
@@ -139,8 +143,19 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
         sql`${grantLeadSightings.emailSentAt} DESC NULLS LAST`,
         desc(grantLeadSightings.createdAt),
       ),
+    db.select({ grantLeadId: funderFindings.grantLeadId, url: mediaMentions.url })
+      .from(funderFindings).innerJoin(mediaMentions, eq(mediaMentions.id, funderFindings.mediaMentionId))
+      .where(and(inArray(funderFindings.grantLeadId, ids), eq(mediaMentions.dismissed, false)))
+      .orderBy(desc(funderFindings.discoveredAt)),
   ]);
 
+  const publicByLead = new Map<string, string[]>();
+  for (const { grantLeadId, url } of publicRows) {
+    if (!grantLeadId) continue;
+    const sources = publicByLead.get(grantLeadId) ?? [];
+    sources.push(url);
+    publicByLead.set(grantLeadId, sources);
+  }
   const orgMap = new Map(orgRows.map((o) => [o.id, o.name]));
   const userMap = new Map(userRows.map((u) => [u.id, [u.firstName, u.lastName].filter(Boolean).join(" ")]));
   const sightingMap = new Map(sightingAgg.map((s) => [s.grantLeadId, s]));
@@ -170,6 +185,7 @@ async function enrichLeads(rows: (typeof grantLeads.$inferSelect)[]) {
       sightingCount: s ? Number(s.sightingCount) : 0,
       sightingUserIds: s?.sightingUserIds ?? [],
       sourceEmails: sourceMap.get(row.id) ?? [],
+      publicSources: publicByLead.get(row.id) ?? [],
     });
   });
 }

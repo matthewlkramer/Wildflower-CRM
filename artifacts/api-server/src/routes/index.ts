@@ -1,3 +1,4 @@
+import fundraisingRouter from "./fundraising";
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import flodeskChatgptMcpRouter from "./flodeskChatgptMcp";
@@ -138,6 +139,7 @@ router.use(notesRouter);
 router.use(mediaMentionsRouter);
 router.use(tasksRouter);
 router.use(meetingNotesRouter);
+router.use(fundraisingRouter);
 router.use(savedViewsRouter);
 router.use(storageRouter);
 router.use(suppressionWindowsRouter);

@@ -9,6 +9,7 @@ import {
 import { SlidersHorizontal } from "lucide-react";
 
 export const DASHBOARD_CARDS = {
+  fundraising: "This week in fundraising",
   goals: "Progress to goal",
   cleanup: "Data cleanup and integrity",
   upcoming: "Upcoming meetings",

@@ -1,3 +1,4 @@
+import { FundraisingBriefCard } from "@/components/fundraising-brief";
 import { useState } from "react";
 import { Link } from "wouter";
 import {
@@ -286,6 +287,8 @@ export default function Dashboard() {
         hidden={hidden}
         toggle={toggle}
       />
+
+      {!hidden.includes("fundraising") && <FundraisingBriefCard />}
 
       {!hidden.includes("goals") && (
         <Card>

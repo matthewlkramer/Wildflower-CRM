@@ -45,6 +45,8 @@ tags:
   - { name: notes }
   - { name: tasks }
   - { name: meeting-notes }
+  - { name: fundraising }
+  - { name: fundraising }
   - { name: saved-views }
   - { name: storage }
   - { name: media-mentions }
@@ -64,6 +66,174 @@ tags:
   - { name: integrations }
 
 paths:
+  /fundraising/brief:
+    get:
+      tags: [fundraising]
+      operationId: getFundraisingBrief
+      parameters:
+        - {"name":"all","in":"query","required":false,"schema":{"type":"boolean"}}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/FundraisingBrief"}
+  /fundraising/findings/{id}/review:
+    put:
+      tags: [fundraising]
+      operationId: reviewFundraisingFinding
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/ReviewFundraisingFindingBody"}
+      responses:
+        "204":
+          description: Saved
+  /fundraising/funders/{id}/request-scan:
+    post:
+      tags: [fundraising]
+      operationId: requestFunderScan
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, minLength: 1, maxLength: 128 } }
+      responses:
+        "204":
+          description: Public-source check queued
+  /development-meetings:
+    get:
+      tags: [fundraising]
+      operationId: listDevelopmentMeetings
+      parameters:
+        - { name: organizationId, in: query, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: personId, in: query, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - { name: householdId, in: query, schema: { type: string, minLength: 1, maxLength: 128 } }
+        - {"name":"before","in":"query","required":false,"schema":{"type":"string","format":"date"}}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"type":"array","items":{"$ref":"#/components/schemas/DevelopmentMeeting"}}
+    post:
+      tags: [fundraising]
+      operationId: createDevelopmentMeeting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/CreateDevelopmentMeetingBody"}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/DevelopmentMeeting"}
+  /development-meetings/suggested-donors:
+    get:
+      tags: [fundraising]
+      operationId: listDevelopmentDonorSuggestions
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"type":"array","items":{"$ref":"#/components/schemas/DevelopmentDonorSuggestion"}}
+  /development-meetings/{id}:
+    get:
+      tags: [fundraising]
+      operationId: getDevelopmentMeeting
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/DevelopmentMeeting"}
+  /development-meetings/{id}/agenda:
+    post:
+      tags: [fundraising]
+      operationId: addDevelopmentAgendaItem
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/AddDevelopmentAgendaItemBody"}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/DevelopmentMeeting"}
+  /development-meetings/{id}/agenda/{itemId}:
+    patch:
+      tags: [fundraising]
+      operationId: updateDevelopmentAgendaItem
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+        - {"name":"itemId","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/UpdateDevelopmentAgendaItemBody"}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/DevelopmentMeeting"}
+    delete:
+      tags: [fundraising]
+      operationId: removeDevelopmentAgendaItem
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+        - {"name":"itemId","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/DevelopmentMeeting"}
+  /development-meetings/{id}/agenda/{itemId}/tasks:
+    post:
+      tags: [fundraising]
+      operationId: assignDevelopmentAction
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+        - {"name":"itemId","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/AssignDevelopmentActionBody"}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/Task"}
+  /development-meetings/{id}/transcript:
+    post:
+      tags: [fundraising]
+      operationId: summarizeDevelopmentTranscript
+      parameters:
+        - {"name":"id","in":"path","required":true,"schema":{"type":"string","minLength":1,"maxLength":128}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {"$ref":"#/components/schemas/SummarizeDevelopmentTranscriptBody"}
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema: {"$ref":"#/components/schemas/MeetingNote"}
   # ─── ChatGPT MCP bridge (machine-to-machine bearer auth) ───────────────────
   /integrations/flodesk-chatgpt/mcp:
     post:
@@ -27254,6 +27424,120 @@ components:
             nullable: true,
             description: "When the source email was sent.",
           }
+    FundraisingFinding:
+      type: object
+      required: ["id","kind","title","category","summary","source","url","publishedAt","deadline","organizationId","organizationName","ownerName","reason","review"]
+      properties:
+        id: {"type":"string","minLength":1,"maxLength":128}
+        kind: {"type":"string","enum":["media","grant_lead"]}
+        title: {"type":"string"}
+        category: {"type":"string","enum":["funding_opportunity","strategy_priorities","leadership_staff","general_news"]}
+        summary: {"type":"string","nullable":true}
+        source: {"type":"string"}
+        url: {"type":"string","nullable":true}
+        publishedAt: {"type":"string","nullable":true}
+        deadline: {"type":"string","nullable":true}
+        organizationId: {"type":"string","nullable":true}
+        organizationName: {"type":"string","nullable":true}
+        ownerName: {"type":"string","nullable":true}
+        reason: {"type":"string"}
+        review: {"type":"string","enum":["unreviewed","useful","dismissed"]}
+    FunderScanCoverage:
+      type: object
+      required: ["organizationId","organizationName","cadence","reason","lastCheckedAt","lastAttemptAt","status","findingCount"]
+      properties:
+        organizationId: {"type":"string","minLength":1,"maxLength":128}
+        organizationName: {"type":"string"}
+        cadence: {"type":"string","enum":["weekly","biweekly","monthly","as_needed"]}
+        reason: {"type":"string"}
+        lastCheckedAt: {"type":"string","nullable":true}
+        lastAttemptAt: {"type":"string","nullable":true}
+        status: {"type":"string","enum":["pending","updates","no_updates","failed","partial"]}
+        findingCount: {"type":"integer","minimum":0}
+    FundraisingBrief:
+      type: object
+      required: ["findings","coverage"]
+      properties:
+        findings: {"type":"array","items":{"$ref":"#/components/schemas/FundraisingFinding"}}
+        coverage: {"type":"array","items":{"$ref":"#/components/schemas/FunderScanCoverage"}}
+    ReviewFundraisingFindingBody:
+      type: object
+      required: ["kind","review"]
+      properties:
+        kind: {"type":"string","enum":["media","grant_lead"]}
+        review: {"type":"string","enum":["unreviewed","useful","dismissed"]}
+    DevelopmentAgendaItem:
+      type: object
+      required: ["id","title","notes","decision","status","revision","organizationId","personId","householdId","findingKind","findingId","sourceUrl","carriedFromId","tasks"]
+      properties:
+        id: {"type":"string","minLength":1,"maxLength":128}
+        title: {"type":"string"}
+        notes: {"type":"string"}
+        decision: {"type":"string"}
+        status: {"type":"string","enum":["pending","discussing","done","deferred"]}
+        revision: {"type":"integer","minimum":0}
+        organizationId: {"type":"string","nullable":true}
+        personId: {"type":"string","nullable":true}
+        householdId: {"type":"string","nullable":true}
+        findingKind: {"type":"string","enum":["media","grant_lead"],"nullable":true}
+        findingId: {"type":"string","nullable":true}
+        sourceUrl: {"type":"string","nullable":true}
+        carriedFromId: {"type":"string","nullable":true}
+        tasks: {"type":"array","items":{"$ref":"#/components/schemas/Task"}}
+    DevelopmentMeeting:
+      type: object
+      required: ["weekStart","note","agenda"]
+      properties:
+        weekStart: {"type":"string","format":"date"}
+        note: {"$ref":"#/components/schemas/MeetingNote"}
+        agenda: {"type":"array","items":{"$ref":"#/components/schemas/DevelopmentAgendaItem"}}
+    DevelopmentDonorSuggestion:
+      type: object
+      required: [id, kind, name, reason, ownerName]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 128 }
+        kind: { type: string, enum: [organization, person, household] }
+        name: {"type":"string"}
+        reason: {"type":"string"}
+        ownerName: {"type":"string","nullable":true}
+    CreateDevelopmentMeetingBody:
+      type: object
+      required: ["date"]
+      properties:
+        date: {"type":"string","format":"date"}
+    AddDevelopmentAgendaItemBody:
+      type: object
+      required: []
+      properties:
+        title: {"type":"string","minLength":1,"maxLength":300}
+        organizationId: {"type":"string","minLength":1,"maxLength":128}
+        personId: {"type":"string","minLength":1,"maxLength":128}
+        householdId: {"type":"string","minLength":1,"maxLength":128}
+        findingKind: {"type":"string","enum":["media","grant_lead"]}
+        findingId: {"type":"string","minLength":1,"maxLength":128}
+    UpdateDevelopmentAgendaItemBody:
+      type: object
+      required: ["revision"]
+      properties:
+        revision: {"type":"integer","minimum":0}
+        title: {"type":"string","minLength":1,"maxLength":300}
+        notes: {"type":"string","maxLength":20000}
+        decision: {"type":"string","maxLength":20000}
+        status: {"type":"string","enum":["pending","discussing","done","deferred"]}
+        move: {"type":"string","enum":["up","down"]}
+    AssignDevelopmentActionBody:
+      type: object
+      required: ["requestId","title","assigneeUserId"]
+      properties:
+        requestId: {"type":"string","minLength":1,"maxLength":128}
+        title: {"type":"string","minLength":1,"maxLength":300}
+        assigneeUserId: {"type":"string","minLength":1,"maxLength":128}
+        dueDate: {"type":"string","format":"date"}
+    SummarizeDevelopmentTranscriptBody:
+      type: object
+      required: ["transcript"]
+      properties:
+        transcript: {"type":"string","minLength":1,"maxLength":180000}
     GrantLead:
       type: object
       required: [id, dedupeKey, status, title, createdAt, updatedAt]
@@ -27312,6 +27596,7 @@ components:
             items: { type: string },
             description: "Mailbox user IDs who received this lead (for display).",
           }
+        publicSources: { type: array, items: { type: string } }
         sourceEmails:
           {
             type: array,
@@ -27517,6 +27802,7 @@ components:
         personIds: { type: array, items: { type: string } }
         organizationIds: { type: array, items: { type: string } }
         householdIds: { type: array, items: { type: string } }
+        developmentWeek: { type: string, format: date, nullable: true }
         calendarEventId:
           {
             type: string,

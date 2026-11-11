@@ -44,6 +44,8 @@ import TopPriorities from "@/pages/top-priorities";
 import PaymentIntermediaries from "@/pages/payment-intermediaries";
 import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
 import Meetings from "@/pages/meetings";
+import { DevelopmentMeetingHistory, DevelopmentMeetingPage } from "@/pages/development-meetings";
+import { FundraisingBriefPage } from "@/components/fundraising-brief";
 import MeetingWorkspace from "@/pages/meeting-workspace";
 import TripPlanner from "@/pages/trip-planner";
 import Newsletter from "@/pages/newsletter";
@@ -239,6 +241,9 @@ function ClerkProviderWithRoutes() {
           <Route path="/reconciliation/clusters"><Redirect to="/reconciliation/deposits" /></Route>
           <Route path="/moves"><ProtectedRoute component={Moves} /></Route>
           <Route path="/meetings"><ProtectedRoute component={Meetings} /></Route>
+          <Route path="/meetings/development"><ProtectedRoute component={DevelopmentMeetingHistory} /></Route>
+          <Route path="/meetings/development/:id"><ProtectedRoute component={DevelopmentMeetingPage} /></Route>
+          <Route path="/fundraising-brief"><ProtectedRoute component={FundraisingBriefPage} /></Route>
           <Route path="/meetings/notes/:noteId"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/meetings/:id"><ProtectedRoute component={MeetingWorkspace} /></Route>
           <Route path="/trips"><ProtectedRoute component={TripPlanner} /></Route>

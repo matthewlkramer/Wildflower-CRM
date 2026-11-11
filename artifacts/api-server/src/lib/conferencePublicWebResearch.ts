@@ -470,7 +470,7 @@ function decodeEntities(value: string): string {
     .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) => String.fromCodePoint(parseInt(hex, 16)));
 }
 
-function stripHtml(html: string, baseUrl?: string): { title: string | null; text: string; links: string[]; pdfLinks: string[] } {
+export function stripHtml(html: string, baseUrl?: string): { title: string | null; text: string; links: string[]; pdfLinks: string[] } {
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
   const resolveLink = (href: string): string | null => {
     try {
@@ -502,7 +502,7 @@ function rejectRestrictedPage(text: string): boolean {
   return /\b(paywall|subscriber[- ]only|subscription required|subscribe to (?:read|continue)|sign in to (?:read|view|continue)|log in to (?:read|view|continue)|members[- ]only|access denied|purchase access|premium content|unlock (?:this|the) (?:article|story|content)|only available to subscribers)\b/i.test(text);
 }
 
-function parseSearchResults(markup: string): Array<{ title: string | null; url: string }> {
+export function parseSearchResults(markup: string): Array<{ title: string | null; url: string }> {
   const items: Array<{ title: string | null; url: string }> = [];
   for (const match of markup.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)) {
     const block = match[1];
@@ -883,6 +883,20 @@ function isOfficialSearchHit(
     (title.includes(String(year)) || result.url.includes(String(year))) &&
     !/(?:^|\.)(?:facebook|linkedin|instagram|youtube|reddit|google|bing)\./.test(hostname) &&
     /\b(official|conference|summit|agenda|program|speaker|schedule)\b/.test(title);
+}
+
+/** Read a bounded public HTML or RSS page using the same validated redirects
+ * and DNS-pinned requests as conference research. */
+export async function fetchPublicResearchMarkup(value: string) {
+  const { response, url } = await safePublicFetch({
+    value,
+    resolveHost: (hostname, options) => lookup(hostname, options) as Promise<ResolvedAddress[]>,
+    maxBytes: MAX_PAGE_BYTES,
+  });
+  if (!response.ok) throw new Error("Public source returned HTTP " + response.status);
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/(?:html|xml|rss)/i.test(contentType)) throw new Error("Public source is not HTML or RSS");
+  return { url, markup: await readBoundedText(response, MAX_PAGE_BYTES) };
 }
 
 async function performFallbackResearch(args: {

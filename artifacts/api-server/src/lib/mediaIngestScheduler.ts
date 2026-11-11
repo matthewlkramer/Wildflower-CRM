@@ -125,6 +125,7 @@ export async function runMediaIngestIfDue(opts?: {
       await markRunning();
       try {
         const summary = await ingestMediaMentions({
+          includeOrganizations: opts?.force === true || process.env.DISABLE_FUNDER_SCAN === "1",
           ...(opts?.maxEntities != null ? { maxEntities: opts.maxEntities } : {}),
           ...(opts?.timespanDays != null ? { timespanDays: opts.timespanDays } : {}),
           ...(opts?.throttleMs != null ? { throttleMs: opts.throttleMs } : {}),

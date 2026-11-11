@@ -54,6 +54,7 @@ export const ListGrantLeadsResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -98,6 +99,7 @@ export const GetGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -150,6 +152,7 @@ export const ClaimGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -195,6 +198,7 @@ export const AssignGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -240,6 +244,7 @@ export const ArchiveGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -292,6 +297,7 @@ export const SplitGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),
@@ -325,6 +331,7 @@ export const SplitGrantLeadResponse = zod.object({
   "updatedAt": zod.string().datetime({}),
   "sightingCount": zod.number().optional().describe('Number of inboxes that received this lead.'),
   "sightingUserIds": zod.array(zod.string()).optional().describe('Mailbox user IDs who received this lead (for display).'),
+  "publicSources": zod.array(zod.string()).optional(),
   "sourceEmails": zod.array(zod.object({
   "emailMessageId": zod.string().nullable().describe('Internal email_messages row id, if the message has been synced into the CRM.'),
   "gmailMessageId": zod.string().nullable().describe('Raw Gmail message id, used for a Gmail deep-link fallback when not yet synced.'),

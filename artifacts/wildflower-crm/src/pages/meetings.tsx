@@ -302,6 +302,10 @@ export default function MeetingsPage() {
         </div>
       </div>
 
+      <Button variant="outline" asChild>
+        <Link href="/meetings/development">Weekly development meetings</Link>
+      </Button>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Card>
           <CardContent className="p-5">

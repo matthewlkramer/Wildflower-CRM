@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   calendarEvents,
+  developmentAgenda,
   meetingNotes,
   tasks,
   users,
@@ -318,7 +319,15 @@ router.patch(
       householdIds: body.householdIds ?? existing.householdIds,
       calendarEventId: existing.calendarEventId,
     };
-    const issues = validateMeetingLinkInvariants(merged);
+    if (existing.developmentWeek && getAppUser(req)?.role === "read_only") {
+      res.status(403).json({ error: "forbidden", message: "This CRM account has read-only access." });
+      return;
+    }
+    if (existing.developmentWeek && (body.personIds || body.organizationIds || body.householdIds)) {
+      res.status(409).json({ error: "conflict", message: "Manage linked donors from the development meeting agenda." });
+      return;
+    }
+    const issues = existing.developmentWeek ? [] : validateMeetingLinkInvariants(merged);
     if (issues.length > 0) {
       res.status(400).json({
         error: "validation_error",
@@ -427,7 +436,14 @@ router.patch(
 router.delete(
   "/meeting-notes/:id",
   asyncHandler(async (req, res) => {
-    await db.delete(meetingNotes).where(eq(meetingNotes.id, paramId(req)));
+    const id = paramId(req);
+    const [developmentNote] = await db.select({ id: meetingNotes.id }).from(meetingNotes)
+      .where(and(eq(meetingNotes.id, id), sql`${meetingNotes.developmentWeek} IS NOT NULL`));
+    if (developmentNote) {
+      res.status(409).json({ error: "conflict", message: "Weekly development meetings retain their shared agenda history." });
+      return;
+    }
+    await db.delete(meetingNotes).where(eq(meetingNotes.id, id));
     res.status(204).end();
   }),
 );
@@ -458,6 +474,7 @@ router.post(
         .for("update")
         .then((r) => r[0]);
       if (!existing) return { kind: "not_found" as const };
+      if (existing.developmentWeek) return { kind: "development_meeting" as const };
       const items = (existing.actionItems ?? []) as MeetingActionItem[];
       const item = items[body.index];
       if (!item) {
@@ -511,6 +528,10 @@ router.post(
       return { kind: "created" as const, task };
     });
     if (result.kind === "not_found") return notFound(res, "meeting note");
+    if (result.kind === "development_meeting") {
+      res.status(409).json({ error: "conflict", message: "Assign next steps from the weekly development agenda." });
+      return;
+    }
     if (result.kind === "bad_index") {
       res.status(400).json({
         error: "validation_error",
@@ -536,7 +557,11 @@ router.post(
       .then((rows) => rows[0]);
     if (!note) return notFound(res, "meeting note");
     const sourceArtifacts = (note.artifacts ?? []) as MeetingArtifact[];
+    const agenda = note.developmentWeek ? await db.select().from(developmentAgenda)
+      .where(eq(developmentAgenda.meetingId, note.id)).orderBy(developmentAgenda.position) : [];
     const savedText = [
+      ...agenda.filter((item) => item.notes.trim() || item.decision.trim())
+        .map((item) => [item.title, item.notes, item.decision].filter(Boolean).join("\n")),
       note.title ? `Title: ${note.title}` : "",
       note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
       note.rawTranscript &&

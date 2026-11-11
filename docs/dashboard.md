@@ -1,6 +1,6 @@
 ---
 status: current-status
-last_verified: 2026-10-13
+last_verified: 2026-11-11
 ---
 
 # Personal dashboard
@@ -12,3 +12,12 @@ Past meeting follow-ups considers the user's 50 most recent CRM-matched calendar
 Gifts needing thank-yous lists the viewer's ten most recent active gifts with no recorded thank-you sent date, using the existing owner and thank-you presence filters and the global entity scope. The recorded sent date remains authoritative; this card does not infer acknowledgements from attachments or email content.
 
 The Moves, Application/close deadlines, and Projections navigation cards are also individually available in Customize dashboard and use the same account/browser preferences.
+
+This week in fundraising shows up to five actionable findings from the last
+seven days, ranked by category, application urgency, relationship signals,
+strategic fit, and source quality. The card combines verified public findings
+with team-shared Grant Leads from Email Intelligence. Reviewers can mark a
+finding useful, dismiss it, or add it to a development agenda. Reviews apply
+to the team. Fundraising brief groups recent findings by funder and shows
+successful, partial, and failed checks separately. The pilot uses the CRM
+dashboard for updates.
