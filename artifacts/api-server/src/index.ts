@@ -2,6 +2,7 @@ import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startSyncScheduler } from "./lib/syncScheduler";
+import { startZoomTranscriptScheduler } from "./lib/zoomTranscripts";
 import { startMediaIngestScheduler } from "./lib/mediaIngestScheduler";
 import { startFunderScanScheduler } from "./lib/funderScan";
 import { startQuickbooksSyncScheduler } from "./lib/quickbooksSyncScheduler";
@@ -40,6 +41,7 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   startSyncScheduler();
+  startZoomTranscriptScheduler();
   startMediaIngestScheduler();
   startFunderScanScheduler();
   startQuickbooksSyncScheduler();

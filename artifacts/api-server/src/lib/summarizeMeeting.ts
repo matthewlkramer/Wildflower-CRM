@@ -1,4 +1,5 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
+import type { MeetingActionItem } from "@workspace/db/schema";
 import { logger } from "./logger";
 
 const MODEL = "claude-sonnet-4-6";
@@ -33,6 +34,25 @@ export interface MeetingSummaryActionItem {
 export interface MeetingSummaryResult {
   summary: string;
   actionItems: MeetingSummaryActionItem[];
+}
+
+export function hasUsableMeetingSummary(result: MeetingSummaryResult): boolean {
+  return !!result.summary &&
+    !result.summary.startsWith("(summary unavailable") &&
+    !result.summary.startsWith("(no summary available");
+}
+
+export function mergeTranscriptActionItems(
+  items: MeetingActionItem[], result: MeetingSummaryResult,
+): MeetingActionItem[] {
+  const titles = new Set(items.map((item) => item.title.trim().toLowerCase()));
+  const additions = result.actionItems.filter((item) => {
+    const title = item.title.trim().toLowerCase();
+    if (titles.has(title)) return false;
+    titles.add(title);
+    return true;
+  });
+  return [...items, ...additions];
 }
 
 /**
@@ -73,9 +93,9 @@ export async function summarizeMeeting(
   } catch (err) {
     // Privacy: never log the err payload directly — Anthropic SDK errors
     // can echo the prompt back, and the prompt contains the transcript.
-    // Capture only the error class + message.
+    // Capture only the error class.
     logger.warn(
-      { errClass: errClass(err), errMessage: errMessage(err) },
+      { errClass: errClass(err) },
       "summarizeMeeting failed; returning placeholder",
     );
     return { summary: "(summary unavailable)", actionItems: [] };
@@ -87,10 +107,6 @@ function errClass(err: unknown): string {
     ? err.constructor.name
     : typeof err;
 }
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
 function parseModelOutput(raw: string): MeetingSummaryResult {
   const text = raw.trim();
   // Strip ``` fences in case the model ignored the no-markdown instruction.

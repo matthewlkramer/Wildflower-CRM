@@ -44,7 +44,7 @@ import {
   lockDevelopmentMeeting,
   refreshDevelopmentDonorLinks,
 } from "../lib/developmentMeetings";
-import { summarizeMeeting } from "../lib/summarizeMeeting";
+import { hasUsableMeetingSummary, mergeTranscriptActionItems, summarizeMeeting } from "../lib/summarizeMeeting";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -536,11 +536,7 @@ router.post(
       );
     if (!note) return notFound(res, "development meeting");
     const result = await summarizeMeeting(transcript);
-    if (
-      !result.summary ||
-      result.summary.startsWith("(summary unavailable") ||
-      result.summary.startsWith("(no summary available")
-    ) {
+    if (!hasUsableMeetingSummary(result)) {
       res
         .status(503)
         .json({
@@ -557,22 +553,13 @@ router.post(
         current.summaryOnly ||
         getAppUser(req)!.emailSyncMode === "summary_only";
       const items = (current.actionItems ?? []) as MeetingActionItem[];
-      const existingTitles = new Set(
-        items.map((item) => item.title.trim().toLowerCase()),
-      );
-      const additions = result.actionItems.filter((item) => {
-        const key = item.title.trim().toLowerCase();
-        if (existingTitles.has(key)) return false;
-        existingTitles.add(key);
-        return true;
-      });
       const [row] = await tx
         .update(meetingNotes)
         .set({
           rawTranscript: summaryOnly ? null : transcript,
           summaryOnly,
           aiSummary: result.summary,
-          actionItems: [...items, ...additions],
+          actionItems: mergeTranscriptActionItems(items, result),
           updatedAt: new Date(),
         })
         .where(eq(meetingNotes.id, id))

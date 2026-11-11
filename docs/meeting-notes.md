@@ -49,8 +49,10 @@ Staff can paste or upload a transcript into the occurrence to generate a
 summary and proposed next steps. The existing summary-only privacy preference
 still controls raw transcript retention. Suggestions from saved discussion
 notes use the existing evidence-based task proposal workflow. Staff choose
-the agenda item and assignee before creating a task. Automatic Zoom recording
-and transcript delivery require the separate Zoom integration.
+the agenda item and assignee before creating a task. The
+[Zoom transcript integration](zoom-integration.md) imports transcripts
+automatically for the configured development series and matched donor calls
+once enabled.
 
 Apply database migration 0279 after 0272 and before publishing the app that
 opens development agendas. Migration 0279 extends the meeting note anchor

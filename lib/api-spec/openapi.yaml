@@ -300,7 +300,8 @@ paths:
         app. Answers Zoom's endpoint URL validation challenge and verifies the
         x-zm-signature header on every other event with the event
         subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a
-        user session. Events are acknowledged and not yet acted on.
+        user session. Supported events for automatic transcript capture are
+        queued before acknowledgement when the integration is enabled.
       requestBody:
         required: true
         content:
@@ -313,7 +314,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ZoomWebhookResponse" }
         "401": { description: "Missing, stale or invalid Zoom signature" }
-        "503": { description: Zoom event subscription secret is not configured }
+        "503": { description: Zoom webhook is unconfigured or could not queue the event }
   # ─── Global search ─────────────────────────────────────────────────────────
   /search:
     get:
@@ -13937,8 +13938,7 @@ components:
     ZoomWebhookEvent:
       type: object
       description: >-
-        A Zoom event notification. Only the event name is relied on; the payload
-        shape varies by event.
+        A Zoom event notification. The payload shape varies by event.
       required: [event]
       properties:
         event: { type: string }
