@@ -717,6 +717,27 @@ export interface ConferenceResearchBackfillResult {
   requestIds: string[];
 }
 
+export type ZoomWebhookEventPayload = { [key: string]: unknown };
+
+/**
+ * A Zoom event notification. Only the event name is relied on; the payload shape varies by event.
+ */
+export interface ZoomWebhookEvent {
+  event: string;
+  event_ts?: number;
+  payload?: ZoomWebhookEventPayload;
+  [key: string]: unknown;
+ }
+
+/**
+ * For the endpoint.url_validation challenge, the plain token and its HMAC-SHA256 with the secret token; for every other event, received=true.
+ */
+export interface ZoomWebhookResponse {
+  received?: boolean;
+  plainToken?: string;
+  encryptedToken?: string;
+}
+
 export type ConferenceResearchIntegrationTickResultStatus = typeof ConferenceResearchIntegrationTickResultStatus[keyof typeof ConferenceResearchIntegrationTickResultStatus];
 
 

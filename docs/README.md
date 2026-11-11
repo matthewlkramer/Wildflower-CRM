@@ -57,6 +57,12 @@ unverified and confirm against code before relying on it.
    two-plane conceptual framing and ratified relationship context; its physical
    money target is partly superseded by the implemented bank-spine ADR.
 
+## Zoom
+
+- [`zoom-integration.md`](zoom-integration.md) — **current-status**: the Zoom event
+  subscription endpoint (validation and signature check only; nothing stored or
+  acted on yet) and the secrets it reads.
+
 ## Donor fields and cleanup work
 
 - [`field-definitions.md`](field-definitions.md) — approved field definitions,
