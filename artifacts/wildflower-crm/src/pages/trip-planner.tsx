@@ -8,10 +8,12 @@ import {
   useCreateTripPlan,
   useCreateTripComment,
   useDraftTripVisits,
+  useGetCurrentUser,
   useGetTripPlan,
   useListTripPlans,
   useListUsers,
   useRefreshTripVisitEvidence,
+  useUnarchiveTripPlan,
   useUpdateTripPlan,
   useUpdateTripVisit,
   type CreateTripPlanBody,
@@ -21,6 +23,7 @@ import {
   type UpdateTripPlanBody,
 } from "@workspace/api-client-react";
 import {
+  Archive,
   CalendarDays,
   Eye,
   EyeOff,
@@ -31,11 +34,21 @@ import {
   Pencil,
   Plane,
   Plus,
+  RotateCcw,
   Sparkles,
-  Trash2,
   UserRound,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -655,7 +668,9 @@ function OutreachBadge({ visit }: { visit: TripVisit }) {
 // The reviewed status can supersede an unrelated older message. Do not show
 // dates from the raw keyword match beside that reviewed conclusion; the
 // review summary is the evidence in that state.
-export function showRawOutreachDates(visit: Pick<TripVisit, "evidenceStatus">): boolean {
+export function showRawOutreachDates(
+  visit: Pick<TripVisit, "evidenceStatus">,
+): boolean {
   return visit.evidenceStatus == null;
 }
 
@@ -1132,10 +1147,10 @@ function TripDiscussion({
 
 function TripDetailPanel({
   tripId,
-  onArchived,
+  onHide,
 }: {
   tripId: string;
-  onArchived: () => void;
+  onHide?: () => void;
 }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1171,14 +1186,6 @@ function TripDetailPanel({
           description: "Please try again. A destination city is required.",
           variant: "destructive",
         }),
-    },
-  });
-  const archive = useArchiveTripPlan({
-    mutation: {
-      onSuccess: () => {
-        refresh();
-        onArchived();
-      },
     },
   });
   const trip = detail.data;
@@ -1226,13 +1233,12 @@ function TripDetailPanel({
                 <Pencil className="mr-2 h-4 w-4" />
                 Edit
               </Button>
-              <Button
-                variant="ghost"
-                onClick={() => archive.mutate({ id: trip.id })}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Archive
-              </Button>
+              {onHide && (
+                <Button variant="ghost" onClick={onHide}>
+                  <EyeOff className="mr-2 h-4 w-4" />
+                  Hide completed trip
+                </Button>
+              )}
             </div>
           </div>
           {trip.notes ? (
@@ -1322,31 +1328,80 @@ function TripDetailPanel({
   );
 }
 
+type TripPeriod = "upcoming" | "past" | "archived";
+
+export function tripPeriod(
+  trip: Pick<TripPlanSummary, "archivedAt" | "travelEndsAt">,
+  now: number,
+): TripPeriod {
+  if (trip.archivedAt) return "archived";
+  return Date.parse(trip.travelEndsAt) < now ? "past" : "upcoming";
+}
+
 export default function TripPlannerPage() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { data: viewer } = useGetCurrentUser();
+  const isAdmin = viewer?.role === "admin";
   const [createOpen, setCreateOpen] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<TripPlanSummary | null>(
+    null,
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [travelerFilter, setTravelerFilter] = useState("all");
+  const [period, setPeriod] = useState<TripPeriod>("upcoming");
+  const [now] = useState(Date.now);
   const { data: users } = useListUsers();
   const usersById = useMemo(
     () =>
       new Map((users ?? []).map((user) => [user.id, userDisplayName(user)])),
     [users],
   );
-  const trips = useListTripPlans();
-  const filteredTrips = useMemo(
-    () => filterTripsByTraveler(trips.data?.data ?? [], travelerFilter),
-    [travelerFilter, trips.data?.data],
+  const trips = useListTripPlans(
+    isAdmin && period === "archived" ? { includeArchived: true } : undefined,
   );
-  useEffect(() => {
-    if (selectedId && filteredTrips.some((trip) => trip.id === selectedId)) {
-      return;
-    }
-    setSelectedId(filteredTrips[0]?.id ?? null);
-  }, [filteredTrips, selectedId]);
+  const filteredTrips = filterTripsByTraveler(
+    trips.data?.data ?? [],
+    travelerFilter,
+  ).filter((trip) => tripPeriod(trip, now) === period);
+  if (period === "past" || period === "archived") filteredTrips.reverse();
+  const selectedTrip =
+    period === "archived"
+      ? undefined
+      : (filteredTrips.find((trip) => trip.id === selectedId) ??
+        filteredTrips[0]);
+  const refreshAfterChange = (trip: TripPlanSummary) => {
+    queryClient.invalidateQueries({ queryKey: getListTripPlansQueryKey() });
+    queryClient.invalidateQueries({
+      queryKey: getGetTripPlanQueryKey(trip.id),
+    });
+  };
+  const archive = useArchiveTripPlan({
+    mutation: {
+      onSuccess: (trip) => {
+        refreshAfterChange(trip);
+        toast({ title: "Trip archived" });
+      },
+      onError: () =>
+        toast({ title: "Could not archive trip", variant: "destructive" }),
+    },
+  });
+  const unarchive = useUnarchiveTripPlan({
+    mutation: {
+      onSuccess: (trip) => {
+        refreshAfterChange(trip);
+        setPeriod(tripPeriod(trip, now));
+        setSelectedId(trip.id);
+        toast({ title: "Trip restored" });
+      },
+      onError: () =>
+        toast({ title: "Could not restore trip", variant: "destructive" }),
+    },
+  });
   const onSaved = (trip: TripPlanSummary) => {
     setCreateOpen(false);
     setTravelerFilter(trip.travelerUserId);
+    setPeriod(tripPeriod(trip, now));
     setSelectedId(trip.id);
     queryClient.invalidateQueries({ queryKey: getListTripPlansQueryKey() });
   };
@@ -1372,6 +1427,33 @@ export default function TripPlannerPage() {
         <Card className="h-fit">
           <CardHeader className="space-y-3">
             <CardTitle className="text-base">Trips</CardTitle>
+            <div
+              role="group"
+              aria-label="Trip dates"
+              className="flex flex-wrap gap-1"
+            >
+              {(
+                [
+                  "upcoming",
+                  "past",
+                  ...(isAdmin ? ["archived"] : []),
+                ] as TripPeriod[]
+              ).map((view) => (
+                <Button
+                  key={view}
+                  size="sm"
+                  variant={period === view ? "secondary" : "ghost"}
+                  className="capitalize"
+                  aria-pressed={period === view}
+                  onClick={() => {
+                    setPeriod(view);
+                    setSelectedId(null);
+                  }}
+                >
+                  {view}
+                </Button>
+              ))}
+            </div>
             <Select value={travelerFilter} onValueChange={setTravelerFilter}>
               <SelectTrigger aria-label="Filter trips by team member">
                 <SelectValue placeholder="All team members" />
@@ -1391,54 +1473,104 @@ export default function TripPlannerPage() {
               <p className="text-sm text-muted-foreground">Loading…</p>
             ) : null}
             {filteredTrips.map((trip) => (
-              <button
+              <div
                 key={trip.id}
-                type="button"
-                onClick={() => setSelectedId(trip.id)}
-                className={`w-full rounded-lg border p-3 text-left transition-colors ${selectedId === trip.id ? "border-primary bg-primary/5" : "hover:bg-muted"}`}
+                className={`flex items-start justify-between gap-1 rounded-lg border p-3 ${selectedTrip?.id === trip.id ? "border-primary bg-primary/5" : ""}`}
               >
-                <p className="font-medium">{tripLabel(trip)}</p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {usersById.get(trip.travelerUserId) ?? "Team member"}
-                </p>
-                {trip.destinationCity ? (
-                  <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-                    <MapPin className="h-3 w-3 shrink-0" />
-                    {[trip.destinationCity, trip.destinationState]
-                      .filter(Boolean)
-                      .join(", ")}
+                <div className="min-w-0">
+                  <p className="font-medium">{tripLabel(trip)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {usersById.get(trip.travelerUserId) ?? "Team member"}
                   </p>
-                ) : null}
-                <p className="text-xs text-muted-foreground">
-                  {formatTripDate(trip.travelStartsAt, trip.timeZone)} –{" "}
-                  {formatTripDate(trip.travelEndsAt, trip.timeZone)}
-                </p>
-              </button>
+                  {trip.destinationCity ? (
+                    <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+                      <MapPin className="h-3 w-3 shrink-0" />
+                      {[trip.destinationCity, trip.destinationState]
+                        .filter(Boolean)
+                        .join(", ")}
+                    </p>
+                  ) : null}
+                  <p className="text-xs text-muted-foreground">
+                    {formatTripDate(trip.travelStartsAt, trip.timeZone)} –{" "}
+                    {formatTripDate(trip.travelEndsAt, trip.timeZone)}
+                  </p>
+                </div>
+                <div className="flex shrink-0">
+                  {period === "archived" ? (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title="Restore trip"
+                      aria-label={`Restore ${tripLabel(trip)}`}
+                      disabled={unarchive.isPending}
+                      onClick={() => unarchive.mutate({ id: trip.id })}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7"
+                        title="Open trip"
+                        aria-label={`Open ${tripLabel(trip)}`}
+                        aria-pressed={selectedTrip?.id === trip.id}
+                        onClick={() => setSelectedId(trip.id)}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                      </Button>
+                      {viewer && viewer.role !== "read_only" && (
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          title="Archive trip"
+                          aria-label={`Archive ${tripLabel(trip)}`}
+                          disabled={archive.isPending}
+                          onClick={() => setArchiveTarget(trip)}
+                        >
+                          <Archive className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             ))}
             {!trips.isLoading && filteredTrips.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                {(trips.data?.data.length ?? 0) === 0
-                  ? "No trips yet."
-                  : "No trips for this team member."}
+                No {period} trips.
               </p>
             ) : null}
           </CardContent>
         </Card>
-        {selectedId ? (
+        {selectedTrip ? (
           <TripDetailPanel
-            tripId={selectedId}
-            onArchived={() => setSelectedId(null)}
+            key={selectedTrip.id}
+            tripId={selectedTrip.id}
+            onHide={
+              period === "past"
+                ? () => {
+                    setPeriod("upcoming");
+                    setSelectedId(null);
+                  }
+                : undefined
+            }
           />
         ) : (
           <Card>
             <CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-center">
               <Plane className="h-10 w-10 text-muted-foreground" />
               <p className="font-medium">
-                {(trips.data?.data.length ?? 0) > 0
-                  ? "No trips match this team member."
-                  : "Add a trip to start planning."}
+                {period === "archived"
+                  ? "Restore an archived trip to open it."
+                  : `No ${period} trip selected.`}
               </p>
-              <Button onClick={() => setCreateOpen(true)}>Add trip</Button>
+              {period === "upcoming" && (
+                <Button onClick={() => setCreateOpen(true)}>Add trip</Button>
+              )}
             </CardContent>
           </Card>
         )}
@@ -1448,6 +1580,34 @@ export default function TripPlannerPage() {
         onOpenChange={setCreateOpen}
         onSaved={onSaved}
       />
+      <AlertDialog
+        open={!!archiveTarget}
+        onOpenChange={(open) => {
+          if (!open) setArchiveTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Archive {archiveTarget ? tripLabel(archiveTarget) : "trip"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              The trip will move to Archived. A CRM administrator can restore
+              it. Completed trips are already available under Past.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep trip</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (archiveTarget) archive.mutate({ id: archiveTarget.id });
+              }}
+            >
+              Archive trip
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

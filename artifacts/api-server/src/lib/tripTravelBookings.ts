@@ -46,6 +46,8 @@ const HOTEL_LANGUAGE =
   /\b(?:accommodation|hotel|lodging|room reservation|stay at)\b/i;
 const HOTEL_CONFIRMATION_TITLE =
   /\b(?:booking|reservation)\s+confirm(?:ation|ed)\b/i;
+const BOOKING_REMINDER_TITLE =
+  /\b(?:book (?:your|a) (?:hotel|room|flight)|(?:hotel|room) booking (?:deadline|reminder)|room block)\b/i;
 const HOTEL_CHECK_DATES = /\bcheck[ -]?(?:in|out)\b/i;
 const HOTEL_GUEST_CONTEXT = /\b(?:guest|reservation|room|stay)\b/i;
 const FLIGHT_NUMBER =
@@ -166,15 +168,20 @@ function datesFromText(text: string, fallbackYear: number): Date[] {
 function emailDatesForTrip(text: string, trip: TripWindow) {
   const tripStart = asDate(trip.travelStartsAt)!;
   const tripEnd = asDate(trip.travelEndsAt)!;
-  const padding = 3 * 86_400_000;
-  const dates = datesFromText(text, tripStart.getUTCFullYear()).filter(
-    (date) =>
-      date.getTime() >= tripStart.getTime() - padding &&
-      date.getTime() <= tripEnd.getTime() + padding,
-  );
+  // Bookings can start the day before or end the day after the planned visit.
+  // Compare the complete date span before selecting dates to display.
+  const padding = 86_400_000;
+  const dates = datesFromText(text, tripStart.getUTCFullYear());
+  const first = dates[0];
+  const last = dates[dates.length - 1];
   return {
-    startAt: dates[0]?.toISOString() ?? null,
-    endAt: dates.length > 1 ? dates[dates.length - 1].toISOString() : null,
+    startAt: first?.toISOString() ?? null,
+    endAt: dates.length > 1 ? last.toISOString() : null,
+    matches:
+      first && last
+        ? first.getTime() <= tripEnd.getTime() + padding &&
+          last.getTime() >= tripStart.getTime() - padding
+        : false,
   };
 }
 
@@ -190,21 +197,12 @@ function providerFromEmail(value: string | null | undefined): string | null {
     : null;
 }
 
-function gmailEvidenceMatchesTrip(
-  text: string,
-  dates: { startAt: string | null; endAt: string | null },
-  trip: TripWindow,
-): boolean {
-  if (dates.startAt) return true;
-  const destination = trip.destinationCity?.trim().toLowerCase();
-  return !!destination && text.toLowerCase().includes(destination);
-}
-
 function bookingKey(booking: DerivedTripTravelBooking): string {
   if (booking.confirmationNumber) {
     return `${booking.kind}:confirmation:${booking.confirmationNumber}`;
   }
   const title = booking.title
+    .replace(/^(?:(?:re|fw|fwd):\s*)+/i, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
@@ -221,26 +219,44 @@ export function deriveTripTravelBookings(
     const kind = detectTripTravelKind(item);
     if (!kind) continue;
     const text = evidenceText(item);
-    const emailDates =
-      item.source === "gmail"
-        ? emailDatesForTrip(text, trip)
-        : { startAt: null, endAt: null };
-    if (
-      item.source === "gmail" &&
-      !gmailEvidenceMatchesTrip(text, emailDates, trip)
-    ) {
-      continue;
+    const confirmationNumber = extractTravelConfirmation(text);
+    const title = item.title?.trim() ?? "";
+    let emailDates: ReturnType<typeof emailDatesForTrip> | undefined;
+    if (item.source === "gmail") {
+      if (BOOKING_REMINDER_TITLE.test(title)) continue;
+      // A booking needs a confirmation, a ticket document, or check-in/out
+      // details on a reservation confirmation. Generic hotel invitations and
+      // newsletters can otherwise match any trip with a nearby date.
+      if (
+        !confirmationNumber &&
+        !FLIGHT_DOCUMENT.test(text) &&
+        !(
+          kind === "hotel" &&
+          HOTEL_CONFIRMATION_TITLE.test(title) &&
+          HOTEL_CHECK_DATES.test(text)
+        )
+      ) {
+        continue;
+      }
+      emailDates = emailDatesForTrip(text, trip);
+      const destination = trip.destinationCity?.trim().toLowerCase();
+      if (
+        emailDates.startAt
+          ? !emailDates.matches
+          : !destination || !text.toLowerCase().includes(destination)
+      )
+        continue;
     }
-    const startAt = toIso(item.startAt) ?? emailDates.startAt;
-    const endAt = toIso(item.endAt) ?? emailDates.endAt;
+    const startAt = toIso(item.startAt) ?? emailDates?.startAt ?? null;
+    const endAt = toIso(item.endAt) ?? emailDates?.endAt ?? null;
     bookings.push({
       kind,
       source: item.source,
       sourceId: item.id,
-      title: item.title?.trim() || (kind === "flight" ? "Flight" : "Hotel"),
+      title: title || (kind === "flight" ? "Flight" : "Hotel"),
       provider:
         item.source === "gmail" ? providerFromEmail(item.fromEmail) : null,
-      confirmationNumber: extractTravelConfirmation(text),
+      confirmationNumber,
       startAt,
       endAt,
       location: item.location?.trim() || null,

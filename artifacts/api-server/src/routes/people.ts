@@ -1,4 +1,4 @@
-import { personGivingScope } from "../lib/personGivingScope";
+import { personPrincipalOrganizations } from "../lib/personGivingScope";
 import { recordNewsletterPreference } from "../lib/newsletterPreferences";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
@@ -16,6 +16,7 @@ import {
   and,
   asc,
   count,
+  desc,
   eq,
   getTableColumns,
   ilike,
@@ -59,7 +60,7 @@ import {
   peopleEntityRolesQuery,
   maskPeopleEntityRoles,
 } from "../lib/peopleRolesSelect";
-import { getViewer, maskName, type Viewer } from "../lib/identityVisibility";
+import { ANON_LABEL, getViewer, maskName, type Viewer } from "../lib/identityVisibility";
 import { isFlaggedForResearch } from "../lib/flaggedForResearch";
 import { csvFilename, csvLine } from "../lib/csvExport";
 import {
@@ -197,13 +198,13 @@ function peopleLastContactedExpr(): SQL {
 // Rollup expressions are defined once and reused by both the SELECT
 // (cast/aliased) and the presence WHERE filters so the two can never
 // drift. Each is a correlated fragment scoped to `people.id`.
-// Organization attribution uses the shared person-giving boundary. Donor
-// XOR keeps it disjoint from direct and household sums, and EXISTS prevents
-// multiple current roles from counting an organization gift more than once.
-const peopleOrgCreditGiftWhere = sql`(
-  g.organization_id IS NOT NULL AND g.archived_at IS NULL
-  AND ${personGivingScope(PEOPLE_ID, { individualGiverPersonId: sql`g.individual_giver_person_id`, householdId: sql`g.household_id`, organizationId: sql`g.organization_id` })}
-)`;
+// Look up the person's credited organizations first, so Postgres can use
+// the gift organization index instead of evaluating attribution for each gift.
+const peopleOrgCreditGifts = sql`
+  FROM (${personPrincipalOrganizations(PEOPLE_ID)}) credited
+  JOIN gifts_and_payments g ON g.organization_id = credited.organization_id
+  WHERE "people"."archived_at" IS NULL AND g.archived_at IS NULL
+`;
 const peopleLifetimeGivingExpr = sql`(
   COALESCE(
     (SELECT SUM(amount) FROM gifts_and_payments
@@ -215,8 +216,7 @@ const peopleLifetimeGivingExpr = sql`(
         AND household_id = ${sql.raw(`"people"."primary_household_id"`)}),
     0
   ) + COALESCE(
-    (SELECT SUM(g.amount) FROM gifts_and_payments g
-      WHERE ${peopleOrgCreditGiftWhere}),
+    (SELECT SUM(g.amount) ${peopleOrgCreditGifts}),
     0
   )
 )`;
@@ -229,8 +229,7 @@ const peopleMostRecentGiftExpr = sql`(
       WHERE archived_at IS NULL
         AND household_id = ${sql.raw(`"people"."primary_household_id"`)}
     UNION ALL
-    SELECT MAX(g.date_received) AS d FROM gifts_and_payments g
-      WHERE ${peopleOrgCreditGiftWhere}
+    SELECT MAX(g.date_received) AS d ${peopleOrgCreditGifts}
   ) AS _gift_dates
 )`;
 const peopleOpenOppCountExpr = sql`(
@@ -506,18 +505,22 @@ router.get(
     if (!built) return;
     const { q, where } = built;
     const { limit, page, offset } = parsePagination(q);
+    const viewer = getViewer(req);
+    const displayOrder = q.nameOrder && viewer.role !== "admin"
+      ? sql`case when ${people.anonymous} and ${people.ownerUserId} is distinct from ${viewer.id}
+          then ${ANON_LABEL.toLowerCase()} else ${peopleDisplayNameOrder} end`
+      : peopleDisplayNameOrder;
     const [rows, [{ value: total } = { value: 0 }]] = await Promise.all([
       db
         .select(peopleListSelect)
         .from(people)
         .where(where)
         // Tiebreak on id so offset pagination is stable for duplicate names.
-        .orderBy(asc(peopleDisplayNameOrder), asc(people.id))
+        .orderBy(q.nameOrder === "desc" ? desc(displayOrder) : asc(displayOrder), asc(people.id))
         .limit(limit)
         .offset(offset),
       db.select({ value: count() }).from(people).where(where),
     ]);
-    const viewer = getViewer(req);
     const data = rows.map((r) => maskPersonRow(r, viewer));
     res.json({ data, pagination: { page, limit, total: Number(total) } });
   }),

@@ -446,6 +446,83 @@ export const useArchiveTripPlan = <
 > => {
   return useMutation(getArchiveTripPlanMutationOptions(options));
 };
+export const getUnarchiveTripPlanUrl = (id: string) => {
+  return `/api/trips/${id}/unarchive`;
+};
+
+export const unarchiveTripPlan = async (
+  id: string,
+  options?: RequestInit,
+): Promise<TripPlanSummary> => {
+  return customFetch<TripPlanSummary>(getUnarchiveTripPlanUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getUnarchiveTripPlanMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveTripPlan>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unarchiveTripPlan>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["unarchiveTripPlan"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unarchiveTripPlan>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return unarchiveTripPlan(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnarchiveTripPlanMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unarchiveTripPlan>>
+>;
+
+export type UnarchiveTripPlanMutationError = ErrorType<NotFoundResponse>;
+
+export const useUnarchiveTripPlan = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unarchiveTripPlan>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof unarchiveTripPlan>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getUnarchiveTripPlanMutationOptions(options));
+};
 /**
  * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
  */

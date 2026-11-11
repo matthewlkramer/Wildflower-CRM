@@ -1,4 +1,5 @@
 import { isBounceSender, parseBounce } from "../lib/intelDetectors";
+import { requireAdmin } from "../lib/archive";
 import { Router, type IRouter, type Response } from "express";
 import { db } from "@workspace/db";
 import {
@@ -869,6 +870,21 @@ router.post(
     if (!row) return notFound(res, "trip");
     await requestCalendarRefresh([row.travelerUserId]);
     res.json(await tripSummary(row, user.id));
+  }),
+);
+
+router.post(
+  "/trips/:id/unarchive",
+  asyncHandler(async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const [row] = await db
+      .update(tripPlans)
+      .set({ archivedAt: null, updatedAt: new Date() })
+      .where(eq(tripPlans.id, paramId(req)))
+      .returning();
+    if (!row) return notFound(res, "trip");
+    await requestCalendarRefresh([row.travelerUserId]);
+    res.json(await tripSummary(row, getAppUser(req)!.id));
   }),
 );
 

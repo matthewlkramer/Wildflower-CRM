@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getListCalendarEventsQueryKey,
   type CalendarEvent,
+  useArchiveCalendarEvent,
   useGetCurrentUser,
   useListCalendarEvents,
+  useRestoreCalendarEvent,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,7 +30,9 @@ import {
   type DashboardScope,
 } from "@/components/dashboard-scope-toggle";
 import { useUserNameMap } from "@/components/user-picker";
-import { Calendar, NotebookPen, Video } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+import { Archive, Calendar, NotebookPen, Video } from "lucide-react";
 
 function extractJoinUrl(
   event: Pick<CalendarEvent, "location" | "description">,
@@ -89,6 +94,45 @@ function useWeekWindow() {
 export default function UpcomingMeetingsCard() {
   const [scope, setScope] = useState<DashboardScope>("mine");
   const { data: currentUser } = useGetCurrentUser();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [calendarPath] = getListCalendarEventsQueryKey();
+  const refresh = () =>
+    queryClient.invalidateQueries({
+      predicate: ({ queryKey: [path] }) =>
+        typeof path === "string" &&
+        (path === calendarPath || path.startsWith(`${calendarPath}/`)),
+    });
+  const restore = useRestoreCalendarEvent({
+    mutation: {
+      onSuccess: () => {
+        void refresh();
+        toast({ title: "Meeting restored" });
+      },
+      onError: () =>
+        toast({ title: "Could not restore meeting", variant: "destructive" }),
+    },
+  });
+  const archive = useArchiveCalendarEvent({
+    mutation: {
+      onSuccess: (_, { id }) => {
+        void refresh();
+        toast({
+          title: "Meeting archived from CRM",
+          action: (
+            <ToastAction
+              altText="Restore meeting"
+              onClick={() => restore.mutate({ id })}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+      },
+      onError: () =>
+        toast({ title: "Could not archive meeting", variant: "destructive" }),
+    },
+  });
   const userId = currentUser?.id;
   const userNames = useUserNameMap();
   const { startAfter, startBefore } = useWeekWindow();
@@ -197,7 +241,15 @@ export default function UpcomingMeetingsCard() {
                       (event.calendarUserId === userId ? "Me" : "—")}
                   </TableCell>
                   <TableCell className="pr-6">
-                    <MeetingActions event={event} />
+                    <MeetingActions
+                      event={event}
+                      onArchive={
+                        currentUser && currentUser.role !== "read_only"
+                          ? () => archive.mutate({ id: event.id })
+                          : undefined
+                      }
+                      archivePending={archive.isPending}
+                    />
                   </TableCell>
                 </TableRow>
               ))
@@ -209,7 +261,15 @@ export default function UpcomingMeetingsCard() {
   );
 }
 
-function MeetingActions({ event }: { event: CalendarEvent }) {
+function MeetingActions({
+  event,
+  onArchive,
+  archivePending,
+}: {
+  event: CalendarEvent;
+  onArchive?: () => void;
+  archivePending: boolean;
+}) {
   const join = extractJoinUrl(event);
   return (
     <TooltipProvider delayDuration={200}>
@@ -307,6 +367,23 @@ function MeetingActions({ event }: { event: CalendarEvent }) {
           </TooltipTrigger>
           <TooltipContent>Open meeting workspace</TooltipContent>
         </Tooltip>
+        {onArchive && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 w-8 p-0"
+                aria-label={`Archive ${event.summary?.trim() || "meeting"} from CRM`}
+                disabled={archivePending}
+                onClick={onArchive}
+              >
+                <Archive className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Archive from CRM for everyone</TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </TooltipProvider>
   );
