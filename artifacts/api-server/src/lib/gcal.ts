@@ -64,6 +64,7 @@ export interface GCalAttendee {
   responseStatus?: string;
   organizer?: boolean;
   self?: boolean;
+  resource?: boolean;
 }
 
 export interface GCalEvent {
@@ -79,6 +80,7 @@ export interface GCalEvent {
   organizer?: { email?: string; self?: boolean };
   transparency?: string;
   visibility?: string;
+  conferenceData?: { entryPoints?: { entryPointType?: string; uri?: string }[] };
 }
 
 export interface GCalEventsListResponse {
@@ -94,6 +96,7 @@ export interface ListEventsOpts {
   timeMax?: string | null; // ISO; ignored if syncToken provided
   query?: string | null; // free-text Google Calendar search (`q`)
   maxResults?: number;
+  signal?: AbortSignal;
 }
 
 export async function listEvents(
@@ -127,6 +130,7 @@ export async function listEvents(
   const path = `/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`;
   const r = await fetch(`${GCAL_BASE}${path}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: opts.signal,
   });
   if (r.status === 410) {
     // Sync token expired — caller drops it and re-bootstraps.

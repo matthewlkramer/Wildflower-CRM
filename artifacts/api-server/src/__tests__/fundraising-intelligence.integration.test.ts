@@ -59,7 +59,8 @@ vi.mock("../lib/funderCadence", async (original) => {
   };
 });
 
-vi.mock("../lib/summarizeMeeting", () => ({
+vi.mock("../lib/summarizeMeeting", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../lib/summarizeMeeting")>(),
   summarizeMeeting: async () => ({
     summary: "The group agreed to review the application.",
     actionItems: [{ title: "Check grant eligibility", dueDate: null }],

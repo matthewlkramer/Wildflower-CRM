@@ -720,7 +720,7 @@ export interface ConferenceResearchBackfillResult {
 export type ZoomWebhookEventPayload = { [key: string]: unknown };
 
 /**
- * A Zoom event notification. Only the event name is relied on; the payload shape varies by event.
+ * A Zoom event notification. The payload shape varies by event.
  */
 export interface ZoomWebhookEvent {
   event: string;

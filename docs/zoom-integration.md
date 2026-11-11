@@ -3,38 +3,71 @@ status: current-status
 last_verified: 2026-11-11
 ---
 
-# Zoom integration
+# Zoom transcript integration
 
-## What exists today
+WFCRM requests Zoom Meeting Summary with transcript retention for qualifying
+Wildflower-hosted calls. Zoom shows its AI notice. The integration never starts
+audio or video recording and never downloads media. Phone participants can hear
+Zoom's separate AI notification.
 
-Only the event subscription endpoint: `POST /api/integrations/zoom/webhook`
-(`artifacts/api-server/src/routes/zoomWebhook.ts`, contract operation
-`receiveZoomWebhook`).
+## Which meetings qualify
 
-- It belongs to the **WFCRM** Zoom Server-to-Server OAuth app. WFTLS has its own
-  Zoom app, endpoint and secrets; the two are independent.
-- Authentication is Zoom's request signature, not a user session. The route is
-  mounted with the other machine-to-machine routers, ahead of session auth.
-- It answers Zoom's `endpoint.url_validation` challenge, verifies
-  `x-zm-signature` on every other event (HMAC-SHA256 over
-  `v0:{timestamp}:{raw body}`, five-minute window), and acknowledges with 200.
-- The raw request body is kept for this one path (see the JSON parser in
-  `app.ts`) because Zoom signs the exact bytes it sent.
-- **Nothing is stored and nothing is acted on.** The event name is logged;
-  payloads are never logged because they carry participant names and emails.
+- A configured recurring development Zoom ID goes to the agenda for the
+  occurrence's Chicago calendar week.
+- A scheduled donor call needs one confirmed, shareable invitation on the
+  host's synced Google Calendar, with the same Zoom ID and a start within
+  20 minutes. WFCRM checks the current invitation through the existing Google
+  connection when available, including Zoom links added as conference details.
+  Declined guests do not qualify the call.
+- An instant Zoom meeting or personal room can qualify when Zoom supplies the
+  email of a recognized donor who joins. Zoom often withholds guest emails, so
+  scheduled invitations are the dependable way to identify external donors.
+  Calls hosted on another Zoom account are outside the integration.
 
-## Secrets
+The host must be an active, writable CRM user. Donor matching uses exact
+addresses and current CRM relationships. A gift, opportunity, or grantmaking
+organization establishes the fundraising relationship. Private and ambiguous
+calendar matches are skipped.
 
-| Secret (Replit) | Used for | Read today |
-|---|---|---|
-| `ZOOM_FORWFCRM_EVENTSUB_SECRET` | the event subscription Secret Token | yes |
-| `ZOOM_FORWFCRM_ACCOUNT_ID`, `ZOOM_FORWFCRM_CLIENT_ID`, `ZOOM_FORWFCRM_CLIENT_SECRET` | calling Zoom's API | no — nothing calls Zoom yet |
+## What appears in WFCRM
 
-Without the Secret Token the endpoint answers 503.
+Zoom sends a transcript-ready event after the meeting. WFCRM downloads the
+text for the exact meeting occurrence and uses the existing meeting summarizer.
+It adds draft notes and follow-ups to the donor's meeting note or the weekly
+agenda. Staff notes and existing task assignments are preserved. Staff confirm
+follow-ups before creating tasks. A host or note in summary-only mode keeps the
+new transcript text out of WFCRM. Other hosts see the imported text through
+the usual meeting-note workspace.
 
-## Not built yet
+Queue entries contain only routing metadata and use Zoom's occurrence UUID to
+prevent duplicate imports when events are retried. A completion notification
+or the meeting-end event can trigger import. The worker retries temporary
+download and summarization failures for up to 48 hours. It never logs transcript
+text, attendee emails, or Zoom tokens.
 
-Bringing recordings or transcripts into meeting notes. That work attaches at
-`onZoomEvent` in the route file and needs decisions first: how a Zoom meeting is
-matched to a person or funder, who may see a transcript, and whether recordings
-are kept or only transcripts.
+## Activation and verification
+
+1. Use the existing **for WFCRM** Zoom Server-to-Server OAuth app and
+   `POST /api/integrations/zoom/webhook`. Confirm Start Meeting, End Meeting,
+   Participant/Host joined meeting and AIC transcript completed are subscribed.
+   The webhook validates Zoom's challenge and checks the signature over the
+   original bytes before queuing an event.
+2. The app needs `meeting:update:in_meeting_controls:admin` and
+   `cloud_recording:read:meeting_transcript:admin`. Enable Meeting Summary and
+   the host's ability to retain, view, and manage meeting transcripts. Keep
+   account-wide automatic transcription, automatic Meeting Summary, and
+   automatic audio/video recording off for this workflow. Zoom documents that
+   the live controls API requires cloud recording to be available as a control.
+   That permission is distinct from starting a recording.
+3. Apply `lib/db/migrations/0280_zoom_transcript_jobs.sql` before enabling capture.
+   The existing Replit secrets are `ZOOM_FORWFCRM_EVENTSUB_SECRET`,
+   `ZOOM_FORWFCRM_ACCOUNT_ID`, `ZOOM_FORWFCRM_CLIENT_ID` and
+   `ZOOM_FORWFCRM_CLIENT_SECRET`. Set
+   `ZOOM_FORWFCRM_DEVELOPMENT_MEETING_IDS` to the comma-separated dedicated
+   recurring meeting numbers. Enable the worker with
+   `ZOOM_FORWFCRM_TRANSCRIPTS_ENABLED=true`.
+4. With staff as test participants, verify a matched donor invitation, one
+   occurrence of the development meeting, and an unrelated meeting. Confirm
+   the AI notice appears, no audio/video files are created, drafts land on the
+   right note, and resending a completion event creates no duplicate. The
+   existing transcript upload stays available if Zoom cannot supply a transcript.

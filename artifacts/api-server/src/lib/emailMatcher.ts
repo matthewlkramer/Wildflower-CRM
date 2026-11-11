@@ -283,6 +283,7 @@ export async function matchEmails(
   addresses: string[],
   mailboxOwnerEmail: string | null,
   messageDate: Date = new Date(),
+  options: { exactAddressOnly?: boolean } = {},
 ): Promise<EmailMatchResult> {
   const internalDomains = await loadInternalDomains();
   const cleaned = normalizeForMatching(
@@ -323,7 +324,7 @@ export async function matchEmails(
         })
         .from(emails)
         .where(inArray(sql`lower(${emails.email})`, cleaned)),
-      domains.length === 0
+      options.exactAddressOnly || domains.length === 0
         ? Promise.resolve([] as Array<{ organizationId: string }>)
         : db
             .select({ organizationId: organizations.id })

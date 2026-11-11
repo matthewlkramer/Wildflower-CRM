@@ -3,15 +3,14 @@ import { Router, type IRouter, type Request } from "express";
 import rateLimit from "express-rate-limit";
 import { ReceiveZoomWebhookBody } from "@workspace/api-zod";
 import { logger } from "../lib/logger";
+import { zoomCaptureAccount } from "../lib/zoomClient";
 
 /**
  * Zoom event subscription endpoint for the WFCRM Server-to-Server OAuth app.
  *
- * Minimal on purpose (Nov 2026): it answers Zoom's endpoint URL validation
- * challenge, verifies the signature on every other event, acknowledges it, and
- * logs the event NAME only. Nothing is stored and nothing is acted on yet; the
- * recording/transcript feature will hang off `onZoomEvent` below. Payloads carry
- * participant names and emails, so they are never logged.
+ * Answers the validation challenge and verifies signed notifications. The
+ * transcript worker handles Zoom API calls and note generation outside the
+ * request. Payloads carry private information and are never logged.
  *
  * Authentication is Zoom's signature, not a user session: this router must be
  * mounted before the first sub-router that applies session auth at its module
@@ -58,11 +57,6 @@ export function hasValidZoomSignature(
   return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }
 
-/** The single place later functionality attaches. Deliberately does nothing but log the event name. */
-function onZoomEvent(event: string): void {
-  logger.info({ zoomEvent: event }, "Zoom event received");
-}
-
 const router: IRouter = Router();
 const limiter = rateLimit({
   windowMs: 60_000,
@@ -71,7 +65,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-router.post(ZOOM_WEBHOOK_PATH, limiter, (req: RequestWithRawBody, res) => {
+router.post(ZOOM_WEBHOOK_PATH, limiter, async (req: RequestWithRawBody, res) => {
   const secret = configuredSecret();
   if (!secret) {
     res.status(503).json({ error: "zoom_webhook_not_configured" });
@@ -93,10 +87,9 @@ router.post(ZOOM_WEBHOOK_PATH, limiter, (req: RequestWithRawBody, res) => {
     return;
   }
 
-  const rawBody = req.rawBody ?? Buffer.from(JSON.stringify(req.body ?? {}));
-  const valid = hasValidZoomSignature(
+  const valid = req.rawBody && hasValidZoomSignature(
     { signature: req.get("x-zm-signature"), timestamp: req.get("x-zm-request-timestamp") },
-    rawBody,
+    req.rawBody,
     secret,
   );
   if (!valid) {
@@ -104,9 +97,21 @@ router.post(ZOOM_WEBHOOK_PATH, limiter, (req: RequestWithRawBody, res) => {
     return;
   }
 
-  // Acknowledge first: Zoom retries when the answer is slow.
-  res.json({ received: true });
-  onZoomEvent(body.event);
+  if (!zoomCaptureAccount()) {
+    res.json({ received: true });
+    return;
+  }
+  try {
+    const { enqueueZoomMeetingEvent, runZoomTranscriptJobs } = await import("../lib/zoomTranscripts");
+    await enqueueZoomMeetingEvent(body.event, body.payload, body.event_ts);
+    res.json({ received: true });
+    void runZoomTranscriptJobs();
+    return;
+  } catch {
+    logger.warn("Could not queue Zoom event");
+    res.status(503).json({ error: "zoom_event_queue_unavailable" });
+    return;
+  }
 });
 
 export default router;

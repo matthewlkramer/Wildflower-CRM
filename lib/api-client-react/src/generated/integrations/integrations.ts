@@ -205,7 +205,7 @@ export const useRunConferenceResearchIntegrationTick = <
   );
 };
 /**
- * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Events are acknowledged and not yet acted on.
+ * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Supported events for automatic transcript capture are queued before acknowledgement when the integration is enabled.
  */
 export const getReceiveZoomWebhookUrl = () => {
   return `/api/integrations/zoom/webhook`;
@@ -268,7 +268,7 @@ export type ReceiveZoomWebhookMutationBody = BodyType<ZoomWebhookEvent>;
 export type ReceiveZoomWebhookMutationError = ErrorType<void>;
 
 /**
- * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Events are acknowledged and not yet acted on.
+ * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Supported events for automatic transcript capture are queued before acknowledgement when the integration is enabled.
  */
 export const useReceiveZoomWebhook = <
   TError = ErrorType<void>,

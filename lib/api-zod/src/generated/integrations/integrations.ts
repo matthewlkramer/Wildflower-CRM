@@ -74,7 +74,7 @@ export const RunConferenceResearchIntegrationTickResponse = zod.object({
 });
 
 /**
- * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Events are acknowledged and not yet acted on.
+ * @summary Receives event notifications from the WFCRM Zoom Server-to-Server OAuth app. Answers Zoom's endpoint URL validation challenge and verifies the x-zm-signature header on every other event with the event subscription secret token (ZOOM_FORWFCRM_EVENTSUB_SECRET) rather than a user session. Supported events for automatic transcript capture are queued before acknowledgement when the integration is enabled.
  */
 export const ReceiveZoomWebhookBody = zod
   .object({
@@ -82,9 +82,7 @@ export const ReceiveZoomWebhookBody = zod
     event_ts: zod.number().optional(),
     payload: zod.record(zod.string(), zod.unknown()).optional(),
   })
-  .describe(
-    "A Zoom event notification. Only the event name is relied on; the payload shape varies by event.",
-  );
+  .describe("A Zoom event notification. The payload shape varies by event.");
 
 export const ReceiveZoomWebhookResponse = zod
   .object({
