@@ -39,13 +39,14 @@ done
 # Workspace sender allowlist is also checked at SMTP time. The pipe checks
 # and strips the separate authenticated Workspace routing header.
 postconf -M '2525/inet=2525 inet n - n - - smtpd'
+postconf -e 'wfcrm_sender_checks = check_sender_access hash:/etc/postfix/wf-crm-senders, reject'
 postconf -P \
-    '2525/inet/mynetworks=127.0.0.0/8, 74.125.0.0/16, 209.85.128.0/17' \
+    '2525/inet/mynetworks=127.0.0.0/8,74.125.0.0/16,209.85.128.0/17' \
     '2525/inet/smtpd_tls_security_level=encrypt' \
-    '2525/inet/smtpd_client_restrictions=permit_mynetworks, reject' \
-    '2525/inet/smtpd_sender_restrictions=check_sender_access hash:/etc/postfix/wf-crm-senders, reject' \
-    '2525/inet/smtpd_relay_restrictions=permit_mynetworks, reject' \
-    '2525/inet/smtpd_recipient_restrictions=permit_mynetworks, reject' \
+    '2525/inet/smtpd_client_restrictions=permit_mynetworks,reject' \
+    '2525/inet/smtpd_sender_restrictions=$wfcrm_sender_checks' \
+    '2525/inet/smtpd_relay_restrictions=permit_mynetworks,reject' \
+    '2525/inet/smtpd_recipient_restrictions=permit_mynetworks,reject' \
     '2525/inet/smtpd_reject_unlisted_recipient=no' \
     '2525/inet/content_filter=wfcrm:'
 postconf -M 'wfcrm/unix=wfcrm unix - n n - - pipe user=wfmailpilot argv=/usr/bin/python3 -B /opt/wf-mail-pilot/crm_transport.py --config /etc/wf-mail-pilot/crm.json deliver --sender=${sender} --recipient=${recipient}'
