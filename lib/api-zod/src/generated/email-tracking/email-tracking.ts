@@ -161,6 +161,7 @@ export const SearchTrackedEmailResponse = zod.union([zod.object({
   "uniqueIps": zod.number(),
   "views": zod.array(zod.object({
   "id": zod.string(),
+  "recipientId": zod.string().optional().describe('Tracked recipient row ID associated with this open.'),
   "viewedAt": zod.string().datetime({}),
   "ipAddress": zod.string().nullish(),
   "userAgent": zod.string().nullish()
@@ -251,6 +252,7 @@ export const GetTrackedEmailResponse = zod.object({
   "uniqueIps": zod.number(),
   "views": zod.array(zod.object({
   "id": zod.string(),
+  "recipientId": zod.string().optional().describe('Tracked recipient row ID associated with this open.'),
   "viewedAt": zod.string().datetime({}),
   "ipAddress": zod.string().nullish(),
   "userAgent": zod.string().nullish()
