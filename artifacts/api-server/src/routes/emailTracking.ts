@@ -34,6 +34,7 @@ import { GMAIL_SEND_SCOPE } from "../lib/googleOauth";
 import { buildRawMessage } from "../lib/mime";
 import { sendRawMessage, GmailSendError } from "../lib/gmailSend";
 import { shouldSuppressInboundTrackingMessage } from "../lib/emailTrackingSuppression";
+import { GATEWAY_DELIVERY_PREFIX, gatewayDeliveryVisibility, gatewaySenderEnabled, isGatewayDelivery } from "../lib/emailGatewayIdentity";
 
 /**
  * Self-hosted backend for the vendored Magio email-tracking extension
@@ -280,7 +281,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const filename = String(req.params.filename ?? "");
     const id = filename.replace(/\.gif$/i, "");
-    if (!id) {
+    if (!id || id.startsWith(GATEWAY_DELIVERY_PREFIX)) {
       res.status(200).set(PIXEL_HEADERS).send(PIXEL);
       return;
     }
@@ -309,7 +310,7 @@ router.get(
     //    suppress proxy hits that arrive within GMAIL_PROXY_WINDOW_MS of the
     //    email being registered (those represent Gmail's delivery-time cache
     //    fetch). Proxy hits after that window are treated as real human opens
-    //    because our no-cache headers force Gmail to re-fetch on each open.
+    //    as an observed image request. Gmail may reuse an image on a later open.
     //
     // 2. Sender self-view (same IP): the sender opening the email in their
     //    Sent folder from the same network should not count as a recipient open.
@@ -419,6 +420,13 @@ router.post(
       });
       return;
     }
+    if (gatewaySenderEnabled(grant.googleEmail)) {
+      res.status(409).json({
+        error: "workspace_gateway_native_send",
+        message: "Send the original message through Gmail for Workspace tracking.",
+      });
+      return;
+    }
     if (!grant.scope.split(/\s+/).includes(GMAIL_SEND_SCOPE)) {
       res.status(409).json({
         error: "send_scope_missing",
@@ -524,7 +532,7 @@ router.get(
     const email = await db
       .select()
       .from(trackedEmails)
-      .where(eq(trackedEmails.subject, subject))
+      .where(and(eq(trackedEmails.subject, subject), sql`NOT (${isGatewayDelivery})`))
       .orderBy(desc(trackedEmails.createdAt))
       .limit(1)
       .then((r) => r[0]);
@@ -550,6 +558,7 @@ router.get(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
       )
+      .where(sql`NOT (${isGatewayDelivery})`)
       .groupBy(trackedEmails.id, trackedEmails.subject);
     res.json(rows);
   }),
@@ -560,6 +569,10 @@ router.delete(
   publicTrackingLimiter,
   asyncHandler(async (req, res) => {
     const id = paramId(req);
+    if (id.startsWith(GATEWAY_DELIVERY_PREFIX)) {
+      res.json({ deleted: 0 });
+      return;
+    }
     const since = new Date(Date.now() - SENDER_PEEK_WINDOW_MS);
     const deleted = await db
       .delete(trackedEmailViews)
@@ -632,7 +645,7 @@ router.get(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
       )
-      .where(and(eq(trackedEmails.sender, myEmail), hasExternalRecipient))
+      .where(and(eq(trackedEmails.sender, myEmail), hasExternalRecipient, gatewayDeliveryVisibility(me.id)))
       .groupBy(trackedEmails.id)
       .orderBy(desc(trackedEmails.createdAt))
       .limit(limit);
@@ -659,6 +672,11 @@ router.get(
   "/email-tracking/by-contact",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const me = getAppUser(req);
+    if (!me) {
+      res.status(401).json({ error: "unauthorized" });
+      return;
+    }
     const personId =
       typeof req.query.personId === "string" ? req.query.personId : undefined;
     const organizationId =
@@ -703,7 +721,7 @@ router.get(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
       )
-      .where(whereExpr)
+      .where(and(whereExpr, gatewayDeliveryVisibility(me.id)))
       .groupBy(trackedEmails.id)
       .orderBy(desc(trackedEmails.createdAt));
 
@@ -810,6 +828,7 @@ router.get(
           gte(trackedEmails.createdAt, fourteenDaysAgo),
           hasCrmRecipient,
           mailboxScope(me, allMailboxes, users.id),
+          gatewayDeliveryVisibility(me.id),
           sql`NOT EXISTS (
             SELECT 1 FROM email_tracking_resolutions AS resolution
             WHERE resolution.queue_type = 'outbound'
@@ -983,6 +1002,7 @@ router.post(
         .where(
           and(
             eq(trackedEmails.id, sourceId),
+            gatewayDeliveryVisibility(me.id),
             sql`(
               ${users.id} = ${me.id}
               OR ${allMailboxes ? sql`TRUE` : sql`FALSE`}
@@ -1094,6 +1114,7 @@ router.get(
       .where(
         and(
           eq(trackedEmails.id, id),
+          gatewayDeliveryVisibility(me.id),
           me?.role === "admin"
             ? sql`TRUE`
             : sql`lower(${trackedEmails.sender}) = lower(${me?.email ?? ""})`,

@@ -125,7 +125,7 @@ export async function getMessage(
   if (format === "metadata") {
     // Bare minimum to do participant matching + display. Anything
     // else is wasted bytes at scale.
-    for (const h of ["From", "To", "Cc", "Bcc", "Subject", "Date"]) {
+    for (const h of ["From", "To", "Cc", "Bcc", "Subject", "Date", "Message-ID"]) {
       sp.append("metadataHeaders", h);
     }
   }

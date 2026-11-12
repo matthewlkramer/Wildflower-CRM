@@ -93,3 +93,80 @@ export const ReceiveZoomWebhookResponse = zod
   .describe(
     "For the endpoint.url_validation challenge, the plain token and its HMAC-SHA256 with the secret token; for every other event, received=true.",
   );
+
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+ * @summary Checks whether a connected Gmail sender is writing to a CRM contact
+ */
+export const checkEmailGatewayEligibilityBodySenderMax = 254;
+
+export const checkEmailGatewayEligibilityBodyRecipientsItemMax = 254;
+
+export const checkEmailGatewayEligibilityBodyRecipientsMax = 100;
+
+export const CheckEmailGatewayEligibilityBody = zod.object({
+  sender: zod.string().email().max(checkEmailGatewayEligibilityBodySenderMax),
+  recipients: zod
+    .array(
+      zod
+        .string()
+        .email()
+        .max(checkEmailGatewayEligibilityBodyRecipientsItemMax),
+    )
+    .min(1)
+    .max(checkEmailGatewayEligibilityBodyRecipientsMax),
+});
+
+export const CheckEmailGatewayEligibilityResponse = zod.object({
+  eligible: zod.boolean(),
+});
+
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret. Pending messages can be submitted again after Gmail sync.
+ * @summary Imports observed opens for an exact Gmail sent message and recipient
+ */
+export const importEmailGatewayDeliveryBodyDeliveryIdRegExp = new RegExp(
+  "^[A-Za-z0-9_-]{16,80}$",
+);
+export const importEmailGatewayDeliveryBodySenderMax = 254;
+
+export const importEmailGatewayDeliveryBodyRecipientMax = 254;
+
+export const importEmailGatewayDeliveryBodyMessageIdMax = 512;
+
+export const importEmailGatewayDeliveryBodyMessageIdRegExp = new RegExp(
+  "^<[A-Za-z0-9.!#$%&'\*+\/=?^_`{|}~-]+@[A-Za-z0-9.-]+>$",
+);
+export const importEmailGatewayDeliveryBodyEventsItemIdMax = 9007199254740991;
+
+export const importEmailGatewayDeliveryBodyEventsMax = 100;
+
+export const ImportEmailGatewayDeliveryBody = zod.object({
+  deliveryId: zod
+    .string()
+    .regex(importEmailGatewayDeliveryBodyDeliveryIdRegExp),
+  sender: zod.string().email().max(importEmailGatewayDeliveryBodySenderMax),
+  recipient: zod
+    .string()
+    .email()
+    .max(importEmailGatewayDeliveryBodyRecipientMax),
+  messageId: zod
+    .string()
+    .max(importEmailGatewayDeliveryBodyMessageIdMax)
+    .regex(importEmailGatewayDeliveryBodyMessageIdRegExp),
+  events: zod
+    .array(
+      zod.object({
+        id: zod
+          .number()
+          .min(1)
+          .max(importEmailGatewayDeliveryBodyEventsItemIdMax),
+        observedAt: zod.string().datetime({}),
+      }),
+    )
+    .max(importEmailGatewayDeliveryBodyEventsMax),
+});
+
+export const ImportEmailGatewayDeliveryResponse = zod.object({
+  status: zod.enum(["imported", "pending_sync", "out_of_scope"]),
+});
