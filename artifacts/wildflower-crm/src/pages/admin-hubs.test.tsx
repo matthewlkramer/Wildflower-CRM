@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/hooks/use-is-admin", () => ({ useIsAdmin: () => true }));
@@ -20,7 +21,8 @@ vi.mock("@/pages/restriction-text-review", () => ({
   default: () => <div>Restriction content</div>,
 }));
 
-import { AppImprovementsHub, DataCleanupHub } from "./admin-hubs";
+import { DataCleanupHub } from "./admin-hubs";
+import Admin from "./admin";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -61,12 +63,32 @@ describe("consolidated admin hubs", () => {
       "",
       "/admin/app-improvements?tab=future-functionality",
     );
-    await act(async () => root.render(<AppImprovementsHub />));
+    await act(async () => root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Admin />
+      </QueryClientProvider>,
+    ));
 
     expect(host.textContent).toContain("Feedback Queue");
     expect(host.textContent).toContain("Future Functionality");
-    expect(host.querySelector('[data-state="active"]')?.textContent).toContain(
+    expect(host.querySelector('[role="tablist"][aria-label="Admin sections"] [aria-selected="true"]')?.textContent).toBe("App Improvements");
+    expect(host.querySelector('[role="tabpanel"] [role="tablist"] [aria-selected="true"]')?.textContent).toContain(
       "Future Functionality",
     );
+  });
+
+  it("makes the four maintenance tools available inside Admin", async () => {
+    window.history.replaceState({}, "", "/admin?tab=maintenance");
+    await act(async () => root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Admin />
+      </QueryClientProvider>,
+    ));
+    expect([...host.querySelectorAll('[role="tabpanel"] a')].map((link) => link.getAttribute("href"))).toEqual([
+      "/enrichment-queue",
+      "/data-cleanup",
+      "/payment-intermediaries",
+      "/fundable-projects",
+    ]);
   });
 });

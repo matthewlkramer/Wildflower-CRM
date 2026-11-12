@@ -3,8 +3,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const route = vi.hoisted(() => ({ path: "/opportunities" }));
+
 vi.mock("wouter", () => ({
-  useLocation: () => ["/opportunities", vi.fn()],
+  useLocation: () => [route.path, vi.fn()],
   Link: ({ href, children, ...props }: React.ComponentProps<"a">) => (
     <a href={href} {...props}>
       {children}
@@ -48,6 +50,7 @@ let host: HTMLDivElement;
 let root: Root;
 
 beforeEach(() => {
+  route.path = "/opportunities";
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -84,8 +87,19 @@ describe("application layout", () => {
     const labels = Array.from(sidebar.querySelectorAll("a"), (link) =>
       link.textContent?.trim(),
     );
-    expect(labels).toContain("Data Cleanup");
-    expect(labels).toContain("App Improvements");
+    expect(labels).toContain("Admin");
+    expect(labels).toContain("Deadlines");
+    for (const label of [
+      "App Improvements",
+      "Enrichment Queue",
+      "Data Cleanup",
+      "Payment Intermediaries",
+      "Fundable Projects",
+      "Application/Close Deadlines",
+      "Reporting Deadlines",
+    ]) {
+      expect(labels).not.toContain(label);
+    }
     expect(labels).not.toContain("Users");
     expect(labels).not.toContain("Feedback");
     expect(labels).not.toContain("Potential Duplicates");
@@ -111,12 +125,21 @@ describe("application layout", () => {
     expect(text.indexOf("Gifts")).toBeGreaterThan(
       text.indexOf("Reconciliation"),
     );
-    expect(text.indexOf("Payment Intermediaries")).toBeGreaterThan(
-      text.indexOf("Maintenance"),
-    );
-    expect(text.indexOf("Fundable Projects")).toBeGreaterThan(
-      text.indexOf("Maintenance"),
-    );
+    const developmentLinks = text.split("Development team")[1]?.split("Administration")[0];
+    expect(developmentLinks).toContain("Development Team Meetings");
+    expect(developmentLinks).toContain("Campaigns");
+  });
+
+  it.each([
+    ["/meetings/development/example", "Development Team Meetings"],
+    ["/payment-intermediaries/example", "Admin"],
+    ["/admin/app-improvements", "Admin"],
+  ])("highlights the enclosing section for %s", async (path, label) => {
+    route.path = path;
+    await act(async () => root.render(<Layout>Page content</Layout>));
+    const sidebar = host.querySelector('[data-testid="desktop-sidebar"]')!;
+    const activeLinks = [...sidebar.querySelectorAll('[aria-current="page"]')];
+    expect(activeLinks.map((link) => link.getAttribute("aria-label"))).toEqual([label]);
   });
 
   it("uses compact vertical navigation spacing", async () => {

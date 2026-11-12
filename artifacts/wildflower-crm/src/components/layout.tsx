@@ -4,7 +4,6 @@ import { useClerk, useUser } from "@clerk/react";
 import { 
   LayoutDashboard, 
   Users, 
-  MessageSquare,
   Building2, 
   Target, 
   HandCoins, 
@@ -17,26 +16,21 @@ import {
   Menu,
   Inbox,
   Eye,
-  FileClock,
-  Landmark,
-  FolderKanban,
-  CreditCard,
   Scale,
   PanelLeftClose,
   PanelLeftOpen,
   Lightbulb,
   FileBarChart,
   ScrollText,
-  ListChecks,
   Megaphone,
   Newspaper,
   CalendarCheck2,
   Plane,
   GalleryVerticalEnd,
-  WandSparkles,
   Rss,
 } from "lucide-react";
 import { useIsAdmin } from "@/hooks/use-is-admin";
+import { adminMaintenanceLinks } from "@/lib/admin-maintenance";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -129,12 +123,6 @@ const navItems: NavEntry[] = [
     icon: Lightbulb,
     description: "Review potential grants before adding them to the pipeline.",
   },
-  {
-    href: "/grants-calendar",
-    label: "Application/Close Deadlines",
-    icon: CalendarDays,
-    description: "Track application deadlines and expected donor decisions.",
-  },
 
   { section: "Engagement" },
   {
@@ -217,10 +205,10 @@ const navItems: NavEntry[] = [
     description: "See received goal credit, unpaid commitments, and open asks.",
   },
   {
-    href: "/reporting-deadlines",
-    label: "Reporting Deadlines",
-    icon: FileClock,
-    description: "Track reports Wildflower owes to donors after an award.",
+    href: "/deadlines",
+    label: "Deadlines",
+    icon: CalendarDays,
+    description: "Track applications, projected closes, and reports due to donors.",
   },
   {
     href: "/projections",
@@ -229,47 +217,12 @@ const navItems: NavEntry[] = [
     description: "Review expected fundraising against goals.",
   },
 
-  { section: "Maintenance" },
+  { section: "Development team" },
   {
-    href: "/enrichment-queue",
-    label: "Enrichment Queue",
-    icon: WandSparkles,
-    description: "Review proposed updates to donor and contact information.",
-  },
-  {
-    href: "/data-cleanup",
-    label: "Data Cleanup",
-    icon: ListChecks,
-    description:
-      "Resolve missing fields, possible duplicates, and research items.",
-  },
-  {
-    href: "/payment-intermediaries",
-    label: "Payment Intermediaries",
-    icon: Landmark,
-    description: "Maintain entities that route payments on behalf of donors.",
-  },
-  {
-    href: "/fundable-projects",
-    label: "Fundable Projects",
-    icon: FolderKanban,
-    description:
-      "Maintain project designations, fundraising goals, and progress.",
-  },
-
-  { section: "Administration" },
-  {
-    href: "/admin",
-    label: "Admin",
-    icon: Settings,
-    description: "Manage users, settings, and integration health.",
-  },
-  {
-    href: "/admin/app-improvements",
-    label: "App Improvements",
-    icon: MessageSquare,
-    adminOnly: true,
-    description: "Review staff feedback and proposed improvements.",
+    href: "/meetings/development",
+    label: "Development Team Meetings",
+    icon: Users,
+    description: "Plan weekly development team agendas and review past meetings.",
   },
   {
     href: "/campaigns",
@@ -277,6 +230,14 @@ const navItems: NavEntry[] = [
     icon: Megaphone,
     adminOnly: true,
     description: "Maintain fundraising appeals and campaign attribution.",
+  },
+
+  { section: "Administration" },
+  {
+    href: "/admin",
+    label: "Admin",
+    icon: Settings,
+    description: "Find maintenance tools, app improvements, settings, and integrations.",
   },
   {
     href: "/audit-log",
@@ -298,12 +259,19 @@ function NavLinks({
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
+  const visibleItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const activePath = adminMaintenanceLinks.some(({ href }) => pathWithin(location, href))
+    ? "/admin"
+    : location;
+  const activeHref = visibleItems.reduce((best, item) =>
+    "href" in item && item.href.length > best.length && pathWithin(activePath, item.href)
+      ? item.href
+      : best, "");
+
   return (
     <TooltipProvider>
       <nav className="space-y-0.5" data-testid="primary-navigation">
-        {navItems
-          .filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin)
-          .map((item) => {
+        {visibleItems.map((item) => {
             if ("section" in item) {
               return collapsed ? (
                 <div
@@ -320,9 +288,7 @@ function NavLinks({
                 </div>
               );
             }
-            const isActive =
-              location === item.href ||
-              (item.href !== "/admin" && location.startsWith(`${item.href}/`));
+            const isActive = item.href === activeHref;
             const Icon = item.icon;
             const indented = !collapsed && "indent" in item && item.indent;
             const link = (
@@ -364,6 +330,10 @@ function NavLinks({
       </nav>
     </TooltipProvider>
   );
+}
+
+function pathWithin(location: string, href: string) {
+  return location === href || location.startsWith(`${href}/`);
 }
 
 const SIDEBAR_COLLAPSED_KEY = "wf-sidebar-collapsed";

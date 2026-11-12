@@ -385,15 +385,13 @@ export default function Dashboard() {
           </Link>
         )}
         {!hidden.includes("deadlines") && (
-          <Link href="/grants-calendar">
+          <Link href="/deadlines">
             <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
               <CardHeader>
-                <CardTitle className="text-lg">
-                  Application/close deadlines
-                </CardTitle>
+                <CardTitle className="text-lg">Deadlines</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
-                Upcoming application deadlines and projected close dates.
+                Applications, projected closes, and donor reports.
               </CardContent>
             </Card>
           </Link>

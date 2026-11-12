@@ -11,7 +11,7 @@ Past meeting follow-ups considers the user's 50 most recent CRM-matched calendar
 
 Gifts needing thank-yous lists the viewer's ten most recent active gifts with no recorded thank-you sent date, using the existing owner and thank-you presence filters and the global entity scope. The recorded sent date remains authoritative; this card does not infer acknowledgements from attachments or email content.
 
-The Moves, Application/close deadlines, and Projections navigation cards are also individually available in Customize dashboard and use the same account/browser preferences.
+The Moves, Deadlines, and Projections navigation cards are also individually available in Customize dashboard and use the same account/browser preferences. Deadlines opens one workspace with Applications & closes and Donor reporting tabs.
 
 Upcoming meetings lets CRM editors archive a synced meeting for the team.
 The archive applies to each CRM copy of that physical event, including in
