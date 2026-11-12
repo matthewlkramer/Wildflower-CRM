@@ -315,6 +315,26 @@ paths:
               schema: { $ref: "#/components/schemas/ZoomWebhookResponse" }
         "401": { description: "Missing, stale or invalid Zoom signature" }
         "503": { description: Zoom webhook is unconfigured or could not queue the event }
+  /integrations/email-gateway/connected-senders:
+    post:
+      operationId: listEmailGatewayConnectedSenders
+      tags: [integrations]
+      summary: Lists connected work Gmail mailboxes for the Workspace routing group
+      description: Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+      responses:
+        "200":
+          description: Complete list of mailboxes eligible for routing
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [senders]
+                properties:
+                  senders:
+                    type: array
+                    items: { type: string, format: email }
+        "401": { description: Missing or invalid gateway token }
+        "503": { description: Automatic enrollment is unavailable }
   /integrations/email-gateway/eligibility:
     post:
       operationId: checkEmailGatewayEligibility

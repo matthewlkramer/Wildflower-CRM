@@ -200,7 +200,36 @@ and the private routing value in the value field. Workspace adds the `X-`
 prefix. The gateway removes the header before delivery. Start with a narrow synthetic
 subject match and verify external delivery and CRM attribution. When expanding
 to ordinary outgoing mail, the same sender allowlist applies. Update both
-the Workspace rule and gateway config when adding a mailbox.
+the Workspace rule and gateway config when adding a mailbox in manual mode.
+
+### Automatic mailbox enrollment
+
+Use a dedicated Google Group as the outbound envelope-sender filter on the
+existing rule. Keep the private routing header, processed-message guard, TLS
+host and message-size limit. The group is for routing only. Restrict posting
+and keep unrelated users, nested groups, and other access grants out of it.
+
+1. Enable the Cloud Identity API in the gateway project. Attach a dedicated
+   service account to the gateway VM with the `cloud-platform` access scope.
+   Grant the service identity membership management for this group only. It
+   uses the VM metadata service, so no service-account key is required.
+2. Set `WFCRM_EMAIL_GATEWAY_WORKSPACE_DOMAIN` to the exact Workspace domain in
+   Replit and republish. The authenticated `/connected-senders` endpoint derives
+   membership from each non-archived CRM user's active Gmail read grant. Duplicate
+   claims on the same mailbox are excluded. No OAuth tokens are returned.
+3. Set `workspace_domain` and `routing_group` (the immutable Cloud Identity
+   resource `groups/{id}`) in the gateway configuration and rerun the installer.
+   The installer starts the one-minute `wf-crm-routing-group.timer`. To inspect
+   planned changes without applying them, run `sync_routing_group.py --config
+   /etc/wf-mail-pilot/crm.json --dry-run` as `wfmailpilot`. Verify that the two
+   current mailboxes and any new active ones are in the group before switching
+   the existing Workspace rule from exact sender names to the group filter.
+
+Disconnecting Google in WFCRM stops new tracking at the eligibility check.
+The next group sync removes the mailbox, and Workspace then stops routing its
+mail through the gateway. During propagation, any copies still routed by
+Workspace go through without a tracking image. When the CRM roster or group API
+is unavailable, the sync retries without treating a failed read as an empty list.
 
 The gateway checks eligibility against WFCRM's active Google grants and
 existing CRM contact matching. It passes through mail when there is no match,

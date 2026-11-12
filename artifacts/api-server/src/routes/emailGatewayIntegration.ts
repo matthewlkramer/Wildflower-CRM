@@ -19,8 +19,10 @@ import {
   GATEWAY_DELIVERY_PREFIX,
   gatewayGroupId,
   gatewaySenderEnabled,
+  gatewayWorkspaceDomain,
 } from "../lib/emailGatewayIdentity";
 import { getHeader, getMessage, listMessageIds } from "../lib/gmail";
+import { GMAIL_READ_SCOPE } from "../lib/googleOauth";
 import { getValidGoogleAccessTokenForUser } from "../lib/googleTokenStore";
 import { asyncHandler } from "../lib/helpers";
 
@@ -48,25 +50,48 @@ router.use(gatewayPath, (req, res, next) => {
   next();
 });
 
-async function connectedMailbox(sender: string): Promise<string | null> {
-  if (!gatewaySenderEnabled(sender)) return null;
-  const owners = await db
-    .select({ id: users.id })
+async function connectedMailboxes(sender?: string) {
+  const email = sql<string>`lower(${googleOauthTokens.googleEmail})`;
+  return db
+    .select({ email, userId: sql<string>`min(${users.id})` })
     .from(googleOauthTokens)
     .innerJoin(users, eq(users.id, googleOauthTokens.userId))
     .where(
       and(
-        sql`lower(${googleOauthTokens.googleEmail}) = ${sender}`,
+        sender ? sql`${email} = ${sender}` : undefined,
+        isNotNull(googleOauthTokens.googleEmail),
         isNotNull(googleOauthTokens.grantedAt),
         isNotNull(googleOauthTokens.accessTokenEnc),
         isNotNull(googleOauthTokens.refreshTokenEnc),
         isNull(googleOauthTokens.revokedAt),
         isNull(users.archivedAt),
+        gatewayWorkspaceDomain()
+          ? sql`${GMAIL_READ_SCOPE} = ANY(string_to_array(${googleOauthTokens.scope}, ' '))`
+          : undefined,
       ),
     )
-    .limit(2);
-  return owners.length === 1 ? owners[0]!.id : null;
+    .groupBy(email)
+    .having(sql`count(*) = 1`);
 }
+
+async function connectedMailbox(sender: string): Promise<string | null> {
+  if (!gatewaySenderEnabled(sender)) return null;
+  const [owner] = await connectedMailboxes(sender);
+  return owner?.userId ?? null;
+}
+
+router.post(
+  `${gatewayPath}/connected-senders`,
+  asyncHandler(async (_req, res) => {
+    if (!gatewayWorkspaceDomain()) {
+      res.status(503).json({ error: "email_gateway_enrollment_not_configured" });
+      return;
+    }
+    const mailboxes = await connectedMailboxes();
+    res.set("Cache-Control", "no-store");
+    res.json({ senders: mailboxes.map(({ email }) => email).filter(gatewaySenderEnabled).sort() });
+  }),
+);
 
 router.post(
   `${gatewayPath}/eligibility`,

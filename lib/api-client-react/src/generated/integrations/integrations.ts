@@ -18,6 +18,7 @@ import type {
   ConferenceResearchIntegrationTickResult,
   EmailGatewayDelivery,
   EmailGatewayDeliveryResult,
+  ListEmailGatewayConnectedSenders200,
   McpJsonRpcRequest,
   McpJsonRpcResponse,
   ZoomWebhookEvent,
@@ -292,6 +293,92 @@ export const useReceiveZoomWebhook = <
   TContext
 > => {
   return useMutation(getReceiveZoomWebhookMutationOptions(options));
+};
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+ * @summary Lists connected work Gmail mailboxes for the Workspace routing group
+ */
+export const getListEmailGatewayConnectedSendersUrl = () => {
+  return `/api/integrations/email-gateway/connected-senders`;
+};
+
+export const listEmailGatewayConnectedSenders = async (
+  options?: RequestInit,
+): Promise<ListEmailGatewayConnectedSenders200> => {
+  return customFetch<ListEmailGatewayConnectedSenders200>(
+    getListEmailGatewayConnectedSendersUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getListEmailGatewayConnectedSendersMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["listEmailGatewayConnectedSenders"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>,
+    void
+  > = () => {
+    return listEmailGatewayConnectedSenders(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ListEmailGatewayConnectedSendersMutationResult = NonNullable<
+  Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>
+>;
+
+export type ListEmailGatewayConnectedSendersMutationError = ErrorType<void>;
+
+/**
+ * @summary Lists connected work Gmail mailboxes for the Workspace routing group
+ */
+export const useListEmailGatewayConnectedSenders = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof listEmailGatewayConnectedSenders>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(
+    getListEmailGatewayConnectedSendersMutationOptions(options),
+  );
 };
 /**
  * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.

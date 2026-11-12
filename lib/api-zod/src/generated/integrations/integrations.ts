@@ -96,6 +96,14 @@ export const ReceiveZoomWebhookResponse = zod
 
 /**
  * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+ * @summary Lists connected work Gmail mailboxes for the Workspace routing group
+ */
+export const ListEmailGatewayConnectedSendersResponse = zod.object({
+  senders: zod.array(zod.string().email()),
+});
+
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
  * @summary Checks whether a connected Gmail sender is writing to a CRM contact
  */
 export const checkEmailGatewayEligibilityBodySenderMax = 254;
