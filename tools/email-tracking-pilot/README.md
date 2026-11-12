@@ -195,8 +195,9 @@ timer. Permit port 2525 only from Google's current outgoing mail ranges.
 Use an isolated Workspace content-compliance rule requiring an exact match
 against the enabled envelope-sender list and the absence of
 `X-Wildflower-Mail-Pilot-Processed: v1`. Use the validated TLS mail host on
-port 2525 and add `X-Wildflower-Mail-Gateway-Auth` with the private routing
-value. The gateway removes it before delivery. Start with a narrow synthetic
+port 2525. Enter `Wildflower-Mail-Gateway-Auth` in the custom header key field
+and the private routing value in the value field. Workspace adds the `X-`
+prefix. The gateway removes the header before delivery. Start with a narrow synthetic
 subject match and verify external delivery and CRM attribution. When expanding
 to ordinary outgoing mail, the same sender allowlist applies. Update both
 the Workspace rule and gateway config when adding a mailbox.

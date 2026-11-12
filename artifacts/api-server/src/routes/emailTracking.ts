@@ -16,6 +16,7 @@ import {
   eq,
   gte,
   inArray,
+  max,
   sql,
   type SQLWrapper,
 } from "drizzle-orm";
@@ -638,7 +639,7 @@ router.get(
         recipientHouseholdIds: trackedEmails.recipientHouseholdIds,
         createdAt: trackedEmails.createdAt,
         totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
-        lastView: sql<Date | null>`MAX(${trackedEmailViews.viewedAt})`,
+        lastView: max(trackedEmailViews.viewedAt),
       })
       .from(trackedEmails)
       .leftJoin(
@@ -662,7 +663,7 @@ router.get(
         recipientHouseholdIds: r.recipientHouseholdIds,
         createdAt: r.createdAt.toISOString(),
         totalViews: r.totalViews ?? 0,
-        lastView: r.lastView ? new Date(r.lastView).toISOString() : null,
+        lastView: r.lastView?.toISOString() ?? null,
       })),
     });
   }),
@@ -714,7 +715,7 @@ router.get(
         recipientHouseholdIds: trackedEmails.recipientHouseholdIds,
         createdAt: trackedEmails.createdAt,
         totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
-        lastView: sql<Date | null>`MAX(${trackedEmailViews.viewedAt})`,
+        lastView: max(trackedEmailViews.viewedAt),
       })
       .from(trackedEmails)
       .leftJoin(
@@ -737,7 +738,7 @@ router.get(
         recipientHouseholdIds: r.recipientHouseholdIds,
         createdAt: r.createdAt.toISOString(),
         totalViews: r.totalViews ?? 0,
-        lastView: r.lastView ? r.lastView.toISOString() : null,
+        lastView: r.lastView?.toISOString() ?? null,
       })),
     });
   }),
@@ -811,7 +812,7 @@ router.get(
         sender: trackedEmails.sender,
         sentAt: trackedEmails.createdAt,
         totalViews: sql<number>`COUNT(${trackedEmailViews.id})::int`,
-        lastView: sql<Date | null>`MAX(${trackedEmailViews.viewedAt})`,
+        lastView: max(trackedEmailViews.viewedAt),
         laterReply,
         gmailThreadId: trackedEmails.gmailThreadId,
         mailboxUserId: users.id,
