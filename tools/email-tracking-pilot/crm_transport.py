@@ -30,6 +30,8 @@ from prepare_delivery import Delivery, prepare_deliveries
 ROUTE_HEADER = b"x-wildflower-mail-gateway-auth"
 MESSAGE_ID = re.compile(r"<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>")
 EXPORT_RETRY_SECONDS = 60
+DOMAIN = re.compile(r"[a-z0-9-]+(?:\.[a-z0-9-]+)+")
+WORKSPACE_ADDRESS = re.compile(r"[a-z0-9._%+-]+@([a-z0-9.-]+)")
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,8 @@ class CrmConfig:
     relay_port: int = 587
     relay_user: str | None = None
     relay_password_file: str | None = None
+    workspace_domain: str | None = None
+    routing_group: str | None = None
 
     def __post_init__(self):
         endpoint = urlsplit(self.crm_endpoint)
@@ -52,6 +56,16 @@ class CrmConfig:
             raise ValueError("Provide an HTTPS CRM endpoint")
         if not self.senders or bool(self.relay_user) != bool(self.relay_password_file):
             raise ValueError("Configure sender allowlist and complete relay credentials")
+        if self.workspace_domain is not None and not DOMAIN.fullmatch(self.workspace_domain):
+            raise ValueError("Use an exact lowercase Workspace domain")
+        if self.routing_group is not None and (
+            not self.workspace_domain or not re.fullmatch(r"groups/[a-zA-Z0-9_-]+", self.routing_group)
+        ):
+            raise ValueError("Use an immutable Cloud Identity group resource")
+
+    def workspace_sender(self, address):
+        match = WORKSPACE_ADDRESS.fullmatch(address)
+        return bool(match and match[1] == self.workspace_domain)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -69,7 +83,7 @@ def crm_post(config, operation, data):
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"},
     )
     with build_opener(NoRedirect()).open(request, timeout=5) as response:
-        result = json.loads(response.read(16_384))
+        result = json.loads(response.read(131_072))
     if not isinstance(result, dict):
         raise ValueError("Unexpected CRM response")
     return result
@@ -123,7 +137,10 @@ def tracked_copy(config, sender, recipient, raw, headers, message_id, post):
 
 def deliver_crm(config, sender, recipient, raw, *, post=crm_post, submit=forward_copy):
     sender, recipient = sender.casefold(), recipient.casefold()
-    if sender not in {address.casefold() for address in config.senders} or len(raw) > MAX_MESSAGE_BYTES:
+    sender_allowed = config.workspace_sender(sender) if config.routing_group else (
+        sender in {address.casefold() for address in config.senders}
+    )
+    if not sender_allowed or len(raw) > MAX_MESSAGE_BYTES:
         raise RejectDelivery("Sender or message size is outside the CRM route")
     clean = remove_route_header(raw, Path(config.route_secret_file).read_bytes().strip())
     headers = BytesParser(policy=policy.default).parsebytes(clean, headersonly=True)

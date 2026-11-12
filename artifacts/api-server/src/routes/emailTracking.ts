@@ -35,7 +35,7 @@ import { GMAIL_SEND_SCOPE } from "../lib/googleOauth";
 import { buildRawMessage } from "../lib/mime";
 import { sendRawMessage, GmailSendError } from "../lib/gmailSend";
 import { shouldSuppressInboundTrackingMessage } from "../lib/emailTrackingSuppression";
-import { GATEWAY_DELIVERY_PREFIX, gatewayDeliveryVisibility, gatewaySenderEnabled, isGatewayDelivery } from "../lib/emailGatewayIdentity";
+import { GATEWAY_DELIVERY_PREFIX, gatewayDeliveryVisibility, gatewaySenderEnabled, isGatewayDelivery, trackingMailboxMatches } from "../lib/emailGatewayIdentity";
 
 /**
  * Self-hosted backend for the vendored Magio email-tracking extension
@@ -648,7 +648,7 @@ router.get(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
       )
-      .where(and(eq(trackedEmails.sender, myEmail), hasExternalRecipient, gatewayDeliveryVisibility(me.id)))
+      .where(and(trackingMailboxMatches(me.id, myEmail), hasExternalRecipient, gatewayDeliveryVisibility(me.id)))
       .groupBy(trackedEmails.id)
       .orderBy(desc(trackedEmails.createdAt))
       .limit(limit);
@@ -821,7 +821,7 @@ router.get(
         mailboxUserName: users.displayName,
       })
       .from(trackedEmails)
-      .innerJoin(users, sql`lower(${users.email}) = lower(${trackedEmails.sender})`)
+      .innerJoin(users, trackingMailboxMatches(users.id, users.email))
       .leftJoin(
         trackedEmailViews,
         eq(trackedEmailViews.emailId, trackedEmails.id),
@@ -1001,7 +1001,7 @@ router.post(
       const row = await db
         .select({ mailboxUserId: users.id })
         .from(trackedEmails)
-        .innerJoin(users, sql`lower(${users.email}) = lower(${trackedEmails.sender})`)
+        .innerJoin(users, trackingMailboxMatches(users.id, users.email))
         .where(
           and(
             eq(trackedEmails.id, sourceId),
@@ -1120,7 +1120,7 @@ router.get(
           gatewayDeliveryVisibility(me.id),
           me?.role === "admin"
             ? sql`TRUE`
-            : sql`lower(${trackedEmails.sender}) = lower(${me?.email ?? ""})`,
+            : trackingMailboxMatches(me.id, me.email ?? ""),
         ),
       )
       .then((r) => r[0]);

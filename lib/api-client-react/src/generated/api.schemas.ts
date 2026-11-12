@@ -12077,6 +12077,10 @@ householdId?: string;
 before?: string;
 };
 
+export type ListEmailGatewayConnectedSenders200 = {
+  senders: string[];
+};
+
 export type CheckEmailGatewayEligibilityBody = {
   /** @maxLength 254 */
   sender: string;

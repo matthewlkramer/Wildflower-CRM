@@ -17,10 +17,12 @@
  *   - calendar.readonly — for the Calendar sync worker (T004)
  */
 
+export const GMAIL_READ_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/gmail.readonly",
+  GMAIL_READ_SCOPE,
   "https://www.googleapis.com/auth/gmail.send",
   "https://www.googleapis.com/auth/calendar.readonly",
 ] as const;

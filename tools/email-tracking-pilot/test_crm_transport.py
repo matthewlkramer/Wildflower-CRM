@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from contextlib import closing
+from dataclasses import replace
 from email import policy
 from email.parser import BytesParser
 from pathlib import Path
@@ -85,6 +86,16 @@ class CrmTransportTest(unittest.TestCase):
             deliver_crm(self.config, "unrelated@example.test", RECIPIENTS[0], self.routed,
                         submit=self.submit)
         self.assertEqual(self.delivered, [])
+
+    def test_group_propagation_after_disconnect_delivers_without_tracking(self):
+        config = replace(self.config, workspace_domain="example.test", routing_group="groups/test")
+        deliver_crm(config, "sender@example.test", RECIPIENTS[0], self.routed,
+                    post=lambda *_: {"eligible": False}, submit=self.submit)
+        self.assertEqual(self.delivered[0][2], self.message)
+        with self.assertRaises(RejectDelivery):
+            deliver_crm(config, "sender@outside.test", RECIPIENTS[0], self.routed,
+                        submit=self.submit)
+        export_crm(config, post=lambda *_: self.fail("Disconnected mail must never be exported"))
 
 
 if __name__ == "__main__":
