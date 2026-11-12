@@ -1,6 +1,7 @@
 import { db } from "@workspace/db";
 import { trackedEmails, trackedEmailViews } from "@workspace/db/schema";
-import { eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, inArray, or, sql, type SQL } from "drizzle-orm";
+import { GATEWAY_DELIVERY_PREFIX, isGatewayDelivery } from "./emailGatewayIdentity";
 
 /**
  * Enriches synced Gmail `email_messages` rows with their open-tracking
@@ -75,7 +76,8 @@ export function matchSentEmailTracking(
     // legacy row can never inflate the count of an exactly-matched send.
     const exacts = r.gmailMessageId
       ? tracked.filter(
-          (te) => !!te.gmailMessageId && te.gmailMessageId === r.gmailMessageId,
+          (te) => te.gmailMessageId === r.gmailMessageId &&
+            (!te.id.startsWith(GATEWAY_DELIVERY_PREFIX) || te.sender === fromLower),
         )
       : [];
     const matchSet =
@@ -83,6 +85,7 @@ export function matchSentEmailTracking(
         ? exacts
         : tracked.filter(
             (te) =>
+              !te.id.startsWith(GATEWAY_DELIVERY_PREFIX) &&
               !!fromLower &&
               te.sender.trim() === fromLower &&
               !!subjLower &&
@@ -143,6 +146,9 @@ export async function computeTracking(
       sql`${trackedEmails.recipientHouseholdIds} @> ARRAY[${scope.householdId}]::text[]`,
     );
 
+  const gmailIds = sent
+    .map((r) => r.gmailMessageId)
+    .filter((x): x is string => !!x);
   let whereExpr: SQL | undefined;
   if (scopePreds.length > 0) {
     // The activity feed always scopes by exactly ONE contact dimension, so
@@ -150,12 +156,11 @@ export async function computeTracking(
     // they are OR-combined (not AND like the email-messages list): a tracked
     // email is xor-linked to a single donor type, so AND-combining person AND
     // funder predicates would never match any tracked row.
-    whereExpr =
-      scopePreds.length === 1 ? scopePreds[0]! : or(...scopePreds)!;
+    const contactScope = or(...scopePreds);
+    whereExpr = gmailIds.length
+      ? or(contactScope, and(isGatewayDelivery, inArray(trackedEmails.gmailMessageId, gmailIds)))
+      : contactScope;
   } else {
-    const gmailIds = sent
-      .map((r) => r.gmailMessageId)
-      .filter((x): x is string => !!x);
     if (gmailIds.length === 0) return new Map();
     whereExpr = inArray(trackedEmails.gmailMessageId, gmailIds);
   }

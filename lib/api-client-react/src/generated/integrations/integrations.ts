@@ -13,7 +13,11 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  CheckEmailGatewayEligibility200,
+  CheckEmailGatewayEligibilityBody,
   ConferenceResearchIntegrationTickResult,
+  EmailGatewayDelivery,
+  EmailGatewayDeliveryResult,
   McpJsonRpcRequest,
   McpJsonRpcResponse,
   ZoomWebhookEvent,
@@ -288,4 +292,184 @@ export const useReceiveZoomWebhook = <
   TContext
 > => {
   return useMutation(getReceiveZoomWebhookMutationOptions(options));
+};
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+ * @summary Checks whether a connected Gmail sender is writing to a CRM contact
+ */
+export const getCheckEmailGatewayEligibilityUrl = () => {
+  return `/api/integrations/email-gateway/eligibility`;
+};
+
+export const checkEmailGatewayEligibility = async (
+  checkEmailGatewayEligibilityBody: CheckEmailGatewayEligibilityBody,
+  options?: RequestInit,
+): Promise<CheckEmailGatewayEligibility200> => {
+  return customFetch<CheckEmailGatewayEligibility200>(
+    getCheckEmailGatewayEligibilityUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(checkEmailGatewayEligibilityBody),
+    },
+  );
+};
+
+export const getCheckEmailGatewayEligibilityMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkEmailGatewayEligibility>>,
+    TError,
+    { data: BodyType<CheckEmailGatewayEligibilityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkEmailGatewayEligibility>>,
+  TError,
+  { data: BodyType<CheckEmailGatewayEligibilityBody> },
+  TContext
+> => {
+  const mutationKey = ["checkEmailGatewayEligibility"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkEmailGatewayEligibility>>,
+    { data: BodyType<CheckEmailGatewayEligibilityBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return checkEmailGatewayEligibility(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckEmailGatewayEligibilityMutationResult = NonNullable<
+  Awaited<ReturnType<typeof checkEmailGatewayEligibility>>
+>;
+export type CheckEmailGatewayEligibilityMutationBody =
+  BodyType<CheckEmailGatewayEligibilityBody>;
+export type CheckEmailGatewayEligibilityMutationError = ErrorType<void>;
+
+/**
+ * @summary Checks whether a connected Gmail sender is writing to a CRM contact
+ */
+export const useCheckEmailGatewayEligibility = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkEmailGatewayEligibility>>,
+    TError,
+    { data: BodyType<CheckEmailGatewayEligibilityBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkEmailGatewayEligibility>>,
+  TError,
+  { data: BodyType<CheckEmailGatewayEligibilityBody> },
+  TContext
+> => {
+  return useMutation(getCheckEmailGatewayEligibilityMutationOptions(options));
+};
+/**
+ * Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret. Pending messages can be submitted again after Gmail sync.
+ * @summary Imports observed opens for an exact Gmail sent message and recipient
+ */
+export const getImportEmailGatewayDeliveryUrl = () => {
+  return `/api/integrations/email-gateway/deliveries`;
+};
+
+export const importEmailGatewayDelivery = async (
+  emailGatewayDelivery: EmailGatewayDelivery,
+  options?: RequestInit,
+): Promise<EmailGatewayDeliveryResult> => {
+  return customFetch<EmailGatewayDeliveryResult>(
+    getImportEmailGatewayDeliveryUrl(),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(emailGatewayDelivery),
+    },
+  );
+};
+
+export const getImportEmailGatewayDeliveryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importEmailGatewayDelivery>>,
+    TError,
+    { data: BodyType<EmailGatewayDelivery> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof importEmailGatewayDelivery>>,
+  TError,
+  { data: BodyType<EmailGatewayDelivery> },
+  TContext
+> => {
+  const mutationKey = ["importEmailGatewayDelivery"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof importEmailGatewayDelivery>>,
+    { data: BodyType<EmailGatewayDelivery> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return importEmailGatewayDelivery(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ImportEmailGatewayDeliveryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof importEmailGatewayDelivery>>
+>;
+export type ImportEmailGatewayDeliveryMutationBody =
+  BodyType<EmailGatewayDelivery>;
+export type ImportEmailGatewayDeliveryMutationError = ErrorType<void>;
+
+/**
+ * @summary Imports observed opens for an exact Gmail sent message and recipient
+ */
+export const useImportEmailGatewayDelivery = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof importEmailGatewayDelivery>>,
+    TError,
+    { data: BodyType<EmailGatewayDelivery> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof importEmailGatewayDelivery>>,
+  TError,
+  { data: BodyType<EmailGatewayDelivery> },
+  TContext
+> => {
+  return useMutation(getImportEmailGatewayDeliveryMutationOptions(options));
 };

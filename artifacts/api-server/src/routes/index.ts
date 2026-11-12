@@ -4,6 +4,7 @@ import healthRouter from "./health";
 import flodeskChatgptMcpRouter from "./flodeskChatgptMcp";
 import conferenceResearchIntegrationRouter from "./conferenceResearchIntegration";
 import zoomWebhookRouter from "./zoomWebhook";
+import emailGatewayIntegrationRouter from "./emailGatewayIntegration";
 import usersRouter from "./users";
 import regionsRouter from "./regions";
 import schoolsRouter from "./schools";
@@ -89,6 +90,7 @@ router.use(conferenceResearchIntegrationRouter);
 // Zoom authenticates with its own request signature (no user session), so it
 // mounts with the other machine-to-machine routers, ahead of session auth.
 router.use(zoomWebhookRouter);
+router.use(emailGatewayIntegrationRouter);
 // emailTrackingRouter mounts here (NOT at the bottom) on purpose. Several
 // sub-routers below — usersRouter, regionsRouter, schoolsRouter, etc. —
 // apply `router.use(requireAuth)` at module top, and Express runs that

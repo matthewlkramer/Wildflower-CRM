@@ -717,6 +717,44 @@ export interface ConferenceResearchBackfillResult {
   requestIds: string[];
 }
 
+export type EmailGatewayDeliveryEventsItem = {
+  /**
+   * @minimum 1
+   * @maximum 9007199254740991
+   */
+  id: number;
+  observedAt: string;
+};
+
+export interface EmailGatewayDelivery {
+  /** @pattern ^[A-Za-z0-9_-]{16,80}$ */
+  deliveryId: string;
+  /** @maxLength 254 */
+  sender: string;
+  /** @maxLength 254 */
+  recipient: string;
+  /**
+   * @maxLength 512
+   * @pattern ^<[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>$
+   */
+  messageId: string;
+  /** @maxItems 100 */
+  events: EmailGatewayDeliveryEventsItem[];
+}
+
+export type EmailGatewayDeliveryResultStatus = typeof EmailGatewayDeliveryResultStatus[keyof typeof EmailGatewayDeliveryResultStatus];
+
+
+export const EmailGatewayDeliveryResultStatus = {
+  imported: 'imported',
+  pending_sync: 'pending_sync',
+  out_of_scope: 'out_of_scope',
+} as const;
+
+export interface EmailGatewayDeliveryResult {
+  status: EmailGatewayDeliveryResultStatus;
+}
+
 export type ZoomWebhookEventPayload = { [key: string]: unknown };
 
 /**
@@ -12035,6 +12073,20 @@ personId?: string;
  */
 householdId?: string;
 before?: string;
+};
+
+export type CheckEmailGatewayEligibilityBody = {
+  /** @maxLength 254 */
+  sender: string;
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  recipients: string[];
+};
+
+export type CheckEmailGatewayEligibility200 = {
+  eligible: boolean;
 };
 
 export type SearchParams = {

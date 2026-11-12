@@ -315,6 +315,60 @@ paths:
               schema: { $ref: "#/components/schemas/ZoomWebhookResponse" }
         "401": { description: "Missing, stale or invalid Zoom signature" }
         "503": { description: Zoom webhook is unconfigured or could not queue the event }
+  /integrations/email-gateway/eligibility:
+    post:
+      operationId: checkEmailGatewayEligibility
+      tags: [integrations]
+      summary: Checks whether a connected Gmail sender is writing to a CRM contact
+      description: Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sender, recipients]
+              properties:
+                sender: { type: string, format: email, maxLength: 254 }
+                recipients:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  items: { type: string, format: email, maxLength: 254 }
+      responses:
+        "200":
+          description: Whether the gateway may attach a tracking image
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [eligible]
+                properties:
+                  eligible: { type: boolean }
+        "400": { description: Invalid sender or recipient payload }
+        "401": { description: Missing or invalid gateway token }
+        "503": { description: The gateway integration is unavailable }
+  /integrations/email-gateway/deliveries:
+    post:
+      operationId: importEmailGatewayDelivery
+      tags: [integrations]
+      summary: Imports observed opens for an exact Gmail sent message and recipient
+      description: Requires the dedicated WFCRM_EMAIL_GATEWAY_TOKEN bearer secret. Pending messages can be submitted again after Gmail sync.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EmailGatewayDelivery" }
+      responses:
+        "200":
+          description: Import outcome
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EmailGatewayDeliveryResult" }
+        "400": { description: Invalid delivery or event payload }
+        "401": { description: Missing or invalid gateway token }
+        "409": { description: The delivery identity is already associated with another message }
+        "503": { description: The gateway integration is unavailable }
   # ─── Global search ─────────────────────────────────────────────────────────
   /search:
     get:
@@ -13963,6 +14017,28 @@ components:
         dateRunsQueued: { type: integer }
         agendaRunsQueued: { type: integer }
         requestIds: { type: array, items: { type: string } }
+    EmailGatewayDelivery:
+      type: object
+      required: [deliveryId, sender, recipient, messageId, events]
+      properties:
+        deliveryId: { type: string, pattern: '^[A-Za-z0-9_-]{16,80}$' }
+        sender: { type: string, format: email, maxLength: 254 }
+        recipient: { type: string, format: email, maxLength: 254 }
+        messageId: { type: string, maxLength: 512, pattern: '^<[A-Za-z0-9.!#$%&''*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+>$' }
+        events:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [id, observedAt]
+            properties:
+              id: { type: integer, minimum: 1, maximum: 9007199254740991 }
+              observedAt: { type: string, format: date-time }
+    EmailGatewayDeliveryResult:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [imported, pending_sync, out_of_scope] }
     ZoomWebhookEvent:
       type: object
       description: >-
