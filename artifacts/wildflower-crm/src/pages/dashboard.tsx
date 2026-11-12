@@ -400,7 +400,7 @@ export default function Dashboard() {
           <Link href="/moves">
             <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
               <CardHeader>
-                <CardTitle className="text-lg">Moves</CardTitle>
+                <CardTitle className="text-lg">Donor Follow-up</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
                 People who haven't been contacted recently.

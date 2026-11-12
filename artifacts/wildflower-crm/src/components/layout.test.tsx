@@ -134,6 +134,8 @@ describe("application layout", () => {
     ["/meetings/development/example", "Development Team Meetings"],
     ["/payment-intermediaries/example", "Admin"],
     ["/admin/app-improvements", "Admin"],
+    ["/feed", "Activity"],
+    ["/moves", "Donor Follow-up"],
   ])("highlights the enclosing section for %s", async (path, label) => {
     route.path = path;
     await act(async () => root.render(<Layout>Page content</Layout>));

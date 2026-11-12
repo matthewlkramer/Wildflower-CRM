@@ -127,13 +127,13 @@ const navItems: NavEntry[] = [
   { section: "Engagement" },
   {
     href: "/feed",
-    label: "Feed",
+    label: "Activity",
     icon: Rss,
     description: "Scan recent activity and updates across relationships.",
   },
   {
     href: "/moves",
-    label: "Moves",
+    label: "Donor Follow-up",
     icon: Activity,
     description: "Review outreach and follow-up across donor portfolios.",
   },

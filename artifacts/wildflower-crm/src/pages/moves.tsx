@@ -167,7 +167,7 @@ export default function Moves() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">Moves</h1>
+          <h1 className="text-3xl font-serif font-bold text-foreground">Donor Follow-up</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {isOrg
               ? "Organizations that could use a touch — ordered by oldest contact first."

@@ -50,7 +50,7 @@ test("feedback workflow: browser preferences, mobile search, record actions, and
   });
   await page.goto("/e2e/fixtures/feedback.html");
   await page.getByText("Customize dashboard").click();
-  for (const label of ["Moves", "Deadlines", "Projections"])
+  for (const label of ["Donor Follow-up", "Deadlines", "Projections"])
     await page.getByRole("switch", { name: `Show ${label}` }).click();
   await page.getByTestId("filter-meetings-owner").click();
   await page.getByRole("option", { name: "Synthetic Tester" }).click();
@@ -59,7 +59,7 @@ test("feedback workflow: browser preferences, mobile search, record actions, and
     "Synthetic Tester",
   );
   await page.getByText("Customize dashboard").click();
-  for (const label of ["Moves", "Deadlines", "Projections"])
+  for (const label of ["Donor Follow-up", "Deadlines", "Projections"])
     await expect(
       page.getByRole("switch", { name: `Show ${label}` }),
     ).toHaveAttribute("aria-checked", "false");
