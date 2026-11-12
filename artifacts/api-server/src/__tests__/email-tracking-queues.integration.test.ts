@@ -21,6 +21,7 @@ const OUT_OWNER = `${RUN}_out_owner`;
 const OUT_MEMBER = `${RUN}_out_member`;
 const OUT_OLD = `${RUN}_out_old`;
 const OUT_NO_CRM = `${RUN}_out_no_crm`;
+const LAST_OWNER_OPEN = new Date(Date.now() - 60 * 60_000);
 const IN_OWNER_WAIT = `${RUN}_in_owner_wait`;
 const IN_OWNER_YOUNG = `${RUN}_in_owner_young`;
 const IN_OWNER_REPLIED = `${RUN}_in_owner_replied`;
@@ -159,6 +160,15 @@ beforeAll(async () => {
       sender: OWNER_EMAIL,
       createdAt: new Date(now - 24 * 60 * 60_000),
     },
+  ]);
+
+  await db.insert(dbMod.trackedEmailViews).values([
+    {
+      id: `${OUT_OWNER}_open_1`,
+      emailId: OUT_OWNER,
+      viewedAt: new Date(LAST_OWNER_OPEN.getTime() - 1_000),
+    },
+    { id: `${OUT_OWNER}_open_2`, emailId: OUT_OWNER, viewedAt: LAST_OWNER_OPEN },
   ]);
 
   const received = (
@@ -350,8 +360,13 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
   it("enforces age/contact/reply rules and detects a later reply in the same mailbox thread", async () => {
     asUser(OWNER_ID, "team_member", OWNER_EMAIL);
     const outbound = await getQueue("outbound");
+    expect(outbound.status).toBe(200);
     const ownerOutbound = outbound.json.data.find((r) => r.id === OUT_OWNER);
-    expect(ownerOutbound?.laterReply).toBe(true);
+    expect(ownerOutbound).toMatchObject({
+      lastView: LAST_OWNER_OPEN.toISOString(),
+      laterReply: true,
+      totalViews: 2,
+    });
     expect(outbound.json.data.map((r) => r.id)).not.toContain(OUT_OLD);
     expect(outbound.json.data.map((r) => r.id)).not.toContain(OUT_NO_CRM);
 
