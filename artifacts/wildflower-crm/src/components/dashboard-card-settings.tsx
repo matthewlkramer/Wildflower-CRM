@@ -20,8 +20,8 @@ export const DASHBOARD_CARDS = {
   email: "Email proposals",
   grants: "Grant leads",
   projections: "Projections",
-  deadlines: "Application/close deadlines",
-  moves: "Moves",
+  deadlines: "Deadlines",
+  moves: "Donor Follow-up",
 } as const;
 export type DashboardCardId = keyof typeof DASHBOARD_CARDS;
 

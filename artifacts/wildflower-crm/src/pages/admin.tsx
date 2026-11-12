@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link, useLocation, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   useListEntities,
@@ -46,6 +47,7 @@ import {
   getGetOwnedRecordCountsQueryKey,
   getAdminListEntityCodingRulesQueryKey,
   getListEntitiesQueryKey,
+  getListFiscalYearsQueryKey,
   getListFiscalYearEntityGoalsQueryKey,
   getGetDashboardSummaryQueryKey,
   getAdminListGoogleSyncQueryKey,
@@ -127,6 +129,8 @@ import { useToast } from "@/hooks/use-toast";
 import { partitionFiscalYears } from "@/lib/dropdownVisibility";
 import { formatEnum } from "@/lib/format";
 import AdminUsers from "@/pages/admin-users";
+import { AppImprovementsHub } from "@/pages/admin-hubs";
+import { adminMaintenanceLinks } from "@/lib/admin-maintenance";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -157,14 +161,34 @@ function normalizeAmount(raw: string): string {
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
+const adminTabs = [
+  { value: "funds-goals", label: "Funds & Goals" },
+  { value: "maintenance", label: "Maintenance" },
+  { value: "app-improvements", label: "App Improvements", adminOnly: true },
+  { value: "integrations", label: "Integrations / Sync", adminOnly: true },
+  { value: "email", label: "Email" },
+  { value: "finance-rules", label: "Finance Rules" },
+  { value: "users", label: "Users", adminOnly: true },
+];
+
 export default function Admin() {
   const isAdmin = useIsAdmin();
+  const [location, navigate] = useLocation();
+  const search = useSearch();
+  const requested = location === "/admin/app-improvements"
+    ? "app-improvements"
+    : new URLSearchParams(search).get("tab");
+  const availableTabs = adminTabs.filter((tab) => !tab.adminOnly || isAdmin);
+  const activeTab = availableTabs.find(({ value }) => value === requested)?.value ?? "funds-goals";
+  const showGoals = activeTab === "funds-goals";
   const entitiesQ = useListEntities({
-    query: { queryKey: getListEntitiesQueryKey(), staleTime: 30_000 },
+    query: { queryKey: getListEntitiesQueryKey(), staleTime: 30_000, enabled: showGoals || activeTab === "finance-rules" },
   });
-  const fyListQ = useListFiscalYears();
+  const fyListQ = useListFiscalYears(undefined, {
+    query: { queryKey: getListFiscalYearsQueryKey(), enabled: showGoals },
+  });
   const goalsQ = useListFiscalYearEntityGoals(undefined, {
-    query: { queryKey: getListFiscalYearEntityGoalsQueryKey(), staleTime: 30_000 },
+    query: { queryKey: getListFiscalYearEntityGoalsQueryKey(), staleTime: 30_000, enabled: showGoals },
   });
 
   const entities = entitiesQ.data ?? [];
@@ -173,28 +197,47 @@ export default function Admin() {
 
   return (
     <div className="space-y-8 max-w-6xl">
-      <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">Admin</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Manage fund entities and per-fiscal-year goals. Retired entities stay
-          in the database for historical attribution but are hidden from
-          dropdowns by default across the rest of the app.
-        </p>
-      </div>
+      <h1 className="text-3xl font-serif font-bold text-foreground">Admin</h1>
 
-      <Tabs defaultValue={new URLSearchParams(window.location.search).get("tab") === "users" ? "users" : "funds-goals"} className="space-y-6">
-        <TabsList className="flex h-auto flex-wrap justify-start gap-1">
-          <TabsTrigger value="funds-goals">Funds &amp; Goals</TabsTrigger>
-          {isAdmin && <TabsTrigger value="integrations">Integrations / Sync</TabsTrigger>}
-          <TabsTrigger value="email">Email</TabsTrigger>
-          <TabsTrigger value="finance-rules">Finance Rules</TabsTrigger>
-          {isAdmin && <TabsTrigger value="users">Users</TabsTrigger>}
+      <Tabs
+        value={activeTab}
+        activationMode="manual"
+        onValueChange={(value) => navigate(value === "app-improvements" ? "/admin/app-improvements" : `/admin?tab=${value}`)}
+        className="space-y-6"
+      >
+        <TabsList aria-label="Admin sections" className="flex h-auto flex-wrap justify-start gap-1">
+          {availableTabs.map(({ value, label }) => (
+            <TabsTrigger key={value} value={value}>{label}</TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="funds-goals" className="space-y-8">
+          <p className="text-sm text-muted-foreground">
+            Retired fund entities retain their historical attribution and are
+            hidden from dropdowns by default.
+          </p>
           <EntitiesSection entities={entities} loading={entitiesQ.isLoading} />
           <GoalsSection entities={entities} fyList={fyList} goals={goals} loading={goalsQ.isLoading || fyListQ.isLoading} />
         </TabsContent>
+
+        <TabsContent value="maintenance">
+          <ul className="grid gap-3 sm:grid-cols-2">
+            {adminMaintenanceLinks.map(({ href, label, description }) => (
+              <li key={href}>
+                <Link href={href} className="block h-full rounded-lg border bg-card p-4 transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <span className="block font-semibold">{label}</span>
+                  <span className="mt-1 block text-sm text-muted-foreground">{description}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="app-improvements">
+            <AppImprovementsHub />
+          </TabsContent>
+        )}
 
         {isAdmin && (
           <TabsContent value="integrations" className="space-y-8">
