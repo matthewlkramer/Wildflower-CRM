@@ -129,6 +129,7 @@ beforeAll(async () => {
   await db.insert(dbMod.trackedEmails).values([
     {
       id: OUT_OWNER,
+      groupId: `${RUN}_group`,
       subject: "Owner recent tracked",
       recipient: "crm-person@example.org",
       sender: OWNER_EMAIL,
@@ -155,6 +156,7 @@ beforeAll(async () => {
     },
     {
       id: OUT_NO_CRM,
+      groupId: `${RUN}_group`,
       subject: "No CRM match",
       recipient: "unknown@example.org",
       sender: OWNER_EMAIL,
@@ -169,6 +171,11 @@ beforeAll(async () => {
       viewedAt: new Date(LAST_OWNER_OPEN.getTime() - 1_000),
     },
     { id: `${OUT_OWNER}_open_2`, emailId: OUT_OWNER, viewedAt: LAST_OWNER_OPEN },
+    {
+      id: `${OUT_NO_CRM}_open`,
+      emailId: OUT_NO_CRM,
+      viewedAt: new Date(LAST_OWNER_OPEN.getTime() - 2_000),
+    },
   ]);
 
   const received = (
@@ -406,6 +413,30 @@ describe.skipIf(!HAS_DB)("email tracking action queues", () => {
     // admin must not infer the private reply from this derived queue state.
     expect(inboundIds).toContain(IN_MEMBER_PRIVATE_REPLY_SOURCE);
     expect(inboundIds).not.toContain(IN_MEMBER_PRIVATE);
+  }, 30_000);
+
+  it("attributes every dated open to the recipient who received that copy", async () => {
+    asUser(OWNER_ID, "team_member", OWNER_EMAIL);
+    const res = await fetch(`${baseUrl}/api/email-tracking/${OUT_OWNER}`);
+    expect(res.status).toBe(200);
+    const detail = await res.json();
+    expect(detail.recipients).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: OUT_OWNER, totalViews: 2 }),
+        expect.objectContaining({ id: OUT_NO_CRM, totalViews: 1 }),
+      ]),
+    );
+    expect(detail.views).toMatchObject([
+      { recipientId: OUT_OWNER, viewedAt: LAST_OWNER_OPEN.toISOString() },
+      {
+        recipientId: OUT_OWNER,
+        viewedAt: new Date(LAST_OWNER_OPEN.getTime() - 1_000).toISOString(),
+      },
+      {
+        recipientId: OUT_NO_CRM,
+        viewedAt: new Date(LAST_OWNER_OPEN.getTime() - 2_000).toISOString(),
+      },
+    ]);
   }, 30_000);
 
   it("resolves idempotently, preserves mailbox owner, and records the acting reviewer", async () => {

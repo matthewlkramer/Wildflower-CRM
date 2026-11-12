@@ -11002,6 +11002,8 @@ export interface TrackedEmail {
 
 export interface TrackedEmailView {
   id: string;
+  /** Tracked recipient row ID associated with this open. */
+  recipientId?: string;
   viewedAt: string;
   ipAddress?: string | null;
   userAgent?: string | null;

@@ -147,6 +147,7 @@ async function resolveLinks(addresses: string[]): Promise<{
 }
 
 type ViewRow = {
+  emailId: string;
   id: string;
   viewedAt: Date;
   ipAddress: string | null;
@@ -156,6 +157,7 @@ type ViewRow = {
 function shapeViews(rows: ViewRow[]) {
   return rows.map((v) => ({
     id: v.id,
+    recipientId: v.emailId,
     viewedAt: v.viewedAt.toISOString(),
     ipAddress: v.ipAddress,
     userAgent: v.userAgent,

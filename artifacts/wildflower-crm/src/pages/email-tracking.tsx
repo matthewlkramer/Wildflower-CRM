@@ -93,14 +93,17 @@ function EmailDetailDialog({
       enabled: !!id,
     },
   });
+  const recipients = data?.recipients ?? [];
+  const grouped = recipients.length > 1;
+  const addressesById = new Map(recipients.map((r) => [r.id, r.recipient]));
   return (
     <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{data?.subject ? decodeHtmlEntities(data.subject) : "Tracked email"}</DialogTitle>
           <DialogDescription>
             {data
-              ? `${data.totalViews} view${data.totalViews === 1 ? "" : "s"} · ${data.uniqueIps} unique IP${data.uniqueIps === 1 ? "" : "s"} · sent ${format(new Date(data.createdAt), "PPp")}`
+              ? `${data.totalViews} observed open${data.totalViews === 1 ? "" : "s"} · sent ${format(new Date(data.createdAt), "PPp")}`
               : "Loading…"}
           </DialogDescription>
         </DialogHeader>
@@ -119,9 +122,22 @@ function EmailDetailDialog({
               </div>
               <div>
                 <div className="text-xs uppercase text-muted-foreground">
-                  To
+                  {grouped ? "Recipients" : "To"}
                 </div>
-                <div className="font-medium break-all">{data.recipient}</div>
+                {grouped ? (
+                  <ul className="space-y-1">
+                    {recipients.map((recipient) => (
+                      <li key={recipient.id} className="break-all">
+                        <span className="font-medium">{recipient.recipient}</span>
+                        <span className="text-muted-foreground">
+                          {` · ${recipient.totalViews} open${recipient.totalViews === 1 ? "" : "s"}`}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="font-medium break-all">{data.recipient}</div>
+                )}
               </div>
             </div>
 
@@ -171,6 +187,7 @@ function EmailDetailDialog({
                   <TableHeader>
                     <TableRow>
                       <TableHead>When</TableHead>
+                      {grouped && <TableHead>Recipient</TableHead>}
                       <TableHead>Browser / OS</TableHead>
                       <TableHead>IP</TableHead>
                     </TableRow>
@@ -181,8 +198,13 @@ function EmailDetailDialog({
                       return (
                         <TableRow key={v.id}>
                           <TableCell className="whitespace-nowrap">
-                            {format(new Date(v.viewedAt), "PPp")}
+                            {format(new Date(v.viewedAt), "PPpp")}
                           </TableCell>
+                          {grouped && (
+                            <TableCell className="break-all">
+                              {addressesById.get(v.recipientId ?? "") ?? "—"}
+                            </TableCell>
+                          )}
                           <TableCell>
                             {ua.browser} · {ua.os}
                           </TableCell>

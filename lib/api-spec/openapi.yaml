@@ -28150,6 +28150,9 @@ components:
       required: [id, viewedAt]
       properties:
         id: { type: string }
+        recipientId:
+          type: string
+          description: "Tracked recipient row ID associated with this open."
         viewedAt: { type: string, format: date-time }
         ipAddress: { type: string, nullable: true }
         userAgent: { type: string, nullable: true }
