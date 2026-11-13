@@ -152,11 +152,16 @@ export const UpdateMeetingNoteParams = zod.object({
   "id": zod.coerce.string()
 })
 
+export const updateMeetingNoteBodyTranscriptMax = 300000;
+
+
+
 export const UpdateMeetingNoteBody = zod.object({
   "title": zod.string().nullish(),
   "meetingDate": zod.string().datetime({}).optional(),
   "attendees": zod.array(zod.string()).nullish(),
   "manualNotes": zod.string().nullish(),
+  "transcript": zod.string().max(updateMeetingNoteBodyTranscriptMax).optional().describe('Add a transcript to the existing sources. Transcript retention follows the meeting\'s privacy setting.'),
   "aiSummary": zod.string().nullish(),
   "actionItems": zod.array(zod.object({
   "title": zod.string(),

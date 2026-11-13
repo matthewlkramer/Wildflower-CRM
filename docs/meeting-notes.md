@@ -36,6 +36,16 @@ optional reviewer observations. It refreshes the summary and suggested action
 items, preserving linked tasks and action items marked as staff-edited. Review
 observations apply to that run. Regeneration does not create tasks or send mail.
 
+The meeting workspace opens upcoming meetings with their briefing available
+and past meetings with the saved summary and action items in view. Typed
+notes, photos, dictation, recordings, and saved or added transcripts share
+one source section. The Calendar link opens the original invitation.
+
+On synced calendar meetings, attendance uses named speakers in saved timed
+captions. Strong name matches identify invitees, and unmatched speaker names
+are shown for review. An invitee with no speaking cue stays unconfirmed.
+CRM absence edits take precedence and survive calendar sync.
+
 Generating tasks saves the current source notes silently; the independent Save
 notes action keeps its save notification. The review dialog uses wrapped task
 text, expands on desktop, fits mobile, and blocks repeated confirmation while

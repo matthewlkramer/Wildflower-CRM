@@ -9,11 +9,9 @@ import {
   getGetPersonQueryKey,
   getListCalendarEventsQueryKey,
   getListMeetingNotesQueryKey,
-  getListTasksQueryKey,
   useCreateMeetingNote,
-  useCreateTask,
+  useGetCurrentUser,
   useDraftMeetingFollowUp,
-  useGenerateMeetingNextSteps,
   useGetCalendarEvent,
   useGetHousehold,
   useGetMeetingNote,
@@ -23,32 +21,33 @@ import {
   useUpdateMeetingNote,
   useUpdateCalendarEventAttendance,
   type MeetingArtifact,
-  type MeetingNextStepProposal,
+  type CalendarEvent,
 } from "@workspace/api-client-react";
 import {
   ArrowLeft,
   AudioLines,
   Calendar,
   Camera,
+  ChevronDown,
   CircleStop,
   ExternalLink,
   FileImage,
   Mail,
   Mic,
   Save,
-  Sparkles,
   Trash2,
+  UsersRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   ContactPicker,
-  MeetingNextStepsProposalDialog,
   MeetingNoteRow,
   type PickedContact,
 } from "@/components/meeting-notes-panel";
@@ -66,6 +65,62 @@ import {
 } from "@/lib/meeting-links";
 
 type ContactRef = MeetingLink;
+
+function MeetingAttendance({ event, editable, pending, onChange }: {
+  event: CalendarEvent;
+  editable: boolean;
+  pending: boolean;
+  onChange: (email: string, absent: boolean) => void;
+}) {
+  const invited = [...new Set((event.attendeeEmails ?? []).map((email) => email.trim().toLowerCase()).filter(Boolean))];
+  const speakers = event.transcriptAttendees ?? [];
+  const byEmail = new Map(speakers.flatMap((speaker) => speaker.email ? [[speaker.email, speaker.name] as const] : []));
+  const absent = new Set(event.absentAttendeeEmails);
+  const guests = speakers.filter((speaker) => !speaker.email);
+  if (!invited.length && !guests.length) return null;
+  const held = Date.parse(event.endAt ?? event.startAt) <= Date.now() || speakers.length > 0;
+  const confirmed = invited.filter((email) => byEmail.has(email) && !absent.has(email)).length;
+  return (
+    <details className="group rounded-lg border bg-card px-3 py-2.5">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 text-sm [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-2 font-medium">
+          <UsersRound className="h-4 w-4 text-muted-foreground" /> Attendance
+        </span>
+        <span className="text-muted-foreground">
+          {confirmed > 0 ? `${confirmed} confirmed · ` : ""}
+          {invited.length} invited{guests.length ? ` · ${guests.length} other speaker${guests.length === 1 ? "" : "s"}` : ""}
+        </span>
+        <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <ul className="mt-2 divide-y text-sm">
+        {invited.map((email) => {
+          const name = byEmail.get(email);
+          const isAbsent = absent.has(email);
+          return (
+            <li key={email} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
+              <span className="min-w-0 flex-1 [overflow-wrap:anywhere]" title={email}>{name || email}</span>
+              <span className="text-xs text-muted-foreground">
+                {isAbsent ? "Absent" : name ? "In transcript" : held ? "Unconfirmed" : "Invited"}
+              </span>
+              {editable && (
+                <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                  disabled={pending} aria-label={`${isAbsent ? "Clear absence for" : "Mark absent:"} ${email}`}
+                  onClick={() => onChange(email, !isAbsent)}>
+                  {isAbsent ? "Undo" : "Mark absent"}
+                </Button>
+              )}
+            </li>
+          );
+        })}
+        {guests.map(({ name }) => (
+          <li key={name} className="flex items-center justify-between gap-2 py-1.5">
+            <span>{name}</span><span className="text-xs text-muted-foreground">In transcript · unmatched</span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 function formatMeetingTime(startAt: string, endAt?: string | null) {
   const start = new Date(startAt);
@@ -222,6 +277,7 @@ export default function MeetingWorkspacePage() {
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { data: currentUser } = useGetCurrentUser();
   const isNewMeeting = id === "new";
   const eventId = routeNoteId || isNewMeeting ? "" : id;
   const event = useGetCalendarEvent(eventId, {
@@ -230,11 +286,6 @@ export default function MeetingWorkspacePage() {
       queryKey: getGetCalendarEventQueryKey(eventId),
     },
   });
-  useEffect(() => {
-    if (event.data && window.location.hash === "#meeting-preparation") {
-      document.getElementById("meeting-preparation")?.scrollIntoView();
-    }
-  }, [event.data?.id]);
   const existingNoteId = routeNoteId || event.data?.meetingNoteId || "";
   const [createdNoteId, setCreatedNoteId] = useState("");
   const noteId = existingNoteId || createdNoteId;
@@ -244,7 +295,22 @@ export default function MeetingWorkspacePage() {
       queryKey: getGetMeetingNoteQueryKey(noteId),
     },
   });
+  const noteEventId = !eventId ? note.data?.calendarEventId ?? "" : "";
+  const linkedEvent = useGetCalendarEvent(noteEventId, {
+    query: { enabled: Boolean(noteEventId), queryKey: getGetCalendarEventQueryKey(noteEventId) },
+  });
+  const calendarEvent = event.data ?? linkedEvent.data;
   const [manualNotes, setManualNotes] = useState("");
+  const [transcriptDraft, setTranscriptDraft] = useState("");
+  const [showTranscriptInput, setShowTranscriptInput] = useState(false);
+  const [showSources, setShowSources] = useState<boolean | null>(null);
+  const [showBriefing, setShowBriefing] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (event.data?.id && window.location.hash === "#meeting-preparation") {
+      setShowBriefing(true);
+      document.getElementById("meeting-preparation")?.scrollIntoView();
+    }
+  }, [event.data?.id]);
   const [artifacts, setArtifacts] = useState<MeetingArtifact[]>([]);
   const [photoPages, setPhotoPages] = useState<File[]>([]);
   const [linkedContacts, setLinkedContacts] = useState<ContactRef[]>([]);
@@ -258,17 +324,18 @@ export default function MeetingWorkspacePage() {
     "meeting" | "dictation" | null
   >(null);
   const [processingLabel, setProcessingLabel] = useState("");
-  const [proposals, setProposals] = useState<MeetingNextStepProposal[]>([]);
-  const [proposalOpen, setProposalOpen] = useState(false);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamsRef = useRef<MediaStream[]>([]);
   const audioContextRef = useRef<AudioContext | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const photoLibraryInputRef = useRef<HTMLInputElement | null>(null);
+  const transcriptFileInput = useRef<HTMLInputElement | null>(null);
+  const initializedNoteId = useRef("");
   const initializedLinksForRef = useRef<string | null>(null);
   const startedAtRef = useRef(new Date().toISOString());
-  const draftKey = `wfcrm-meeting-draft:${id}`;
+  const draftKey = `wfcrm-meeting-draft:${routeNoteId || id}`;
+  const transcriptDraftKey = `${draftKey}:transcript`;
 
   const requestedContact = useMemo<ContactRef | null>(() => {
     if (!isNewMeeting) return null;
@@ -320,7 +387,9 @@ export default function MeetingWorkspacePage() {
   }, [event.data, note.data, linkedContacts, requestedContact]);
 
   useEffect(() => {
-    if (note.data) {
+    if (!note.data) initializedNoteId.current = "";
+    if (note.data && initializedNoteId.current !== note.data.id) {
+      initializedNoteId.current = note.data.id;
       setManualNotes(
         sessionStorage.getItem(draftKey) ?? note.data.manualNotes ?? "",
       );
@@ -330,6 +399,14 @@ export default function MeetingWorkspacePage() {
       setSelectedContact(links[0] ?? null);
     }
   }, [note.data]);
+
+  useEffect(() => {
+    const draft = sessionStorage.getItem(transcriptDraftKey) ?? "";
+    setTranscriptDraft(draft);
+    setShowTranscriptInput(Boolean(draft));
+    setShowSources(null);
+    setShowBriefing(window.location.hash === "#meeting-preparation" ? true : null);
+  }, [transcriptDraftKey]);
 
   useEffect(() => {
     if (!note.data && sessionStorage.getItem(draftKey)) {
@@ -363,9 +440,9 @@ export default function MeetingWorkspacePage() {
   const create = useCreateMeetingNote();
   const attendance = useUpdateCalendarEventAttendance({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (_, { id }) => {
         void queryClient.invalidateQueries({
-          queryKey: getGetCalendarEventQueryKey(eventId),
+          queryKey: getGetCalendarEventQueryKey(id),
         });
         void queryClient.invalidateQueries({
           queryKey: getListCalendarEventsQueryKey(),
@@ -381,9 +458,30 @@ export default function MeetingWorkspacePage() {
   });
   const update = useUpdateMeetingNote();
   const processMedia = useProcessMeetingMedia();
-  const generate = useGenerateMeetingNextSteps();
-  const createTask = useCreateTask();
   const draftFollowUp = useDraftMeetingFollowUp();
+
+  function changeTranscriptDraft(value: string) {
+    setTranscriptDraft(value);
+    try {
+      sessionStorage.setItem(transcriptDraftKey, value);
+    } catch {
+      // The current draft still works when browser storage is full.
+    }
+  }
+
+  async function loadTranscriptFile(file: File) {
+    try {
+      if (file.size > 1_200_000) throw new Error("Choose a transcript of at most 300,000 characters.");
+      const text = (await file.text()).trim();
+      if (!text || text.length > 300_000 || text.includes("\0")) {
+        throw new Error("Choose a nonempty text, VTT, or SRT transcript of at most 300,000 characters.");
+      }
+      changeTranscriptDraft(text);
+      setShowTranscriptInput(true);
+    } catch (error) {
+      toast({ title: "Transcript could not be loaded", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    }
+  }
 
   async function processFile(
     file: File,
@@ -601,14 +699,16 @@ export default function MeetingWorkspacePage() {
     }
     let savedId = noteId;
     if (savedId) {
-      await update.mutateAsync({
+      const saved = await update.mutateAsync({
         id: savedId,
         data: {
           manualNotes: manualNotes.trim() || null,
           artifacts,
+          transcript: transcriptDraft.trim() || undefined,
           ...links,
         },
       });
+      setArtifacts(saved.artifacts ?? []);
     } else {
       const saved = await create.mutateAsync({
         data: {
@@ -625,11 +725,13 @@ export default function MeetingWorkspacePage() {
             ) ?? undefined,
           calendarEventId: event.data?.id,
           manualNotes: manualNotes.trim() || undefined,
+          transcript: transcriptDraft.trim() || undefined,
           artifacts: artifacts.length ? artifacts : undefined,
           ...links,
         },
       });
       savedId = saved.id;
+      setArtifacts(saved.artifacts ?? []);
       setCreatedNoteId(saved.id);
       if (isNewMeeting) navigate(`/meetings/notes/${saved.id}`);
     }
@@ -643,25 +745,14 @@ export default function MeetingWorkspacePage() {
       queryClient.invalidateQueries({
         queryKey: getListCalendarEventsQueryKey(),
       }),
+      calendarEvent ? queryClient.invalidateQueries({ queryKey: getGetCalendarEventQueryKey(calendarEvent.id) }) : undefined,
     ]);
     if (notify) toast({ title: "Meeting notes saved" });
     sessionStorage.removeItem(draftKey);
+    sessionStorage.removeItem(transcriptDraftKey);
+    setTranscriptDraft("");
+    setShowTranscriptInput(false);
     return savedId;
-  }
-
-  async function saveAndGenerateTasks() {
-    try {
-      const savedId = await saveMeeting(false);
-      const result = await generate.mutateAsync({ id: savedId });
-      setProposals(result.proposals);
-      setProposalOpen(true);
-    } catch (error) {
-      toast({
-        title: "Next steps could not be generated",
-        description: error instanceof Error ? error.message : String(error),
-        variant: "destructive",
-      });
-    }
   }
 
   async function saveMeetingAndReport() {
@@ -708,7 +799,7 @@ export default function MeetingWorkspacePage() {
   }
 
   const hasNotes = Boolean(
-    noteId || manualNotes.trim() || artifacts.length > 0,
+    noteId || manualNotes.trim() || transcriptDraft.trim() || artifacts.length > 0,
   );
   const taskContext = { defaultLinks: meetingLinkIds(linkedContacts) };
   const meetingTitle =
@@ -716,7 +807,28 @@ export default function MeetingWorkspacePage() {
     note.data?.title?.trim() ||
     (isNewMeeting ? "New meeting" : "Meeting workspace");
   const meetingStartAt =
-    event.data?.startAt ?? note.data?.meetingDate ?? startedAtRef.current;
+    calendarEvent?.startAt ?? note.data?.meetingDate ?? startedAtRef.current;
+  const isPastMeeting = !isNewMeeting && (
+    Boolean(note.data?.aiSummary) || Date.parse(calendarEvent?.endAt ?? meetingStartAt) <= Date.now()
+  );
+  const briefingOpen = showBriefing ?? !isPastMeeting;
+  const savedLinks = meetingLinksFromIds(note.data ?? {});
+  const linksChanged = !!note.data && (linkedContacts.length !== savedLinks.length ||
+    linkedContacts.some((link) => !savedLinks.some((saved) => saved.id === link.id && saved.kind === link.kind)));
+  const sourcesOpen = showSources ?? (!isPastMeeting || !note.data || showTranscriptInput);
+  let savedTranscript = note.data?.rawTranscript ?? "";
+  // Earlier versions copied source artifacts into the combined transcript.
+  // Each artifact already has its own entry and editor in this workspace.
+  for (const artifact of note.data?.artifacts ?? []) {
+    if (!artifact.transcript.trim()) continue;
+    const label = artifact.kind === "handwritten_notes" ? "Handwritten notes" :
+      artifact.kind === "voice_dictation" ? "Dictated voice notes" : "Recorded meeting";
+    savedTranscript = savedTranscript
+      .replace(`${label} (${artifact.fileName}):\n${artifact.transcript.trim()}`, "")
+      .replace(`${label}:\n${artifact.transcript.trim()}`, "");
+  }
+  savedTranscript = savedTranscript.trim();
+  const sourceCount = Number(Boolean(savedTranscript)) + Number(Boolean(manualNotes.trim())) + artifacts.length;
 
   return (
     <div className="space-y-6">
@@ -730,13 +842,13 @@ export default function MeetingWorkspacePage() {
           <div>
             <h1 className="text-3xl font-serif font-bold">{meetingTitle}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {formatMeetingTime(meetingStartAt, event.data?.endAt)}
+                {formatMeetingTime(meetingStartAt, calendarEvent?.endAt)}
             </p>
           </div>
           <div className="flex gap-2">
-            {event.data?.htmlLink ? (
+            {calendarEvent?.htmlLink ? (
               <Button asChild variant="outline">
-                <a href={event.data.htmlLink} target="_blank" rel="noreferrer">
+                <a href={calendarEvent.htmlLink} target="_blank" rel="noreferrer">
                   <Calendar className="mr-1 h-4 w-4" /> Calendar
                   <ExternalLink className="ml-1 h-3 w-3" />
                 </a>
@@ -748,72 +860,23 @@ export default function MeetingWorkspacePage() {
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
         <div className="space-y-6">
-          {!!event.data?.attendeeEmails?.length && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Attendance</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-muted-foreground">
-                  Mark invited people who did not attend. The calendar
-                  invitation stays intact.
-                </p>
-                {[
-                  ...new Set(
-                    event.data.attendeeEmails.map((email) =>
-                      email.trim().toLowerCase(),
-                    ),
-                  ),
-                ].map((email) => {
-                  const absent =
-                    event.data?.absentAttendeeEmails?.includes(email) ?? false;
-                  return (
-                    <div
-                      key={email}
-                      className="flex items-center justify-between gap-3"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm">{email}</p>
-                        <span className="text-xs text-muted-foreground">
-                          {absent ? "Absent" : "Invited"}
-                        </span>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={attendance.isPending}
-                        aria-label={`${absent ? "Clear absence for" : "Mark absent:"} ${email}`}
-                        onClick={() =>
-                          attendance.mutate({
-                            id: eventId,
-                            data: { emailAddress: email, absent: !absent },
-                          })
-                        }
-                      >
-                        {absent ? "Undo absence" : "Mark absent"}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </CardContent>
-            </Card>
+          {calendarEvent && (
+            <MeetingAttendance
+              event={calendarEvent}
+              editable={!!currentUser && currentUser.role !== "read_only"}
+              pending={attendance.isPending}
+              onChange={(emailAddress, absent) => attendance.mutate({ id: calendarEvent.id, data: { emailAddress, absent } })}
+            />
           )}
           <Card id="meeting-preparation">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Sparkles className="h-4 w-4 text-primary" /> Meeting
-                preparation
+                Linked CRM records
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {contacts.length > 0 ? (
                 <div className="space-y-2">
-                  <Label>Linked CRM records</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Matched records are linked by default. Uncheck any that do
-                    not belong to this meeting; select a name to view its
-                    briefing.
-                  </p>
                   {contacts.map((contact) => (
                     <ContactChoice
                       key={`${contact.kind}-${contact.id}`}
@@ -841,7 +904,7 @@ export default function MeetingWorkspacePage() {
                             : uniqueMeetingLinks([...current, contact]),
                         )
                       }
-                      onFocus={() => setSelectedContact(contact)}
+                      onFocus={() => { setSelectedContact(contact); setShowBriefing(true); }}
                     />
                   ))}
                 </div>
@@ -862,29 +925,56 @@ export default function MeetingWorkspacePage() {
                   }}
                 />
               </div>
-              <ContactPreparation contact={selectedContact} />
-              {event.data?.description ? (
-                <div className="rounded-md border bg-muted/30 p-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">
-                    Calendar description
-                  </p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm">
-                    {event.data.description}
-                  </p>
-                </div>
-              ) : null}
+              {selectedContact && (
+                <details open={briefingOpen} onToggle={(item) => {
+                  if (item.currentTarget.open !== briefingOpen) setShowBriefing(item.currentTarget.open);
+                }} className="group border-t pt-3">
+                  <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-medium [&::-webkit-details-marker]:hidden">
+                    {isPastMeeting ? "Relationship briefing" : "Pre-meeting briefing"}
+                    <ChevronDown className="h-4 w-4 text-muted-foreground group-open:rotate-180" />
+                  </summary>
+                  <div className="mt-3">
+                    {briefingOpen && <ContactPreparation contact={selectedContact} />}
+                  </div>
+                </details>
+              )}
+              {linksChanged && currentUser?.role !== "read_only" && (
+                <Button type="button" variant="outline" size="sm" disabled={update.isPending}
+                  onClick={async () => {
+                    if (!noteId) return;
+                    try {
+                      const saved = await update.mutateAsync({ id: noteId, data: meetingLinkIds(linkedContacts) });
+                      queryClient.setQueryData(getGetMeetingNoteQueryKey(noteId), saved);
+                      void queryClient.invalidateQueries({ queryKey: getListMeetingNotesQueryKey() });
+                      toast({ title: "Meeting links saved" });
+                    } catch (error) {
+                      toast({ title: "Could not save meeting links", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+                    }
+                  }}>
+                  Save links
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">
-                Notes and source material
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+        <div className="flex min-w-0 flex-col gap-4">
+          {note.data && (
+            <Card className={isPastMeeting ? undefined : "order-1"}>
+              <CardContent className="pt-5">
+                <ul><MeetingNoteRow note={note.data} workspace /></ul>
+              </CardContent>
+            </Card>
+          )}
+          <details open={sourcesOpen} onToggle={(item) => {
+            if (item.currentTarget.open !== sourcesOpen) setShowSources(item.currentTarget.open);
+          }} className="group rounded-xl border bg-card">
+            <summary className="flex cursor-pointer list-none items-center gap-2 px-5 py-4 text-lg font-semibold [&::-webkit-details-marker]:hidden">
+              Meeting sources
+              {sourceCount > 0 && <Badge variant="secondary">{sourceCount}</Badge>}
+              <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="space-y-4 px-5 pb-5">
               <div className="space-y-2">
                 <Label htmlFor="meeting-live-notes">Live notes</Label>
                 <Textarea
@@ -894,93 +984,71 @@ export default function MeetingWorkspacePage() {
                     setManualNotes(item.target.value);
                     sessionStorage.setItem(draftKey, item.target.value);
                   }}
-                  rows={14}
-                  placeholder="Take notes while you talk…"
+                  rows={5}
+                  placeholder="Add notes from the meeting…"
                   data-testid="input-meeting-live-notes"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Saved verbatim and kept separate from generated summaries.
-                  Your unsaved typed draft stays in this browser tab.
-                </p>
               </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={Boolean(processingLabel)}
-                >
-                  <Camera className="mr-1 h-4 w-4" /> Photograph paper notes
-                </Button>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
+              {savedTranscript && (
+                <details className="rounded-md border px-3 py-2 text-sm">
+                  <summary className="cursor-pointer font-medium">Saved transcript</summary>
+                  <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words text-xs">{savedTranscript}</pre>
+                </details>
+              )}
+              {note.data?.summaryOnly && (
+                <p className="text-xs text-muted-foreground">Summary-only mode discards transcript text after processing.</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" disabled={Boolean(processingLabel) || Boolean(recordingMode)}>
+                      Add source <ChevronDown className="ml-1 h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start">
+                    <DropdownMenuItem onSelect={() => setShowTranscriptInput(true)}>Paste transcript</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => transcriptFileInput.current?.click()}>Upload transcript</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => photoInputRef.current?.click()}><Camera className="mr-2 h-4 w-4" /> Photograph paper notes</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => photoLibraryInputRef.current?.click()}><FileImage className="mr-2 h-4 w-4" /> Choose page images</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void startRecording("meeting")}><Mic className="mr-2 h-4 w-4" /> Record meeting</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => void startRecording("dictation")}><AudioLines className="mr-2 h-4 w-4" /> Dictate notes</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                {recordingMode && (
+                  <Button type="button" size="sm" variant="destructive" onClick={stopRecording}>
+                    <CircleStop className="mr-1 h-4 w-4" /> Stop {recordingMode === "dictation" ? "dictation" : "recording"}
+                  </Button>
+                )}
+                <input ref={photoInputRef} type="file" accept="image/*" capture="environment" className="hidden"
                   onChange={(item) => {
                     const file = item.target.files?.[0];
                     if (file) setPhotoPages((current) => [...current, file]);
                     item.target.value = "";
-                  }}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => photoLibraryInputRef.current?.click()}
-                  disabled={Boolean(processingLabel)}
-                >
-                  <FileImage className="mr-1 h-4 w-4" /> Choose page images
-                </Button>
-                <input
-                  ref={photoLibraryInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  className="hidden"
+                  }} />
+                <input ref={photoLibraryInputRef} type="file" accept="image/*" multiple className="hidden"
                   onChange={(item) => {
-                    setPhotoPages((current) => [
-                      ...current,
-                      ...Array.from(item.target.files ?? []),
-                    ]);
+                    setPhotoPages((current) => [...current, ...Array.from(item.target.files ?? [])]);
                     item.target.value = "";
-                  }}
-                />
-                {recordingMode ? (
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    onClick={stopRecording}
-                  >
-                    <CircleStop className="mr-1 h-4 w-4" />
-                    {recordingMode === "dictation"
-                      ? "Stop voice notes"
-                      : "Stop recording"}
-                  </Button>
-                ) : (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void startRecording("meeting")}
-                      disabled={Boolean(processingLabel)}
-                    >
-                      <Mic className="mr-1 h-4 w-4" /> Record meeting
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => void startRecording("dictation")}
-                      disabled={Boolean(processingLabel)}
-                      data-testid="button-dictate-voice-notes"
-                    >
-                      <AudioLines className="mr-1 h-4 w-4" /> Dictate voice
-                      notes
-                    </Button>
-                  </>
-                )}
+                  }} />
+                <input ref={transcriptFileInput} type="file" accept=".txt,.vtt,.srt,text/plain,text/vtt" className="hidden"
+                  onChange={(item) => {
+                    const file = item.target.files?.[0];
+                    item.target.value = "";
+                    if (file) void loadTranscriptFile(file);
+                  }} />
               </div>
+              {showTranscriptInput && (
+                <div className="space-y-2">
+                  <Label htmlFor="meeting-transcript-input">Transcript to add</Label>
+                  <Textarea id="meeting-transcript-input" rows={6} value={transcriptDraft} maxLength={300000}
+                    placeholder="Paste transcript text or Zoom captions…"
+                    onChange={(item) => changeTranscriptDraft(item.target.value)} />
+                  <Button type="button" variant="ghost" size="sm" onClick={() => {
+                    changeTranscriptDraft("");
+                    setShowTranscriptInput(false);
+                  }}>Discard transcript draft</Button>
+                </div>
+              )}
               {photoPages.length > 0 ? (
                 <div className="space-y-2 rounded-md border p-3">
                   <p className="text-sm font-medium">
@@ -1015,12 +1083,6 @@ export default function MeetingWorkspacePage() {
                   </Button>
                 </div>
               ) : null}
-              <p className="text-xs text-muted-foreground">
-                Recording asks you to choose the meeting window with system
-                audio and then enables your microphone. The CRM does not join
-                the video call. Dictate voice notes uses only your microphone
-                and folds the transcription into the saved meeting summary.
-              </p>
               {processingLabel ? (
                 <p className="text-sm text-primary">{processingLabel}</p>
               ) : null}
@@ -1091,17 +1153,10 @@ export default function MeetingWorkspacePage() {
                     }
                     rows={7}
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Edits here are included when you click Save notes below.
-                  </p>
                 </div>
               ))}
 
               <div className="flex flex-wrap justify-end gap-2 border-t pt-4">
-                <AddTaskDialog
-                  ctx={taskContext}
-                  trigger={<Button variant="outline">Add task by hand</Button>}
-                />
                 <Button
                   type="button"
                   variant="outline"
@@ -1113,95 +1168,27 @@ export default function MeetingWorkspacePage() {
                   }
                   onClick={() => void saveMeetingAndReport()}
                 >
-                  <Save className="mr-1 h-4 w-4" /> Save notes
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  disabled={
-                    !hasNotes || Boolean(processingLabel) || generate.isPending
-                  }
-                  onClick={() => void saveAndGenerateTasks()}
-                >
-                  <Sparkles className="mr-1 h-4 w-4" /> Generate next tasks
-                </Button>
-                <Button
-                  type="button"
-                  disabled={
-                    !hasNotes ||
-                    Boolean(processingLabel) ||
-                    draftFollowUp.isPending
-                  }
-                  onClick={() => void openFollowUpDraft()}
-                >
-                  <Mail className="mr-1 h-4 w-4" /> Draft follow-up email
+                  <Save className="mr-1 h-4 w-4" /> Save sources
                 </Button>
               </div>
-              {linkedContacts.length === 0 && hasNotes ? (
+              {linkedContacts.length === 0 && hasNotes && !calendarEvent ? (
                 <p className="text-right text-sm text-amber-700">
-                  {event.data?.id || note.data?.calendarEventId
-                    ? "This note will be linked to the calendar meeting; you can add CRM records above."
-                    : "Link at least one CRM record above before saving this standalone meeting note."}
+                  Link a CRM record before saving this standalone meeting.
                 </p>
               ) : null}
-              <p className="text-right text-xs text-muted-foreground">
-                The email opens in your computer’s mail app. You review and send
-                it yourself.
-              </p>
-            </CardContent>
-          </Card>
-
-          {note.data ? (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Saved meeting record</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul>
-                  <MeetingNoteRow note={note.data} />
-                </ul>
-              </CardContent>
-            </Card>
-          ) : null}
+            </div>
+          </details>
+          <div className="order-2 flex flex-wrap justify-end gap-2">
+            <AddTaskDialog ctx={taskContext} trigger={<Button variant="outline" size="sm">Add task</Button>} />
+            <Button type="button" variant="outline" size="sm"
+              disabled={!hasNotes || Boolean(processingLabel) || create.isPending || update.isPending || draftFollowUp.isPending}
+              onClick={() => void openFollowUpDraft()}>
+              <Mail className="mr-1 h-4 w-4" /> Draft follow-up email
+            </Button>
+          </div>
         </div>
       </div>
 
-      <MeetingNextStepsProposalDialog
-        open={proposalOpen}
-        proposals={proposals}
-        onOpenChange={setProposalOpen}
-        onConfirm={async (selected) => {
-          await Promise.all(
-            selected.map((proposal) =>
-              createTask.mutateAsync({
-                data: {
-                  title: proposal.title,
-                  description: proposal.description ?? undefined,
-                  dueDate: proposal.dueDate ?? undefined,
-                  assigneeUserId: proposal.assigneeUserId ?? undefined,
-                  personIds: taskContext.defaultLinks.personIds.length
-                    ? taskContext.defaultLinks.personIds
-                    : undefined,
-                  organizationIds: taskContext.defaultLinks.organizationIds
-                    .length
-                    ? taskContext.defaultLinks.organizationIds
-                    : undefined,
-                  householdIds: taskContext.defaultLinks.householdIds.length
-                    ? taskContext.defaultLinks.householdIds
-                    : undefined,
-                },
-              }),
-            ),
-          );
-          await queryClient.invalidateQueries({
-            queryKey: getListTasksQueryKey(),
-          });
-          setProposalOpen(false);
-          toast({
-            title: `${selected.length} task${selected.length === 1 ? "" : "s"} created`,
-          });
-        }}
-      />
     </div>
   );
 }

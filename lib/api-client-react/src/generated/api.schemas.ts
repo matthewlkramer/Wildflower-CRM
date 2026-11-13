@@ -9424,6 +9424,11 @@ export interface TripComment {
   createdAt: string;
 }
 
+export type CalendarEventTranscriptAttendeesItem = {
+  name: string;
+  email: string | null;
+};
+
 export interface CalendarEvent {
   id: string;
   calendarUserId: string;
@@ -9437,6 +9442,8 @@ export interface CalendarEvent {
   attendeeEmails?: string[] | null;
   /** Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs. */
   readonly absentAttendeeEmails?: readonly string[];
+  /** Named transcript speakers, with a matched invitee address when there is enough evidence. Available on event detail. */
+  readonly transcriptAttendees?: readonly CalendarEventTranscriptAttendeesItem[];
   organizerEmail?: string | null;
   status?: string | null;
   /** Google Calendar transparency. `transparent` events do not reduce trip availability. */
@@ -10912,6 +10919,11 @@ export interface UpdateMeetingNoteBody {
   meetingDate?: string;
   attendees?: string[] | null;
   manualNotes?: string | null;
+  /**
+   * Add a transcript to the existing sources. Transcript retention follows the meeting's privacy setting.
+   * @maxLength 300000
+   */
+  transcript?: string;
   aiSummary?: string | null;
   actionItems?: MeetingActionItem[] | null;
   artifacts?: MeetingArtifact[];

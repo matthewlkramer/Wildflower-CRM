@@ -7520,6 +7520,7 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/CalendarEvent" }
         "400": { description: Address is not an invitee }
+        "403": { description: Read-only CRM access }
         "404": { description: Meeting not found or not visible }
 
   /calendar-events/{id}/privacy:
@@ -26506,6 +26507,16 @@ components:
           items: { type: string }
           readOnly: true
           description: "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs."
+        transcriptAttendees:
+          type: array
+          readOnly: true
+          description: "Named transcript speakers, with a matched invitee address when there is enough evidence. Available on event detail."
+          items:
+            type: object
+            required: [name, email]
+            properties:
+              name: { type: string }
+              email: { type: string, nullable: true }
         organizerEmail: { type: string, nullable: true }
         status: { type: string, nullable: true }
         transparency:
@@ -28071,6 +28082,10 @@ components:
         meetingDate: { type: string, format: date-time }
         attendees: { type: array, items: { type: string }, nullable: true }
         manualNotes: { type: string, nullable: true }
+        transcript:
+          type: string
+          maxLength: 300000
+          description: "Add a transcript to the existing sources. Transcript retention follows the meeting's privacy setting."
         aiSummary: { type: string, nullable: true }
         actionItems:
           type: array

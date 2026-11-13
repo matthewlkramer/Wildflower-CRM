@@ -131,7 +131,7 @@ export function MeetingNotesPanel(ctx: MeetingContext) {
  * revert via PATCH. Promote-to-task is hidden in edit mode (you can't
  * promote a stale draft).
  */
-export function MeetingNoteRow({ note }: { note: MeetingNote }) {
+export function MeetingNoteRow({ note, workspace = false }: { note: MeetingNote; workspace?: boolean }) {
   if (note.developmentWeek) {
     return (
       <div className="space-y-1 rounded-md border p-3">
@@ -143,7 +143,7 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
       </div>
     );
   }
-  return <EditableMeetingNoteRow note={note} />;
+  return <EditableMeetingNoteRow note={note} workspace={workspace} />;
 }
 
 function RegenerateSummaryDialog({ note }: { note: MeetingNote }) {
@@ -208,7 +208,7 @@ function RegenerateSummaryDialog({ note }: { note: MeetingNote }) {
   );
 }
 
-function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
+function EditableMeetingNoteRow({ note, workspace }: { note: MeetingNote; workspace: boolean }) {
   const { data: currentUser } = useGetCurrentUser();
   const [showTranscript, setShowTranscript] = useState(false);
   const visibleTranscript = (note.artifacts ?? []).some(
@@ -299,17 +299,18 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
         onCancel={() => setEditing(false)}
         onSave={(patch) => update.mutate({ id: note.id, data: patch })}
         saving={update.isPending}
+        workspace={workspace}
       />
     );
   }
 
   return (
     <li
-      className="border rounded-md p-3 text-sm space-y-2"
+      className={workspace ? "text-sm space-y-3" : "border rounded-md p-3 text-sm space-y-2"}
       data-testid={`meeting-note-row-${note.id}`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
+        {workspace ? <h2 className="text-lg font-semibold">Meeting summary</h2> : <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
             <Badge variant="secondary">Meeting</Badge>
@@ -342,7 +343,7 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
               Attendees: {note.attendees.join(", ")}
             </div>
           ) : null}
-        </div>
+        </div>}
         <div className="flex items-center gap-0.5 shrink-0">
           <Button
             type="button"
@@ -376,13 +377,13 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
         <p className="whitespace-pre-wrap text-muted-foreground">
           {note.aiSummary}
         </p>
-      ) : null}
+      ) : workspace ? <p className="text-sm text-muted-foreground">Add notes or a transcript to generate a summary.</p> : null}
       {currentUser && currentUser.role !== "read_only" &&
       (note.manualNotes?.trim() || note.rawTranscript?.trim() ||
         note.artifacts?.some((artifact) => artifact.transcript.trim())) ? (
         <RegenerateSummaryDialog note={note} />
       ) : null}
-      {note.manualNotes ? (
+      {!workspace && note.manualNotes ? (
         <div className="space-y-1">
           <div className="text-xs font-medium">Staff notes</div>
           <p className="whitespace-pre-wrap text-muted-foreground">
@@ -390,7 +391,7 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
           </p>
         </div>
       ) : null}
-      {note.artifacts && note.artifacts.length > 0 ? (
+      {!workspace && note.artifacts && note.artifacts.length > 0 ? (
         <div className="space-y-1.5">
           <div className="text-xs font-medium">Source material</div>
           <ul className="space-y-1">
@@ -439,7 +440,7 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
                 data-testid={`meeting-action-item-${note.id}-${i}`}
               >
                 <div className="min-w-0">
-                  <div className="truncate">{it.title}</div>
+                  <div className={workspace ? "break-words" : "truncate"}>{it.title}</div>
                   <div className="text-muted-foreground">
                     {it.assigneeName ? `${it.assigneeName}` : "Unassigned"}
                     {it.dueDate ? ` · due ${it.dueDate}` : ""}
@@ -475,7 +476,7 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
           </ul>
         </div>
       ) : null}
-      {visibleTranscript ? (
+      {!workspace && visibleTranscript ? (
         <div>
           <button
             type="button"
@@ -510,6 +511,7 @@ function MeetingNoteEditor({
   onCancel,
   onSave,
   saving,
+  workspace,
 }: {
   note: MeetingNote;
   onCancel: () => void;
@@ -520,6 +522,7 @@ function MeetingNoteEditor({
     actionItems?: MeetingActionItem[];
   }) => void;
   saving: boolean;
+  workspace: boolean;
 }) {
   const [title, setTitle] = useState(note.title ?? "");
   const [summary, setSummary] = useState(note.aiSummary ?? "");
@@ -545,7 +548,7 @@ function MeetingNoteEditor({
       className="border rounded-md p-3 text-sm space-y-3 bg-muted/20"
       data-testid={`meeting-note-editor-${note.id}`}
     >
-      <div className="space-y-1.5">
+      {!workspace && <div className="space-y-1.5">
         <Label htmlFor={`edit-title-${note.id}`} className="text-xs">
           Title
         </Label>
@@ -555,7 +558,7 @@ function MeetingNoteEditor({
           onChange={(e) => setTitle(e.target.value)}
           data-testid={`input-edit-meeting-title-${note.id}`}
         />
-      </div>
+      </div>}
       <div className="space-y-1.5">
         <Label htmlFor={`edit-summary-${note.id}`} className="text-xs">
           Summary
@@ -568,7 +571,7 @@ function MeetingNoteEditor({
           data-testid={`input-edit-meeting-summary-${note.id}`}
         />
       </div>
-      <div className="space-y-1.5">
+      {!workspace && <div className="space-y-1.5">
         <Label htmlFor={`edit-manual-notes-${note.id}`} className="text-xs">
           Staff notes
         </Label>
@@ -579,7 +582,7 @@ function MeetingNoteEditor({
           rows={7}
           data-testid={`input-edit-meeting-manual-notes-${note.id}`}
         />
-      </div>
+      </div>}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
           <Label className="text-xs">Action items</Label>
@@ -667,9 +670,8 @@ function MeetingNoteEditor({
             // Drop empty-title action items on save so users don't have to
             // manually delete a row they just clicked Add on.
             onSave({
-              title: title.trim() || null,
+              ...(!workspace ? { title: title.trim() || null, manualNotes: manualNotes.trim() || null } : {}),
               aiSummary: summary.trim() || null,
-              manualNotes: manualNotes.trim() || null,
               actionItems: items
                 .map((it) => ({ ...it, title: it.title.trim() }))
                 .filter((it) => it.title.length > 0),
