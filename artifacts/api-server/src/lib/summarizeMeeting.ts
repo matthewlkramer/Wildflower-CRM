@@ -9,11 +9,12 @@ const SYSTEM = `You are an assistant that summarizes meeting transcripts for a f
 
 Output STRICT JSON with this exact shape and nothing else (no markdown, no code fences, no commentary):
 {
-  "summary": "string — a concise account of the discussion, outcome at the close, important context, and what each side is doing next. No greetings.",
+  "summary": "string — 5 to 8 sentences, at most 250 words. Start with the outcome and what each side owns. Include only context and discussion that explain the outcome or affect future strategy. No greetings.",
   "actionItems": [
     {
       "title": "string — short imperative phrasing (max ~120 chars). Start with a verb.",
       "assigneeName": "string or null — the person responsible, if explicitly named in the transcript. Use the name as it appears. null if not assigned.",
+      "ownerSide": "internal — this list is only for actions for the Wildflower team.",
       "dueDate": "YYYY-MM-DD or null — only if an explicit calendar date is mentioned. null otherwise."
     }
   ]
@@ -24,7 +25,9 @@ Rules:
 - Explain how the conversation developed. Include material responses to concerns, evidence that the other party engaged with a response or reconsidered criteria, and what remains unresolved. Use later context (for example, an unread pre-read) to qualify earlier comments. Capture strategic or political fit if it materially affects the relationship.
 - Weigh specific next steps volunteered and owned by a funder as meaningful movement, including a commitment to think through fit. Describe what was actually volunteered and preserve its limits. A willingness to explore fit is not a promise of funding, approval, or a change of criteria. Capture an external follow-up in the summary; reserve actionable items for commitments or requests the CRM team can act on.
 - ${FOLLOW_UP_RULES}
-- Return at most 12 action items.
+- Review early commitments individually against subsequent evidence, even when the closing discussion moved to another subject. If a later exchange identifies an existing resource or link that addresses an earlier offer to send information, omit a separate resend unless participants clearly still want it. Distinguish the final decision-facing deliverable from a spreadsheet or background material that supports it. Include a practical internal follow-up when the team expressly offers or agrees to articulate that deliverable. Avoid bundling unrelated offers.
+- Include material questions answered or still open. Distinguish an initial conversation about this opportunity from a first-ever relationship. Distinguish network-wide enrollment, actual charter enrollment, authorized seats and projected growth; omit figures that are unclear or not material.
+- Return zero to six internal action items. Before returning JSON, remove every funder-owned or other external item. Put those in the summary if material.
 - If the transcript is empty or unintelligible, return {"summary": "(no summary available)", "actionItems": []}.
 - Do NOT invent action items that weren't discussed.
 - Do NOT include action items already framed as completed.`;
@@ -158,19 +161,28 @@ function parseModelOutput(raw: string): MeetingSummaryResult {
     : "(no summary available)";
   const items = Array.isArray(obj.actionItems) ? obj.actionItems : [];
   const actionItems: MeetingSummaryActionItem[] = [];
-  for (const it of items.slice(0, 12)) {
+  for (const it of items) {
     if (!it || typeof it !== "object") continue;
     const o = it as Record<string, unknown>;
     const title = typeof o.title === "string" ? o.title.trim() : "";
-    if (!title) continue;
+    if (!title || o.ownerSide !== "internal") continue;
     const assigneeName =
       typeof o.assigneeName === "string" && o.assigneeName.trim()
         ? o.assigneeName.trim()
         : null;
     const dueDate = isISODate(o.dueDate) ? (o.dueDate as string) : null;
     actionItems.push({ title: title.slice(0, 240), assigneeName, dueDate });
+    if (actionItems.length === 6) break;
   }
-  return { summary: summary.slice(0, 4000), actionItems };
+  const limited = summary.slice(0, 4000);
+  // In case the model ignores the length instruction, keep complete sentences.
+  const lastSentenceEnd = [...limited.matchAll(/[.!?]["”]?(?=\s|$)/g)].at(-1);
+  return {
+    summary: summary.length <= 4000 || !lastSentenceEnd
+      ? limited
+      : limited.slice(0, lastSentenceEnd.index + lastSentenceEnd[0].length),
+    actionItems,
+  };
 }
 
 function isISODate(v: unknown): boolean {

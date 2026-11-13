@@ -20,6 +20,9 @@ const LEADERSHIP =
   /\b(appoints?|names?|welcomes?|steps down|retires?)\b.{0,90}\b(executive director|chief|president|ceo|program officer|board|director)\b|\b(new|interim) (?:ceo|president|executive director|program officer)\b/i;
 const STRATEGY =
   /\b(strategic plan|funding priorities|new (?:strategy|priorities|focus areas)|annual report|grantmaking strategy|strategic priorities)\b/i;
+const STAFF_DIRECTORY = /\/(?:our-people\/team|our-team|team|leadership|staff)\/?$/i;
+const STAFF_PROFILE = /\/(?:person|people|team|leadership|staff)\/[^/]+\/?$/i;
+const INVESTMENT_ROLE = /^(?:(?:senior |chief )?(?:investment|grantmaking|program|strategy) (?:officer|director|manager|lead)|(?:managing |general )?partner|executive director|chief executive officer|CEO|president)\b/i;
 
 export interface PublicFunderFinding {
   article: GdeltArticle;
@@ -27,6 +30,52 @@ export interface PublicFunderFinding {
   summary: string | null;
   deadline: string | null;
   official: boolean;
+  candidateName?: string;
+}
+
+async function officialStaffFindings(
+  homepage: { url: URL; markup: string },
+  website: URL,
+  fetchPage: typeof fetchPublicResearchMarkup,
+): Promise<PublicFunderFinding[]> {
+  const links = (page: typeof homepage, path: RegExp) =>
+    stripHtml(page.markup, page.url.toString()).links.filter((link) => {
+      const url = new URL(link);
+      return sameWebsite(url, website) && path.test(url.pathname);
+    });
+  const directoryUrls = [...new Set(links(homepage, STAFF_DIRECTORY))].slice(0, 2);
+  const directories = await Promise.allSettled(directoryUrls.map((url) => fetchPage(url)));
+  const profiles = [...new Set(directories.flatMap((result) =>
+    result.status === "fulfilled" && sameWebsite(result.value.url, website)
+      ? links(result.value, STAFF_PROFILE)
+      : [],
+  ))].slice(0, 40);
+  const findings: PublicFunderFinding[] = [];
+  for (let index = 0; index < profiles.length; index += 4) {
+    const pages = await Promise.allSettled(profiles.slice(index, index + 4).map((url) => fetchPage(url)));
+    for (const page of pages) {
+      if (page.status !== "fulfilled" || !sameWebsite(page.value.url, website)) continue;
+      const { url, markup } = page.value;
+      const { title } = stripHtml(markup);
+      const name = title?.split(/\s+[|–—-]\s+/)[0]?.trim();
+      if (!name || !/^[\p{L}][\p{L}.'’-]*(?:\s+[\p{L}][\p{L}.'’-]*){1,4}$/u.test(name)) continue;
+      const heading = [...markup.matchAll(/<(h[2-5]|p|div)\b[^>]*>([^<>]{3,100})<\/\1>/gi)]
+        .map((match) => ({ role: stripHtml(match[2]).text, end: match.index + match[0].length }))
+        .find(({ role }) => role.split(/\s+/).length <= 12 && INVESTMENT_ROLE.test(role) && !/[.!?]/.test(role));
+      if (!heading) continue;
+      const { role, end } = heading;
+      const bio = stripHtml(markup.slice(end)).text.split(/(?<=[.!?])\s+/)[0]?.slice(0, 300);
+      findings.push({
+        article: { url: url.toString(), title: `${name} · ${role}`, domain: url.hostname, publicationDate: null, language: null },
+        category: "leadership_staff",
+        summary: bio || null,
+        deadline: null,
+        official: true,
+        candidateName: name,
+      });
+    }
+  }
+  return findings;
 }
 
 function sameWebsite(url: URL, website: URL | null): boolean {
@@ -112,7 +161,7 @@ export function classifyFunderFinding(args: {
 
 export async function researchPublicFunder(
   target: Pick<FunderTarget, "searchName" | "website"> &
-    Partial<Pick<FunderTarget, "entityType">>,
+    Partial<Pick<FunderTarget, "entityType" | "priority">>,
   since: string,
   today: string,
   sources = { fetchPage: fetchPublicResearchMarkup, searchNews: searchGdelt },
@@ -157,6 +206,7 @@ export async function researchPublicFunder(
     title: string | null;
   };
   const candidates = new Map<string, Candidate>();
+  let staffFindings: Promise<PublicFunderFinding[]> = Promise.resolve([]);
   const news = results[0];
   if (news?.status === "fulfilled" && Array.isArray(news.value)) {
     for (const item of news.value as GdeltArticle[])
@@ -173,6 +223,9 @@ export async function researchPublicFunder(
     } else {
       const { url, markup } = result.value;
       if (!sameWebsite(url, website)) continue;
+      if (website && ((target.priority ?? 0) >= 4 || target.priority === 0)) {
+        staffFindings = officialStaffFindings({ url, markup }, website, sources.fetchPage);
+      }
       candidates.set(url.toString(), { url: url.toString(), title: null });
       for (const link of stripHtml(markup, url.toString()).links) {
         const linkUrl = websiteUrl(link);
@@ -312,7 +365,7 @@ export async function researchPublicFunder(
     for (const page of pages) if (page) findings.push(page);
   }
   return {
-    findings,
+    findings: [...findings, ...await staffFindings],
     complete:
       unavailablePages === 0 &&
       [...results, ...listingResults].every(

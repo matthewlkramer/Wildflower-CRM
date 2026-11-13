@@ -5,6 +5,33 @@ import {
 } from "./funderPublicResearch";
 
 describe("public funder evidence", () => {
+  it("finds an undated investment-team bio at the official site for an active opportunity", async () => {
+    const pages: Record<string, string> = {
+      "/": '<a href="/our-people/team/">Meet the team</a>',
+      "/our-people/team/": '<a href="/person/jefferson-chang/">Jefferson Chang</a><a href="https://unrelated.example/person/jane-doe/">Jane Doe</a>',
+      "/person/jefferson-chang/": "<title>Jefferson Chang | Fund</title><h1>Jefferson Chang</h1><p>Investment Manager</p><p>Jefferson supports charter school growth.</p>",
+    };
+    const result = await researchPublicFunder(
+      { searchName: "Fund", website: "https://fund.example/", priority: 4 },
+      "2026-11-06", "2026-11-13",
+      {
+        searchNews: vi.fn(async () => []),
+        fetchPage: vi.fn(async (value) => {
+          const url = new URL(value);
+          if (url.hostname === "www.bing.com") return { url, markup: "<rss></rss>" };
+          return { url, markup: pages[url.pathname] ?? "" };
+        }),
+      },
+    );
+    expect(result.findings).toEqual([expect.objectContaining({
+      candidateName: "Jefferson Chang",
+      category: "leadership_staff",
+      official: true,
+      summary: "Jefferson supports charter school growth.",
+      article: expect.objectContaining({ publicationDate: null }),
+    })]);
+  });
+
   it("requires a supported open cycle before promoting an announcement to Grant Leads", () => {
     const base = {
       published: "2026-11-08",

@@ -181,7 +181,7 @@ export async function loadFundraisingBrief(all: boolean, now = new Date()) {
             : row.category === "strategy_priorities"
               ? "A change that may affect funding fit"
               : row.category === "leadership_staff"
-                ? "A relationship contact may have changed"
+                ? "Review a potential contact or staff change"
                 : "Recent coverage of this funder",
         rank:
           (row.category === "funding_opportunity"

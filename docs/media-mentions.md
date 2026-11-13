@@ -64,6 +64,10 @@ and obtain human approval before production.
 ## Funder scans
 
 The public funder scan uses the same Media Mentions rows and deduplication.
+For active opportunities and on-demand checks it also looks for key investment
+and leadership roles on the funder's official staff pages. Unmatched names
+appear in the Fundraising Brief as reviewable findings. The source stays
+linked to the organization and discovery leaves contact creation to review.
 It checks public search results and the funder's site, including linked
 newsrooms and grant announcements, and verifies dates on the source page.
 A press mention stays linked to the organization. A verified open funding

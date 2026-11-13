@@ -230,6 +230,11 @@ export default function MeetingWorkspacePage() {
       queryKey: getGetCalendarEventQueryKey(eventId),
     },
   });
+  useEffect(() => {
+    if (event.data && window.location.hash === "#meeting-preparation") {
+      document.getElementById("meeting-preparation")?.scrollIntoView();
+    }
+  }, [event.data?.id]);
   const existingNoteId = routeNoteId || event.data?.meetingNoteId || "";
   const [createdNoteId, setCreatedNoteId] = useState("");
   const noteId = existingNoteId || createdNoteId;
@@ -793,7 +798,7 @@ export default function MeetingWorkspacePage() {
               </CardContent>
             </Card>
           )}
-          <Card>
+          <Card id="meeting-preparation">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Sparkles className="h-4 w-4 text-primary" /> Meeting
