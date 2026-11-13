@@ -5,6 +5,10 @@ import {
   calendarEventArchives,
   calendarEventAttendance,
   meetingNoteDismissals,
+  emails,
+  meetingNotes,
+  people,
+  users,
 } from "@workspace/db/schema";
 import {
   and,
@@ -14,6 +18,8 @@ import {
   eq,
   gte,
   ilike,
+  inArray,
+  isNull,
   lt,
   notExists,
   or,
@@ -38,6 +44,7 @@ import {
 } from "../lib/helpers";
 import { recordAudit } from "../lib/audit";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
+import { matchTranscriptAttendance, transcriptSpeakers } from "../lib/meetingAttendance";
 import {
   calendarEventDismissalKey,
   calendarEventPhysicalKeySql,
@@ -73,6 +80,10 @@ router.patch(
     const user = getAppUser(req);
     if (!user) {
       res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (user.role === "read_only") {
+      res.status(403).json({ error: "forbidden", message: "This CRM account has read-only access." });
       return;
     }
     const body = parseOrBadRequest(
@@ -271,7 +282,50 @@ router.get(
       )
       .then((r) => r[0]);
     if (!row) return notFound(res, "calendar event");
-    res.json(row);
+    if (!row.meetingNoteId) {
+      res.json(row);
+      return;
+    }
+    const [source] = await db.select({
+      rawTranscript: meetingNotes.rawTranscript,
+      artifacts: meetingNotes.artifacts,
+    }).from(meetingNotes)
+      .innerJoin(calendarEvents, eq(calendarEvents.id, meetingNotes.calendarEventId))
+      .where(and(eq(meetingNotes.id, row.meetingNoteId), calendarEventVisibleToCaller(user.id)));
+    const speakers = [...new Set([
+      ...transcriptSpeakers(source?.rawTranscript ?? ""),
+      ...(source?.artifacts ?? [])
+        .filter((artifact) => artifact.kind === "audio_recording")
+        .flatMap((artifact) => transcriptSpeakers(artifact.transcript)),
+    ])];
+    if (!speakers.length) {
+      res.json(row);
+      return;
+    }
+    const invitees = [...new Set((row.attendeeEmails ?? [])
+      .map((email) => email.trim().toLowerCase()).filter(Boolean))];
+    const personEmail = sql<string>`lower(${emails.email})`;
+    const userEmail = sql<string>`lower(${users.email})`;
+    const [contacts, staff] = invitees.length ? await Promise.all([
+      db.select({
+        email: personEmail,
+        name: sql<string>`coalesce(nullif(${people.fullName}, ''), concat_ws(' ', ${people.firstName}, ${people.lastName}))`,
+      }).from(emails).innerJoin(people, eq(people.id, emails.personId))
+        .where(and(inArray(personEmail, invitees), isNull(people.archivedAt))),
+      db.select({
+        email: userEmail,
+        name: sql<string>`coalesce(nullif(trim(concat_ws(' ', ${users.firstName}, ${users.lastName})), ''), ${users.displayName}, '')`,
+      }).from(users).where(and(inArray(userEmail, invitees), isNull(users.archivedAt))),
+    ]) : [[], []];
+    const namesByEmail = new Map<string, string[]>();
+    for (const { email, name } of [...contacts, ...staff]) {
+      namesByEmail.set(email, [...(namesByEmail.get(email) ?? []), name]);
+    }
+    res.json({
+      ...row,
+      transcriptAttendees: matchTranscriptAttendance(speakers,
+        invitees.map((email) => ({ email, names: namesByEmail.get(email) }))),
+    });
   }),
 );
 

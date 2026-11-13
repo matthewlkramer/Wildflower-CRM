@@ -206,6 +206,25 @@ afterAll(async () => {
 }, 60_000);
 
 describe.skipIf(!HAS_DB)("calendar event No notes action", () => {
+  it("derives attendance from the saved transcript across synced copies", async () => {
+    const noteId = `${RUN}_transcript_attendance`;
+    await db.insert(schema.meetingNotes).values({
+      id: noteId,
+      creatorUserId: USER_ID,
+      calendarEventId: EVENT_COPY_ID,
+      rawTranscript: "00:00:01.000 --> 00:00:03.000\nTess Urahn: Hello.",
+    });
+    try {
+      const result = await request(`/api/calendar-events/${EVENT_ID}`);
+      expect(result.status).toBe(200);
+      expect(result.json.transcriptAttendees).toEqual([
+        { name: "Tess Urahn", email: "turahn@example.org" },
+      ]);
+    } finally {
+      await db.delete(schema.meetingNotes).where(drizzle.eq(schema.meetingNotes.id, noteId));
+    }
+  });
+
   it("preserves absence across synced copies, supports undo and enforces visibility and invitees", async () => {
     const mark = (id: string, emailAddress: string, absent: boolean) => request(`/api/calendar-events/${id}/attendance`, {
       method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ emailAddress, absent }),

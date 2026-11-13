@@ -286,9 +286,7 @@ router.post(
         // raw bytes never reach postgres in the first place. The
         // hand-typed-notes path never has a transcript to begin with.
         rawTranscript:
-          !isTranscriptPath || summaryOnly
-            ? null
-            : transcriptParts.join("\n\n"),
+          summaryOnly ? null : body.transcript?.trim() || null,
         summaryOnly,
         aiSummary: ai.summary,
         actionItems: ai.actionItems as unknown as MeetingActionItem[],
@@ -343,7 +341,6 @@ router.patch(
       return;
     }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
-    let refreshingSummary = false;
     if (body.title !== undefined) patch.title = body.title;
     if (body.meetingDate !== undefined)
       patch.meetingDate = new Date(body.meetingDate);
@@ -361,8 +358,13 @@ router.patch(
         return !prior || prior.staffEdited ? { ...item, staffEdited: true } : item;
       }) ?? null;
     }
+    const addedTranscript = body.transcript?.trim();
+    const transcript = [
+      existing.rawTranscript?.trim(),
+      addedTranscript && !existing.rawTranscript?.includes(addedTranscript) ? addedTranscript : "",
+    ].filter(Boolean).join("\n\n");
+    const incomingArtifacts = (body.artifacts ?? existing.artifacts) as MeetingArtifact[];
     if (body.artifacts !== undefined) {
-      const incomingArtifacts = body.artifacts as MeetingArtifact[];
       try {
         await validateMeetingArtifacts(incomingArtifacts);
       } catch (error) {
@@ -375,59 +377,34 @@ router.patch(
         });
         return;
       }
-      const existingArtifactIds = new Set(
-        ((existing.artifacts ?? []) as MeetingArtifact[]).map(
-          (artifact) => artifact.id,
-        ),
-      );
-      const newDictations = incomingArtifacts.filter(
-        (artifact) =>
-          artifact.kind === "voice_dictation" &&
-          !existingArtifactIds.has(artifact.id) &&
-          artifact.transcript.trim(),
-      );
-      if (
-        newDictations.length > 0 &&
-        body.aiSummary === undefined &&
-        body.actionItems === undefined
-      ) {
-        refreshingSummary = true;
-        const notes =
-          body.manualNotes !== undefined
-            ? (body.manualNotes?.trim() ?? "")
-            : (existing.manualNotes?.trim() ?? "");
-        const summaryInput = savedMeetingSource({
-          manualNotes: notes,
-          rawTranscript: existing.rawTranscript,
-          artifacts: incomingArtifacts,
-        });
-        const ai = await summarizeMeeting(summaryInput, {
-          relationship: await meetingRelationshipContext(merged, body.meetingDate ? new Date(body.meetingDate) : existing.meetingDate, existing.id),
-          priorSummary: existing.summaryOnly ? existing.aiSummary ?? undefined : undefined,
-        });
-        if (hasUsableMeetingSummary(ai)) {
-          patch.aiSummary = ai.summary;
-          const items = (existing.actionItems ?? []) as MeetingActionItem[];
-          patch.actionItems = mergeTranscriptActionItems(
-            existing.summaryOnly ? items : staffMeetingActionItems(items),
-            ai,
-          );
-        }
-        if (!existing.summaryOnly) {
-          patch.rawTranscript = [
-            existing.rawTranscript?.trim() ?? "",
-            ...newDictations.map(
-              (artifact) =>
-                `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript.trim()}`,
-            ),
-          ]
-            .filter(Boolean)
-            .join("\n\n");
-        }
-      }
       patch.artifacts = existing.summaryOnly
         ? incomingArtifacts.map((artifact) => ({ ...artifact, transcript: "" }))
         : incomingArtifacts;
+    }
+    const sourceChanged = transcript !== (existing.rawTranscript?.trim() ?? "") ||
+      incomingArtifacts.some((artifact) => artifact.transcript.trim() &&
+        !existing.artifacts.some((prior) => prior.id === artifact.id && prior.transcript === artifact.transcript));
+    const updatingSources = Boolean(addedTranscript || body.artifacts !== undefined);
+    if (addedTranscript && !existing.summaryOnly) patch.rawTranscript = transcript;
+    if (sourceChanged && body.aiSummary === undefined && body.actionItems === undefined) {
+      const ai = await summarizeMeeting(savedMeetingSource({
+        manualNotes: body.manualNotes === undefined ? existing.manualNotes : body.manualNotes,
+        rawTranscript: transcript,
+        artifacts: incomingArtifacts,
+      }), {
+        relationship: await meetingRelationshipContext(merged, body.meetingDate ? new Date(body.meetingDate) : existing.meetingDate, existing.id),
+        priorSummary: existing.summaryOnly ? existing.aiSummary ?? undefined : undefined,
+      });
+      if (hasUsableMeetingSummary(ai)) {
+        patch.aiSummary = ai.summary;
+        const items = (existing.actionItems ?? []) as MeetingActionItem[];
+        patch.actionItems = mergeTranscriptActionItems(
+          existing.summaryOnly ? items : staffMeetingActionItems(items), ai,
+        );
+      } else if (existing.summaryOnly) {
+        res.status(503).json({ error: "summary_unavailable", message: "The transcript could not be summarized. Try saving again." });
+        return;
+      }
     }
     if (body.personIds !== undefined) patch.personIds = body.personIds;
     if (body.organizationIds !== undefined)
@@ -447,11 +424,11 @@ router.patch(
       .set(patch)
       .where(and(
         eq(meetingNotes.id, existing.id),
-        refreshingSummary ? sql`${meetingNotes}."xmin"::text = ${version}` : undefined,
+        updatingSources ? sql`${meetingNotes}."xmin"::text = ${version}` : undefined,
       ))
       .returning();
     if (!row) {
-      if (!refreshingSummary) return notFound(res, "meeting note");
+      if (!updatingSources) return notFound(res, "meeting note");
       res.status(409).json({ error: "conflict", message: "The meeting note changed. Reload it before saving." });
       return;
     }
