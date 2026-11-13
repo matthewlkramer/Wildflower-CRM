@@ -35,6 +35,7 @@ Rules:
 - Do not include recommendations, advice, or next steps in summary.
 - Use profile research for enduring background or public funding criteria. Keep those distinct from what the funder has said or agreed to about Wildflower.
 - Use the latest meeting outcome to distinguish questions that have been answered from ones that are open. Do not re-suggest work the meeting indicates is complete or duplicate an existing deliverable.
+- Respect tracked follow-up states. A shared item is complete even if unread. A funder-owned item is a dependency, not a Wildflower task. A due check-in is a possible Wildflower action. Do not imply the internal check-in is the funder's deadline.
 - Return nextSteps separately. Each must cite a specific evidence item (media mention, recorded interest/current initiative, or recent newsletter engagement) and be actionable. Never give generic "send a warm email" advice.
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
@@ -183,6 +184,8 @@ export async function generateRelationshipSummary(args: {
 
   const generatedAt = new Date().toISOString();
   try {
+    const { loadRelationshipFollowUps } = await import("./opportunityFollowUps");
+    const followUps = await loadRelationshipFollowUps(signals.entity.kind, signals.entity.id);
     const response = await aiProposalLimit(() =>
       withRateLimitRetry(
         () =>
@@ -193,7 +196,8 @@ export async function generateRelationshipSummary(args: {
               system: args.meetingPreparation
                 ? `${SYSTEM}${MEETING_PREPARATION_RULES}`
                 : `${SYSTEM}${RECORD_PAGE_RULES}`,
-              messages: [{ role: "user", content: fmtSignals(signals) }],
+              messages: [{ role: "user", content: fmtSignals(signals) +
+                (followUps.length ? `\nTRACKED OPPORTUNITY FOLLOW-UPS:\n${JSON.stringify(followUps)}` : "") }],
             },
             { timeout: 60000, maxRetries: 0 },
           ),

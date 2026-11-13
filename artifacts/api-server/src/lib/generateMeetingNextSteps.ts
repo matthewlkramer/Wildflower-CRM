@@ -12,6 +12,7 @@ Only include a task when the speaker expressly commits to do it, asks someone to
 Background discussion, hopes, ideas, relationship observations, and generated summaries do not create commitments. Do not suggest general cultivation work.
 ${FOLLOW_UP_RULES}
 Use shared CRM history only to interpret the meeting or recognize material already shared. Exclude steps owned solely by someone outside the CRM team.
+Compare later emails to earlier offers. Do not create tasks from the emails alone. If there is a tracked already-shared item with the same scope, do not propose a resend.
 Return zero proposals when there are no explicit tasks. Combine repeated statements about the same action. Prefer fewer concrete tasks; return at most 6.
 Return strict JSON: {"proposals":[{"title":"imperative action, max 160 characters","evidence":"exact quote from the note expressing this task","dueDate":"YYYY-MM-DD or null","description":"brief context"}]}.
 Do not infer deadlines. Each evidence quote must be copied from the supplied staff notes or source transcript, not a generated summary.`;

@@ -19,6 +19,7 @@ import GrantLeadsCard from "@/components/GrantLeadsCard";
 import UpcomingMeetingsCard from "@/components/upcoming-meetings-card";
 import { DashboardPrioritiesCard } from "@/components/dashboard-priorities-card";
 import { DashboardTasksCard } from "@/components/dashboard-tasks-card";
+import { DueOpportunityFollowUps } from "@/components/opportunity-follow-ups";
 import { useEntityFilter } from "@/lib/entity-filter-context";
 import {
   DashboardCardSettings,
@@ -364,7 +365,7 @@ export default function Dashboard() {
 
       {!hidden.includes("priorities") && <DashboardPrioritiesCard />}
 
-      {!hidden.includes("tasks") && <DashboardTasksCard />}
+      {!hidden.includes("tasks") && <><DueOpportunityFollowUps /><DashboardTasksCard /></>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {!hidden.includes("email") && <EmailProposalsCard />}

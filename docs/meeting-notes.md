@@ -36,6 +36,17 @@ optional reviewer observations. It refreshes the summary and suggested action
 items, preserving linked tasks and action items marked as staff-edited. Review
 observations apply to that run. Regeneration does not create tasks or send mail.
 
+Opportunity follow-ups distinguish Wildflower deliverables, funder-owned
+commitments, and material already shared. Meeting suggestions reconcile the
+closing discussion and relevant shared email, then staff can track them on an
+opportunity. The read status of shared material is independent of delivery.
+The optional Wildflower deliverable starts a waiting item's check-in clock on
+its recorded send date. The internal check-in uses a 14-day default and is
+independent of the funder's agreed date. The point person sees due check-ins
+on the dashboard. The app reviews subsequent shared replies in a linked email
+thread for explicit resolutions and allows staff to record a check-in, resolve
+the item, or reopen it. Meeting briefings include the tracked state.
+
 The meeting workspace opens upcoming meetings with their briefing available
 and past meetings with the saved summary and action items in view. Typed
 notes, photos, dictation, recordings, and saved or added transcripts share

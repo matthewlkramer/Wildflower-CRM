@@ -322,7 +322,7 @@ async function importTranscript(job: Job, owner: Owner) {
   const prior = existingForEvent[0]?.note;
   const source = prior ? savedMeetingSource(prior) : "";
   const result = await summarizeMeeting([source, transcript].filter(Boolean).join("\n\nZoom transcript\n"), {
-    relationship: await meetingRelationshipContext(prior ?? links, event?.startAt ?? job.startedAt, prior?.id),
+    relationship: await meetingRelationshipContext(prior ?? links, event?.startAt ?? job.startedAt, prior?.id, true),
     priorSummary: prior?.summaryOnly ? prior.aiSummary ?? undefined : undefined,
   });
   if (!hasUsableMeetingSummary(result)) {
@@ -378,6 +378,7 @@ async function importTranscript(job: Job, owner: Owner) {
     const items = (note?.actionItems ?? []) as MeetingActionItem[];
     const existingSummary = note?.aiSummary?.trim();
     const imported = {
+      followUpSuggestions: result.followUps ?? [],
       aiSummary:
         (developmentId || !source) && existingSummary && existingSummary !== result.summary
           ? existingSummary + "\n\nZoom transcript summary\n" + result.summary

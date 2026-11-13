@@ -95,3 +95,4 @@ export * from "./newsletterPreferences";
 export * from "./calendarEventAttendance";
 export * from "./conferences";
 export * from "./fundraisingIntelligence";
+export * from "./opportunityFollowUps";

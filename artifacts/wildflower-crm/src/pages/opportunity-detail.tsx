@@ -38,6 +38,7 @@ import {
 import { PledgeAllocationsEditor } from "@/components/allocation-editors";
 import { UnifiedActivityFeed } from "@/components/unified-activity-feed";
 import { TasksPanel } from "@/components/tasks-panel";
+import { OpportunityFollowUps } from "@/components/opportunity-follow-ups";
 import { ConfirmDeleteDialog } from "@/components/confirm-delete-dialog";
 import { FlagForResearchDialog } from "@/components/flag-for-research-dialog";
 import { EditPeopleEntityRoleDialog } from "@/components/add-role-dialogs";
@@ -1533,6 +1534,7 @@ function OppView({ opp }: { opp: OpportunityOrPledgeDetail }) {
             };
             return (
               <>
+                {!opp.archivedAt && <OpportunityFollowUps opportunityId={opp.id} />}
                 <TasksPanel
                   opportunityId={opp.id}
                   defaultLinks={oppDefaultLinks}

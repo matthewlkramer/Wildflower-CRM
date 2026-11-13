@@ -290,6 +290,7 @@ router.post(
         summaryOnly,
         aiSummary: ai.summary,
         actionItems: ai.actionItems as unknown as MeetingActionItem[],
+        followUpSuggestions: "followUps" in ai ? ai.followUps ?? [] : [],
         artifacts: summaryOnly
           ? artifacts.map((artifact) => ({ ...artifact, transcript: "" }))
           : artifacts,
@@ -392,11 +393,12 @@ router.patch(
         rawTranscript: transcript,
         artifacts: incomingArtifacts,
       }), {
-        relationship: await meetingRelationshipContext(merged, body.meetingDate ? new Date(body.meetingDate) : existing.meetingDate, existing.id),
+        relationship: await meetingRelationshipContext(merged, body.meetingDate ? new Date(body.meetingDate) : existing.meetingDate, existing.id, true),
         priorSummary: existing.summaryOnly ? existing.aiSummary ?? undefined : undefined,
       });
       if (hasUsableMeetingSummary(ai)) {
         patch.aiSummary = ai.summary;
+        patch.followUpSuggestions = ai.followUps ?? [];
         const items = (existing.actionItems ?? []) as MeetingActionItem[];
         patch.actionItems = mergeTranscriptActionItems(
           existing.summaryOnly ? items : staffMeetingActionItems(items), ai,
@@ -571,7 +573,7 @@ router.post(
       return;
     }
     const result = await summarizeMeeting(source, {
-      relationship: await meetingRelationshipContext(note, note.meetingDate, note.id),
+      relationship: await meetingRelationshipContext(note, note.meetingDate, note.id, true),
       reviewer: body.reviewerContext?.trim(),
     });
     if (!hasUsableMeetingSummary(result)) {
@@ -580,6 +582,7 @@ router.post(
     }
     const [updated] = await db.update(meetingNotes).set({
       aiSummary: result.summary,
+      followUpSuggestions: result.followUps ?? [],
       actionItems: mergeTranscriptActionItems(
         staffMeetingActionItems((note.actionItems ?? []) as MeetingActionItem[]),
         result,
@@ -616,7 +619,7 @@ router.post(
     try {
       proposals = await generateMeetingTaskProposals(
         savedText,
-        await meetingRelationshipContext(note, note.meetingDate, note.id),
+        await meetingRelationshipContext(note, note.meetingDate, note.id, true),
       );
     } catch (error) {
       res.status(503).json({
