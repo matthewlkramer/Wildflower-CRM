@@ -53,6 +53,7 @@ export const meetingNotes = pgTable(
     summaryOnly: boolean("summary_only").notNull().default(false),
     aiSummary: text("ai_summary"),
     actionItems: jsonb("action_items"),
+    followUpSuggestions: jsonb("follow_up_suggestions").$type<MeetingFollowUpSuggestion[]>(),
     // Immutable source files captured for this meeting. The object itself
     // lives in private object storage; this JSON keeps its metadata and the
     // OpenAI-produced transcript next to the meeting record.
@@ -137,6 +138,19 @@ export interface MeetingActionItem {
   dueDate?: string | null;
   promotedTaskId?: string | null;
   staffEdited?: boolean;
+  evidence?: string;
+}
+
+export interface MeetingFollowUpSuggestion {
+  kind: "ours" | "waiting" | "shared";
+  title: string;
+  ownerName?: string | null;
+  evidence: string;
+  evidenceEmailId?: string | null;
+  evidenceUrl?: string | null;
+  readStatus?: "unread" | "read" | "unknown" | null;
+  externalDueDate?: string | null;
+  dependsOnTitle?: string | null;
 }
 
 export type MeetingArtifactKind =

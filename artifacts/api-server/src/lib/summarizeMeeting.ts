@@ -1,5 +1,5 @@
 import { anthropic } from "@workspace/integrations-anthropic-ai";
-import type { MeetingActionItem } from "@workspace/db/schema";
+import type { MeetingActionItem, MeetingFollowUpSuggestion } from "@workspace/db/schema";
 import { logger } from "./logger";
 import { boundMeetingSource, FOLLOW_UP_RULES } from "./meetingAnalysis";
 
@@ -15,8 +15,20 @@ Output STRICT JSON with this exact shape and nothing else (no markdown, no code 
       "title": "string — short imperative phrasing (max ~120 chars). Start with a verb.",
       "assigneeName": "string or null — the person responsible, if explicitly named in the transcript. Use the name as it appears. null if not assigned.",
       "ownerSide": "internal — this list is only for actions for the Wildflower team.",
+      "evidence": "exact source quote for this action",
+      "supersededBy": "exact title from followUps if the same item is already shared or owned by the funder; otherwise null",
       "dueDate": "YYYY-MM-DD or null — only if an explicit calendar date is mentioned. null otherwise."
     }
+  ],
+  "followUps": [
+    {"kind":"waiting or shared","title":"short standalone description",
+     "ownerName":"explicit external owner for waiting, sender for shared, or null",
+     "evidence":"exact quote from a transcript, staff note or eligible email excerpt",
+     "evidenceEmailId":"email id from supplied history or null",
+     "readStatus":"unread, read, unknown or null",
+     "externalDueDate":"explicit date agreed to by the other side, or null",
+     "dependsOnTitle":"copy the exact corresponding internal action title when a deliverable should go out before checking in, otherwise null",
+     "supersedesTitles":["earlier offers for this same deliverable or external actions; use the exact titles if present in actionItems"]}
   ]
 }
 
@@ -25,6 +37,8 @@ Rules:
 - Explain how the conversation developed. Include material responses to concerns, evidence that the other party engaged with a response or reconsidered criteria, and what remains unresolved. Use later context (for example, an unread pre-read) to qualify earlier comments. Capture strategic or political fit if it materially affects the relationship.
 - Weigh specific next steps volunteered and owned by a funder as meaningful movement, including a commitment to think through fit. Describe what was actually volunteered and preserve its limits. A willingness to explore fit is not a promise of funding, approval, or a change of criteria. Capture an external follow-up in the summary; reserve actionable items for commitments or requests the CRM team can act on.
 - ${FOLLOW_UP_RULES}
+- First identify items already shared and commitments owned by the funder. Store them only in followUps and use them to remove corresponding actionItems. Treat a funder's explicit undertaking to explore fit as waiting. An offer or idea without a commitment is not waiting. When relevant correspondence corroborates a follow-up, cite that email. Use post-meeting emails to reconcile follow-ups; do not write their contents as dialogue or facts established during the meeting.
+- Treat recordedSharedItems as confirmed prior delivery. If you cite an email ID, quote the actual email excerpt or cite an exact meeting quote plus a relevant shared thread message. Do not reintroduce an equivalent open action through a paraphrase.
 - Review early commitments individually against subsequent evidence, even when the closing discussion moved to another subject. If a later exchange identifies an existing resource or link that addresses an earlier offer to send information, omit a separate resend unless participants clearly still want it. Distinguish the final decision-facing deliverable from a spreadsheet or background material that supports it. Include a practical internal follow-up when the team expressly offers or agrees to articulate that deliverable. Avoid bundling unrelated offers.
 - Include material questions answered or still open. Distinguish an initial conversation about this opportunity from a first-ever relationship. Distinguish network-wide enrollment, actual charter enrollment, authorized seats and projected growth; omit figures that are unclear or not material.
 - Return zero to six internal action items. Before returning JSON, remove every funder-owned or other external item. Put those in the summary if material.
@@ -36,11 +50,55 @@ export interface MeetingSummaryActionItem {
   title: string;
   assigneeName: string | null;
   dueDate: string | null;
+  evidence?: string;
 }
 
 export interface MeetingSummaryResult {
   summary: string;
   actionItems: MeetingSummaryActionItem[];
+  followUps?: MeetingFollowUpSuggestion[];
+}
+
+function groundFollowUps(raw: unknown, source: string, relationship: string | undefined) {
+  const supersededTitles = new Set<string>();
+  if (!Array.isArray(raw)) return { followUps: [], supersededTitles };
+  let history: {
+    sharedEmails?: Array<{ id: string; excerpt: string | null; direction: string }>;
+    subsequentThreadEmails?: Array<{ id: string; excerpt: string | null; direction: string }>;
+  } = {};
+  try { history = JSON.parse(relationship || "{}") ?? {}; } catch { /* Older callers can pass plain text. */ }
+  const emails = [...(history.sharedEmails ?? []), ...(history.subsequentThreadEmails ?? [])];
+  const norm = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  const meeting = norm(source);
+  const seen = new Set<string>();
+  const followUps = raw.slice(0, 20).flatMap((value): MeetingFollowUpSuggestion[] => {
+    if (!value || typeof value !== "object" || !["waiting", "shared"].includes(value.kind)) return [];
+    const title = typeof value.title === "string" ? value.title.trim().slice(0, 240) : "";
+    const evidence = typeof value.evidence === "string" ? value.evidence.trim().slice(0, 600) : "";
+    const email = emails.find((item) => item.id === value.evidenceEmailId);
+    const quote = norm(evidence);
+    const key = value.kind + norm(title);
+    if (!title || quote.length < 10 || seen.has(key) ||
+        (!meeting.includes(quote) && !norm(email?.excerpt ?? "").includes(quote))) return [];
+    seen.add(key);
+    supersededTitles.add(norm(title));
+    if (Array.isArray(value.supersedesTitles)) {
+      for (const old of value.supersedesTitles) {
+        if (typeof old === "string") supersededTitles.add(norm(old));
+      }
+    }
+    return [{
+      kind: value.kind,
+      title,
+      ownerName: typeof value.ownerName === "string" ? value.ownerName.trim().slice(0, 160) || null : null,
+      evidence,
+      evidenceEmailId: email?.id ?? null,
+      readStatus: value.kind === "shared" && ["unread", "read"].includes(value.readStatus) ? value.readStatus : null,
+      externalDueDate: value.kind === "waiting" && isISODate(value.externalDueDate) ? value.externalDueDate : null,
+      dependsOnTitle: value.kind === "waiting" && typeof value.dependsOnTitle === "string" ? value.dependsOnTitle.trim().slice(0, 240) : null,
+    }];
+  }).slice(0, 12);
+  return { followUps, supersededTitles };
 }
 
 export function hasUsableMeetingSummary(result: MeetingSummaryResult): boolean {
@@ -102,7 +160,7 @@ export async function summarizeMeeting(
     for (const block of response.content) {
       if (block.type === "text") text += block.text;
     }
-    return parseModelOutput(text);
+    return parseModelOutput(text, source, context.relationship);
   } catch (err) {
     // Privacy: never log the err payload directly — Anthropic SDK errors
     // can echo the prompt back, and the prompt contains the transcript.
@@ -120,7 +178,7 @@ function errClass(err: unknown): string {
     ? err.constructor.name
     : typeof err;
 }
-function parseModelOutput(raw: string): MeetingSummaryResult {
+function parseModelOutput(raw: string, source: string, relationship?: string): MeetingSummaryResult {
   const text = raw.trim();
   // Strip ``` fences in case the model ignored the no-markdown instruction.
   const stripped = text
@@ -160,18 +218,24 @@ function parseModelOutput(raw: string): MeetingSummaryResult {
     ? obj.summary.trim()
     : "(no summary available)";
   const items = Array.isArray(obj.actionItems) ? obj.actionItems : [];
+  const { followUps, supersededTitles } = groundFollowUps(obj.followUps, source, relationship);
+  const norm = (value: string) => value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+  const externalOwners = new Set(followUps.filter((item) => item.kind === "waiting" && item.ownerName).map((item) => norm(item.ownerName!)));
   const actionItems: MeetingSummaryActionItem[] = [];
   for (const it of items) {
     if (!it || typeof it !== "object") continue;
     const o = it as Record<string, unknown>;
     const title = typeof o.title === "string" ? o.title.trim() : "";
-    if (!title || o.ownerSide !== "internal") continue;
+    if (!title || o.ownerSide !== "internal" || supersededTitles.has(norm(title)) ||
+      (typeof o.supersededBy === "string" && supersededTitles.has(norm(o.supersededBy)))) continue;
     const assigneeName =
       typeof o.assigneeName === "string" && o.assigneeName.trim()
         ? o.assigneeName.trim()
         : null;
+    if (assigneeName && externalOwners.has(norm(assigneeName))) continue;
     const dueDate = isISODate(o.dueDate) ? (o.dueDate as string) : null;
-    actionItems.push({ title: title.slice(0, 240), assigneeName, dueDate });
+    const evidence = typeof o.evidence === "string" ? o.evidence.trim().slice(0, 600) : undefined;
+    actionItems.push({ title: title.slice(0, 240), assigneeName, dueDate, ...(evidence ? { evidence } : {}) });
     if (actionItems.length === 6) break;
   }
   const limited = summary.slice(0, 4000);
@@ -182,9 +246,11 @@ function parseModelOutput(raw: string): MeetingSummaryResult {
       ? limited
       : limited.slice(0, lastSentenceEnd.index + lastSentenceEnd[0].length),
     actionItems,
+    ...(followUps.length ? { followUps } : {}),
   };
 }
 
-function isISODate(v: unknown): boolean {
-  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
+function isISODate(v: unknown): v is string {
+  return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) &&
+    Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
 }

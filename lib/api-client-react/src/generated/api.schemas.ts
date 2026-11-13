@@ -10893,6 +10893,110 @@ export interface MeetingNextStepsResult {
   proposals: MeetingNextStepProposal[];
 }
 
+export type SaveOpportunityFollowUpBodyKind = typeof SaveOpportunityFollowUpBodyKind[keyof typeof SaveOpportunityFollowUpBodyKind];
+
+
+export const SaveOpportunityFollowUpBodyKind = {
+  ours: 'ours',
+  waiting: 'waiting',
+  shared: 'shared',
+} as const;
+
+export type SaveOpportunityFollowUpBodyReadStatus = typeof SaveOpportunityFollowUpBodyReadStatus[keyof typeof SaveOpportunityFollowUpBodyReadStatus] | null;
+
+
+export const SaveOpportunityFollowUpBodyReadStatus = {
+  unread: 'unread',
+  read: 'read',
+  unknown: 'unknown',
+} as const;
+
+export interface SaveOpportunityFollowUpBody {
+  kind: SaveOpportunityFollowUpBodyKind;
+  /**
+   * @minLength 1
+   * @maxLength 240
+   */
+  title: string;
+  /** @maxLength 160 */
+  ownerName?: string | null;
+  pointPersonId?: string | null;
+  meetingNoteId?: string | null;
+  /** @maxLength 150 */
+  suggestionKey?: string | null;
+  evidenceEmailId?: string | null;
+  /** @maxLength 1000 */
+  evidenceUrl?: string | null;
+  /** @maxLength 1500 */
+  evidenceNote?: string | null;
+  readStatus?: SaveOpportunityFollowUpBodyReadStatus;
+  externalDueDate?: string | null;
+  dependencyId?: string | null;
+  /**
+   * @minimum 1
+   * @maximum 365
+   */
+  checkInDays?: number;
+  checkInOn?: string | null;
+  sentOn?: string | null;
+}
+
+export type OpportunityFollowUpStatus = typeof OpportunityFollowUpStatus[keyof typeof OpportunityFollowUpStatus];
+
+
+export const OpportunityFollowUpStatus = {
+  open: 'open',
+  sent: 'sent',
+  shared: 'shared',
+  blocked: 'blocked',
+  waiting: 'waiting',
+  due: 'due',
+  resolved: 'resolved',
+} as const;
+
+export type OpportunityFollowUp = SaveOpportunityFollowUpBody & ({
+  id: string;
+  opportunityId: string;
+  opportunityName?: string | null;
+  status: OpportunityFollowUpStatus;
+  checkInDays: number;
+  resolvedOn?: string | null;
+  updateEmailId?: string | null;
+});
+
+export type OpportunityMeetingSuggestionKind = typeof OpportunityMeetingSuggestionKind[keyof typeof OpportunityMeetingSuggestionKind];
+
+
+export const OpportunityMeetingSuggestionKind = {
+  ours: 'ours',
+  waiting: 'waiting',
+  shared: 'shared',
+} as const;
+
+export type OpportunityMeetingSuggestionReadStatus = typeof OpportunityMeetingSuggestionReadStatus[keyof typeof OpportunityMeetingSuggestionReadStatus] | null;
+
+
+export const OpportunityMeetingSuggestionReadStatus = {
+  unread: 'unread',
+  read: 'read',
+  unknown: 'unknown',
+} as const;
+
+export interface OpportunityMeetingSuggestion {
+  key: string;
+  meetingNoteId: string;
+  meetingTitle?: string | null;
+  kind: OpportunityMeetingSuggestionKind;
+  title: string;
+  ownerName?: string | null;
+  evidence: string;
+  evidenceEmailId?: string | null;
+  evidenceUrl?: string | null;
+  readStatus?: OpportunityMeetingSuggestionReadStatus;
+  externalDueDate?: string | null;
+  dependsOnTitle?: string | null;
+}
+
 /**
  * At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process.
  */
@@ -12065,6 +12169,27 @@ export type PageParameter = number;
  * Admin-only: when true, include archived (soft-deleted) rows. Ignored for non-admins — they never see archived rows even if this is passed.
  */
 export type IncludeArchivedQueryParameter = boolean;
+
+export type ListOpportunityFollowUps200 = {
+  items: OpportunityFollowUp[];
+  suggestions: OpportunityMeetingSuggestion[];
+};
+
+export type UpdateOpportunityFollowUpBodyAction = typeof UpdateOpportunityFollowUpBodyAction[keyof typeof UpdateOpportunityFollowUpBodyAction];
+
+
+export const UpdateOpportunityFollowUpBodyAction = {
+  sent: 'sent',
+  resolved: 'resolved',
+  reopen: 'reopen',
+  checked_in: 'checked_in',
+} as const;
+
+export type UpdateOpportunityFollowUpBody = {
+  details?: SaveOpportunityFollowUpBody;
+  action?: UpdateOpportunityFollowUpBodyAction;
+  date?: string;
+};
 
 export type GetFundraisingBriefParams = {
 all?: boolean;

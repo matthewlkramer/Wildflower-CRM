@@ -19,6 +19,9 @@ vi.mock("@workspace/integrations-anthropic-ai", () => ({
 vi.mock("../lib/aiConcurrency", () => ({
   aiProposalLimit: (work: () => unknown) => work(),
 }));
+vi.mock("../lib/opportunityFollowUps", () => ({
+  loadRelationshipFollowUps: async () => [{ title: "Assess fit", status: "waiting" }],
+}));
 
 vi.mock("../lib/logger", () => ({
   logger: { info: vi.fn(), warn: vi.fn() },

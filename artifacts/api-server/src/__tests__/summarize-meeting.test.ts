@@ -39,8 +39,32 @@ describe("summarizeMeeting", () => {
       sharedRelationshipHistory: "Earlier correspondence",
       staffReviewerObservations: "Matt thought this was genuine",
     });
-    expect(prompt.system).toContain("supersede earlier discussion");
+    expect(prompt.system).toContain("supersedes an earlier offer");
     expect(prompt.system).toContain("volunteered and owned by a funder");
+  });
+
+  it("retains waiting and shared evidence while suppressing a mislabeled task and an obsolete resend", async () => {
+    create.mockResolvedValue(textResponse(JSON.stringify({
+      summary: "They will review the plan.",
+      actionItems: [
+        { title: "Send outcomes report", ownerSide: "internal" },
+        { title: "Prepare the growth plan", ownerSide: "internal" },
+        { title: "Assess fit", assigneeName: "Pat Funder", ownerSide: "internal" },
+      ],
+      followUps: [
+        { kind: "shared", title: "Outcomes report", evidence: "The report is linked in the pre-read we sent", evidenceEmailId: "email-1", readStatus: "unread", supersedesTitles: ["Send outcomes report"] },
+        { kind: "waiting", title: "Consider fit", ownerName: "Pat Funder", evidence: "I will think through how this could fit", dependsOnTitle: "Prepare the growth plan" },
+        { kind: "waiting", title: "Approve award", evidence: "Invented funding promise", evidenceEmailId: "unknown" },
+      ],
+    })));
+    const out = await summarizeMeeting("Pat: I will think through how this could fit.", {
+      relationship: JSON.stringify({ sharedEmails: [{ id: "email-1", excerpt: "The report is linked in the pre-read we sent", direction: "sent" }] }),
+    });
+    expect(out.actionItems.map((item) => item.title)).toEqual(["Prepare the growth plan"]);
+    expect(out.followUps).toEqual([
+      expect.objectContaining({ kind: "shared", evidenceEmailId: "email-1", readStatus: "unread" }),
+      expect.objectContaining({ kind: "waiting", dependsOnTitle: "Prepare the growth plan" }),
+    ]);
   });
 
   it("parses well-formed JSON output", async () => {

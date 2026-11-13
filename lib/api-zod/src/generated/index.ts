@@ -43,6 +43,7 @@ export * from "./meeting-notes/meeting-notes";
 export * from "./newsletter/newsletter";
 export * from "./notes/notes";
 export * from "./opportunities-and-pledges/opportunities-and-pledges";
+export * from "./opportunity-follow-ups/opportunity-follow-ups";
 export * from "./organizations/organizations";
 export * from "./payment-intermediaries/payment-intermediaries";
 export * from "./people/people";

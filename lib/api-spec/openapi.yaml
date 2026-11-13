@@ -45,6 +45,7 @@ tags:
   - { name: notes }
   - { name: tasks }
   - { name: meeting-notes }
+  - { name: opportunity-follow-ups }
   - { name: fundraising }
   - { name: fundraising }
   - { name: saved-views }
@@ -66,6 +67,74 @@ tags:
   - { name: integrations }
 
 paths:
+  /opportunity-follow-ups/due:
+    get:
+      tags: [opportunity-follow-ups]
+      operationId: listDueOpportunityFollowUps
+      responses:
+        "200":
+          description: Check-ins due for the current team member.
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/OpportunityFollowUp" } }
+  /opportunities-and-pledges/{id}/follow-ups:
+    get:
+      tags: [opportunity-follow-ups]
+      operationId: listOpportunityFollowUps
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      responses:
+        "200":
+          description: Follow-up actions and meeting suggestions for this opportunity.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, suggestions]
+                properties:
+                  items: { type: array, items: { $ref: "#/components/schemas/OpportunityFollowUp" } }
+                  suggestions: { type: array, items: { $ref: "#/components/schemas/OpportunityMeetingSuggestion" } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [opportunity-follow-ups]
+      operationId: createOpportunityFollowUp
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SaveOpportunityFollowUpBody" }
+      responses:
+        "201":
+          description: Saved follow-up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpportunityFollowUp" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /opportunity-follow-ups/{id}:
+    patch:
+      tags: [opportunity-follow-ups]
+      operationId: updateOpportunityFollowUp
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                details: { $ref: "#/components/schemas/SaveOpportunityFollowUpBody" }
+                action: { type: string, enum: [sent, resolved, reopen, checked_in] }
+                date: { type: string, format: date }
+      responses:
+        "200":
+          description: Updated follow-up.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpportunityFollowUp" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   /fundraising/brief:
     get:
       tags: [fundraising]
@@ -28041,6 +28110,54 @@ components:
         proposals:
           type: array
           items: { $ref: "#/components/schemas/MeetingNextStepProposal" }
+    SaveOpportunityFollowUpBody:
+      type: object
+      required: [kind, title]
+      properties:
+        kind: { type: string, enum: [ours, waiting, shared] }
+        title: { type: string, minLength: 1, maxLength: 240 }
+        ownerName: { type: string, nullable: true, maxLength: 160 }
+        pointPersonId: { type: string, nullable: true }
+        meetingNoteId: { type: string, nullable: true }
+        suggestionKey: { type: string, nullable: true, maxLength: 150 }
+        evidenceEmailId: { type: string, nullable: true }
+        evidenceUrl: { type: string, nullable: true, maxLength: 1000 }
+        evidenceNote: { type: string, nullable: true, maxLength: 1500 }
+        readStatus: { type: string, nullable: true, enum: [unread, read, unknown] }
+        externalDueDate: { type: string, format: date, nullable: true }
+        dependencyId: { type: string, nullable: true }
+        checkInDays: { type: integer, minimum: 1, maximum: 365 }
+        checkInOn: { type: string, format: date, nullable: true }
+        sentOn: { type: string, format: date, nullable: true }
+    OpportunityFollowUp:
+      allOf:
+        - $ref: "#/components/schemas/SaveOpportunityFollowUpBody"
+        - type: object
+          required: [id, opportunityId, status, checkInDays]
+          properties:
+            id: { type: string }
+            opportunityId: { type: string }
+            opportunityName: { type: string, nullable: true }
+            status: { type: string, enum: [open, sent, shared, blocked, waiting, due, resolved] }
+            checkInDays: { type: integer }
+            resolvedOn: { type: string, format: date, nullable: true }
+            updateEmailId: { type: string, nullable: true }
+    OpportunityMeetingSuggestion:
+      type: object
+      required: [key, meetingNoteId, kind, title, evidence]
+      properties:
+        key: { type: string }
+        meetingNoteId: { type: string }
+        meetingTitle: { type: string, nullable: true }
+        kind: { type: string, enum: [ours, waiting, shared] }
+        title: { type: string }
+        ownerName: { type: string, nullable: true }
+        evidence: { type: string }
+        evidenceEmailId: { type: string, nullable: true }
+        evidenceUrl: { type: string, nullable: true }
+        readStatus: { type: string, nullable: true, enum: [unread, read, unknown] }
+        externalDueDate: { type: string, format: date, nullable: true }
+        dependsOnTitle: { type: string, nullable: true }
     CreateMeetingNoteBody:
       type: object
       description: "At least one CRM link or a calendarEventId is required. A note can link to any number of people, organizations, and households. At least one of transcript, summary, manualNotes, or artifacts is required. Source artifacts were already processed through /meeting-media/process."
