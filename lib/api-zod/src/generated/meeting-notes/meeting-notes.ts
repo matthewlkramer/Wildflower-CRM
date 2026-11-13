@@ -241,6 +241,62 @@ export const PromoteMeetingActionItemBody = zod.object({
 })
 
 /**
+ * @summary Refresh the meeting summary and suggested follow-ups using saved sources and shared relationship history.
+ */
+export const RegenerateMeetingSummaryParams = zod.object({
+  "id": zod.coerce.string()
+})
+
+export const regenerateMeetingSummaryBodyReviewerContextMax = 6000;
+
+
+
+export const RegenerateMeetingSummaryBody = zod.object({
+  "reviewerContext": zod.string().max(regenerateMeetingSummaryBodyReviewerContextMax).optional()
+})
+
+export const RegenerateMeetingSummaryResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string().nullish(),
+  "meetingDate": zod.string().datetime({}),
+  "attendees": zod.array(zod.string()).nullish(),
+  "manualNotes": zod.string().nullish(),
+  "rawTranscript": zod.string().nullish().describe('Always null when summaryOnly is true.'),
+  "summaryOnly": zod.boolean().describe('Snapshot of the creator\'s email_sync_mode at create time. When true, the raw transcript was dropped pre-insert.'),
+  "aiSummary": zod.string().nullish(),
+  "actionItems": zod.array(zod.object({
+  "title": zod.string(),
+  "assigneeName": zod.string().nullish().describe('Free-text assignee name as extracted from the transcript.'),
+  "dueDate": zod.string().date().nullish(),
+  "promotedTaskId": zod.string().nullish().describe('Set after this item was promoted into a task via \/promote-action-item.')
+})).nullish(),
+  "artifacts": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['handwritten_notes', 'audio_recording', 'voice_dictation']),
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number(),
+  "transcript": zod.string(),
+  "createdAt": zod.string().datetime({}),
+  "sourcePages": zod.array(zod.object({
+  "objectPath": zod.string(),
+  "fileName": zod.string(),
+  "mimeType": zod.string(),
+  "sizeBytes": zod.number()
+})).optional().describe('For a combined handwritten-note artifact, every original page in capture order. objectPath above points to the first page for older clients.')
+})).optional(),
+  "creatorUserId": zod.string(),
+  "personIds": zod.array(zod.string()),
+  "organizationIds": zod.array(zod.string()),
+  "householdIds": zod.array(zod.string()),
+  "developmentWeek": zod.string().date().nullish(),
+  "calendarEventId": zod.string().nullish().describe('Direct pointer to the synced calendar event this note documents.'),
+  "createdAt": zod.string().datetime({}),
+  "updatedAt": zod.string().datetime({})
+})
+
+/**
  * @summary Generate editable task proposals from a saved meeting note.
  */
 export const GenerateMeetingNextStepsParams = zod.object({

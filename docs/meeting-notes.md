@@ -23,6 +23,19 @@ summaries and earlier generated action items are not evidence of a commitment.
 Each proposal must quote source evidence, duplicates are removed, and no tasks
 is a valid result. At most six proposals are presented for explicit review.
 
+Meeting summaries and follow-ups use the closing exchange to reconcile earlier
+requests, outcomes, and ownership. A funder's volunteered next step belongs in
+the summary with its scope. Suggested tasks cover the CRM team's commitments.
+For linked donors, analysis uses a bounded sample of shared email and earlier
+meetings, notes, and interactions. Private mail and private calendar-linked
+notes are excluded. History can clarify the relationship or what has already
+been shared. Meeting source material establishes new commitments.
+
+**Regenerate summary** on a saved donor meeting uses its source material and
+optional reviewer observations. It refreshes the summary and suggested action
+items, preserving linked tasks and action items marked as staff-edited. Review
+observations apply to that run. Regeneration does not create tasks or send mail.
+
 Generating tasks saves the current source notes silently; the independent Save
 notes action keeps its save notification. The review dialog uses wrapped task
 text, expands on desktop, fits mobile, and blocks repeated confirmation while

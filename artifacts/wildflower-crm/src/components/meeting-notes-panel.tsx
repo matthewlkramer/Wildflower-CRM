@@ -5,6 +5,7 @@ import {
   useUpdateMeetingNote,
   useDeleteMeetingNote,
   usePromoteMeetingActionItem,
+  useRegenerateMeetingSummary,
   useGenerateMeetingNextSteps,
   useCreateTask,
   useGetCurrentUser,
@@ -145,7 +146,70 @@ export function MeetingNoteRow({ note }: { note: MeetingNote }) {
   return <EditableMeetingNoteRow note={note} />;
 }
 
+function RegenerateSummaryDialog({ note }: { note: MeetingNote }) {
+  const [open, setOpen] = useState(false);
+  const [reviewerContext, setReviewerContext] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const regenerate = useRegenerateMeetingSummary({
+    mutation: {
+      onSuccess: async (updated) => {
+        queryClient.setQueryData(getGetMeetingNoteQueryKey(note.id), updated);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: getListMeetingNotesQueryKey() }),
+          queryClient.invalidateQueries({ queryKey: getListCalendarEventsQueryKey() }),
+        ]);
+        setOpen(false);
+        setReviewerContext("");
+        toast({ title: "Meeting summary refreshed" });
+      },
+      onError: (error) => toast({
+        title: "Could not refresh the summary",
+        description: error.message,
+        variant: "destructive",
+      }),
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(value) => { if (!regenerate.isPending) setOpen(value); }}>
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm">Regenerate summary</Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Regenerate meeting summary</DialogTitle>
+          <DialogDescription>
+            Refresh the summary and suggested action items.
+            The CRM uses the saved sources and recent shared relationship history.
+          </DialogDescription>
+        </DialogHeader>
+        <Label htmlFor={`summary-context-${note.id}`}>Review observations (optional)</Label>
+        <Textarea
+          id={`summary-context-${note.id}`}
+          value={reviewerContext}
+          onChange={(event) => setReviewerContext(event.target.value)}
+          maxLength={6000}
+          disabled={regenerate.isPending}
+          rows={5}
+        />
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={regenerate.isPending}>Cancel</Button>
+          <Button
+            type="button"
+            disabled={regenerate.isPending}
+            onClick={() => regenerate.mutate({ id: note.id, data: { reviewerContext } })}
+          >
+            {regenerate.isPending ? "Regenerating…" : "Regenerate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
+  const { data: currentUser } = useGetCurrentUser();
   const [showTranscript, setShowTranscript] = useState(false);
   const visibleTranscript = (note.artifacts ?? []).some(
     (artifact) => artifact.transcript,
@@ -312,6 +376,11 @@ function EditableMeetingNoteRow({ note }: { note: MeetingNote }) {
         <p className="whitespace-pre-wrap text-muted-foreground">
           {note.aiSummary}
         </p>
+      ) : null}
+      {currentUser && currentUser.role !== "read_only" &&
+      (note.manualNotes?.trim() || note.rawTranscript?.trim() ||
+        note.artifacts?.some((artifact) => artifact.transcript.trim())) ? (
+        <RegenerateSummaryDialog note={note} />
       ) : null}
       {note.manualNotes ? (
         <div className="space-y-1">

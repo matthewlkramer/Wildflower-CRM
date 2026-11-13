@@ -29,6 +29,20 @@ describe("summarizeMeeting", () => {
     expect(out.actionItems).toEqual([]);
   });
 
+  it("includes the closing exchange and separates reviewer and relationship context from meeting evidence", async () => {
+    create.mockResolvedValue(textResponse('{"summary":"ok","actionItems":[]}'));
+    const transcript = "Opening. " + "Discussion. ".repeat(6500) + "The pre-read has the report. I'll think about fit.";
+    await summarizeMeeting(transcript, { relationship: "Earlier correspondence", reviewer: "Matt thought this was genuine" });
+    const prompt = create.mock.calls[0][0];
+    expect(JSON.parse(prompt.messages[0].content)).toEqual({
+      meetingSources: transcript,
+      sharedRelationshipHistory: "Earlier correspondence",
+      staffReviewerObservations: "Matt thought this was genuine",
+    });
+    expect(prompt.system).toContain("supersede earlier discussion");
+    expect(prompt.system).toContain("volunteered and owned by a funder");
+  });
+
   it("parses well-formed JSON output", async () => {
     create.mockResolvedValue(
       textResponse(

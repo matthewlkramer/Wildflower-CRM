@@ -6662,6 +6662,31 @@ paths:
           }
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /meeting-notes/{id}/regenerate-summary:
+    post:
+      operationId: regenerateMeetingSummary
+      tags: [meeting-notes]
+      summary: Refresh the meeting summary and suggested follow-ups using saved sources and shared relationship history.
+      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reviewerContext: { type: string, maxLength: 6000 }
+      responses:
+        "200":
+          description: Updated note. Existing linked tasks are preserved.
+          content:
+            application/json:
+              { schema: { $ref: "#/components/schemas/MeetingNote" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { description: Read-only CRM access. }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The note cannot be regenerated or changed during regeneration. }
+        "503": { description: Summary generation is unavailable. }
   /meeting-notes/{id}/generate-next-steps:
     post:
       operationId: generateMeetingNextSteps

@@ -45,6 +45,7 @@ import {
   refreshDevelopmentDonorLinks,
 } from "../lib/developmentMeetings";
 import { hasUsableMeetingSummary, mergeTranscriptActionItems, summarizeMeeting } from "../lib/summarizeMeeting";
+import { meetingRelationshipContext, savedMeetingSource } from "../lib/meetingAnalysis";
 
 const router: IRouter = Router();
 router.use(requireAuth);
@@ -535,7 +536,10 @@ router.post(
         and(eq(meetingNotes.id, id), isNotNull(meetingNotes.developmentWeek)),
       );
     if (!note) return notFound(res, "development meeting");
-    const result = await summarizeMeeting(transcript);
+    const result = await summarizeMeeting(
+      savedMeetingSource({ ...note, rawTranscript: transcript }),
+      { relationship: await meetingRelationshipContext(note, note.meetingDate, note.id) },
+    );
     if (!hasUsableMeetingSummary(result)) {
       res
         .status(503)
