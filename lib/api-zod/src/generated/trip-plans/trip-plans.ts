@@ -232,6 +232,17 @@ export const GetTripPlanResponse = zod
             .describe(
               "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.",
             ),
+          transcriptAttendees: zod
+            .array(
+              zod.object({
+                name: zod.string(),
+                email: zod.string().nullable(),
+              }),
+            )
+            .optional()
+            .describe(
+              "Named transcript speakers, with a matched invitee address when there is enough evidence. Available on event detail.",
+            ),
           organizerEmail: zod.string().nullish(),
           status: zod.string().nullish(),
           transparency: zod
@@ -610,6 +621,17 @@ export const DraftTripVisitsResponse = zod
             .optional()
             .describe(
               "Invitees marked absent in the CRM for this physical meeting. Separate from calendar invitations; preserved across syncs.",
+            ),
+          transcriptAttendees: zod
+            .array(
+              zod.object({
+                name: zod.string(),
+                email: zod.string().nullable(),
+              }),
+            )
+            .optional()
+            .describe(
+              "Named transcript speakers, with a matched invitee address when there is enough evidence. Available on event detail.",
             ),
           organizerEmail: zod.string().nullish(),
           status: zod.string().nullish(),
