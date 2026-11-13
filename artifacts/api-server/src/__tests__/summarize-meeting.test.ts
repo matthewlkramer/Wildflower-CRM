@@ -49,8 +49,9 @@ describe("summarizeMeeting", () => {
         JSON.stringify({
           summary: "Discussed Q3 grant timeline.",
           actionItems: [
-            { title: "Send LOI by Friday", assigneeName: "Alex", dueDate: "2026-06-05" },
-            { title: "Schedule follow-up", assigneeName: null, dueDate: null },
+            { title: "Send LOI by Friday", assigneeName: "Alex", dueDate: "2026-06-05", ownerSide: "internal" },
+            { title: "Schedule follow-up", assigneeName: null, dueDate: null, ownerSide: "internal" },
+            { title: "Review the plan", assigneeName: "Funder", dueDate: null, ownerSide: "external" },
           ],
         }),
       ),
@@ -78,7 +79,7 @@ describe("summarizeMeeting", () => {
         JSON.stringify({
           summary: "s",
           actionItems: [
-            { title: "Keep me", dueDate: "next Tuesday" },
+            { title: "Keep me", dueDate: "next Tuesday", ownerSide: "internal" },
             { title: "  ", dueDate: "2026-06-05" },
             { assigneeName: "no title" },
           ],
@@ -104,12 +105,12 @@ describe("summarizeMeeting", () => {
     expect(out.summary).toBe("(summary unavailable)");
   });
 
-  it("caps action items at 12", async () => {
-    const many = Array.from({ length: 30 }, (_, i) => ({ title: `Item ${i}` }));
+  it("caps action items at six", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({ title: `Item ${i}`, ownerSide: "internal" }));
     create.mockResolvedValue(
       textResponse(JSON.stringify({ summary: "s", actionItems: many })),
     );
     const out = await summarizeMeeting("x");
-    expect(out.actionItems).toHaveLength(12);
+    expect(out.actionItems).toHaveLength(6);
   });
 });

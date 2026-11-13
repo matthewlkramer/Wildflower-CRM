@@ -358,14 +358,14 @@ function MeetingActions({
               data-testid={`button-notes-${event.id}`}
             >
               <Link
-                href={`/meetings/${event.id}`}
-                aria-label="Open meeting workspace"
+                href={`/meetings/${event.id}#meeting-preparation`}
+                aria-label="Open meeting briefing"
               >
                 <NotebookPen className="h-4 w-4" />
               </Link>
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Open meeting workspace</TooltipContent>
+          <TooltipContent>Open meeting briefing</TooltipContent>
         </Tooltip>
         {onArchive && (
           <Tooltip>

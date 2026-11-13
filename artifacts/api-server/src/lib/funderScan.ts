@@ -4,6 +4,7 @@ import {
   funderScanState,
   grantLeadSuppressions,
   organizations,
+  people,
 } from "@workspace/db/schema";
 import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
@@ -118,6 +119,13 @@ async function saveFinding(
   target: FunderTarget,
   finding: PublicFunderFinding,
 ): Promise<boolean> {
+  if (finding.candidateName) {
+    const [known] = await tx.select({ id: people.id }).from(people).where(and(
+      isNull(people.archivedAt),
+      sql`lower(trim(coalesce(nullif(${people.fullName}, ''), concat_ws(' ', ${people.firstName}, ${people.lastName})))) = lower(${finding.candidateName})`,
+    )).limit(1);
+    if (known) return false;
+  }
   const { id } = await upsertArticleWithId(
     { kind: "organization", id: target.id, name: target.searchName },
     { ...finding.article, snippet: finding.summary ?? undefined },
@@ -138,7 +146,9 @@ async function saveFinding(
       organizationId: target.id,
       grantLeadId,
       category: finding.category,
-      summary: finding.summary,
+      summary: finding.candidateName
+        ? ["Contact candidate from the funder's official team page.", finding.summary].filter(Boolean).join(" ")
+        : finding.summary,
       deadline: finding.deadline,
       officialSource: finding.official,
     })

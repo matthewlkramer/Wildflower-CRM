@@ -33,12 +33,17 @@ Rules:
 - Lead with the current state: active pledge awaiting payment, open ask in progress, recently gave, long-lapsed, brand-new prospect, etc.
 - Ground every claim in the snapshot (a dated gift, an open opportunity and its stage, the last-contacted date, a recent meeting or email). Never invent facts, amounts, or interactions not present in the data.
 - Do not include recommendations, advice, or next steps in summary.
+- Use profile research for enduring background or public funding criteria. Keep those distinct from what the funder has said or agreed to about Wildflower.
+- Use the latest meeting outcome to distinguish questions that have been answered from ones that are open. Do not re-suggest work the meeting indicates is complete or duplicate an existing deliverable.
 - Return nextSteps separately. Each must cite a specific evidence item (media mention, recorded interest/current initiative, or recent newsletter engagement) and be actionable. Never give generic "send a warm email" advice.
 - Plain prose, no bullet points, no greetings, no headers. Refer to the donor by name.
 - If the snapshot shows essentially no activity (no gifts, no opportunities, no notes/meetings/emails), say plainly that the relationship is new/quiet with no recorded activity yet.`;
 
 const RECORD_PAGE_RULES = `
 - Keep this record-page summary compact. Do not enumerate schools, school status or risk details, funding geographies, markets, cities, or regions. Those details belong in the single-meeting preparation briefing. You may describe a regional opportunity broadly when it is material to the relationship.`;
+
+const MEETING_PREPARATION_RULES = `
+- Suggest concrete questions worth clarifying at the meeting, tied to recorded evidence and the current opportunity. Include what has already been established when it helps avoid revisiting the same question. Distinguish published criteria from questions about how they are applied.`;
 
 export interface RelationshipSummaryResult {
   summary: string;
@@ -63,6 +68,8 @@ function fmtSignals(signals: TaskSignals): string {
   lines.push(`  Last contacted: ${e.lastContacted ?? "(unknown)"}`);
   lines.push(`  Interaction count: ${e.interactionCount ?? "(unknown)"}`);
   lines.push(`  Interests / current initiatives: ${e.interests.length ? e.interests.join(", ") : "(none recorded)"}`);
+  if (e.profileBackground) lines.push(`  Profile background: ${e.profileBackground}`);
+  if (e.fundingPriorities) lines.push(`  Funding priorities and research: ${e.fundingPriorities}`);
   lines.push("");
 
   lines.push("RECENT GIFTS / PAYMENTS:");
@@ -184,7 +191,7 @@ export async function generateRelationshipSummary(args: {
               model: MODEL,
               max_tokens: 1024,
               system: args.meetingPreparation
-                ? SYSTEM
+                ? `${SYSTEM}${MEETING_PREPARATION_RULES}`
                 : `${SYSTEM}${RECORD_PAGE_RULES}`,
               messages: [{ role: "user", content: fmtSignals(signals) }],
             },

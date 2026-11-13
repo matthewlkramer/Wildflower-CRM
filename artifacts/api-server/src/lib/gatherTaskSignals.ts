@@ -42,6 +42,8 @@ export interface TaskSignals {
     issuesGrants: boolean;
     interests: string[];
     fundingRegionIds: string[];
+    profileBackground?: string | null;
+    fundingPriorities?: string | null;
   };
   recentGifts: Array<{
     date: string | null;
@@ -215,6 +217,7 @@ async function gatherPersonSignals(personId: string): Promise<TaskSignals | null
         ...(p.interestsGovModels ?? []),
       ],
       fundingRegionIds: p.regionIds ?? [],
+      profileBackground: p.aboutMe?.slice(0, 2200),
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
@@ -374,6 +377,8 @@ async function gatherOrganizationSignals(
         ...(o.interestsGovModels ?? []),
       ],
       fundingRegionIds: o.regionIds ?? [],
+      profileBackground: o.about?.slice(0, 2200),
+      fundingPriorities: o.priorityAreasNotes?.slice(0, 3500),
     },
     recentGifts: gifts.map((g) => ({
       date: iso(g.date),
