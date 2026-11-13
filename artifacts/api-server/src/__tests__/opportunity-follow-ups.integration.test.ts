@@ -27,7 +27,7 @@ beforeAll(async () => {
   await db.insert(organizations).values({ id: organization, name: "Example Funder" });
   await db.insert(opportunitiesAndPledges).values({ id: opportunity, name: "Growth", organizationId: organization, ownerUserId: owner });
   const app = express().use(express.json()).use(router);
-  await new Promise<void>((resolve) => { server = app.listen(0, resolve); });
+  await new Promise<void>((resolve, reject) => { server = app.listen(0, (error) => error ? reject(error) : resolve()); });
   url = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
 });
 afterAll(async () => {
