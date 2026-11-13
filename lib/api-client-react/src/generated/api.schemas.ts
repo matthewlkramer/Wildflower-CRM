@@ -13514,6 +13514,11 @@ limit?: LimitParameter;
 page?: PageParameter;
 };
 
+export type RegenerateMeetingSummaryBody = {
+  /** @maxLength 6000 */
+  reviewerContext?: string;
+};
+
 export type ListSavedViewsParams = {
 /**
  * Page identifier, e.g. 'individuals', 'funders'.

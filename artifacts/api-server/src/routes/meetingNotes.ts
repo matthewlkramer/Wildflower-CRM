@@ -19,6 +19,7 @@ import {
   CreateMeetingNoteBodyRefined,
   UpdateMeetingNoteBody,
   PromoteMeetingActionItemBody,
+  RegenerateMeetingSummaryBody,
   ProcessMeetingMediaBody,
   validateMeetingLinkInvariants,
   MEETING_LINK_MESSAGE,
@@ -34,7 +35,8 @@ import {
   parseOrBadRequest,
   parsePagination,
 } from "../lib/helpers";
-import { summarizeMeeting } from "../lib/summarizeMeeting";
+import { hasUsableMeetingSummary, mergeTranscriptActionItems, staffMeetingActionItems, summarizeMeeting } from "../lib/summarizeMeeting";
+import { meetingRelationshipContext, savedMeetingSource } from "../lib/meetingAnalysis";
 import { organizationActivityArrayScope } from "../lib/organizationActivityScope";
 import { ObjectStorageService } from "../lib/objectStorage";
 import {
@@ -261,8 +263,11 @@ router.post(
     ]
       .filter(Boolean)
       .join("\n\n");
+    const meetingDate = body.meetingDate ? new Date(body.meetingDate) : new Date();
     const ai = isTranscriptPath
-      ? await summarizeMeeting(summaryInput)
+      ? await summarizeMeeting(summaryInput, {
+          relationship: await meetingRelationshipContext(body, meetingDate),
+        })
       : {
           summary: body.summary?.trim() || null,
           actionItems: [] as MeetingActionItem[],
@@ -273,7 +278,7 @@ router.post(
       .values({
         id: newId(),
         title: body.title ?? null,
-        meetingDate: body.meetingDate ? new Date(body.meetingDate) : new Date(),
+        meetingDate,
         attendees: body.attendees ?? null,
         manualNotes: body.manualNotes?.trim() || null,
         // Privacy split mirrors the Gmail sync path: in summary_only
@@ -306,12 +311,13 @@ router.patch(
   asyncHandler(async (req, res) => {
     const body = parseOrBadRequest(UpdateMeetingNoteBody, req.body, res);
     if (!body) return;
-    const existing = await db
-      .select()
+    const current = await db
+      .select({ note: meetingNotes, version: sql<string>`${meetingNotes}."xmin"::text` })
       .from(meetingNotes)
       .where(eq(meetingNotes.id, paramId(req)))
       .then((r) => r[0]);
-    if (!existing) return notFound(res, "meeting note");
+    if (!current) return notFound(res, "meeting note");
+    const { note: existing, version } = current;
     // Merge-then-validate so a partial PATCH cannot remove the last anchor.
     const merged = {
       personIds: body.personIds ?? existing.personIds,
@@ -337,13 +343,24 @@ router.patch(
       return;
     }
     const patch: Record<string, unknown> = { updatedAt: new Date() };
+    let refreshingSummary = false;
     if (body.title !== undefined) patch.title = body.title;
     if (body.meetingDate !== undefined)
       patch.meetingDate = new Date(body.meetingDate);
     if (body.attendees !== undefined) patch.attendees = body.attendees;
     if (body.manualNotes !== undefined) patch.manualNotes = body.manualNotes;
     if (body.aiSummary !== undefined) patch.aiSummary = body.aiSummary;
-    if (body.actionItems !== undefined) patch.actionItems = body.actionItems;
+    if (body.actionItems !== undefined) {
+      const priorItems = (existing.actionItems ?? []) as MeetingActionItem[];
+      patch.actionItems = body.actionItems?.map((item) => {
+        const prior = priorItems.find((candidate) =>
+          candidate.title === item.title &&
+          (candidate.assigneeName ?? null) === (item.assigneeName ?? null) &&
+          (candidate.dueDate ?? null) === (item.dueDate ?? null),
+        );
+        return !prior || prior.staffEdited ? { ...item, staffEdited: true } : item;
+      }) ?? null;
+    }
     if (body.artifacts !== undefined) {
       const incomingArtifacts = body.artifacts as MeetingArtifact[];
       try {
@@ -374,26 +391,28 @@ router.patch(
         body.aiSummary === undefined &&
         body.actionItems === undefined
       ) {
+        refreshingSummary = true;
         const notes =
           body.manualNotes !== undefined
             ? (body.manualNotes?.trim() ?? "")
             : (existing.manualNotes?.trim() ?? "");
-        const summaryInput = [
-          notes ? `Staff notes:\n${notes}` : "",
-          existing.aiSummary
-            ? `Existing meeting summary:\n${existing.aiSummary}`
-            : "",
-          ...incomingArtifacts.map((artifact) =>
-            artifact.transcript.trim()
-              ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript.trim()}`
-              : "",
-          ),
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-        const ai = await summarizeMeeting(summaryInput);
-        patch.aiSummary = ai.summary;
-        patch.actionItems = ai.actionItems;
+        const summaryInput = savedMeetingSource({
+          manualNotes: notes,
+          rawTranscript: existing.rawTranscript,
+          artifacts: incomingArtifacts,
+        });
+        const ai = await summarizeMeeting(summaryInput, {
+          relationship: await meetingRelationshipContext(merged, body.meetingDate ? new Date(body.meetingDate) : existing.meetingDate, existing.id),
+          priorSummary: existing.summaryOnly ? existing.aiSummary ?? undefined : undefined,
+        });
+        if (hasUsableMeetingSummary(ai)) {
+          patch.aiSummary = ai.summary;
+          const items = (existing.actionItems ?? []) as MeetingActionItem[];
+          patch.actionItems = mergeTranscriptActionItems(
+            existing.summaryOnly ? items : staffMeetingActionItems(items),
+            ai,
+          );
+        }
         if (!existing.summaryOnly) {
           patch.rawTranscript = [
             existing.rawTranscript?.trim() ?? "",
@@ -426,9 +445,16 @@ router.patch(
     const [row] = await db
       .update(meetingNotes)
       .set(patch)
-      .where(eq(meetingNotes.id, paramId(req)))
+      .where(and(
+        eq(meetingNotes.id, existing.id),
+        refreshingSummary ? sql`${meetingNotes}."xmin"::text = ${version}` : undefined,
+      ))
       .returning();
-    if (!row) return notFound(res, "meeting note");
+    if (!row) {
+      if (!refreshingSummary) return notFound(res, "meeting note");
+      res.status(409).json({ error: "conflict", message: "The meeting note changed. Reload it before saving." });
+      return;
+    }
     res.json(meetingNoteResponse(row));
   }),
 );
@@ -548,6 +574,50 @@ router.post(
 );
 
 router.post(
+  "/meeting-notes/:id/regenerate-summary",
+  asyncHandler(async (req, res) => {
+    if (getAppUser(req)?.role === "read_only") {
+      res.status(403).json({ error: "forbidden", message: "This CRM account has read-only access." });
+      return;
+    }
+    const body = parseOrBadRequest(RegenerateMeetingSummaryBody, req.body, res);
+    if (!body) return;
+    const [current] = await db.select({
+      note: meetingNotes,
+      version: sql<string>`${meetingNotes}."xmin"::text`,
+    }).from(meetingNotes).where(eq(meetingNotes.id, paramId(req)));
+    if (!current) return notFound(res, "meeting note");
+    const { note, version } = current;
+    const source = savedMeetingSource(note);
+    if (note.developmentWeek || !source) {
+      res.status(409).json({ error: "conflict", message: "This meeting needs saved source notes or a transcript to regenerate its summary." });
+      return;
+    }
+    const result = await summarizeMeeting(source, {
+      relationship: await meetingRelationshipContext(note, note.meetingDate, note.id),
+      reviewer: body.reviewerContext?.trim(),
+    });
+    if (!hasUsableMeetingSummary(result)) {
+      res.status(503).json({ error: "summary_unavailable", message: "The summary could not be regenerated. Try again." });
+      return;
+    }
+    const [updated] = await db.update(meetingNotes).set({
+      aiSummary: result.summary,
+      actionItems: mergeTranscriptActionItems(
+        staffMeetingActionItems((note.actionItems ?? []) as MeetingActionItem[]),
+        result,
+      ),
+      updatedAt: new Date(),
+    }).where(and(eq(meetingNotes.id, note.id), sql`${meetingNotes}."xmin"::text = ${version}`)).returning();
+    if (!updated) {
+      res.status(409).json({ error: "conflict", message: "The meeting note changed during regeneration. Reload it and try again." });
+      return;
+    }
+    res.json(meetingNoteResponse(updated));
+  }),
+);
+
+router.post(
   "/meeting-notes/:id/generate-next-steps",
   asyncHandler(async (req, res) => {
     const note = await db
@@ -556,29 +626,21 @@ router.post(
       .where(eq(meetingNotes.id, paramId(req)))
       .then((rows) => rows[0]);
     if (!note) return notFound(res, "meeting note");
-    const sourceArtifacts = (note.artifacts ?? []) as MeetingArtifact[];
     const agenda = note.developmentWeek ? await db.select().from(developmentAgenda)
       .where(eq(developmentAgenda.meetingId, note.id)).orderBy(developmentAgenda.position) : [];
     const savedText = [
       ...agenda.filter((item) => item.notes.trim() || item.decision.trim())
         .map((item) => [item.title, item.notes, item.decision].filter(Boolean).join("\n")),
-      note.title ? `Title: ${note.title}` : "",
-      note.manualNotes ? `Staff notes:\n${note.manualNotes}` : "",
-      note.rawTranscript &&
-      !sourceArtifacts.some((artifact) => artifact.transcript)
-        ? `Transcript:\n${note.rawTranscript}`
-        : "",
-      ...sourceArtifacts.map((artifact) =>
-        artifact.transcript
-          ? `${meetingArtifactSourceLabel(artifact.kind)}:\n${artifact.transcript}`
-          : "",
-      ),
+      savedMeetingSource(note),
     ]
       .filter(Boolean)
       .join("\n\n");
     let proposals;
     try {
-      proposals = await generateMeetingTaskProposals(savedText);
+      proposals = await generateMeetingTaskProposals(
+        savedText,
+        await meetingRelationshipContext(note, note.meetingDate, note.id),
+      );
     } catch (error) {
       res.status(503).json({
         error: "task_generation_unavailable",

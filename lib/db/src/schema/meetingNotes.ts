@@ -136,6 +136,7 @@ export interface MeetingActionItem {
   assigneeName?: string | null;
   dueDate?: string | null;
   promotedTaskId?: string | null;
+  staffEdited?: boolean;
 }
 
 export type MeetingArtifactKind =

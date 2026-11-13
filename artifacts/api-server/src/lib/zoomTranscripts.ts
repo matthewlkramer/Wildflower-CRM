@@ -25,9 +25,11 @@ import { chicagoToday } from "./effectiveProjectedCloseDate";
 import { createDevelopmentMeeting } from "./developmentMeetings";
 import { newId } from "./helpers";
 import { logger } from "./logger";
+import { meetingRelationshipContext, savedMeetingSource } from "./meetingAnalysis";
 import {
   hasUsableMeetingSummary,
   mergeTranscriptActionItems,
+  staffMeetingActionItems,
   summarizeMeeting,
 } from "./summarizeMeeting";
 import { withSyncLock } from "./syncLock";
@@ -304,7 +306,25 @@ async function importTranscript(job: Job, owner: Owner) {
   }
   const transcript = await downloadZoomTranscript(job.uuid);
   if (!transcript) throw new Error("Zoom transcript is not ready");
-  const result = await summarizeMeeting(transcript);
+  const eventScope = event && (event.gcalEventId
+    ? eq(calendarEvents.gcalEventId, event.gcalEventId)
+    : eq(calendarEvents.id, event.id));
+  const existingForEvent = eventScope
+    ? await db.select({ note: meetingNotes, version: sql<string>`${meetingNotes}."xmin"::text` })
+        .from(meetingNotes)
+        .innerJoin(calendarEvents, eq(calendarEvents.id, meetingNotes.calendarEventId))
+        .where(eventScope).limit(2)
+    : [];
+  if (existingForEvent.length > 1) {
+    await finish(job, "ambiguous_note");
+    return;
+  }
+  const prior = existingForEvent[0]?.note;
+  const source = prior ? savedMeetingSource(prior) : "";
+  const result = await summarizeMeeting([source, transcript].filter(Boolean).join("\n\nZoom transcript\n"), {
+    relationship: await meetingRelationshipContext(prior ?? links, event?.startAt ?? job.startedAt, prior?.id),
+    priorSummary: prior?.summaryOnly ? prior.aiSummary ?? undefined : undefined,
+  });
   if (!hasUsableMeetingSummary(result)) {
     throw new Error("Zoom transcript could not be summarized");
   }
@@ -324,22 +344,18 @@ async function importTranscript(job: Job, owner: Owner) {
           .from(meetingNotes)
           .where(eq(meetingNotes.id, developmentId))
           .for("update")
-      : event
+          .then((rows) => rows.map((note) => ({ note, version: undefined })))
+      : eventScope
         ? await tx
-            .select({ note: meetingNotes })
+            .select({ note: meetingNotes, version: sql<string>`${meetingNotes}."xmin"::text` })
             .from(meetingNotes)
             .innerJoin(
               calendarEvents,
               eq(calendarEvents.id, meetingNotes.calendarEventId),
             )
-            .where(
-              event.gcalEventId
-                ? eq(calendarEvents.gcalEventId, event.gcalEventId)
-                : eq(calendarEvents.id, event.id),
-            )
+            .where(eventScope)
             .limit(2)
             .for("update", { of: meetingNotes })
-            .then((rows) => rows.map(({ note }) => note))
         : [];
     if (existing.length > 1) {
       await tx
@@ -352,17 +368,24 @@ async function importTranscript(job: Job, owner: Owner) {
         .where(eq(zoomTranscriptJobs.uuid, job.uuid));
       return;
     }
-    const [note] = existing;
+    const [latest] = existing;
+    if (eventScope && latest?.version !== existingForEvent[0]?.version) {
+      throw new Error("Meeting note changed while processing Zoom transcript");
+    }
+    const note = latest?.note;
     const summaryOnly =
       owner.emailSyncMode === "summary_only" || !!note?.summaryOnly;
     const items = (note?.actionItems ?? []) as MeetingActionItem[];
     const existingSummary = note?.aiSummary?.trim();
     const imported = {
       aiSummary:
-        existingSummary && existingSummary !== result.summary
+        (developmentId || !source) && existingSummary && existingSummary !== result.summary
           ? existingSummary + "\n\nZoom transcript summary\n" + result.summary
           : result.summary,
-      actionItems: mergeTranscriptActionItems(items, result),
+      actionItems: mergeTranscriptActionItems(
+        developmentId || !source || note?.summaryOnly ? items : staffMeetingActionItems(items),
+        result,
+      ),
       // Preserve staff-entered source material and apply the host's privacy
       // preference to the imported text only.
       rawTranscript: summaryOnly

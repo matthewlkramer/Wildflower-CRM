@@ -31,6 +31,7 @@ import type {
   NotFoundResponse,
   ProcessMeetingMediaBody,
   PromoteActionItemBody,
+  RegenerateMeetingSummaryBody,
   Task,
   UpdateMeetingNoteBody
 } from '../api.schemas';
@@ -446,6 +447,77 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getPromoteMeetingActionItemMutationOptions(options));
+    }
+    /**
+ * @summary Refresh the meeting summary and suggested follow-ups using saved sources and shared relationship history.
+ */
+export const getRegenerateMeetingSummaryUrl = (id: string,) => {
+
+
+
+
+  return `/api/meeting-notes/${id}/regenerate-summary`
+}
+
+export const regenerateMeetingSummary = async (id: string,
+    regenerateMeetingSummaryBody: RegenerateMeetingSummaryBody, options?: RequestInit): Promise<MeetingNote> => {
+
+  return customFetch<MeetingNote>(getRegenerateMeetingSummaryUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      regenerateMeetingSummaryBody,)
+  }
+);}
+
+
+
+
+export const getRegenerateMeetingSummaryMutationOptions = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateMeetingSummary>>, TError,{id: string;data: BodyType<RegenerateMeetingSummaryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateMeetingSummary>>, TError,{id: string;data: BodyType<RegenerateMeetingSummaryBody>}, TContext> => {
+
+const mutationKey = ['regenerateMeetingSummary'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateMeetingSummary>>, {id: string;data: BodyType<RegenerateMeetingSummaryBody>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  regenerateMeetingSummary(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateMeetingSummaryMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateMeetingSummary>>>
+    export type RegenerateMeetingSummaryMutationBody = BodyType<RegenerateMeetingSummaryBody>
+    export type RegenerateMeetingSummaryMutationError = ErrorType<BadRequestResponse | void | NotFoundResponse>
+
+    /**
+ * @summary Refresh the meeting summary and suggested follow-ups using saved sources and shared relationship history.
+ */
+export const useRegenerateMeetingSummary = <TError = ErrorType<BadRequestResponse | void | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateMeetingSummary>>, TError,{id: string;data: BodyType<RegenerateMeetingSummaryBody>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateMeetingSummary>>,
+        TError,
+        {id: string;data: BodyType<RegenerateMeetingSummaryBody>},
+        TContext
+      > => {
+      return useMutation(getRegenerateMeetingSummaryMutationOptions(options));
     }
     /**
  * @summary Generate editable task proposals from a saved meeting note.
