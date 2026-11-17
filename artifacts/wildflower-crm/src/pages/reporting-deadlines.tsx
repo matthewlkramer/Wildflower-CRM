@@ -27,7 +27,7 @@ import {
   useHouseholdName,
 } from "@/components/entity-picker";
 import { formatDate } from "@/lib/format";
-import { CheckCircle2, Clock, FileClock } from "lucide-react";
+import { CheckCircle2, Clock } from "lucide-react";
 
 /**
  * Cross-team view of every reporting_deadline task, sorted by due date
@@ -103,18 +103,6 @@ export default function ReportingDeadlinesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <FileClock className="h-6 w-6 text-primary" />
-        <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">
-            Reporting deadlines
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            All reporting deadlines across the team, soonest first.
-          </p>
-        </div>
-      </div>
-
       <div className="flex flex-wrap items-center gap-4">
         <label
           className="inline-flex items-center gap-2 text-sm cursor-pointer select-none"

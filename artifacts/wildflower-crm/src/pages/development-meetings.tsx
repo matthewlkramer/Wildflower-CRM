@@ -100,11 +100,8 @@ export function DevelopmentMeetingHistory() {
   }
   return (
     <div className="space-y-5">
-      <Link href="/meetings" className="text-sm text-primary hover:underline">
-        All meetings
-      </Link>
       <h1 className="text-3xl font-serif font-bold">
-        Weekly development meetings
+        Development team meetings
       </h1>
       {viewer && viewer.role !== "read_only" && (
         <form

@@ -175,10 +175,10 @@ export default function AdminFeedback() {
   return (
     <div className="max-w-7xl space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-3xl font-serif font-bold">
+        <h2 className="flex items-center gap-2 text-2xl font-serif font-bold">
           <MessageSquare className="h-7 w-7 text-primary" />
           Feedback
-        </h1>
+        </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Review questions and issues submitted from inside the CRM, including
           page state and a private screenshot when capture succeeded.

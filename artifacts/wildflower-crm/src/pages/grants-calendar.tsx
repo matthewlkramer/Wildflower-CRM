@@ -462,9 +462,6 @@ export default function GrantsCalendar() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-3xl font-serif font-bold text-foreground">
-            Application/close deadlines
-          </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Open opportunities with an application deadline or projected close
             date. Overdue items remain visible until they are resolved.

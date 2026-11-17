@@ -54,7 +54,7 @@ describe("personal dashboard cards", () => {
     try {
       await act(async () => root.render(<Settings userId="owner" />));
       await openSettings(host);
-      for (const label of ["Moves", "Application/close deadlines", "Projections"]) {
+      for (const label of ["Donor Follow-up", "Deadlines", "Projections"]) {
         const control = host.querySelector<HTMLButtonElement>(`[aria-label="Show ${label}"]`)!;
         expect(control).not.toBeNull(); await act(async () => control.click());
         expect(control.getAttribute("aria-checked")).toBe("false");

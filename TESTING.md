@@ -36,8 +36,8 @@ The dev DB is shared with the user, so tests must:
 | `/interactions` | `interactions.tsx` | yes |
 | `/projections` | `projections.tsx` | yes |
 | `/fiscal-year/:fyId` | `fiscal-year-detail.tsx` | yes |
-| `/grants-calendar` | `grants-calendar.tsx` | yes |
-| `/admin` | `admin.tsx` | admin only |
+| `/deadlines` | `deadlines.tsx` | yes |
+| `/admin` | `admin.tsx` | yes, some tabs are admin only |
 | anything else | `not-found.tsx` | — |
 
 ---
@@ -56,7 +56,7 @@ Each page's checklist covers: **renders without 500/console errors**, **all butt
 - [ ] KPI cards render numbers (no `NaN`, no `—` for everything)
 - [ ] FY selector switches the data
 - [ ] Entity filter chips switch the data
-- [ ] Tile links navigate to `/projections`, `/grants-calendar`, `/moves`
+- [ ] Tile links navigate to `/projections`, `/deadlines`, `/moves`
 - [ ] "Show all FY" / "Show retired" toggles work
 
 ### `/individuals`
@@ -154,13 +154,15 @@ Each page's checklist covers: **renders without 500/console errors**, **all butt
 - [ ] Gift rows link to `/gifts/:id`
 - [ ] Opp rows link to `/opportunities/:id`
 
-### `/grants-calendar`
-- [ ] Upcoming deadlines list renders
+### `/deadlines`
+- [ ] Applications & closes and Donor reporting each render
+- [ ] Legacy deadline URLs select the corresponding tab
 - [ ] Opportunity link → `/opportunities/:id`
 - [ ] Funder link uses stopPropagation
 
-### `/admin` (admin role required)
-- [ ] Non-admin: section hidden / 403 swallowed
+### `/admin`
+- [ ] Maintenance links to Enrichment Queue, Data Cleanup, Payment Intermediaries, and Fundable Projects
+- [ ] Non-admin: App Improvements, Integrations / Sync, and Users tabs are hidden
 - [ ] Admin: Google connect / disconnect / reconnect buttons appear and work
 - [ ] Per-user "Resync now" button triggers a sync and refetches table (30 s auto-refetch)
 - [ ] Entity goals: create, update, delete fiscal-year-entity goal
@@ -196,7 +198,7 @@ Feed any of these to the Playwright subagent (`await runTest({ testPlan, relevan
    (b) no red console errors, (c) page is not the 404 component:
    /dashboard, /individuals, /households, /funding-entities, /pipeline,
    /opportunities, /pledges, /gifts, /moves, /interactions, /projections,
-   /grants-calendar, /admin
+   /deadlines, /admin
 3. [Browser] On /individuals, click the first row. Assert it lands on
    /individuals/<id> and the name header is visible.
 4. [Browser] Repeat step 3 for /households, /funding-entities,

@@ -23,12 +23,12 @@ import Gifts from "@/pages/gifts";
 import GiftDetail from "@/pages/gift-detail";
 import Moves from "@/pages/moves";
 import Projections, { CashFlow } from "@/pages/projections";
-import GrantsCalendar from "@/pages/grants-calendar";
+import Deadlines from "@/pages/deadlines";
 import FiscalYearDetail from "@/pages/fiscal-year-detail";
 import FiscalYearReport from "@/pages/fiscal-year-report";
 import Admin from "@/pages/admin";
 import AuditLog from "@/pages/audit-log";
-import { AppImprovementsHub, DataCleanupHub } from "@/pages/admin-hubs";
+import { DataCleanupHub } from "@/pages/admin-hubs";
 import RevenueExtractor from "@/pages/revenue-extractor";
 import EnrichmentQueue from "@/pages/enrichment-queue";
 import FundableProjects from "@/pages/fundable-projects";
@@ -39,7 +39,6 @@ import ReconciliationRules from "@/pages/reconciliation-rules";
 import EmailIntelligence from "@/pages/email-intelligence";
 import GrantLeads from "@/pages/grant-leads";
 import EmailTracking from "@/pages/email-tracking";
-import ReportingDeadlines from "@/pages/reporting-deadlines";
 import TopPriorities from "@/pages/top-priorities";
 import PaymentIntermediaries from "@/pages/payment-intermediaries";
 import PaymentIntermediaryDetail from "@/pages/payment-intermediary-detail";
@@ -256,8 +255,9 @@ function ClerkProviderWithRoutes() {
           <Route path="/cash-flow"><ProtectedRoute component={CashFlow} /></Route>
           <Route path="/fiscal-year/:fyId"><ProtectedRoute component={FiscalYearDetail} /></Route>
           <Route path="/fiscal-year-report/:fyId"><ProtectedRoute component={FiscalYearReport} /></Route>
-          <Route path="/grants-calendar"><ProtectedRoute component={GrantsCalendar} /></Route>
-          <Route path="/reporting-deadlines"><ProtectedRoute component={ReportingDeadlines} /></Route>
+          <Route path="/deadlines"><ProtectedRoute component={Deadlines} /></Route>
+          <Route path="/grants-calendar"><Redirect to="/deadlines" /></Route>
+          <Route path="/reporting-deadlines"><Redirect to="/deadlines?tab=reporting" /></Route>
           <Route path="/grant-leads"><ProtectedRoute component={GrantLeads} /></Route>
           <Route path="/email-intelligence"><ProtectedRoute component={EmailIntelligence} /></Route>
           <Route path="/email-tracking"><ProtectedRoute component={EmailTracking} /></Route>
@@ -265,7 +265,7 @@ function ClerkProviderWithRoutes() {
           <Route path="/campaigns"><ProtectedRoute component={Campaigns} /></Route>
           <Route path="/settings"><ProtectedRoute component={Settings} /></Route>
           <Route path="/admin"><ProtectedRoute component={Admin} /></Route>
-          <Route path="/admin/app-improvements"><ProtectedRoute component={AppImprovementsHub} /></Route>
+          <Route path="/admin/app-improvements"><ProtectedRoute component={Admin} /></Route>
           <Route path="/admin/feedback"><Redirect to="/admin/app-improvements?tab=feedback" /></Route>
           <Route path="/admin/future-functionality"><Redirect to="/admin/app-improvements?tab=future-functionality" /></Route>
           <Route path="/audit-log"><ProtectedRoute component={AuditLog} /></Route>

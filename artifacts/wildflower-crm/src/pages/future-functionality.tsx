@@ -153,10 +153,10 @@ export default function FutureFunctionality() {
   return (
     <div className="max-w-6xl space-y-6">
       <div>
-        <h1 className="flex items-center gap-2 text-3xl font-serif font-bold">
+        <h2 className="flex items-center gap-2 text-2xl font-serif font-bold">
           <Lightbulb className="h-7 w-7 text-primary" />
           Future functionality possibilities
-        </h1>
+        </h2>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
           Ideas we may revisit later. None of these is critical, approved, or
           scheduled. An idea should become active work only when a clear need and
