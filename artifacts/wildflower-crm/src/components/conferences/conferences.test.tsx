@@ -1,11 +1,28 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import type { ConferenceResearchRequest } from "@workspace/api-client-react";
-import { EventForm, latestCompletedDateProposal, speakerAddInput } from "@/pages/conferences";
+import type { ConferenceEventSummary, ConferenceResearchRequest } from "@workspace/api-client-react";
+import { EventForm, groupConferenceEditions, latestCompletedDateProposal, speakerAddInput } from "@/pages/conferences";
 import { conferenceError } from "./type-manager";
 
 describe("conference date and administration UI", () => {
+  it("groups editions by conference series and keeps each year's count", () => {
+    const editions: ConferenceEventSummary[] = [
+      { id: "gsv-25", conferenceTypeId: "gsv", conferenceTypeName: "ASU+GSV Summit",
+        year: 2025, attendanceCount: 7, location: "San Diego", status: "completed", createdAt: "", updatedAt: "" },
+      { id: "gsv-26", conferenceTypeId: "gsv", conferenceTypeName: "ASU+GSV Summit",
+        year: 2026, attendanceCount: 12, status: "completed", createdAt: "", updatedAt: "" },
+      { id: "other-26", conferenceTypeId: "other", conferenceTypeName: "Other conference",
+        year: 2026, attendanceCount: 3, status: "completed", createdAt: "", updatedAt: "" },
+    ];
+    const series = groupConferenceEditions(editions, "");
+    expect(series.map(([id]) => id)).toEqual(["gsv", "other"]);
+    expect(series[0]?.[1].editions.map(({ year, attendanceCount }) => [year, attendanceCount]))
+      .toEqual([[2026, 12], [2025, 7]]);
+    expect(groupConferenceEditions(editions, "san diego")[0]?.[1].editions.map(({ id }) => id))
+      .toEqual(["gsv-25"]);
+  });
+
   it("asks for a start date or an explicit unknown-date research path", () => {
     const html = renderToStaticMarkup(createElement(EventForm, { types: [{ id: "type-1", displayName: "Learning Summit" }], pending: false, onSave: vi.fn(), onCancel: vi.fn() }));
     expect(html).toContain("Start date");

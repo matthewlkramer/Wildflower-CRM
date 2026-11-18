@@ -92,3 +92,21 @@ Apply database migration 0279 after 0272 and before publishing the app that
 opens development agendas. Migration 0279 extends the meeting note anchor
 constraint and creates the agenda and funder scan tables. Keep the 0279
 constraint in place for existing weekly agendas.
+
+## Weekly development meetings
+
+Open the weekly agenda from Team Operations. The same meeting URLs continue to
+serve upcoming and historical agendas. Standing check-ins come first, followed
+by discussion and decisions. New agendas follow National Development's
+Talkspirit sequence of team check-in, standing checklists, development metrics,
+and project updates. The checklist includes reminders at their existing
+weekly, twice-monthly, monthly, and quarterly cadences.
+When a week is created or its current or upcoming agenda is reopened,
+unfinished discussion items and items with open tasks are carried from the
+previous agenda, including work added after the next week was first opened. Their discussion notes, donor and
+finding links, and open task references follow them. The prior agenda keeps its
+own decisions and remains linked from the new item. Each week has one shared
+agenda. Reopening it keeps one copy per carried item and respects removals.
+
+Mark complete records that an item was discussed. Remove from agenda is
+available for items without saved notes, decisions, or tasks.

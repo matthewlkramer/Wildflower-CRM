@@ -92,6 +92,7 @@ const ORGANIZATION_FK_REFS: ReadonlyArray<MergeRef> = [
   { table: "funder_scan_state", col: "organization_id" },
   { table: "donor_routing_preferences", col: "source_organization_id" },
   { table: "donor_routing_preferences", col: "target_organization_id" },
+  { table: "trip_plans", col: "outreach_organization_id" },
   { table: "conference_speaker_proposals", col: "matched_organization_id" },
   { table: "conference_import_rows", col: "matched_organization_id" },
 ];

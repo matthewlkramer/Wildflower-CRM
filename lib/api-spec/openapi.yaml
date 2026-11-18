@@ -7399,10 +7399,11 @@ paths:
       operationId: draftTripVisits
       tags: [trip-plans]
       description: >-
-        Adds up to 25 destination-matching people whose own solicitation
-        priority, or a current affiliated organization's solicitation priority,
-        is medium, high, or top. Existing team refinements are preserved.
-      parameters: [{ $ref: "#/components/parameters/IdPath" }]
+        Suggests up to 25 people from the linked conference or local prospects.
+        Defaults to conference or organization evidence when the trip has a link. Existing visit entries are preserved.
+      parameters:
+        - { $ref: "#/components/parameters/IdPath" }
+        - { name: scope, in: query, schema: { type: string, enum: [conference, local] } }
       responses:
         "200":
           description: System-drafted visit candidates
@@ -26223,6 +26224,8 @@ components:
         createdByUserId: { type: string }
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
+        conferenceEventId: { type: string, nullable: true }
+        outreachOrganizationId: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
         timeZone:
           {
@@ -26326,6 +26329,7 @@ components:
           { allOf: [{ $ref: "#/components/schemas/Priority" }], nullable: true }
         rank: { type: integer }
         rationale: { type: string, nullable: true }
+        conferenceEvidence: { type: string, nullable: true }
         source: { $ref: "#/components/schemas/TripVisitSource" }
         notes: { type: string, nullable: true }
         nextStep: { type: string, nullable: true }
@@ -26390,6 +26394,8 @@ components:
         travelerUserId: { type: string }
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
+        conferenceEventId: { type: string, nullable: true }
+        outreachOrganizationId: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
         timeZone: { type: string }
         travelStartsAt: { type: string, format: date-time }
@@ -26406,6 +26412,8 @@ components:
         travelerUserId: { type: string }
         title: { type: string, nullable: true }
         destinationCity: { type: string, nullable: true }
+        conferenceEventId: { type: string, nullable: true }
+        outreachOrganizationId: { type: string, nullable: true }
         destinationState: { type: string, nullable: true }
         timeZone: { type: string }
         travelStartsAt: { type: string, format: date-time }
@@ -27758,6 +27766,9 @@ components:
         findingId: {"type":"string","nullable":true}
         sourceUrl: {"type":"string","nullable":true}
         carriedFromId: {"type":"string","nullable":true}
+        standingCheckIn: { type: boolean }
+        standingPrompt: { type: string, nullable: true }
+        carriedFromMeetingId: { type: string, nullable: true }
         tasks: {"type":"array","items":{"$ref":"#/components/schemas/Task"}}
     DevelopmentMeeting:
       type: object

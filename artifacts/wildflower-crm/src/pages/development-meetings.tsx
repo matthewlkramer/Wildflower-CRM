@@ -50,7 +50,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 const STATUS = {
   pending: "To discuss",
   discussing: "Discussing",
-  done: "Discussed",
+  done: "Complete",
   deferred: "Deferred",
 };
 
@@ -186,7 +186,7 @@ export function DevelopmentMeetingHistory() {
                       meeting.agenda.filter((item) => item.status === "done")
                         .length
                     }{" "}
-                    of {meeting.agenda.length} discussed
+                    of {meeting.agenda.length} complete
                     {decisions > 0 &&
                       " · " +
                         decisions +
@@ -417,6 +417,8 @@ function AgendaItemEditor({
     item.notes !== draft.notes ||
     item.decision !== draft.decision;
   const stale = changed && item.revision !== draft.revision;
+  const canRemove = !item.tasks.length && !item.notes.trim() &&
+    !item.decision.trim() && item.status !== "done";
 
   useEffect(() => {
     setDraft((previous) =>
@@ -519,26 +521,54 @@ function AgendaItemEditor({
           : "rounded-md border"
       }
     >
-      <button
-        className="flex w-full items-center justify-between gap-3 p-3 text-left"
-        type="button"
-        aria-expanded={opened}
-        onClick={() => setOpened(!opened)}
-      >
-        <span className="font-medium">{item.title}</span>
-        <span className="flex flex-wrap items-center justify-end gap-2">
-          {item.carriedFromId && (
-            <Badge variant="outline">Carried forward</Badge>
-          )}
-          <Badge
-            variant={item.status === "discussing" ? "default" : "secondary"}
-          >
+      <div className="flex flex-wrap items-center gap-x-2 px-3 py-1">
+        <button
+          className="flex min-w-[10rem] flex-1 items-center justify-between gap-2 rounded py-2 text-left"
+          type="button"
+          aria-expanded={opened}
+          onClick={() => setOpened(!opened)}
+        >
+          <span className="min-w-0 break-words font-medium">{item.title}</span>
+          <Badge variant={item.status === "discussing" ? "default" : "secondary"}>
             {STATUS[item.status]}
           </Badge>
-        </span>
-      </button>
+        </button>
+        {!readOnly && (
+          <div className="flex flex-wrap gap-1">
+            {item.status !== "done" && (
+              <Button
+                size="sm"
+                variant="outline"
+                aria-label={`Mark complete: ${item.title}`}
+                disabled={saving || stale || !draft.title.trim()}
+                onClick={() => void update({ ...saveDraft(), status: "done" })}
+              >
+                Mark complete
+              </Button>
+            )}
+            {canRemove && (
+              <Button
+                size="sm"
+                variant="ghost"
+                aria-label={`Remove from agenda: ${item.title}`}
+                disabled={saving || changed}
+                onClick={() => void remove()}
+              >
+                Remove from agenda
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
       {opened && (
         <div className="space-y-4 border-t p-3">
+          {item.standingPrompt && <p className="text-sm text-muted-foreground">{item.standingPrompt}</p>}
+          {item.carriedFromMeetingId && (
+            <Link className="block text-sm text-primary hover:underline"
+              href={`/meetings/development/${item.carriedFromMeetingId}`}>
+              Carried from the previous agenda
+            </Link>
+          )}
           {(item.organizationId || item.personId || item.householdId) && (
             <DonorContext item={item} users={users} />
           )}
@@ -650,18 +680,6 @@ function AgendaItemEditor({
                   Start discussion
                 </Button>
               )}
-              {item.status !== "done" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={saving || stale || !draft.title.trim()}
-                  onClick={() =>
-                    void update({ ...saveDraft(), status: "done" })
-                  }
-                >
-                  Mark discussed
-                </Button>
-              )}
               {item.status !== "deferred" && (
                 <Button
                   size="sm"
@@ -692,19 +710,6 @@ function AgendaItemEditor({
               >
                 <ArrowDown className="h-4 w-4" />
               </Button>
-              {!item.tasks.length &&
-                !item.notes.trim() &&
-                !item.decision.trim() &&
-                item.status !== "done" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={saving || changed}
-                    onClick={() => void remove()}
-                  >
-                    Remove
-                  </Button>
-                )}
             </div>
           )}
           {item.tasks.length > 0 && (
@@ -947,23 +952,31 @@ function DevelopmentMeetingEditor({
           <CardTitle className="text-lg">Agenda</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          {meeting.agenda.map((item, index) => (
-            <AgendaItemEditor
-              key={item.id}
-              item={item}
-              meetingId={id}
-              users={users}
-              suggestions={remainingSuggestions}
-              readOnly={readOnly}
-              first={index === 0}
-              last={index === meeting.agenda.length - 1}
-              onUpdate={refresh}
-              onTask={() =>
-                void client.invalidateQueries({
-                  queryKey: getListTasksQueryKey(),
-                })
-              }
-            />
+          {[
+            { label: "Standing check-ins", items: meeting.agenda.filter((item) => item.standingCheckIn) },
+            { label: "Discussion and decisions", items: meeting.agenda.filter((item) => !item.standingCheckIn) },
+          ].map(({ label, items }) => items.length > 0 && (
+            <section key={label} aria-label={label} className="space-y-2">
+              <h3 className="text-sm font-semibold">{label}</h3>
+              {items.map((item, index) => (
+                <AgendaItemEditor
+                  key={item.id}
+                  item={item}
+                  meetingId={id}
+                  users={users}
+                  suggestions={remainingSuggestions}
+                  readOnly={readOnly}
+                  first={index === 0}
+                  last={index === items.length - 1}
+                  onUpdate={refresh}
+                  onTask={() =>
+                    void client.invalidateQueries({
+                      queryKey: getListTasksQueryKey(),
+                    })
+                  }
+                />
+              ))}
+            </section>
           ))}
           {!readOnly && (
             <div className="space-y-3 border-t pt-3">

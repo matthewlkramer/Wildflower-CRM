@@ -21,6 +21,7 @@ import type {
   BadRequestResponse,
   CreateTripCommentBody,
   CreateTripPlanBody,
+  DraftTripVisitsParams,
   ListTripPlansParams,
   NotFoundResponse,
   TripComment,
@@ -524,17 +525,33 @@ export const useUnarchiveTripPlan = <
   return useMutation(getUnarchiveTripPlanMutationOptions(options));
 };
 /**
- * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
+ * Suggests up to 25 people from the linked conference or local prospects. Defaults to conference or organization evidence when the trip has a link. Existing visit entries are preserved.
  */
-export const getDraftTripVisitsUrl = (id: string) => {
-  return `/api/trips/${id}/draft-visits`;
+export const getDraftTripVisitsUrl = (
+  id: string,
+  params?: DraftTripVisitsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/trips/${id}/draft-visits?${stringifiedParams}`
+    : `/api/trips/${id}/draft-visits`;
 };
 
 export const draftTripVisits = async (
   id: string,
+  params?: DraftTripVisitsParams,
   options?: RequestInit,
 ): Promise<TripPlanDetail> => {
-  return customFetch<TripPlanDetail>(getDraftTripVisitsUrl(id), {
+  return customFetch<TripPlanDetail>(getDraftTripVisitsUrl(id, params), {
     ...options,
     method: "POST",
   });
@@ -547,14 +564,14 @@ export const getDraftTripVisitsMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof draftTripVisits>>,
     TError,
-    { id: string },
+    { id: string; params?: DraftTripVisitsParams },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof draftTripVisits>>,
   TError,
-  { id: string },
+  { id: string; params?: DraftTripVisitsParams },
   TContext
 > => {
   const mutationKey = ["draftTripVisits"];
@@ -568,11 +585,11 @@ export const getDraftTripVisitsMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof draftTripVisits>>,
-    { id: string }
+    { id: string; params?: DraftTripVisitsParams }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, params } = props ?? {};
 
-    return draftTripVisits(id, requestOptions);
+    return draftTripVisits(id, params, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -591,14 +608,14 @@ export const useDraftTripVisits = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof draftTripVisits>>,
     TError,
-    { id: string },
+    { id: string; params?: DraftTripVisitsParams },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof draftTripVisits>>,
   TError,
-  { id: string },
+  { id: string; params?: DraftTripVisitsParams },
   TContext
 > => {
   return useMutation(getDraftTripVisitsMutationOptions(options));

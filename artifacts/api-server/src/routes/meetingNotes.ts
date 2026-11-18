@@ -13,7 +13,7 @@ import type {
   MeetingArtifactKind,
   MeetingNote,
 } from "@workspace/db/schema";
-import { and, desc, count, eq, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, count, eq, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   ListMeetingNotesQueryParams,
   CreateMeetingNoteBodyRefined,
@@ -607,7 +607,8 @@ router.post(
       .then((rows) => rows[0]);
     if (!note) return notFound(res, "meeting note");
     const agenda = note.developmentWeek ? await db.select().from(developmentAgenda)
-      .where(eq(developmentAgenda.meetingId, note.id)).orderBy(developmentAgenda.position) : [];
+      .where(and(eq(developmentAgenda.meetingId, note.id), isNull(developmentAgenda.removedAt)))
+      .orderBy(developmentAgenda.position) : [];
     const savedText = [
       ...agenda.filter((item) => item.notes.trim() || item.decision.trim())
         .map((item) => [item.title, item.notes, item.decision].filter(Boolean).join("\n")),

@@ -215,6 +215,9 @@ export const ListDevelopmentMeetingsResponseItem = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),
@@ -359,6 +362,9 @@ export const CreateDevelopmentMeetingResponse = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),
@@ -512,6 +518,9 @@ export const GetDevelopmentMeetingResponse = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),
@@ -694,6 +703,9 @@ export const AddDevelopmentAgendaItemResponse = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),
@@ -867,6 +879,9 @@ export const UpdateDevelopmentAgendaItemResponse = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),
@@ -1016,6 +1031,9 @@ export const RemoveDevelopmentAgendaItemResponse = zod.object({
       findingId: zod.string().nullable(),
       sourceUrl: zod.string().nullable(),
       carriedFromId: zod.string().nullable(),
+      standingCheckIn: zod.boolean().optional(),
+      standingPrompt: zod.string().nullish(),
+      carriedFromMeetingId: zod.string().nullish(),
       tasks: zod.array(
         zod.object({
           id: zod.string(),

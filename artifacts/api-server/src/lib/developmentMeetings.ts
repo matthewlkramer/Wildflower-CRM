@@ -14,6 +14,7 @@ import {
   getTableColumns,
   inArray,
   isNotNull,
+  isNull,
   lt,
   or,
   sql,
@@ -22,12 +23,24 @@ import { chicagoToday } from "./effectiveProjectedCloseDate";
 import { developmentWeek, loadFunderTargets } from "./funderCadence";
 import { newId } from "./helpers";
 import type { Tx } from "./reconciliationCommit";
+import { alias } from "drizzle-orm/pg-core";
 
-const AGENDA_TEMPLATE = [
-  "Review open action items",
-  "Discuss fundraising updates",
-  "Agree on next steps",
+type AgendaTemplateItem = { key: string; title: string; prompt?: string; legacyKey?: string };
+const STANDING_CHECK_INS: readonly AgendaTemplateItem[] = [
+  { key: "check_in", title: "Team check-in" },
+  {
+    key: "checklists", title: "Standing checklists", legacyKey: "open_actions",
+    prompt: "Weekly: donor thank-yous, donor communication updates in CRM, and project updates. Twice monthly: tax acknowledgments. Monthly: upcoming grant and metrics deadlines. Quarterly: development circle update.",
+  },
+  { key: "metrics", title: "Development metrics", prompt: "Review the weekly Development Circle metrics." },
+  { key: "projects", title: "Project updates", legacyKey: "fundraising_updates" },
 ];
+const RECAP: AgendaTemplateItem = { key: "next_steps", title: "Agree on next steps" };
+const standingByKey = new Map(STANDING_CHECK_INS.flatMap<[string, AgendaTemplateItem]>((item) =>
+  item.legacyKey ? [[item.key, item], [item.legacyKey, item]] : [[item.key, item]],
+));
+export const isStandingCheckIn = (key: string | null) => key !== null && standingByKey.has(key);
+const priorAgenda = alias(developmentAgenda, "prior_agenda");
 
 export async function loadDevelopmentMeetings(
   filters: {
@@ -51,7 +64,7 @@ export async function loadDevelopmentMeetings(
         ...(["organizationId", "personId", "householdId"] as const).map(
           (key) =>
             filters[key]
-              ? sql`EXISTS (SELECT 1 FROM development_agenda WHERE ${developmentAgenda.meetingId} = ${meetingNotes.id} AND ${developmentAgenda[key]} = ${filters[key]})`
+              ? sql`EXISTS (SELECT 1 FROM development_agenda WHERE ${developmentAgenda.meetingId} = ${meetingNotes.id} AND ${developmentAgenda[key]} = ${filters[key]} AND ${developmentAgenda.removedAt} IS NULL)`
               : undefined,
         ),
       ),
@@ -60,8 +73,13 @@ export async function loadDevelopmentMeetings(
     .limit(filters.id ? 1 : 16);
   if (!notes.length) return [];
   const rows = await db
-    .select({ item: developmentAgenda, sourceUrl: mediaMentions.url })
+    .select({
+      item: developmentAgenda,
+      sourceUrl: mediaMentions.url,
+      carriedFromMeetingId: priorAgenda.meetingId,
+    })
     .from(developmentAgenda)
+    .leftJoin(priorAgenda, eq(priorAgenda.id, developmentAgenda.carriedFromId))
     .leftJoin(
       mediaMentions,
       and(
@@ -71,13 +89,17 @@ export async function loadDevelopmentMeetings(
       ),
     )
     .where(
-      inArray(
-        developmentAgenda.meetingId,
-        notes.map((note) => note.id),
-      ),
+      and(isNull(developmentAgenda.removedAt),
+        inArray(developmentAgenda.meetingId, notes.map((note) => note.id))),
     )
     .orderBy(asc(developmentAgenda.position), asc(developmentAgenda.id));
-  const items = rows.map(({ item, sourceUrl }) => ({ ...item, sourceUrl }));
+  const items = rows.map(({ item: { templateKey, removedAt: _removedAt, ...item }, sourceUrl, carriedFromMeetingId }) => ({
+    ...item,
+    sourceUrl,
+    carriedFromMeetingId,
+    standingCheckIn: isStandingCheckIn(templateKey),
+    standingPrompt: templateKey ? standingByKey.get(templateKey)?.prompt ?? null : null,
+  }));
   const links = items.length
     ? await db
         .select({
@@ -143,7 +165,7 @@ export async function refreshDevelopmentDonorLinks(tx: Tx, meetingId: string) {
       householdId: developmentAgenda.householdId,
     })
     .from(developmentAgenda)
-    .where(eq(developmentAgenda.meetingId, meetingId));
+    .where(and(eq(developmentAgenda.meetingId, meetingId), isNull(developmentAgenda.removedAt)));
   function distinct(key: keyof (typeof rows)[number]) {
     return [...new Set(rows.flatMap((row) => (row[key] ? [row[key]!] : [])))];
   }
@@ -164,11 +186,11 @@ export async function createDevelopmentMeeting(
 ) {
   const weekStart = developmentWeek(date);
   return db.transaction(async (tx) => {
-    const id = newId();
+    const candidateId = newId();
     const [created] = await tx
       .insert(meetingNotes)
       .values({
-        id,
+        id: candidateId,
         title: "Weekly development meeting",
         meetingDate: new Date(date + "T18:00:00Z"),
         developmentWeek: weekStart,
@@ -177,12 +199,15 @@ export async function createDevelopmentMeeting(
       })
       .onConflictDoNothing()
       .returning({ id: meetingNotes.id });
+    let id = candidateId;
     if (!created) {
       const [existing] = await tx
         .select({ id: meetingNotes.id })
         .from(meetingNotes)
-        .where(eq(meetingNotes.developmentWeek, weekStart));
-      return existing!.id;
+        .where(eq(meetingNotes.developmentWeek, weekStart))
+        .for("update");
+      id = existing!.id;
+      if (weekStart < developmentWeek(chicagoToday())) return id;
     }
 
     const [prior] = await tx
@@ -190,7 +215,8 @@ export async function createDevelopmentMeeting(
       .from(meetingNotes)
       .where(lt(meetingNotes.developmentWeek, weekStart))
       .orderBy(desc(meetingNotes.developmentWeek))
-      .limit(1);
+      .limit(1)
+      .for("update");
     const hasOpenTasks = sql<boolean>`EXISTS (
       SELECT 1 FROM development_agenda_tasks a JOIN tasks t ON t.id = a.task_id
       WHERE a.agenda_item_id = development_agenda.id AND t.status IN ('open','waiting')
@@ -202,53 +228,85 @@ export async function createDevelopmentMeeting(
           .where(
             and(
               eq(developmentAgenda.meetingId, prior.id),
+              isNull(developmentAgenda.removedAt),
               or(sql`${developmentAgenda.status} <> 'done'`, hasOpenTasks),
             ),
           )
           .orderBy(asc(developmentAgenda.position))
       : [];
-    const isTemplate = (item: (typeof unfinished)[number]) =>
-      AGENDA_TEMPLATE.includes(item.title) &&
-      !item.organizationId &&
-      !item.personId &&
-      !item.householdId &&
-      !item.findingId;
-    const carried = unfinished.filter((item) => !isTemplate(item));
-    function template(title: string, position: number) {
-      const previous = unfinished.find(
-        (item) => item.title === title && isTemplate(item) && item.hasOpenTasks,
-      );
-      return {
-        id: newId(),
-        meetingId: id,
-        title,
-        position,
-        carriedFromId: previous?.id,
-      };
+    const existing = created ? [] : await tx.select().from(developmentAgenda)
+      .where(eq(developmentAgenda.meetingId, id))
+      .orderBy(asc(developmentAgenda.position), asc(developmentAgenda.id));
+    // Include removed items so reopening a pre-created agenda respects a
+    // previous decision to take a carried item off that specific agenda.
+    const roots = new Map<string, string>();
+    if (existing.length && prior && unfinished.length) {
+      const lineage = await tx.execute<{ item_id: string; root_id: string }>(sql`
+        WITH RECURSIVE ancestry AS (
+          SELECT id AS item_id, id, carried_from_id
+          FROM development_agenda WHERE meeting_id IN (${id}, ${prior.id})
+          UNION ALL
+          SELECT child.item_id, parent.id, parent.carried_from_id
+          FROM ancestry child JOIN development_agenda parent ON parent.id = child.carried_from_id
+        )
+        SELECT item_id, id AS root_id FROM ancestry WHERE carried_from_id IS NULL
+      `);
+      for (const row of lineage.rows) roots.set(row.item_id, row.root_id);
     }
-    await tx.insert(developmentAgenda).values([
-      ...AGENDA_TEMPLATE.slice(0, 2).map(template),
-      ...carried.map((item, index) => ({
-        id: newId(),
-        meetingId: id,
-        title: item.title,
-        position: index + 2,
-        organizationId: item.organizationId,
-        personId: item.personId,
-        householdId: item.householdId,
-        findingKind: item.findingKind,
-        findingId: item.findingId,
-        carriedFromId: item.id,
-      })),
-      template(AGENDA_TEMPLATE[2]!, carried.length + 2),
-    ]);
+    const presentRoots = new Set(existing.map((item) => roots.get(item.id) ?? item.id));
+    const carried = unfinished.filter((item) =>
+      !item.templateKey && !presentRoots.has(roots.get(item.id) ?? item.id) &&
+      (!item.findingId || !existing.some((row) => row.findingKind === item.findingKind && row.findingId === item.findingId)),
+    );
+
+    const additions: Array<typeof developmentAgenda.$inferInsert> = [];
+    async function includeTemplate({ key, title, legacyKey }: AgendaTemplateItem, position: number, align = false) {
+      const slot = existing.find((item) => item.templateKey === key || item.templateKey === legacyKey);
+      const previous = unfinished.find(
+        (item) => (item.templateKey === key || item.templateKey === legacyKey) && item.hasOpenTasks,
+      );
+      if (!slot) {
+        additions.push({ id: newId(), meetingId: id, templateKey: key, title, position, carriedFromId: previous?.id });
+      } else if (!slot.removedAt) {
+        const carryId = slot.carriedFromId ?? previous?.id;
+        if ((align && position !== slot.position) || carryId !== (slot.carriedFromId ?? undefined)) {
+          await tx.update(developmentAgenda).set({
+            position: align ? position : undefined,
+            carriedFromId: carryId,
+            revision: slot.revision + 1,
+          }).where(eq(developmentAgenda.id, slot.id));
+        }
+      }
+    }
+    const firstPosition = existing.length ? existing.at(-1)!.position + 1 : 0;
+    const alignStanding = STANDING_CHECK_INS.some(({ key, legacyKey }) =>
+      !existing.some((item) => item.templateKey === key || item.templateKey === legacyKey));
+    for (const [index, item] of STANDING_CHECK_INS.entries()) {
+      await includeTemplate(item, index, alignStanding);
+    }
+    additions.push(...carried.map((item, index) => ({
+      id: newId(),
+      meetingId: id,
+      title: item.title,
+      notes: item.notes,
+      position: firstPosition + (existing.length ? 0 : STANDING_CHECK_INS.length) + index,
+      organizationId: item.organizationId,
+      personId: item.personId,
+      householdId: item.householdId,
+      findingKind: item.findingKind,
+      findingId: item.findingId,
+      carriedFromId: item.id,
+    })));
+    await includeTemplate(RECAP, firstPosition + STANDING_CHECK_INS.length + carried.length);
+    if (additions.length) await tx.insert(developmentAgenda).values(additions);
     await tx.execute(sql`
       INSERT INTO development_agenda_tasks (agenda_item_id, request_id, task_id)
       SELECT new.id, old.request_id, old.task_id
       FROM development_agenda new
       JOIN development_agenda_tasks old ON old.agenda_item_id = new.carried_from_id
       JOIN tasks t ON t.id = old.task_id
-      WHERE new.meeting_id = ${id} AND t.status IN ('open','waiting')
+      WHERE new.meeting_id = ${id} AND new.removed_at IS NULL AND t.status IN ('open','waiting')
+      ON CONFLICT (agenda_item_id, request_id) DO NOTHING
     `);
     await refreshDevelopmentDonorLinks(tx, id);
     return id;

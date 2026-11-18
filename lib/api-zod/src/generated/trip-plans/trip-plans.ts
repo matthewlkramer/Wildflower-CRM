@@ -27,6 +27,8 @@ export const ListTripPlansResponse = zod.object({
       createdByUserId: zod.string(),
       title: zod.string().nullish(),
       destinationCity: zod.string().nullish(),
+      conferenceEventId: zod.string().nullish(),
+      outreachOrganizationId: zod.string().nullish(),
       destinationState: zod.string().nullish(),
       timeZone: zod
         .string()
@@ -76,6 +78,8 @@ export const CreateTripPlanBody = zod.object({
   travelerUserId: zod.string(),
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
+  conferenceEventId: zod.string().nullish(),
+  outreachOrganizationId: zod.string().nullish(),
   destinationState: zod.string().nullish(),
   timeZone: zod.string(),
   travelStartsAt: zod.string().datetime({}),
@@ -104,6 +108,8 @@ export const GetTripPlanResponse = zod
     createdByUserId: zod.string(),
     title: zod.string().nullish(),
     destinationCity: zod.string().nullish(),
+    conferenceEventId: zod.string().nullish(),
+    outreachOrganizationId: zod.string().nullish(),
     destinationState: zod.string().nullish(),
     timeZone: zod
       .string()
@@ -160,6 +166,7 @@ export const GetTripPlanResponse = zod
             .nullish(),
           rank: zod.number(),
           rationale: zod.string().nullish(),
+          conferenceEvidence: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
           notes: zod.string().nullish(),
           nextStep: zod.string().nullish(),
@@ -320,6 +327,8 @@ export const UpdateTripPlanBody = zod.object({
   travelerUserId: zod.string().optional(),
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
+  conferenceEventId: zod.string().nullish(),
+  outreachOrganizationId: zod.string().nullish(),
   destinationState: zod.string().nullish(),
   timeZone: zod.string().optional(),
   travelStartsAt: zod.string().datetime({}).optional(),
@@ -343,6 +352,8 @@ export const UpdateTripPlanResponse = zod.object({
   createdByUserId: zod.string(),
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
+  conferenceEventId: zod.string().nullish(),
+  outreachOrganizationId: zod.string().nullish(),
   destinationState: zod.string().nullish(),
   timeZone: zod
     .string()
@@ -392,6 +403,8 @@ export const ArchiveTripPlanResponse = zod.object({
   createdByUserId: zod.string(),
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
+  conferenceEventId: zod.string().nullish(),
+  outreachOrganizationId: zod.string().nullish(),
   destinationState: zod.string().nullish(),
   timeZone: zod
     .string()
@@ -441,6 +454,8 @@ export const UnarchiveTripPlanResponse = zod.object({
   createdByUserId: zod.string(),
   title: zod.string().nullish(),
   destinationCity: zod.string().nullish(),
+  conferenceEventId: zod.string().nullish(),
+  outreachOrganizationId: zod.string().nullish(),
   destinationState: zod.string().nullish(),
   timeZone: zod
     .string()
@@ -481,10 +496,14 @@ export const UnarchiveTripPlanResponse = zod.object({
 });
 
 /**
- * Adds up to 25 destination-matching people whose own solicitation priority, or a current affiliated organization's solicitation priority, is medium, high, or top. Existing team refinements are preserved.
+ * Suggests up to 25 people from the linked conference or local prospects. Defaults to conference or organization evidence when the trip has a link. Existing visit entries are preserved.
  */
 export const DraftTripVisitsParams = zod.object({
   id: zod.coerce.string(),
+});
+
+export const DraftTripVisitsQueryParams = zod.object({
+  scope: zod.enum(["conference", "local"]).optional(),
 });
 
 export const DraftTripVisitsResponse = zod
@@ -494,6 +513,8 @@ export const DraftTripVisitsResponse = zod
     createdByUserId: zod.string(),
     title: zod.string().nullish(),
     destinationCity: zod.string().nullish(),
+    conferenceEventId: zod.string().nullish(),
+    outreachOrganizationId: zod.string().nullish(),
     destinationState: zod.string().nullish(),
     timeZone: zod
       .string()
@@ -550,6 +571,7 @@ export const DraftTripVisitsResponse = zod
             .nullish(),
           rank: zod.number(),
           rationale: zod.string().nullish(),
+          conferenceEvidence: zod.string().nullish(),
           source: zod.enum(["system_draft", "manual"]),
           notes: zod.string().nullish(),
           nextStep: zod.string().nullish(),
@@ -747,6 +769,7 @@ export const UpdateTripVisitResponse = zod.object({
     .nullish(),
   rank: zod.number(),
   rationale: zod.string().nullish(),
+  conferenceEvidence: zod.string().nullish(),
   source: zod.enum(["system_draft", "manual"]),
   notes: zod.string().nullish(),
   nextStep: zod.string().nullish(),
@@ -805,6 +828,7 @@ export const RefreshTripVisitEvidenceResponse = zod.object({
     .nullish(),
   rank: zod.number(),
   rationale: zod.string().nullish(),
+  conferenceEvidence: zod.string().nullish(),
   source: zod.enum(["system_draft", "manual"]),
   notes: zod.string().nullish(),
   nextStep: zod.string().nullish(),
