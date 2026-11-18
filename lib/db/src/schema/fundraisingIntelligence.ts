@@ -51,6 +51,8 @@ export const developmentAgenda = pgTable(
       .references(() => meetingNotes.id, { onDelete: "cascade" }),
     position: integer("position").notNull(),
     title: text("title").notNull(),
+    templateKey: text("template_key"),
+    removedAt: timestamp("removed_at", { withTimezone: true }),
     notes: text("notes").notNull().default(""),
     decision: text("decision").notNull().default(""),
     status: text("status", { enum: agendaStatuses })
@@ -81,7 +83,7 @@ export const developmentAgenda = pgTable(
     ),
     uniqueIndex("development_agenda_finding_uq")
       .on(t.meetingId, t.findingKind, t.findingId)
-      .where(sql`${t.findingId} IS NOT NULL`),
+      .where(sql`${t.findingId} IS NOT NULL AND ${t.removedAt} IS NULL`),
     check(
       "development_agenda_status_check",
       sql`${t.status} IN ('pending','discussing','done','deferred')`,

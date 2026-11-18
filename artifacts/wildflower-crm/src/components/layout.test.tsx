@@ -107,7 +107,9 @@ describe("application layout", () => {
     expect(text.indexOf("Pledges")).toBeGreaterThan(
       text.indexOf("Opportunities"),
     );
-    expect(text.indexOf("Pledges")).toBeLessThan(text.indexOf("Gift processing"));
+    expect(text.indexOf("Pledges")).toBeLessThan(text.indexOf("Team Operations"));
+    expect(text.indexOf("Team Operations")).toBeLessThan(text.indexOf("Weekly development meetings"));
+    expect(sidebar.querySelector('a[href="/meetings/development"]')).not.toBeNull();
     expect(text.indexOf("Gifts")).toBeGreaterThan(
       text.indexOf("Reconciliation"),
     );

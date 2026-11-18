@@ -175,7 +175,7 @@ export default function Dashboard() {
         </div>
 
         <div
-          className="flex h-6 w-full overflow-hidden rounded-md bg-muted"
+          className="flex h-4 w-full overflow-hidden rounded-md bg-muted"
           role="img"
           aria-label={`${fyLabel} progress to goal`}
         >
@@ -244,15 +244,14 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-        <h1 className="text-3xl font-serif font-bold text-foreground">
+        <h1 className="text-2xl font-serif font-bold text-foreground">
           Dashboard
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          A quick snapshot of the CRM. Fiscal year runs July 1 – June 30;
-          currently <span className="font-medium">{fy?.label ?? "…"}</span>.
+          <span className="font-medium">{fy?.label ?? "…"}</span> · July 1 – June 30
           {selectedEntityIds.length > 0 ? (
             <>
               {" "}
@@ -293,7 +292,7 @@ export default function Dashboard() {
 
       {!hidden.includes("goals") && (
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="px-4 pb-2 pt-3">
             <div className="flex items-center justify-between gap-4">
               <CardTitle className="text-lg">Progress to goal</CardTitle>
               <div
@@ -340,7 +339,7 @@ export default function Dashboard() {
               </p>
             ) : null}
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-3 px-4 pb-3">
             {byFy.length === 0 ? (
               isLoading ? (
                 <DashboardGoalBarSkeleton />
@@ -360,26 +359,31 @@ export default function Dashboard() {
       )}
 
       {!hidden.includes("upcoming") && <UpcomingMeetingsCard />}
-      {!hidden.includes("past") && <PastMeetingFollowUpsCard />}
-      {!hidden.includes("thanks") && <GiftThankYousCard />}
+      {(!hidden.includes("past") || !hidden.includes("thanks")) && (
+        <div className={cn("grid gap-3 items-start",
+          !hidden.includes("past") && !hidden.includes("thanks") && "lg:grid-cols-2")}>
+          {!hidden.includes("past") && <PastMeetingFollowUpsCard />}
+          {!hidden.includes("thanks") && <GiftThankYousCard />}
+        </div>
+      )}
 
       {!hidden.includes("priorities") && <DashboardPrioritiesCard />}
 
       {!hidden.includes("tasks") && <><DueOpportunityFollowUps /><DashboardTasksCard /></>}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {!hidden.includes("email") && <EmailProposalsCard />}
         {!hidden.includes("grants") && <GrantLeadsCard />}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {!hidden.includes("projections") && (
           <Link href="/projections">
             <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-              <CardHeader>
+              <CardHeader className="px-4 pb-2 pt-3">
                 <CardTitle className="text-lg">Projections</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="px-4 pb-3 text-sm text-muted-foreground">
                 Open-pipeline allocations by fiscal year and fund entity.
               </CardContent>
             </Card>
@@ -388,12 +392,12 @@ export default function Dashboard() {
         {!hidden.includes("deadlines") && (
           <Link href="/grants-calendar">
             <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-              <CardHeader>
+              <CardHeader className="px-4 pb-2 pt-3">
                 <CardTitle className="text-lg">
                   Application/close deadlines
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="px-4 pb-3 text-sm text-muted-foreground">
                 Upcoming application deadlines and projected close dates.
               </CardContent>
             </Card>
@@ -402,10 +406,10 @@ export default function Dashboard() {
         {!hidden.includes("moves") && (
           <Link href="/moves">
             <Card className="cursor-pointer hover:bg-muted/30 transition-colors h-full">
-              <CardHeader>
+              <CardHeader className="px-4 pb-2 pt-3">
                 <CardTitle className="text-lg">Moves</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
+              <CardContent className="px-4 pb-3 text-sm text-muted-foreground">
                 People who haven't been contacted recently.
               </CardContent>
             </Card>
@@ -431,7 +435,7 @@ function MetricLine({ label, value }: { label: string; value: string }) {
 
 function DashboardGoalBarSkeleton() {
   return (
-    <div className="space-y-6" data-testid="dashboard-goal-bar-skeleton">
+    <div className="space-y-3" data-testid="dashboard-goal-bar-skeleton">
       {Array.from({ length: 2 }).map((_, i) => (
         <div key={i} className="space-y-2">
           <div className="flex items-baseline justify-between gap-4">
@@ -507,10 +511,10 @@ function WorklistsCard({
 }) {
   return (
     <Card data-testid="card-worklists">
-      <CardHeader>
+      <CardHeader className="px-4 pb-2 pt-3">
         <CardTitle className="text-lg">Data cleanup and integrity</CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 pb-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {WORKLIST_ITEMS.map((item) => {
             const count = worklists?.[item.key];
@@ -520,7 +524,7 @@ function WorklistsCard({
                   className="cursor-pointer hover:bg-muted/30 transition-colors h-full"
                   data-testid={`worklist-tile-${item.key}`}
                 >
-                  <CardContent className="p-4 space-y-1">
+                  <CardContent className="space-y-0.5 px-3 py-2">
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="font-medium text-sm">{item.label}</span>
                       {isLoading ? (

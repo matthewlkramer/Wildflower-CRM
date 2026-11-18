@@ -186,7 +186,13 @@ const navItems: NavEntry[] = [
     description: "Review suggested updates from synced email.",
   },
 
-  { section: "Gift processing" },
+  { section: "Team Operations" },
+  {
+    href: "/meetings/development",
+    label: "Weekly development meetings",
+    icon: CalendarCheck2,
+    description: "Prepare the team agenda and review meeting decisions.",
+  },
   {
     href: "/reconciliation/deposits",
     label: "Reconciliation",
@@ -322,7 +328,9 @@ function NavLinks({
             }
             const isActive =
               location === item.href ||
-              (item.href !== "/admin" && location.startsWith(`${item.href}/`));
+              (item.href !== "/admin" &&
+                location.startsWith(`${item.href}/`) &&
+                !(item.href === "/meetings" && location.startsWith("/meetings/development")));
             const Icon = item.icon;
             const indented = !collapsed && "indent" in item && item.indent;
             const link = (

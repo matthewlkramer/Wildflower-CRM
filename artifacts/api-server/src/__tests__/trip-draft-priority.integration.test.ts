@@ -9,6 +9,9 @@ const HAS_DB =
 const RUN = `tripdraftspec_${Date.now()}`;
 const USER_ID = `${RUN}_user`;
 const TRIP_ID = `${RUN}_trip`;
+const CONFERENCE_TYPE_ID = `${RUN}_conference`;
+const CONFERENCE_EVENT_ID = `${RUN}_edition`;
+const PRIOR_EDITION_ID = `${RUN}_prior_edition`;
 const PERSON_IDS = {
   top: `${RUN}_top`,
   medium: `${RUN}_medium`,
@@ -136,6 +139,10 @@ afterAll(async () => {
   await schema.db
     .delete(schema.tripPlans)
     .where(inArrayFn(schema.tripPlans.id, [TRIP_ID]));
+  await schema.db.delete(schema.conferenceEvents)
+    .where(inArrayFn(schema.conferenceEvents.id, [CONFERENCE_EVENT_ID, PRIOR_EDITION_ID]));
+  await schema.db.delete(schema.conferenceTypes)
+    .where(inArrayFn(schema.conferenceTypes.id, [CONFERENCE_TYPE_ID]));
   await schema.db
     .delete(schema.peopleEntityRoles)
     .where(
@@ -207,5 +214,61 @@ describe.skipIf(!HAS_DB)("trip CRM draft priority gate", () => {
     await schema.db.insert(schema.emailMessages).values({ id: `${RUN}_reply`, mailboxUserId: USER_ID, gmailMessageId: `${RUN}_reply_gmail`, gmailThreadId: `${RUN}_thread`, direction: "received", sentAt: new Date("2026-09-24T12:00:00Z"), fromEmail: "synthetic-recipient@example.test", subject: "Re: Meet in Priorityville", matchedPersonIds: [PERSON_IDS.medium] });
     rows = await visits();expect(rows.find(row => row.personId === PERSON_IDS.medium)?.outreachStatus).toBe("responded");
   }, 30000);
+
+  it("uses the linked edition and organizer before offering local outreach", async () => {
+    await schema.db.insert(schema.conferenceTypes).values({
+      id: CONFERENCE_TYPE_ID, displayName: RUN + " Retreat", organizer: RUN + " Low Priority Organization",
+    });
+    await schema.db.insert(schema.conferenceEvents).values([
+      { id: CONFERENCE_EVENT_ID, conferenceTypeId: CONFERENCE_TYPE_ID, year: 2026 },
+      { id: PRIOR_EDITION_ID, conferenceTypeId: CONFERENCE_TYPE_ID, year: 2025 },
+    ]);
+    await schema.db.insert(schema.conferenceAttendance).values([
+      {
+        id: RUN + "_directory", conferenceEventId: CONFERENCE_EVENT_ID,
+        personId: PERSON_IDS.blank, registrationListed: true, sourceType: "uploaded_list",
+      },
+      {
+        id: RUN + "_prior_attendance", conferenceEventId: PRIOR_EDITION_ID,
+        personId: PERSON_IDS.highOrg,
+      },
+    ]);
+    await schema.db.insert(schema.tripVisitCandidates).values({
+      id: RUN + "_manual", tripId: TRIP_ID, personId: PERSON_IDS.low, rank: 40,
+      source: "manual", notes: "Preserve this staff note",
+    });
+    const url = baseUrl + "/api/trips/" + TRIP_ID;
+    const patch = await fetch(url, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conferenceEventId: CONFERENCE_EVENT_ID }),
+    });
+    expect(patch.status).toBe(200);
+    expect(await patch.json()).toMatchObject({ conferenceEventId: CONFERENCE_EVENT_ID });
+    const draft = async (scope = "") => {
+      const response = await fetch(url + "/draft-visits" + scope, { method: "POST" });
+      expect(response.status).toBe(200);
+      return (await response.json()).visits as Array<{
+        id: string; personId: string; conferenceEvidence: string | null; notes: string | null;
+      }>;
+    };
+    const scoped = await draft();
+    expect(scoped.filter((visit) => visit.conferenceEvidence).map(({ personId, conferenceEvidence }) =>
+      [personId, conferenceEvidence])).toEqual([
+      [PERSON_IDS.blank, "Listed in the conference directory"],
+      [PERSON_IDS.lowOrg, "Current affiliation with the conference organizer"],
+    ]);
+    expect(scoped.find((visit) => visit.personId === PERSON_IDS.low)?.notes).toBe("Preserve this staff note");
+    expect((await draft()).map((visit) => visit.id)).toEqual(scoped.map((visit) => visit.id));
+    const local = await draft("?scope=local");
+    expect(local.find((visit) => visit.personId === PERSON_IDS.highOrg)?.conferenceEvidence).toBeNull();
+    const organizerOnly = await fetch(url, {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conferenceEventId: null, outreachOrganizationId: ORGANIZATION_IDS.low }),
+    });
+    expect(organizerOnly.status).toBe(200);
+    expect((await draft()).filter((visit) => visit.conferenceEvidence)).toMatchObject([
+      { personId: PERSON_IDS.lowOrg, conferenceEvidence: "Current affiliation with the linked organization" },
+    ]);
+  });
 
 });

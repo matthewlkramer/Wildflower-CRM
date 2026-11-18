@@ -31,6 +31,14 @@ last_verified: 2026-10-13
   Low-priority and unprioritized people and organizations are never system-drafted.
   The action never overwrites a team's existing refinements; manual additions
   remain available regardless of priority.
+- A trip can link to one specific annual conference edition. Its default
+  suggestions then use CRM evidence for that edition: recorded attendance,
+  speaker and directory records, and current roles at a uniquely matched
+  CRM organization identified as the conference organizer. Staff can also link an
+  outreach organization directly, including when there is no conference edition. A directory record
+  is displayed as registration evidence. The separate local-prospect action
+  still uses address and priority. Untouched system suggestions without event
+  evidence can be shown on demand; staff-added or worked-on visits stay visible.
 - Each visit row has two planning actions. `Unavailable` archives the candidate
   and immediately hides them from this trip; adding the person later revives
   that row. `Update from Gmail & Calendar` asks AI to review the latest visible
@@ -116,7 +124,9 @@ last_verified: 2026-10-13
   When a current review supplies the displayed outreach status, its summary
   takes precedence over dates from an older raw keyword match that may relate
   to a different trip.
-- No trip table points to Gmail messages or Calendar events. Evidence links are
+- The optional conference edition points to `conference_events`; the app
+  derives candidate evidence from conference attendance and current roles.
+  No trip table points to Gmail messages or Calendar events. Evidence links are
   derived from the existing matched-person arrays, mailbox/calendar owner, and
   provider thread/event facts.
 - Travel bookings are likewise derived response data rather than stored trip

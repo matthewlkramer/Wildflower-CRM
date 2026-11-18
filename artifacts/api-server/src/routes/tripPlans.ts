@@ -6,6 +6,9 @@ import {
   addresses,
   calendarEvents,
   calendarSyncState,
+  conferenceAttendance,
+  conferenceEvents,
+  conferenceTypes,
   emailMessages,
   emailProposals,
   emailSyncSkip,
@@ -23,6 +26,7 @@ import {
   AddTripVisitBody,
   CreateTripPlanBody,
   CreateTripCommentBody,
+  DraftTripVisitsQueryParams,
   ListTripPlansQueryParams,
   UpdateTripPlanBody,
   UpdateTripVisitBody,
@@ -43,6 +47,7 @@ import {
   or,
   sql,
   type SQL,
+  type SQLWrapper,
 } from "drizzle-orm";
 import { requireAuth } from "../middlewares/requireAuth";
 import { getAppUser } from "../lib/appRequest";
@@ -84,6 +89,8 @@ router.use(requireAuth);
 type TripInput = {
   travelerUserId?: string;
   title?: string | null;
+  conferenceEventId?: string | null;
+  outreachOrganizationId?: string | null;
   destinationCity?: string | null;
   destinationState?: string | null;
   timeZone?: string;
@@ -276,8 +283,26 @@ async function tripValues(body: TripInput, res: Response, current?: TripPlan) {
     .where(and(eq(users.id, travelerUserId), isNull(users.archivedAt)))
     .then((rows) => rows[0]);
   if (!traveler) return badTrip(res, "Choose an active team member.");
+  const conferenceEventId = mergedText(body.conferenceEventId, current?.conferenceEventId);
+  if (conferenceEventId && conferenceEventId !== current?.conferenceEventId) {
+    const [event] = await db.select({ status: conferenceEvents.status })
+      .from(conferenceEvents).where(eq(conferenceEvents.id, conferenceEventId));
+    if (!event || event.status === "cancelled") {
+      return badTrip(res, "Choose an available conference event.");
+    }
+  }
+
+  const outreachOrganizationId = mergedText(body.outreachOrganizationId, current?.outreachOrganizationId);
+  if (outreachOrganizationId && outreachOrganizationId !== current?.outreachOrganizationId) {
+    const [organization] = await db.select({ id: organizations.id }).from(organizations).where(and(
+      eq(organizations.id, outreachOrganizationId), isNull(organizations.archivedAt), eq(organizations.anonymous, false),
+    ));
+    if (!organization) return badTrip(res, "Choose an active organization for outreach.");
+  }
 
   return {
+    conferenceEventId,
+    outreachOrganizationId,
     travelerUserId,
     travelStartsAt,
     travelEndsAt,
@@ -331,6 +356,59 @@ async function loadTripEvents(trip: TripPlan, callerId: string) {
       ),
     )
     .orderBy(asc(calendarEvents.startAt));
+}
+
+// A directory entry is evidence of registration. Only the recorded evidence
+// describes how a person is connected to the selected edition.
+function tripConferenceEvidence(
+  trip: Pick<TripPlan, "conferenceEventId" | "outreachOrganizationId">,
+  personId: SQLWrapper,
+) {
+  const { conferenceEventId: eventId, outreachOrganizationId } = trip;
+  if (!eventId && !outreachOrganizationId) return sql<string | null>`null::text`;
+  const organizer = outreachOrganizationId ? sql<string>`(
+    select ${organizations.id} from ${organizations}
+    where ${organizations.id} = ${outreachOrganizationId}
+      and ${organizations.archivedAt} is null and not ${organizations.anonymous}
+  )` : sql<string>`(
+    select min(${organizations.id})
+    from ${conferenceEvents}
+    join ${conferenceTypes} on ${conferenceTypes.id} = ${conferenceEvents.conferenceTypeId}
+    join ${organizations} on lower(trim(${organizations.name})) = lower(trim(${conferenceTypes.organizer}))
+    where ${conferenceEvents.id} = ${eventId}
+      and ${organizations.archivedAt} is null and not ${organizations.anonymous}
+    having count(*) = 1
+  )`;
+  const organizerEvidence = outreachOrganizationId
+    ? "Current affiliation with the linked organization"
+    : "Current affiliation with the conference organizer";
+  return sql<string | null>`coalesce((
+    select case
+      when ${conferenceAttendance.sourceType} = 'agenda_speaker' then 'Speaker on the conference agenda'
+      when ${conferenceAttendance.registrationListed} then 'Listed in the conference directory'
+      when ${conferenceAttendance.status} = 'confirmed' then 'Confirmed conference attendance'
+      else 'Likely conference attendance'
+    end
+    from ${conferenceAttendance}
+    where ${conferenceAttendance.conferenceEventId} = ${eventId}
+      and ${conferenceAttendance.personId} = ${personId}
+      and (${conferenceAttendance.registrationListed}
+        or ${conferenceAttendance.sourceType} = 'agenda_speaker'
+        or ${conferenceAttendance.status} in ('confirmed', 'likely'))
+  ), case when exists (
+    select 1 from ${peopleEntityRoles}
+    where ${peopleEntityRoles.personId} = ${personId}
+      and ${peopleEntityRoles.current} = 'current'
+      and ${peopleEntityRoles.organizationId} = ${organizer}
+  ) then ${organizerEvidence}::text end)`;
+}
+
+function newTripCandidate(tripId: string) {
+  return sql`not exists (
+    select 1 from ${tripVisitCandidates}
+    where ${tripVisitCandidates.tripId} = ${tripId}
+      and ${tripVisitCandidates.personId} = ${people.id}
+  )`;
 }
 
 async function tripSummary(trip: TripPlan, callerId: string) {
@@ -501,6 +579,7 @@ async function loadTripDetail(
       personId: tripVisitCandidates.personId,
       rank: tripVisitCandidates.rank,
       rationale: tripVisitCandidates.rationale,
+      conferenceEvidence: tripConferenceEvidence(trip, tripVisitCandidates.personId),
       source: tripVisitCandidates.source,
       notes: tripVisitCandidates.notes,
       nextStep: tripVisitCandidates.nextStep,
@@ -711,6 +790,7 @@ async function loadTripDetail(
       priority: row.priority,
       rank: row.rank,
       rationale: row.rationale,
+      conferenceEvidence: row.conferenceEvidence,
       source: row.source as "system_draft" | "manual",
       notes: row.notes,
       nextStep: row.nextStep,
@@ -888,102 +968,134 @@ router.post(
   }),
 );
 
+async function localTripCandidates(trip: TripPlan) {
+  const locationFilters: SQL[] = [
+    isNull(people.archivedAt),
+    eq(people.deceased, false),
+    eq(people.anonymous, false),
+    newTripCandidate(trip.id),
+    sql`lower(trim(${addresses.cityName})) = lower(trim(${trip.destinationCity}))`,
+  ];
+  if (trip.destinationState) {
+    locationFilters.push(
+      sql`lower(trim(${addresses.stateCode})) = lower(trim(${trip.destinationState}))`,
+    );
+  }
+  const affiliatedOrganizationPriority = sql<string | null>`(
+    select ${organizations.priority}::text
+    from ${peopleEntityRoles}
+    inner join ${organizations}
+      on ${organizations.id} = ${peopleEntityRoles.organizationId}
+    where ${peopleEntityRoles.personId} = ${people.id}
+      and ${peopleEntityRoles.current} = 'current'
+      and ${organizations.archivedAt} is null
+      and ${organizations.priority} in ('top', 'high', 'medium')
+    order by case ${organizations.priority}
+      when 'top' then 0
+      when 'high' then 1
+      when 'medium' then 2
+      else 3
+    end
+    limit 1
+  )`;
+  locationFilters.push(
+    or(
+      inArray(people.priority, ["top", "high", "medium"]),
+      sql`${affiliatedOrganizationPriority} is not null`,
+    )!,
+  );
+  const matches = await db
+    .selectDistinctOn([people.id], {
+      personId: people.id,
+      personPriority: people.priority,
+      organizationPriority: affiliatedOrganizationPriority,
+      ownerUserId: people.ownerUserId,
+    })
+    .from(people)
+    .innerJoin(addresses, eq(addresses.personId, people.id))
+    .where(and(...locationFilters))
+    .orderBy(people.id);
+  const priorityOrder: Record<string, number> = {
+    top: 0,
+    high: 1,
+    medium: 2,
+  };
+  const effectivePriority = (match: (typeof matches)[number]) =>
+    [match.personPriority, match.organizationPriority]
+      .filter((value): value is string => !!value && value !== "low")
+      .sort(
+        (a, b) =>
+          (priorityOrder[a] ?? Number.MAX_SAFE_INTEGER) -
+          (priorityOrder[b] ?? Number.MAX_SAFE_INTEGER),
+      )[0];
+  matches.sort(
+    (a, b) =>
+      (priorityOrder[effectivePriority(a) ?? ""] ?? 3) -
+        (priorityOrder[effectivePriority(b) ?? ""] ?? 3) ||
+      Number(b.ownerUserId === trip.travelerUserId) -
+        Number(a.ownerUserId === trip.travelerUserId),
+  );
+  return matches.slice(0, 25).map((match) => ({
+    personId: match.personId,
+    rationale: `${effectivePriority(match)} priority; address matches ${trip.destinationCity}${trip.destinationState ? `, ${trip.destinationState}` : ""}.`,
+  }));
+}
+
+async function conferenceTripCandidates(trip: TripPlan) {
+  const evidence = tripConferenceEvidence(trip, people.id);
+  return db.select({ personId: people.id, rationale: evidence }).from(people)
+    .where(and(isNull(people.archivedAt), eq(people.deceased, false),
+      eq(people.anonymous, false), newTripCandidate(trip.id), sql`${evidence} is not null`))
+    .orderBy(
+      sql`case ${people.priority} when 'top' then 0 when 'high' then 1 when 'medium' then 2 else 3 end`,
+      desc(sql`${people.ownerUserId} is not distinct from ${trip.travelerUserId}`),
+      people.id,
+    ).limit(25);
+}
+
 router.post(
   "/trips/:id/draft-visits",
   asyncHandler(async (req, res) => {
     if (!canMutate(req, res)) return;
     const trip = await loadTrip(req, paramId(req));
     if (!trip) return notFound(res, "trip");
-    if (!trip.destinationCity) {
+    const query = parseOrBadRequest(DraftTripVisitsQueryParams, req.query, res);
+    if (!query) return;
+    const hasEventScope = Boolean(trip.conferenceEventId || trip.outreachOrganizationId);
+    const scope = query.scope ?? (hasEventScope ? "conference" : "local");
+    if (scope === "conference" && !hasEventScope) {
+      res.status(409).json({ error: "conference_required", message: "Choose a conference event or outreach organization for this trip." });
+      return;
+    }
+    if (scope === "local" && !trip.destinationCity) {
       res.status(409).json({
         error: "destination_required",
-        message: "Add a destination city before drafting people to visit.",
+        message: "Add a destination city before suggesting local prospects.",
       });
       return;
     }
-    const locationFilters: SQL[] = [
-      isNull(people.archivedAt),
-      eq(people.deceased, false),
-      sql`lower(trim(${addresses.cityName})) = lower(trim(${trip.destinationCity}))`,
-    ];
-    if (trip.destinationState) {
-      locationFilters.push(
-        sql`lower(trim(${addresses.stateCode})) = lower(trim(${trip.destinationState}))`,
-      );
-    }
-    const affiliatedOrganizationPriority = sql<string | null>`(
-      select ${organizations.priority}::text
-      from ${peopleEntityRoles}
-      inner join ${organizations}
-        on ${organizations.id} = ${peopleEntityRoles.organizationId}
-      where ${peopleEntityRoles.personId} = ${people.id}
-        and ${peopleEntityRoles.current} = 'current'
-        and ${organizations.archivedAt} is null
-        and ${organizations.priority} in ('top', 'high', 'medium')
-      order by case ${organizations.priority}
-        when 'top' then 0
-        when 'high' then 1
-        when 'medium' then 2
-        else 3
-      end
-      limit 1
-    )`;
-    locationFilters.push(
-      or(
-        inArray(people.priority, ["top", "high", "medium"]),
-        sql`${affiliatedOrganizationPriority} is not null`,
-      )!,
-    );
-    const matches = await db
-      .selectDistinctOn([people.id], {
-        personId: people.id,
-        personPriority: people.priority,
-        organizationPriority: affiliatedOrganizationPriority,
-        ownerUserId: people.ownerUserId,
-      })
-      .from(people)
-      .innerJoin(addresses, eq(addresses.personId, people.id))
-      .where(and(...locationFilters))
-      .orderBy(people.id);
-    const priorityOrder: Record<string, number> = {
-      top: 0,
-      high: 1,
-      medium: 2,
-    };
-    const effectivePriority = (match: (typeof matches)[number]) =>
-      [match.personPriority, match.organizationPriority]
-        .filter((value): value is string => !!value && value !== "low")
-        .sort(
-          (a, b) =>
-            (priorityOrder[a] ?? Number.MAX_SAFE_INTEGER) -
-            (priorityOrder[b] ?? Number.MAX_SAFE_INTEGER),
-        )[0];
-    matches.sort(
-      (a, b) =>
-        (priorityOrder[effectivePriority(a) ?? ""] ?? 3) -
-          (priorityOrder[effectivePriority(b) ?? ""] ?? 3) ||
-        Number(b.ownerUserId === trip.travelerUserId) -
-          Number(a.ownerUserId === trip.travelerUserId),
-    );
-    const [{ value: maxRank } = { value: 0 }] = await db
-      .select({ value: max(tripVisitCandidates.rank) })
-      .from(tripVisitCandidates)
-      .where(eq(tripVisitCandidates.tripId, trip.id));
-    const candidates = matches.slice(0, 25).map((match, index) => ({
-      id: newId(),
-      tripId: trip.id,
-      personId: match.personId,
-      rank: Number(maxRank ?? 0) + index + 1,
-      source: "system_draft",
-      rationale: `${effectivePriority(match)} priority; address matches ${trip.destinationCity}${trip.destinationState ? `, ${trip.destinationState}` : ""}.`,
-    }));
+    const candidates = scope === "conference"
+      ? await conferenceTripCandidates(trip)
+      : await localTripCandidates(trip);
     if (candidates.length) {
-      await db
-        .insert(tripVisitCandidates)
-        .values(candidates)
-        .onConflictDoNothing({
-          target: [tripVisitCandidates.tripId, tripVisitCandidates.personId],
-        });
+      await db.transaction(async (tx) => {
+        const [latest] = await tx.select().from(tripPlans)
+          .where(eq(tripPlans.id, trip.id)).for("update");
+        if (!latest || latest.archivedAt || latest.conferenceEventId !== trip.conferenceEventId ||
+            latest.outreachOrganizationId !== trip.outreachOrganizationId ||
+            latest.destinationCity !== trip.destinationCity || latest.destinationState !== trip.destinationState) return;
+        const [{ value: maxRank } = { value: 0 }] = await tx
+          .select({ value: max(tripVisitCandidates.rank) })
+          .from(tripVisitCandidates)
+          .where(eq(tripVisitCandidates.tripId, trip.id));
+        await tx.insert(tripVisitCandidates).values(candidates.map((candidate, index) => ({
+          ...candidate,
+          id: newId(),
+          tripId: trip.id,
+          rank: Number(maxRank ?? 0) + index + 1,
+          source: "system_draft",
+        }))).onConflictDoNothing({ target: [tripVisitCandidates.tripId, tripVisitCandidates.personId] });
+      });
     }
     res.json(await loadTripDetail(req, trip));
   }),

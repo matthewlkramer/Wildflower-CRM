@@ -57,14 +57,14 @@ export function PastMeetingFollowUpsCard() {
   );
   return (
     <Card data-testid="card-past-meeting-follow-ups">
-      <CardHeader>
+      <CardHeader className="px-4 pb-2 pt-3">
         <CardTitle className="text-lg">Past meeting follow-ups</CardTitle>
         <p className="text-xs text-muted-foreground">
           Your 50 most recent CRM meetings in the last 60 days, with missing
           notes or next steps.
         </p>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 pb-3">
         {!user || query.isLoading ? (
           <p>Loading meetings…</p>
         ) : query.isError ? (
@@ -78,7 +78,7 @@ export function PastMeetingFollowUpsCard() {
             {events.map((event) => (
               <li
                 key={event.id}
-                className="flex flex-wrap items-center justify-between gap-2 py-3"
+                className="flex flex-wrap items-center justify-between gap-2 py-1.5"
               >
                 <Link
                   className="text-sm text-primary hover:underline"
@@ -126,13 +126,13 @@ export function GiftThankYousCard() {
   const gifts = query.data?.data ?? [];
   return (
     <Card data-testid="card-gift-thank-yous">
-      <CardHeader>
+      <CardHeader className="px-4 pb-2 pt-3">
         <CardTitle className="text-lg">Gifts needing thank-yous</CardTitle>
         <p className="text-xs text-muted-foreground">
           Your ten most recent gifts without a recorded thank-you sent date.
         </p>
       </CardHeader>
-      <CardContent>
+      <CardContent className="px-4 pb-3">
         {!user || query.isLoading ? (
           <p>Loading gifts…</p>
         ) : query.isError ? (
@@ -146,7 +146,7 @@ export function GiftThankYousCard() {
             {gifts.map((gift) => (
               <li
                 key={gift.id}
-                className="flex items-center justify-between gap-3 py-3"
+                className="flex items-center justify-between gap-2 py-1.5"
               >
                 <Link
                   href={`/gifts/${gift.id}`}

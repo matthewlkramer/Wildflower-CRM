@@ -10,7 +10,7 @@ import {
   useListConferenceSpeakerProposals, useBulkAddConferenceSpeakerProposals, useBulkIgnoreConferenceSpeakerProposals,
   useReopenConferenceSpeakerProposal, useEnqueueConferenceResearchBackfill,
   getGetConferenceEventQueryKey, getListConferenceResearchRequestsQueryKey, getListConferenceSpeakerProposalsQueryKey,
-  type ConferenceEvent, type ConferenceEventInput, type ConferenceImportBatch, type ConferenceResearchRequest,
+  type ConferenceEvent, type ConferenceEventSummary, type ConferenceEventInput, type ConferenceImportBatch, type ConferenceResearchRequest,
   type ConferenceSpeakerProposal, type ConferenceSpeakerProposalBulkInput,
 } from "@workspace/api-client-react";
 import { Archive, CalendarDays, Check, ClipboardPaste, ExternalLink, MailSearch, Plus, Search, Sparkles, Upload } from "lucide-react";
@@ -201,6 +201,20 @@ function EventWorkspace({ eventId, onClose, types, refresh }: { eventId: string;
   </div>;
 }
 
+export function groupConferenceEditions(events: ConferenceEventSummary[], search: string) {
+  const term = search.trim().toLowerCase();
+  const groups = new Map<string, { name: string; editions: ConferenceEventSummary[] }>();
+  for (const event of events) {
+    const haystack = [event.nameOverride, event.conferenceTypeName, event.year, event.location].join(" ").toLowerCase();
+    if (!haystack.includes(term)) continue;
+    const group = groups.get(event.conferenceTypeId);
+    if (group) group.editions.push(event);
+    else groups.set(event.conferenceTypeId, { name: event.conferenceTypeName, editions: [event] });
+  }
+  for (const group of groups.values()) group.editions.sort((a, b) => b.year - a.year);
+  return [...groups].sort(([, a], [, b]) => a.name.localeCompare(b.name));
+}
+
 export default function Conferences() {
   const client = useQueryClient();
   const { toast } = useToast();
@@ -219,7 +233,7 @@ export default function Conferences() {
   const backfill = useEnqueueConferenceResearchBackfill({ mutation: { onSuccess: (result) => { setBackfillOpen(false); refresh(); toast({ title: `Backfill queued: ${result.dateRunsQueued} date runs, ${result.agendaRunsQueued} agenda runs` }); }, onError: (reason) => setError(conferenceError(reason)) } });
   const types = typesQ.data ?? [];
   const events = eventsQ.data ?? [];
-  const visible = useMemo(() => events.filter((event) => `${event.nameOverride ?? ""} ${event.conferenceTypeName} ${event.year} ${event.location ?? ""}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => b.year - a.year), [events, search]);
+  const series = useMemo(() => groupConferenceEditions(events, search), [events, search]);
   return <main className="mx-auto max-w-7xl space-y-6 p-4 pb-16 sm:p-6">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><div className="mb-1 flex items-center gap-2 text-primary"><CalendarDays className="h-5 w-5" /><span className="text-sm font-semibold uppercase tracking-wide">Engagement</span></div><h1 className="font-serif text-3xl font-medium text-foreground">Conferences</h1><p className="mt-1 max-w-2xl text-sm text-muted-foreground">Track annual events, document attendance, and review publicly researched speakers with source evidence.</p></div><div className="rounded-md border border-primary/15 bg-primary/5 px-3 py-2 text-xs text-primary">Attendance belongs to people; organization context follows affiliations.</div></div>
     <nav aria-label="Conference sections" className="flex gap-1 border-b"><Button variant="ghost" className={section === "events" ? "border-b-2 border-primary rounded-none" : ""} onClick={() => { setSection("events"); setSelectedId(""); }}>Annual events</Button><Button variant="ghost" className={section === "types" ? "border-b-2 border-primary rounded-none" : ""} onClick={() => { setSection("types"); setSelectedId(""); }}>Manage types</Button></nav>
@@ -228,8 +242,34 @@ export default function Conferences() {
       {creating && <EventForm types={types.filter((type) => type.active)} pending={create.isPending} onSave={(data) => create.mutate({ data })} onCancel={() => setCreating(false)} />}
       <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input className="pl-9" aria-label="Search annual events" placeholder="Search event, year, or location…" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
       {eventsQ.isLoading && <div className="grid gap-3 sm:grid-cols-2"><div className="h-28 animate-pulse rounded-xl bg-muted" /><div className="h-28 animate-pulse rounded-xl bg-muted" /></div>}{eventsQ.isError && <Card><CardContent className="flex items-center gap-3 py-6"><p role="alert">Could not load events.</p><Button variant="outline" onClick={() => void eventsQ.refetch()}>Retry</Button></CardContent></Card>}{typesQ.isError && <Button variant="outline" onClick={() => void typesQ.refetch()}>Could not load conference types. Retry</Button>}
-      {!eventsQ.isLoading && !eventsQ.isError && !visible.length && <div className="rounded-xl border border-dashed p-9 text-center text-sm text-muted-foreground">{search ? "No events match this search." : "No annual events yet. Add one to begin tracking attendance."}</div>}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{visible.map((event) => <button key={event.id} type="button" onClick={() => setSelectedId(event.id)} className="group rounded-xl border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"><div className="flex items-start justify-between gap-2"><div className="font-serif text-xl leading-tight">{event.nameOverride || event.conferenceTypeName}</div><span className="text-sm font-medium text-primary">{event.year}</span></div><div className="mt-3 text-xs text-muted-foreground">{event.startDate ? `${formatDate(event.startDate)}${event.endDate ? ` – ${formatDate(event.endDate)}` : ""}` : "Dates unknown · needs research"}{event.location ? ` · ${event.location}` : ""}</div><div className="mt-4 flex items-center justify-between border-t pt-3"><Badge variant="secondary">{event.attendanceCount} attendance</Badge><span className="text-xs text-primary group-hover:underline">Open event →</span></div></button>)}</div>
+      {!eventsQ.isLoading && !eventsQ.isError && !series.length && <div className="rounded-xl border border-dashed p-9 text-center text-sm text-muted-foreground">{search ? "No events match this search." : "No annual events yet. Add one to begin tracking attendance."}</div>}
+      <div className="divide-y rounded-lg border bg-card">
+        {series.map(([id, { name, editions }]) => (
+          <section key={id} aria-label={name}
+            className="grid min-w-0 items-start gap-2 p-3 sm:grid-cols-[minmax(10rem,1fr)_3fr] sm:gap-4">
+            <h3 className="font-serif text-lg font-semibold leading-tight sm:py-2">{name}</h3>
+            <div className="flex min-w-0 flex-wrap gap-2">
+              {editions.map((event) => (
+                <button
+                  key={event.id}
+                  type="button"
+                  aria-label={`${event.nameOverride || name}, ${event.year}, ${event.attendanceCount} attendance records`}
+                  onClick={() => setSelectedId(event.id)}
+                  className="flex min-h-14 min-w-28 max-w-full flex-col justify-center rounded-md border bg-background px-3 py-1.5 text-left hover:border-primary/50 hover:bg-primary/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  <span className="text-sm font-semibold text-primary">{event.year}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {event.attendanceCount} {event.attendanceCount === 1 ? "attendance record" : "attendance records"}
+                  </span>
+                  {event.nameOverride && event.nameOverride !== name && (
+                    <span className="max-w-40 truncate text-xs" title={event.nameOverride}>{event.nameOverride}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
       <Card className="border-primary/20"><CardHeader><CardTitle className="flex items-center gap-2 text-base"><Archive className="h-4 w-4" />Historical coverage</CardTitle><CardDescription>Admin action: enqueue missing-date research followed by agenda research for existing events. This does not confirm dates or add ambiguous people automatically.</CardDescription></CardHeader><CardContent className="space-y-3">{backfillOpen ? <div className="space-y-3 rounded-md border bg-muted/30 p-3 text-sm"><label className="flex items-start gap-2"><input type="checkbox" checked={includeCompletedEvents} onChange={(event) => setIncludeCompletedEvents(event.target.checked)} />Include completed historical events</label><label className="flex items-start gap-2"><input type="checkbox" checked={includeKnownDates} onChange={(event) => setIncludeKnownDates(event.target.checked)} />Also research dates already known</label><p className="text-xs text-muted-foreground">This queues work for existing events. The server handles idempotency, retry, and research scheduling. Review findings on each event.</p><div className="flex gap-2"><Button disabled={backfill.isPending} onClick={() => { if (window.confirm("Queue retroactive conference research for existing events?")) backfill.mutate({ data: { includeCompletedEvents, includeKnownDates } }); }}>Queue backfill</Button><Button variant="ghost" onClick={() => setBackfillOpen(false)}>Cancel</Button></div></div> : <Button variant="outline" onClick={() => setBackfillOpen(true)}>Prepare retroactive research</Button>}</CardContent></Card>
     </div>}
   </main>;

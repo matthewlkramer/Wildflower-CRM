@@ -9,6 +9,8 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { people } from "./people";
+import { organizations } from "./organizations";
+import { conferenceEvents } from "./conferences";
 import { users } from "./users";
 
 /**
@@ -27,6 +29,10 @@ export const tripPlans = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     title: text("title"),
+    conferenceEventId: text("conference_event_id").references(() => conferenceEvents.id, { onDelete: "set null" }),
+    outreachOrganizationId: text("outreach_organization_id").references(
+      () => organizations.id, { onDelete: "set null" },
+    ),
     destinationCity: text("destination_city"),
     destinationState: text("destination_state"),
     timeZone: text("time_zone").notNull().default("America/Chicago"),

@@ -12,6 +12,10 @@ import {
   useGetTripPlan,
   useListTripPlans,
   useListUsers,
+  useListConferenceEvents,
+  useGetOrganization,
+  getListConferenceEventsQueryKey,
+  getGetOrganizationQueryKey,
   useRefreshTripVisitEvidence,
   useUnarchiveTripPlan,
   useUpdateTripPlan,
@@ -70,6 +74,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { ContactPicker, type PickedContact } from "@/components/meeting-notes-panel";
 import { userDisplayName } from "@/components/user-picker";
 import { AddPeopleToTripDialog } from "@/components/trip-add-people-dialog";
 import { TripVisitActions } from "@/components/trip-visit-actions";
@@ -273,6 +278,8 @@ export type TripFormState = {
   travelerUserId: string;
   title: string;
   destinationCity: string;
+  conferenceEventId?: string;
+  outreachOrganizationId?: string;
   destinationState: string;
   timeZone: string;
   availableStartsAt: string;
@@ -291,6 +298,8 @@ function initialTripForm(trip?: TripPlanSummary): TripFormState {
     travelerUserId: trip?.travelerUserId ?? "",
     title: trip?.title ?? "",
     destinationCity: trip?.destinationCity ?? "",
+    conferenceEventId: trip?.conferenceEventId ?? "",
+    outreachOrganizationId: trip?.outreachOrganizationId ?? "",
     destinationState: trip?.destinationState ?? "",
     timeZone,
     availableStartsAt: trip
@@ -324,6 +333,8 @@ export function buildTripData(
     travelerUserId: form.travelerUserId,
     title: form.title.trim() || null,
     destinationCity: form.destinationCity.trim() || null,
+    conferenceEventId: form.conferenceEventId === undefined ? undefined : form.conferenceEventId || null,
+    outreachOrganizationId: form.outreachOrganizationId === undefined ? undefined : form.outreachOrganizationId || null,
     destinationState: form.destinationState.trim() || null,
     timeZone: form.timeZone,
     // The API retains these field names for compatibility, but the product has
@@ -352,8 +363,25 @@ function TripFormDialog({
   const { data: users } = useListUsers();
   const { toast } = useToast();
   const [form, setForm] = useState(() => initialTripForm(trip));
+  const conferences = useListConferenceEvents(undefined, {
+    query: { queryKey: getListConferenceEventsQueryKey(), enabled: open },
+  });
+  const [organizationLabel, setOrganizationLabel] = useState("");
+  const organizationId = form.outreachOrganizationId ?? "";
+  const outreachOrganization = useGetOrganization(organizationId, {
+    query: {
+      queryKey: getGetOrganizationQueryKey(organizationId),
+      enabled: open && Boolean(organizationId) && !organizationLabel,
+    },
+  });
+  const conferenceOptions = conferences.data?.filter((event) =>
+    event.status !== "cancelled" || event.id === form.conferenceEventId,
+  ) ?? [];
   useEffect(() => {
-    if (open) setForm(initialTripForm(trip));
+    if (open) {
+      setForm(initialTripForm(trip));
+      setOrganizationLabel("");
+    }
   }, [open, trip]);
   const create = useCreateTripPlan({
     mutation: {
@@ -442,6 +470,45 @@ function TripFormDialog({
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
               placeholder="Boston relationship-building trip"
+            />
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label htmlFor="trip-conference">Conference event (optional)</Label>
+            <select
+              id="trip-conference"
+              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+              value={form.conferenceEventId ?? ""}
+              disabled={conferences.isLoading || conferences.isError}
+              onChange={(event) => setForm({ ...form, conferenceEventId: event.target.value })}
+            >
+              <option value="">No linked conference</option>
+              {form.conferenceEventId && !conferenceOptions.some((event) => event.id === form.conferenceEventId) && (
+                <option value={form.conferenceEventId}>Linked conference</option>
+              )}
+              {conferenceOptions.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.nameOverride || event.conferenceTypeName} ({event.year})
+                </option>
+              ))}
+            </select>
+            {conferences.isError && (
+              <Button type="button" variant="ghost" size="sm" onClick={() => void conferences.refetch()}>
+                Retry loading conference events
+              </Button>
+            )}
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <div className="text-sm font-medium">Outreach organization (optional)</div>
+            <ContactPicker
+              kinds={["organization"]}
+              value={organizationId ? {
+                kind: "organization", id: organizationId,
+                label: organizationLabel || outreachOrganization.data?.name || "Linked organization",
+              } : null}
+              onChange={(value: PickedContact | null) => {
+                setOrganizationLabel(value?.label ?? "");
+                setForm({ ...form, outreachOrganizationId: value?.id ?? "" });
+              }}
             />
           </div>
           <div className="space-y-2">
@@ -756,9 +823,10 @@ function VisitRow({
           timeZone={timeZone}
         />
       </div>
-      {visit.rationale ? (
-        <p className="mt-3 text-sm">{visit.rationale}</p>
-      ) : null}
+      {visit.rationale && <p className="mt-3 text-sm">{visit.rationale}</p>}
+      {visit.conferenceEvidence && visit.conferenceEvidence !== visit.rationale && (
+        <p className="mt-1 text-sm text-muted-foreground">{visit.conferenceEvidence}</p>
+      )}
       {visit.notes ? (
         <div className="mt-2 rounded bg-muted px-3 py-2 text-sm">
           <p className="text-xs font-medium text-muted-foreground">Notes</p>
@@ -1156,6 +1224,7 @@ function TripDetailPanel({
   const { toast } = useToast();
   const [editOpen, setEditOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [showNearby, setShowNearby] = useState(false);
   const detail = useGetTripPlan(tripId);
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: getGetTripPlanQueryKey(tripId) });
@@ -1163,7 +1232,8 @@ function TripDetailPanel({
   };
   const draft = useDraftTripVisits({
     mutation: {
-      onSuccess: (updated) => {
+      onSuccess: (updated, variables) => {
+        if (variables.params?.scope === "local") setShowNearby(true);
         const added = Math.max(
           0,
           updated.visits.length - (detail.data?.visits.length ?? 0),
@@ -1177,13 +1247,15 @@ function TripDetailPanel({
           description:
             added > 0
               ? "Review the suggested people in the visit list."
-              : "Suggestions require a matching destination city and medium, high, or top solicitation priority. You can still add people manually.",
+              : variables.params?.scope === "conference"
+                ? "No additional people had recorded evidence for this event or linked organization."
+                : "Local suggestions require a matching city and medium, high, or top solicitation priority.",
         });
       },
-      onError: () =>
+      onError: (error) =>
         toast({
           title: "Outreach could not be suggested",
-          description: "Please try again. A destination city is required.",
+          description: tripErrorDescription(error),
           variant: "destructive",
         }),
     },
@@ -1205,6 +1277,14 @@ function TripDetailPanel({
         </CardContent>
       </Card>
     );
+  const hasEventScope = Boolean(trip.conferenceEventId || trip.outreachOrganizationId);
+  const nearby = hasEventScope ? trip.visits.filter((visit) =>
+    visit.source === "system_draft" && !visit.conferenceEvidence &&
+    !visit.planningUpdatedAt && !visit.notes && !visit.nextStep &&
+    !visit.evidenceReviewedAt && visit.outreachStatus === "not_invited",
+  ) : [];
+  const nearbyIds = new Set(nearby.map((visit) => visit.id));
+  const visibleVisits = trip.visits.filter((visit) => showNearby || !nearbyIds.has(visit.id));
   return (
     <div className="space-y-5">
       <Card>
@@ -1270,31 +1350,43 @@ function TripDetailPanel({
                 <Plus className="mr-2 h-4 w-4" />
                 Add person
               </Button>
+              {hasEventScope && (
+                <Button
+                  disabled={draft.isPending}
+                  onClick={() => draft.mutate({ id: trip.id, params: { scope: "conference" } })}
+                >
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  {draft.isPending ? "Finding suggestions…" : trip.conferenceEventId ? "Suggest conference contacts" : "Suggest organization contacts"}
+                </Button>
+              )}
               <Button
+                variant={hasEventScope ? "outline" : "default"}
                 disabled={!trip.destinationCity || draft.isPending}
-                onClick={() => draft.mutate({ id: trip.id })}
+                onClick={() => draft.mutate({ id: trip.id, params: { scope: "local" } })}
               >
-                <Sparkles className="mr-2 h-4 w-4" />
-                {draft.isPending
-                  ? "Finding suggestions…"
-                  : "Auto-suggest outreach"}
+                Suggest local prospects
               </Button>
             </div>
           </div>
-          {!trip.destinationCity ? (
-            <p className="text-xs text-amber-700">
-              Add a destination city to enable the system draft.
+          {!trip.destinationCity && (
+            <p className="text-xs text-muted-foreground">
+              Add a destination city to suggest local prospects.
             </p>
-          ) : null}
+          )}
+          {nearby.length > 0 && (
+            <Button type="button" size="sm" variant="ghost" className="w-fit"
+              aria-expanded={showNearby} onClick={() => setShowNearby(!showNearby)}>
+              {showNearby ? "Hide" : "Show"} local suggestions ({nearby.length})
+            </Button>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
-          {trip.visits.length === 0 ? (
+          {visibleVisits.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No one is on the visit list yet. Add a person or auto-suggest
-              outreach from CRM priorities and matching city addresses.
+              Add someone manually or suggest people for this trip.
             </p>
           ) : (
-            trip.visits.map((visit) => (
+            visibleVisits.map((visit) => (
               <VisitRow
                 key={visit.id}
                 tripId={trip.id}

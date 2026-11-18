@@ -9291,6 +9291,8 @@ export interface TripPlanSummary {
   createdByUserId: string;
   title?: string | null;
   destinationCity?: string | null;
+  conferenceEventId?: string | null;
+  outreachOrganizationId?: string | null;
   destinationState?: string | null;
   /** IANA timezone used to display and interpret the trip's local schedule. */
   timeZone: string;
@@ -9390,6 +9392,7 @@ export interface TripVisit {
   priority?: Priority | null;
   rank: number;
   rationale?: string | null;
+  conferenceEvidence?: string | null;
   source: TripVisitSource;
   notes?: string | null;
   nextStep?: string | null;
@@ -9478,6 +9481,8 @@ export interface CreateTripPlanBody {
   travelerUserId: string;
   title?: string | null;
   destinationCity?: string | null;
+  conferenceEventId?: string | null;
+  outreachOrganizationId?: string | null;
   destinationState?: string | null;
   timeZone: string;
   travelStartsAt: string;
@@ -9495,6 +9500,8 @@ export interface UpdateTripPlanBody {
   travelerUserId?: string;
   title?: string | null;
   destinationCity?: string | null;
+  conferenceEventId?: string | null;
+  outreachOrganizationId?: string | null;
   destinationState?: string | null;
   timeZone?: string;
   travelStartsAt?: string;
@@ -10558,6 +10565,9 @@ export interface DevelopmentAgendaItem {
   findingId: string | null;
   sourceUrl: string | null;
   carriedFromId: string | null;
+  standingCheckIn?: boolean;
+  standingPrompt?: string | null;
+  carriedFromMeetingId?: string | null;
   tasks: Task[];
 }
 
@@ -13723,6 +13733,18 @@ startBefore?: string;
  */
 includeArchived?: IncludeArchivedQueryParameter;
 };
+
+export type DraftTripVisitsParams = {
+scope?: DraftTripVisitsScope;
+};
+
+export type DraftTripVisitsScope = typeof DraftTripVisitsScope[keyof typeof DraftTripVisitsScope];
+
+
+export const DraftTripVisitsScope = {
+  conference: 'conference',
+  local: 'local',
+} as const;
 
 export type ListCalendarEventsParams = {
 search?: string;

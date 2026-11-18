@@ -39,6 +39,7 @@ import {
 } from "../lib/fundraisingBrief";
 import {
   createDevelopmentMeeting,
+  isStandingCheckIn,
   loadDevelopmentDonorSuggestions,
   loadDevelopmentMeetings,
   lockDevelopmentMeeting,
@@ -297,7 +298,7 @@ router.post(
       const agenda = await tx
         .select()
         .from(developmentAgenda)
-        .where(eq(developmentAgenda.meetingId, id))
+        .where(and(eq(developmentAgenda.meetingId, id), isNull(developmentAgenda.removedAt)))
         .orderBy(asc(developmentAgenda.position));
       if (
         !body.findingId &&
@@ -353,7 +354,7 @@ router.patch(
       const items = await tx
         .select()
         .from(developmentAgenda)
-        .where(eq(developmentAgenda.meetingId, id))
+        .where(and(eq(developmentAgenda.meetingId, id), isNull(developmentAgenda.removedAt)))
         .orderBy(asc(developmentAgenda.position), asc(developmentAgenda.id));
       const index = items.findIndex((row) => row.id === itemId(req));
       const item = items[index];
@@ -369,8 +370,11 @@ router.patch(
             .where(eq(developmentAgenda.id, active.id));
         }
       }
+      const section = items.filter((row) =>
+        isStandingCheckIn(row.templateKey) === isStandingCheckIn(item.templateKey));
+      const sectionIndex = section.findIndex((row) => row.id === item.id);
       const swap = body.move
-        ? items[index + (body.move === "up" ? -1 : 1)]
+        ? section[sectionIndex + (body.move === "up" ? -1 : 1)]
         : undefined;
       if (swap)
         await tx
@@ -413,6 +417,7 @@ router.delete(
           and(
             eq(developmentAgenda.meetingId, id),
             eq(developmentAgenda.id, itemId(req)),
+            isNull(developmentAgenda.removedAt),
           ),
         );
       if (!item) return "missing";
@@ -429,7 +434,8 @@ router.delete(
       )
         return "has_history";
       await tx
-        .delete(developmentAgenda)
+        .update(developmentAgenda)
+        .set({ removedAt: new Date(), revision: item.revision + 1 })
         .where(eq(developmentAgenda.id, item.id));
       await refreshDevelopmentDonorLinks(tx, id);
       return "ok";
@@ -461,6 +467,7 @@ router.post(
           and(
             eq(developmentAgenda.meetingId, id),
             eq(developmentAgenda.id, itemId(req)),
+            isNull(developmentAgenda.removedAt),
           ),
         );
       if (!item) return "missing";

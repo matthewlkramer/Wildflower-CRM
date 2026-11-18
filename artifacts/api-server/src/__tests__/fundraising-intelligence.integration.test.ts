@@ -399,8 +399,18 @@ describe.skipIf(!hasDatabase)(
         }),
       ]);
       expect(duplicate.note.id).toBe(first.note.id);
-      expect(first.agenda).toHaveLength(3);
+      expect(first.agenda).toHaveLength(5);
+      expect(first.agenda.slice(0, 4)).toMatchObject([
+        { title: "Team check-in", standingCheckIn: true },
+        { title: "Standing checklists", standingCheckIn: true, standingPrompt: expect.stringContaining("Quarterly") },
+        { title: "Development metrics", standingCheckIn: true },
+        { title: "Project updates", standingCheckIn: true },
+      ]);
       const path = "/development-meetings/" + first.note.id;
+      const preopened = await json("/development-meetings", "POST", { date: dates[1] });
+      const withTopic = await json(path + "/agenda", "POST", { title: "An unfinished discussion" });
+      const topic = withTopic.agenda.find((row: { title: string }) => row.title === "An unfinished discussion");
+      expect(topic.id).toBeTruthy();
       const withFinding = await json(path + "/agenda", "POST", {
         findingKind: "grant_lead",
         findingId: grantId,
@@ -413,7 +423,7 @@ describe.skipIf(!hasDatabase)(
         findingKind: "grant_lead",
         findingId: grantId,
       });
-      expect(deduped.agenda).toHaveLength(4);
+      expect(deduped.agenda).toHaveLength(7);
       const itemPath = path + "/agenda/" + item.id;
       const notes = {
         revision: item.revision,
@@ -467,15 +477,28 @@ describe.skipIf(!hasDatabase)(
       const next = await json("/development-meetings", "POST", {
         date: dates[1],
       });
-      expect(next.agenda.at(-1).tasks).toEqual([
+      expect(next.note.id).toBe(preopened.note.id);
+      const recap = next.agenda.find((row: { title: string }) => row.title === "Agree on next steps");
+      expect(recap.tasks).toEqual([
         expect.objectContaining({ id: templateTask.id }),
       ]);
       const carry = next.agenda.find(
         (row: { carriedFromId: string }) => row.carriedFromId === item.id,
       );
+      expect(carry).toMatchObject({
+        notes: "Application timing discussed.",
+        carriedFromMeetingId: first.note.id,
+      });
       expect(carry.tasks).toEqual([
         expect.objectContaining({ id: task.id, status: "open" }),
       ]);
+      const carriedTopic = next.agenda.find((row: { carriedFromId: string }) => row.carriedFromId === topic.id);
+      expect(carriedTopic.id).toBeTruthy();
+      await json(`/development-meetings/${next.note.id}/agenda/${carriedTopic.id}`, "DELETE");
+      const reopened = await json("/development-meetings", "POST", { date: dates[1] });
+      expect(reopened.agenda.filter((row: { carriedFromId: string }) => row.carriedFromId === item.id)).toHaveLength(1);
+      expect(reopened.agenda.some((row: { carriedFromId: string }) => row.carriedFromId === topic.id)).toBe(false);
+
       const history = await json(
         "/development-meetings?organizationId=" + activeId,
       );

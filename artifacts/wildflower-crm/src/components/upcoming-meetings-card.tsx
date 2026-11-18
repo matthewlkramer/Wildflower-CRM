@@ -170,7 +170,7 @@ export default function UpcomingMeetingsCard() {
 
   return (
     <Card data-testid="card-upcoming-meetings">
-      <CardHeader className="flex flex-row items-start justify-between gap-4 space-y-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 px-4 py-3">
         <div>
           <CardTitle className="text-lg">Upcoming meetings</CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -187,10 +187,10 @@ export default function UpcomingMeetingsCard() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-48 pl-6">When</TableHead>
+              <TableHead className="px-4 py-1 sm:w-40">When</TableHead>
               <TableHead>Meeting</TableHead>
-              <TableHead className="w-44">Owner</TableHead>
-              <TableHead className="w-32 pr-6 text-right">Actions</TableHead>
+              <TableHead className="hidden md:table-cell md:w-36">Owner</TableHead>
+              <TableHead className="w-28 pr-4 text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -198,7 +198,7 @@ export default function UpcomingMeetingsCard() {
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="py-8 text-center text-muted-foreground"
+                  className="py-4 text-center text-muted-foreground"
                 >
                   Loading meetings…
                 </TableCell>
@@ -207,7 +207,7 @@ export default function UpcomingMeetingsCard() {
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="py-8 text-center text-muted-foreground"
+                  className="py-4 text-center text-muted-foreground"
                 >
                   Couldn't load {scope === "mine" ? "your" : "the team"}{" "}
                   calendar.
@@ -217,7 +217,7 @@ export default function UpcomingMeetingsCard() {
               <TableRow>
                 <TableCell
                   colSpan={4}
-                  className="py-8 text-center text-muted-foreground"
+                  className="py-4 text-center text-muted-foreground"
                 >
                   Nothing scheduled{" "}
                   {scope === "mine" ? "for you" : "for the team"} in the next
@@ -230,17 +230,20 @@ export default function UpcomingMeetingsCard() {
                   key={event.id}
                   data-testid={`upcoming-meeting-${event.id}`}
                 >
-                  <TableCell className="pl-6 text-sm text-muted-foreground">
+                  <TableCell className="p-1.5 pl-4 text-xs text-muted-foreground sm:text-sm">
                     {formatWhen(event.startAt, event.endAt)}
                   </TableCell>
-                  <TableCell className="font-medium">
+                  <TableCell className="min-w-28 px-1.5 py-1 font-medium">
                     {event.summary?.trim() || "(no title)"}
+                    <span className="block text-xs font-normal text-muted-foreground md:hidden">
+                      {userNames.get(event.calendarUserId) ?? (event.calendarUserId === userId ? "Me" : "Unknown")}
+                    </span>
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="hidden px-1.5 py-1 md:table-cell">
                     {userNames.get(event.calendarUserId) ??
                       (event.calendarUserId === userId ? "Me" : "—")}
                   </TableCell>
-                  <TableCell className="pr-6">
+                  <TableCell className="py-0.5 pl-0 pr-3">
                     <MeetingActions
                       event={event}
                       onArchive={
